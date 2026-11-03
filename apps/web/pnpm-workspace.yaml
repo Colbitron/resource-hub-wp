@@ -1,6 +1,8 @@
 allowBuilds:
   sharp: false
   unrs-resolver: false
+# Next 16.4.5 is newer than pnpm's minimum release age; these exclusions let it
+# install. Remove them once the version has aged past the threshold.
 minimumReleaseAgeExclude:
   - '@next/env@16.4.5'
   - '@next/eslint-plugin-next@16.4.5'

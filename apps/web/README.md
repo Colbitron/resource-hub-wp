@@ -17,7 +17,7 @@ pnpm dev                     # http://localhost:3000
 Checks:
 
 ```bash
-pnpm typecheck   # tsc --noEmit
+pnpm typecheck   # next typegen && tsc --noEmit
 pnpm lint        # eslint
 pnpm build       # next build
 ```
