@@ -1,0 +1,10 @@
+# Native or postinstall build scripts pnpm asked about. None are needed:
+# - fs-ext-extra-prebuilt comes in through @php-wasm/node, which wp-env only
+#   uses in its non-Docker Playground mode. We run Docker.
+# - @parcel/watcher ships prebuilt binaries; its script only compiles a fallback.
+# - core-js and core-js-pure only print a funding message.
+allowBuilds:
+  fs-ext-extra-prebuilt: false
+  "@parcel/watcher": false
+  core-js: false
+  core-js-pure: false

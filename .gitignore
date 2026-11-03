@@ -4,3 +4,8 @@
 node_modules/
 vendor/
 .DS_Store
+
+.wp-env.override.json
+.phpunit.result.cache
+build/
+artifacts/

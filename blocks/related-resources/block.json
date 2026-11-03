@@ -1,0 +1,28 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "resource-hub/related-resources",
+	"version": "0.1.0",
+	"title": "Related Resources",
+	"category": "widgets",
+	"icon": "networking",
+	"description": "Lists resources that share a topic with the current one. Rendered on the server so the editor preview and the front end show the same HTML.",
+	"keywords": [ "resources", "related", "topic" ],
+	"textdomain": "resource-hub",
+	"attributes": {
+		"count": {
+			"type": "integer",
+			"default": 3
+		},
+		"topic": {
+			"type": "string",
+			"default": ""
+		}
+	},
+	"usesContext": [ "postId", "postType" ],
+	"supports": {
+		"html": false,
+		"align": [ "wide", "full" ]
+	},
+	"editorScript": "file:./index.js"
+}

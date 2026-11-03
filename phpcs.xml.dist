@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<ruleset name="Resource Hub">
+	<description>WordPress Coding Standards as the base, with the PSR-12 sniffs that do not conflict with it layered on top.</description>
+
+	<file>resource-hub.php</file>
+	<file>src</file>
+	<file>tests</file>
+
+	<exclude-pattern>*/vendor/*</exclude-pattern>
+	<exclude-pattern>*/node_modules/*</exclude-pattern>
+	<exclude-pattern>*/build/*</exclude-pattern>
+
+	<arg name="extensions" value="php"/>
+	<arg name="colors"/>
+	<arg value="sp"/>
+	<arg name="parallel" value="8"/>
+
+	<config name="minimum_wp_version" value="6.7"/>
+	<config name="testVersion" value="8.2-"/>
+
+	<rule ref="WordPress">
+		<!-- PSR-4 classes live in src/ with StudlyCase file names, not class-*.php. -->
+		<exclude name="WordPress.Files.FileName"/>
+	</rule>
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="ResourceHub"/>
+				<element value="resource_hub"/>
+			</property>
+		</properties>
+	</rule>
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="resource-hub"/>
+			</property>
+		</properties>
+	</rule>
+
+	<rule ref="PSR12">
+		<!-- Where PSR-12 and WordPress disagree, WordPress wins. Each exclusion names the conflict. -->
+		<exclude name="Generic.WhiteSpace.DisallowTabIndent"/><!-- WP indents with tabs. -->
+		<exclude name="Generic.Files.LineLength"/><!-- WP has no hard line limit. -->
+		<exclude name="PSR2.Classes.ClassDeclaration"/><!-- WP keeps the opening brace on the class line. -->
+		<exclude name="PSR2.Methods.FunctionClosingBrace"/>
+		<exclude name="Squiz.Functions.MultiLineFunctionDeclaration"/><!-- WP keeps the opening brace on the function line. -->
+		<exclude name="Squiz.ControlStructures.ControlSignature"/><!-- WP spaces inside parentheses. -->
+		<exclude name="PSR2.ControlStructures.ControlStructureSpacing"/>
+		<exclude name="PSR12.ControlStructures.ControlStructureSpacing"/>
+		<exclude name="PSR2.Methods.FunctionCallSignature"/><!-- WP spaces inside call parentheses. -->
+		<exclude name="Generic.Functions.FunctionCallArgumentSpacing"/>
+		<exclude name="PSR1.Methods.CamelCapsMethodName"/><!-- WP methods are snake_case. -->
+		<exclude name="PSR12.Files.FileHeader"/><!-- WP plugin headers and ABSPATH guards precede declarations. -->
+		<exclude name="PSR12.Files.OpenTag"/>
+		<exclude name="PSR1.Files.SideEffects"/><!-- The plugin entry file both declares and executes by design. -->
+		<exclude name="PSR12.Classes.ClassInstantiation"/>
+		<exclude name="PSR12.Operators.OperatorSpacing"/>
+		<exclude name="PSR2.Namespaces.UseDeclaration"/>
+		<exclude name="PSR12.Properties.ConstantVisibility"/>
+	</rule>
+
+	<rule ref="PHPCompatibilityWP"/>
+</ruleset>

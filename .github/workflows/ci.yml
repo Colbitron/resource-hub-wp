@@ -1,0 +1,107 @@
+# The gate. Every push and pull request runs the full chain inside the same
+# wp-env containers used locally, so a green run here means the same thing as
+# a green run on a laptop.
+#
+# Order matters in one place: PHPUnit reinstalls the tests database, which
+# deactivates every plugin on the tests site, so it runs before Playwright
+# and the Playwright specs re-activate the plugin themselves.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Lint, build, and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        # Reads the version from the packageManager field in package.json.
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint JavaScript
+        run: pnpm lint:js
+
+      - name: Build the block
+        run: pnpm build
+
+      - name: Compute cache keys
+        id: keys
+        run: |
+          echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+          echo "playwright=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # wp-env downloads WordPress core and the core test library into ~/.wp-env
+      # and reuses them when its config checksum matches. The weekly suffix keeps
+      # the unpinned "latest" core from freezing at whatever was cached first.
+      - name: Cache wp-env downloads
+        uses: actions/cache@v6
+        with:
+          path: ~/.wp-env
+          key: wp-env-${{ runner.os }}-${{ hashFiles('.wp-env.json') }}-${{ steps.keys.outputs.week }}
+
+      - name: Start wp-env
+        run: pnpm env:start
+
+      - name: Cache Composer vendor directory
+        uses: actions/cache@v6
+        with:
+          path: vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+
+      - name: Install PHP dependencies
+        run: pnpm composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Lint PHP
+        run: pnpm lint
+
+      - name: Run PHPUnit
+        run: pnpm test:php
+
+      - name: Cache Playwright browser
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.keys.outputs.playwright }}
+
+      # --with-deps still installs the system libraries on a cache hit; only the
+      # browser download is skipped.
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright
+        run: pnpm test:e2e
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-artifacts
+          path: artifacts/
+          retention-days: 7
+
+      - name: wp-env logs
+        if: failure()
+        run: pnpm exec wp-env logs tests --watch=false
