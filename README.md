@@ -10,10 +10,12 @@ Scaffold complete; features in progress. Everything below the line exists and is
 
 | Piece | State |
 |---|---|
-| wp-env environment, PHP 8.5, latest WordPress | done |
+| wp-env environment, PHP 8.4, latest WordPress | done |
 | Composer, PSR-4 autoloader, PHPCS, PHPUnit, Playwright | done |
 | Block build toolchain (`@wordpress/scripts`) | done |
 | GitHub Actions gate | done |
+| Hosted CMS on Cloudways, PHP 8.4, HTTPS ([ADR 0005](docs/adr/0005-hosted-wordpress-on-cloudways.md)) | done |
+| Deploy job from `main` to the host | pending |
 | `resource` post type and taxonomies | pending |
 | REST-registered meta with sanitizers | pending |
 | `GET /resource-hub/v1/related/{id}` | pending |
@@ -61,7 +63,7 @@ pnpm build              # compiles the block editor script into build/
 
 Log in at `http://localhost:8888/wp-admin` with `admin` / `password`.
 
-The revalidation secret and front-end URL are read from `RESOURCE_HUB_FRONTEND_URL` and `RESOURCE_HUB_REVALIDATE_SECRET`. Locally, define them in a gitignored `.wp-env.override.json` under `config`; they are never committed.
+The revalidation secret and front-end URL are read from `RESOURCE_HUB_FRONTEND_URL` and `RESOURCE_HUB_REVALIDATE_SECRET`. Locally, define them in a gitignored `.wp-env.override.json` under `config`; on the host they are `define()`d in `wp-config.php`. They are never committed.
 
 ## Commands
 
@@ -78,7 +80,7 @@ The revalidation secret and front-end URL are read from `RESOURCE_HUB_FRONTEND_U
 
 ## Testing
 
-Three gates, all run by `.github/workflows/ci.yml` on every push:
+Three gates, all run by `.github/workflows/ci.yml` on every pull request and on every push to `main`:
 
 - **PHPCS** on the WordPress Coding Standards with the non-conflicting parts of PSR-12 ([ADR 0003](docs/adr/0003-wordpress-coding-standards-over-psr-12.md)).
 - **PHPUnit 9.6** inside the WordPress core test library that wp-env provides ([ADR 0004](docs/adr/0004-phpunit-9-matches-the-core-test-library.md)).
@@ -96,6 +98,7 @@ Each real decision has a record under [`docs/adr/`](docs/adr/). One sentence eac
 - [0002](docs/adr/0002-repository-root-is-the-plugin.md) The repository root is the plugin, so one mount serves wp-env, Composer, and CI.
 - [0003](docs/adr/0003-wordpress-coding-standards-over-psr-12.md) WordPress Coding Standards win over PSR-12 where they conflict; each exclusion names the conflict.
 - [0004](docs/adr/0004-phpunit-9-matches-the-core-test-library.md) PHPUnit stays on 9.6 because the WordPress core test library tops out there.
+- [0005](docs/adr/0005-hosted-wordpress-on-cloudways.md) The CMS is hosted on Cloudways so Vercel can reach it over HTTPS; PHP is pinned to 8.4 to match.
 
 Decisions still to be made as the features land: the custom REST route versus filtering on the client, `transition_post_status` versus `save_post` for the revalidation hook, server-rendered versus React-rendered block, and the cache strategy for the related query.
 
