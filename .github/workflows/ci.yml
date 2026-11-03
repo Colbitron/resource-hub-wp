@@ -10,6 +10,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -47,19 +48,26 @@ jobs:
       - name: Build the block
         run: pnpm build
 
+      # wp-env picks ~/wp-env (no dot) on Linux hosts that have /snap, which the
+      # GitHub runners do. Pin the location so the cache path below is exact.
       - name: Compute cache keys
         id: keys
         run: |
-          echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
-          echo "playwright=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+          {
+            echo "week=$(date -u +%G-W%V)"
+            echo "playwright=$(node -p "require('@playwright/test/package.json').version")"
+            echo "wp_env_home=$RUNNER_TEMP/wp-env"
+          } >> "$GITHUB_OUTPUT"
+          echo "WP_ENV_HOME=$RUNNER_TEMP/wp-env" >> "$GITHUB_ENV"
 
-      # wp-env downloads WordPress core and the core test library into ~/.wp-env
-      # and reuses them when its config checksum matches. The weekly suffix keeps
-      # the unpinned "latest" core from freezing at whatever was cached first.
+      # wp-env downloads WordPress core and the core test library into
+      # WP_ENV_HOME and reuses them when its config checksum matches. The weekly
+      # suffix keeps the unpinned "latest" core from freezing at whatever was
+      # cached first.
       - name: Cache wp-env downloads
         uses: actions/cache@v6
         with:
-          path: ~/.wp-env
+          path: ${{ steps.keys.outputs.wp_env_home }}
           key: wp-env-${{ runner.os }}-${{ hashFiles('.wp-env.json') }}-${{ steps.keys.outputs.week }}
 
       - name: Start wp-env
