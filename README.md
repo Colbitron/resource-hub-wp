@@ -14,6 +14,8 @@ Scaffold complete; features in progress. Everything below the line exists and is
 | Composer, PSR-4 autoloader, PHPCS, PHPUnit, Playwright | done |
 | Block build toolchain (`@wordpress/scripts`) | done |
 | GitHub Actions gate | done |
+| Hosted CMS on Cloudways, PHP 8.4, HTTPS ([ADR 0005](docs/adr/0005-hosted-wordpress-on-cloudways.md)) | done |
+| Deploy job from `main` to the host | pending |
 | `resource` post type and taxonomies | pending |
 | REST-registered meta with sanitizers | pending |
 | `GET /resource-hub/v1/related/{id}` | pending |
@@ -61,7 +63,7 @@ pnpm build              # compiles the block editor script into build/
 
 Log in at `http://localhost:8888/wp-admin` with `admin` / `password`.
 
-The revalidation secret and front-end URL are read from `RESOURCE_HUB_FRONTEND_URL` and `RESOURCE_HUB_REVALIDATE_SECRET`. Locally, define them in a gitignored `.wp-env.override.json` under `config`; they are never committed.
+The revalidation secret and front-end URL are read from `RESOURCE_HUB_FRONTEND_URL` and `RESOURCE_HUB_REVALIDATE_SECRET`. Locally, define them in a gitignored `.wp-env.override.json` under `config`; on the host they are `define()`d in `wp-config.php`. They are never committed.
 
 ## Commands
 

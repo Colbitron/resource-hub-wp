@@ -1,6 +1,6 @@
-# The gate. Every push and pull request runs the full chain inside the same
-# wp-env containers used locally, so a green run here means the same thing as
-# a green run on a laptop.
+# The gate. Every pull request and every push to main runs the full chain
+# inside the same wp-env containers used locally, so a green run here means
+# the same thing as a green run on a laptop.
 #
 # Order matters in one place: PHPUnit reinstalls the tests database, which
 # deactivates every plugin on the tests site, so it runs before Playwright
