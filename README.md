@@ -78,7 +78,7 @@ The revalidation secret and front-end URL are read from `RESOURCE_HUB_FRONTEND_U
 
 ## Testing
 
-Three gates, all run by `.github/workflows/ci.yml` on every push:
+Three gates, all run by `.github/workflows/ci.yml` on every pull request and on every push to `main`:
 
 - **PHPCS** on the WordPress Coding Standards with the non-conflicting parts of PSR-12 ([ADR 0003](docs/adr/0003-wordpress-coding-standards-over-psr-12.md)).
 - **PHPUnit 9.6** inside the WordPress core test library that wp-env provides ([ADR 0004](docs/adr/0004-phpunit-9-matches-the-core-test-library.md)).
