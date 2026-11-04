@@ -177,7 +177,8 @@ jobs:
       # rsync --delete into the wrong directory would remove other plugins.
       # A CR or LF is refused too, since the value is written to GITHUB_ENV,
       # where a newline would start a new variable. REMOTE_DIR carries the
-      # checked value to the later steps.
+      # checked value to the later steps, and WP_ROOT carries the WordPress
+      # root, which is that value without the plugin suffix.
       - name: Check the deploy path
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
@@ -196,7 +197,9 @@ jobs:
               exit 1
               ;;
           esac
+          wp_root="${path%/wp-content/plugins/resource-hub-wp}"
           echo "REMOTE_DIR=$path" >> "$GITHUB_ENV"
+          echo "WP_ROOT=$wp_root" >> "$GITHUB_ENV"
 
       # The deploy never talks to GitHub after checkout, so the token is not
       # left in .git/config.
@@ -293,12 +296,16 @@ jobs:
             '--exclude=*' \
             ./ "deploy:$REMOTE_DIR/"
 
-      # WP-CLI walks up from the plugin directory to find WordPress. Current
-      # WP-CLI already exits 0 for an active plugin, but the host's version is
-      # not pinned, so the is-active check keeps the step idempotent anyway.
+      # WP-CLI runs from the WordPress root. It would walk up from the plugin
+      # directory to find WordPress, but it evaluates wp-config.php without
+      # changing directory, so the host's relative require('wp-salt.php')
+      # resolves against the working directory and fails anywhere but the
+      # root. Current WP-CLI already exits 0 for an active plugin, but the
+      # host's version is not pinned, so the is-active check keeps the step
+      # idempotent anyway.
       - name: Activate the plugin
         run: |
-          dir=$(printf '%q' "$REMOTE_DIR")
+          dir=$(printf '%q' "$WP_ROOT")
           ssh deploy "cd $dir && { wp plugin is-active resource-hub-wp || wp plugin activate resource-hub-wp; }"
 
       # The site's own home URL, read over SSH, so no hostname is committed and
@@ -306,7 +313,7 @@ jobs:
       # an HTML error page served with a 200.
       - name: Smoke-check the REST root
         run: |
-          dir=$(printf '%q' "$REMOTE_DIR")
+          dir=$(printf '%q' "$WP_ROOT")
           home=$(ssh deploy "cd $dir && wp option get home --skip-plugins --skip-themes")
           case "$home" in
             https://*) ;;
