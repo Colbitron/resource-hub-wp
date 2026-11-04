@@ -16,9 +16,7 @@ declare(strict_types=1);
 
 defined( 'ABSPATH' ) || exit;
 
-$resource_hub_autoload = __DIR__ . '/vendor/autoload.php';
-
-if ( ! is_readable( $resource_hub_autoload ) ) {
+if ( ! is_readable( __DIR__ . '/vendor/autoload.php' ) ) {
 	add_action(
 		'admin_notices',
 		static function (): void {
@@ -30,6 +28,6 @@ if ( ! is_readable( $resource_hub_autoload ) ) {
 	return;
 }
 
-require_once $resource_hub_autoload;
+require_once __DIR__ . '/vendor/autoload.php';
 
 ( new ResourceHub\Plugin( __FILE__ ) )->boot();

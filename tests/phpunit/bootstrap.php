@@ -8,8 +8,7 @@
 
 declare(strict_types=1);
 
-$resource_hub_plugin_dir = dirname( __DIR__, 2 );
-$resource_hub_tests_dir  = getenv( 'WP_TESTS_DIR' );
+$resource_hub_tests_dir = getenv( 'WP_TESTS_DIR' );
 
 if ( ! $resource_hub_tests_dir ) {
 	$resource_hub_tests_dir = '/wordpress-phpunit';
@@ -20,14 +19,16 @@ if ( ! file_exists( $resource_hub_tests_dir . '/includes/functions.php' ) ) {
 	exit( 1 );
 }
 
-require_once $resource_hub_plugin_dir . '/vendor/yoast/phpunit-polyfills/phpunitpolyfills-autoload.php';
-require_once $resource_hub_tests_dir . '/includes/functions.php';
+define( 'RESOURCE_HUB_TESTS_DIR', $resource_hub_tests_dir );
+
+require_once dirname( __DIR__, 2 ) . '/vendor/yoast/phpunit-polyfills/phpunitpolyfills-autoload.php';
+require_once RESOURCE_HUB_TESTS_DIR . '/includes/functions.php';
 
 tests_add_filter(
 	'muplugins_loaded',
-	static function () use ( $resource_hub_plugin_dir ): void {
-		require $resource_hub_plugin_dir . '/resource-hub.php';
+	static function (): void {
+		require dirname( __DIR__, 2 ) . '/resource-hub.php';
 	}
 );
 
-require $resource_hub_tests_dir . '/includes/bootstrap.php';
+require RESOURCE_HUB_TESTS_DIR . '/includes/bootstrap.php';

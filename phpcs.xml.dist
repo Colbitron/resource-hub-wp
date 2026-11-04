@@ -38,6 +38,10 @@
 		</properties>
 	</rule>
 
+	<!-- VIP Minimum, not WordPress-VIP-Go: VIP-Go relaxes sniffs for VIP's own infrastructure (a meta_key/meta_value index, trusted
+	     translations), which Cloudways and wp-env lack. Minimum adds the VIP checks and leaves the WordPress ruleset at full severity. -->
+	<rule ref="WordPressVIPMinimum"/>
+
 	<rule ref="PSR12">
 		<!-- Where PSR-12 and WordPress disagree, WordPress wins. Each exclusion names the conflict. -->
 		<exclude name="Generic.WhiteSpace.DisallowTabIndent"/><!-- WP indents with tabs. -->

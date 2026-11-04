@@ -82,7 +82,7 @@ The revalidation secret and front-end URL are read from `RESOURCE_HUB_FRONTEND_U
 
 Three gates, all run by `.github/workflows/ci.yml` on every pull request and on every push to `main`:
 
-- **PHPCS** on the WordPress Coding Standards with the non-conflicting parts of PSR-12 ([ADR 0003](docs/adr/0003-wordpress-coding-standards-over-psr-12.md)).
+- **PHPCS** on the WordPress Coding Standards and the WordPress VIP Minimum ruleset, with the non-conflicting parts of PSR-12 ([ADR 0003](docs/adr/0003-wordpress-coding-standards-over-psr-12.md), [ADR 0006](docs/adr/0006-vip-minimum-ruleset-in-the-gate.md)).
 - **PHPUnit 9.6** inside the WordPress core test library that wp-env provides ([ADR 0004](docs/adr/0004-phpunit-9-matches-the-core-test-library.md)).
 - **Playwright** against the wp-env tests site on port 8889, using the WordPress e2e utilities.
 
@@ -99,6 +99,7 @@ Each real decision has a record under [`docs/adr/`](docs/adr/). One sentence eac
 - [0003](docs/adr/0003-wordpress-coding-standards-over-psr-12.md) WordPress Coding Standards win over PSR-12 where they conflict; each exclusion names the conflict.
 - [0004](docs/adr/0004-phpunit-9-matches-the-core-test-library.md) PHPUnit stays on 9.6 because the WordPress core test library tops out there.
 - [0005](docs/adr/0005-hosted-wordpress-on-cloudways.md) The CMS is hosted on Cloudways so Vercel can reach it over HTTPS; PHP is pinned to 8.4 to match.
+- [0006](docs/adr/0006-vip-minimum-ruleset-in-the-gate.md) The PHPCS gate adds WordPress VIP Minimum, not VIP-Go, whose relaxations assume VIP's own infrastructure.
 
 Decisions still to be made as the features land: the custom REST route versus filtering on the client, `transition_post_status` versus `save_post` for the revalidation hook, server-rendered versus React-rendered block, and the cache strategy for the related query.
 

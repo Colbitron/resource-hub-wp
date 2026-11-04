@@ -43,7 +43,7 @@ Change this only by changing both repos in the same sitting.
 
 ## Standards and workflow
 
-- PHP 8.4, matching the host (see ADR 0005). WordPress 6.7 or newer. WordPress Coding Standards and PSR-12 via PHPCS; fix, don't silence. Escape on output, sanitize on input, nonces and capability checks everywhere, `$wpdb->prepare` if raw SQL is ever justified (it should not be here). Object cache for the related query; no transients as storage; no filesystem writes at runtime.
+- PHP 8.4, matching the host (see ADR 0005). WordPress 6.7 or newer. WordPress Coding Standards, the WordPress VIP Minimum ruleset, and PSR-12 via PHPCS; fix, don't silence. Escape on output, sanitize on input, nonces and capability checks everywhere, `$wpdb->prepare` if raw SQL is ever justified (it should not be here). Object cache for the related query; no transients as storage; no filesystem writes at runtime.
 - Agent-first build. The human reviews rather than writes: the critical paths (the revalidation hook, auth and permission callbacks, the sanitizers) get read line by line before merge; the rest goes through the gate. The gate is PHPCS, PHPUnit, Playwright, and a reviewer agent on a different model than the implementer. Nothing merges until all of it passes.
 - Work on branches and open pull requests so the review has a diff to read. Small PRs, one concern each. Commit messages say what and why.
 - Record each real decision as an ADR as it is made (REST route versus filtering on the client, `transition_post_status` versus `save_post`, server-rendered block versus React-rendered, cache strategy).
