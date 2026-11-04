@@ -68,7 +68,9 @@ import request from '@colbitron/resource-hub-ui/schemas/revalidate-request.schem
 
 Schemas reference `common.schema.json` by relative `$ref`, resolved against each schema's `$id`, so a validator needs all of them registered, not only the one it checks.
 
-`rest_url` uses `format: uri`. Formats are not part of a draft 2020-12 validator's core: Ajv needs a formats plugin, `ajv-formats` (the test here calls `addFormats( ajv )`), and without one a validator either ignores `format` or throws on the unknown format when it compiles the schema. The `^https?://` pattern on `rest_url` holds either way. Publishing to GitHub Packages is planned and not yet wired.
+`rest_url` uses `format: uri`. Formats are not part of a draft 2020-12 validator's core: Ajv needs a formats plugin, `ajv-formats` (the test here calls `addFormats( ajv )`), and without one a validator either ignores `format` or throws on the unknown format when it compiles the schema. The `^https?://` pattern on `rest_url` holds either way.
+
+Publishing to GitHub Packages is planned and not yet wired.
 
 ## License
 
