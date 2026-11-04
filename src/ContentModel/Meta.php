@@ -12,8 +12,11 @@ namespace ResourceHub\ContentModel;
 /**
  * Registers `summary` and `source_url` with `register_post_meta()` (ADR 0008).
  *
- * Both are single, string-typed, and appear under `meta` in the REST response because
- * `show_in_rest` carries a schema. The rules they obey live in {@see MetaRules}.
+ * Both are single and string-typed. They appear under `meta` in the REST response because
+ * `show_in_rest` is set and the post type supports `custom-fields`; the schema only adds
+ * validation. The one schema rule is `summary`'s `maxLength`. `source_url` has no `format`:
+ * core treats `format: uri` as a sanitizer, running `sanitize_url()` before ours, which turns
+ * scheme-less strings into `http://` URLs. The rules both fields obey live in {@see MetaRules}.
  */
 final class Meta {
 	/**
@@ -63,7 +66,6 @@ final class Meta {
 				'show_in_rest'      => array(
 					'schema' => array(
 						'type'    => 'string',
-						'format'  => 'uri',
 						'default' => '',
 					),
 				),

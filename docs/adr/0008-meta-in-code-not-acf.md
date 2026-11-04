@@ -16,6 +16,6 @@ The reason is that this is a headless build. Every new field also needs a front-
 
 ## Consequences
 
-- Each field has a one-line rule in `MetaRules`, stated in its docblock and enforced by a sanitizer the owner reads before merge. The REST schema repeats the rule on the way in (`maxLength` for `summary`, `format: uri` for `source_url`).
+- Each field has a rule in `MetaRules`, stated clause by clause in its docblock, enforced by a sanitizer the owner reads before merge, and tested clause by clause. The only schema-level rule is `maxLength` for `summary`, which rejects longer input over REST with a 400. The URL rule lives only in the sanitizer: on WordPress 7.1, `rest_validate_value_from_schema()` has no `uri` case, so `format: uri` validates nothing and only runs `sanitize_url()` before our sanitizer, which turned scheme-less strings such as `example.com` into `http://` URLs. `source_url` therefore has no `format`.
 - Writing a field requires `edit_post` on its post. That is what the `auth_callback` says, and PHPUnit checks it for an editor and a subscriber.
 - The editor UI is ours to maintain: a `PluginDocumentSettingPanel` under `editor/`, built by `@wordpress/scripts` alongside the blocks. A new field means a line in `Meta`, a rule in `MetaRules`, a control in the panel, a test, and a change in the front end.
