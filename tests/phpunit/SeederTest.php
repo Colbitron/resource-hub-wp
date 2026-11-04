@@ -36,6 +36,7 @@ final class SeederTest extends WP_UnitTestCase {
 		$first = $seeder->seed( 12 );
 		$this->assertSame( 12, $first['created'] );
 		$this->assertSame( 0, $first['skipped'] );
+		$this->assertSame( array(), $first['errors'] );
 
 		$second = $seeder->seed( 12 );
 		$this->assertSame( 0, $second['created'] );
@@ -133,5 +134,48 @@ final class SeederTest extends WP_UnitTestCase {
 		$this->assertSame( $result['total'], $result['created'] );
 		$this->assertSame( $result['total'], (int) wp_count_posts( PostType::NAME )->publish );
 		$this->assertGreaterThanOrEqual( Seeder::DEFAULT_COUNT, $result['total'] );
+	}
+
+	/**
+	 * With no current user and no administrator, seeded resources go to the first user who can write posts.
+	 */
+	public function test_author_falls_back_to_a_user_who_can_write(): void {
+		wp_set_current_user( 0 );
+
+		foreach ( get_users( array( 'role' => 'administrator' ) ) as $admin ) {
+			$admin->set_role( 'subscriber' );
+		}
+
+		$editor_id = self::factory()->user->create( array( 'role' => 'editor' ) );
+
+		( new Seeder() )->seed( 1 );
+
+		$query = new \WP_Query(
+			array(
+				'post_type'      => PostType::NAME,
+				'posts_per_page' => 5,
+				'no_found_rows'  => true,
+			)
+		);
+
+		$this->assertCount( 1, $query->posts );
+		$this->assertSame( $editor_id, (int) $query->posts[0]->post_author );
+	}
+
+	/**
+	 * A term assignment that fails is reported in `errors` rather than ignored.
+	 */
+	public function test_failed_term_assignment_is_reported(): void {
+		unregister_taxonomy( Taxonomies::TOPIC );
+
+		try {
+			$result = ( new Seeder() )->seed( 1 );
+		} finally {
+			( new Taxonomies() )->register();
+		}
+
+		$this->assertSame( 1, $result['created'] );
+		$this->assertCount( 1, $result['errors'] );
+		$this->assertStringContainsString( Taxonomies::TOPIC, $result['errors'][0] );
 	}
 }

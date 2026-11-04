@@ -205,7 +205,10 @@ final class Seeder {
 	 * Seeds types, topics, the featured flag, and up to `$count` resources.
 	 *
 	 * @param int $count How many resources to ensure exist, capped at the catalogue size.
-	 * @return array{created: int, skipped: int, total: int, terms: int} What happened.
+	 * A failed term assignment does not stop the run; it is recorded in `errors` and the resource
+	 * still counts as created.
+	 *
+	 * @return array{created: int, skipped: int, total: int, terms: int, errors: string[]} What happened.
 	 */
 	public function seed( int $count = self::DEFAULT_COUNT ): array {
 		$count = max( 0, min( $count, count( self::CATALOGUE ) ) );
@@ -225,6 +228,7 @@ final class Seeder {
 
 		$created = 0;
 		$skipped = 0;
+		$errors  = array();
 
 		foreach ( array_slice( self::CATALOGUE, 0, $count ) as $entry ) {
 			if ( $this->find_resource( $entry['slug'] ) > 0 ) {
@@ -254,11 +258,21 @@ final class Seeder {
 			}
 
 			// Set terms directly: `tax_input` is skipped when there is no current user, as in WP-CLI.
-			wp_set_object_terms( $post_id, array( $type_ids[ $entry['type'] ] ), Taxonomies::TYPE );
-			wp_set_object_terms( $post_id, array_map( static fn( string $slug ): int => $topic_ids[ $slug ], $entry['topics'] ), Taxonomies::TOPIC );
+			$assignments = array(
+				Taxonomies::TYPE  => array( $type_ids[ $entry['type'] ] ),
+				Taxonomies::TOPIC => array_map( static fn( string $slug ): int => $topic_ids[ $slug ], $entry['topics'] ),
+			);
 
 			if ( $entry['featured'] && $featured_id > 0 ) {
-				wp_set_object_terms( $post_id, array( $featured_id ), Taxonomies::FLAG );
+				$assignments[ Taxonomies::FLAG ] = array( $featured_id );
+			}
+
+			foreach ( $assignments as $taxonomy => $term_ids ) {
+				$result = wp_set_object_terms( $post_id, $term_ids, $taxonomy );
+
+				if ( is_wp_error( $result ) ) {
+					$errors[] = sprintf( '%s: could not set %s terms: %s', $entry['slug'], $taxonomy, $result->get_error_message() );
+				}
 			}
 
 			++$created;
@@ -269,6 +283,7 @@ final class Seeder {
 			'skipped' => $skipped,
 			'total'   => $created + $skipped,
 			'terms'   => count( $type_ids ) + count( $topic_ids ) + ( $featured_id > 0 ? 1 : 0 ),
+			'errors'  => $errors,
 		);
 	}
 
@@ -303,7 +318,9 @@ final class Seeder {
 	}
 
 	/**
-	 * Author for seeded posts: the current user, or else the first administrator.
+	 * Author for seeded posts: the current user; else the first administrator; else the first user
+	 * who can write posts (an editor or author on a site without an administrator); else 0, which
+	 * leaves the posts without an author.
 	 */
 	private function author_id(): int {
 		$current = get_current_user_id();
@@ -312,17 +329,22 @@ final class Seeder {
 			return $current;
 		}
 
-		$admins = get_users(
-			array(
-				'role'    => 'administrator',
-				'number'  => 1,
-				'orderby' => 'ID',
-				'order'   => 'ASC',
-				'fields'  => 'ID',
-			)
-		);
+		foreach ( array( array( 'role' => 'administrator' ), array( 'capability' => 'edit_posts' ) ) as $who ) {
+			$users = get_users(
+				$who + array(
+					'number'  => 1,
+					'orderby' => 'ID',
+					'order'   => 'ASC',
+					'fields'  => 'ID',
+				)
+			);
 
-		return empty( $admins ) ? 0 : (int) $admins[0];
+			if ( ! empty( $users ) ) {
+				return (int) $users[0];
+			}
+		}
+
+		return 0;
 	}
 
 	/**

@@ -47,14 +47,23 @@ final class SeedCommand {
 
 		$result = ( new Seeder() )->seed( $count );
 
-		WP_CLI::success(
-			sprintf(
-				'%d resources created, %d already present (%d total); %d terms in place.',
-				$result['created'],
-				$result['skipped'],
-				$result['total'],
-				$result['terms']
-			)
+		foreach ( $result['errors'] as $error ) {
+			WP_CLI::warning( $error );
+		}
+
+		$summary = sprintf(
+			'%d resources created, %d already present (%d total); %d terms in place.',
+			$result['created'],
+			$result['skipped'],
+			$result['total'],
+			$result['terms']
 		);
+
+		if ( ! empty( $result['errors'] ) ) {
+			// Exit non-zero so a script that seeds and carries on notices the missing terms.
+			WP_CLI::error( sprintf( '%s %d term assignments failed; see the warnings above.', $summary, count( $result['errors'] ) ) );
+		}
+
+		WP_CLI::success( $summary );
 	}
 }
