@@ -19,9 +19,11 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-# A newer push to a pull request supersedes the older run. Runs on main and
-# manual dispatches queue instead: cancelling one would also cancel its deploy
-# job mid-sync, which the deploy job's own concurrency group cannot prevent.
+# A newer push to a pull request supersedes the older run. On main and for
+# manual dispatches a running run is never cancelled, because that would also
+# cancel its deploy job mid-sync, which the deploy job's own concurrency group
+# cannot prevent. GitHub keeps one waiting run per group and replaces it with
+# a newer one, which is fine: the newer commit includes the older.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -128,15 +130,19 @@ jobs:
     name: Deploy to the host
     needs: gate
     # Pushes only trigger on main already; the ref check keeps that true if the
-    # trigger list ever widens. workflow_dispatch may name any branch or tag,
-    # which is how an earlier ref is redeployed to roll back.
+    # trigger list ever widens. A manual dispatch deploys only from main or a
+    # tag: a tag on an earlier commit is how a rollback is redeployed. Pushing
+    # a tag does not start CI (the push trigger is main only), so a tag deploy
+    # is always a dispatch.
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'workflow_dispatch'
+      && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')))
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # One deploy at a time across every ref, and never cancelled part-way:
-    # a second merge waits for the first sync to finish.
+    # One deploy at a time across every ref. A running deploy is never
+    # cancelled; a waiting one is replaced by a newer one, which is fine
+    # because the newer commit includes the older.
     concurrency:
       group: deploy-production
       cancel-in-progress: false
@@ -147,16 +153,41 @@ jobs:
       run:
         shell: bash
 
-    env:
-      # Assumed to be the absolute path of the plugin directory itself on the
-      # host, ending in wp-content/plugins/resource-hub-wp, not the plugins
-      # directory above it. The first step refuses anything else, because
-      # rsync --delete into the wrong directory would remove other plugins.
-      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-
     steps:
-      - name: Check the deploy path
+      # An unset secret reads as an empty string, which would otherwise surface
+      # later as a confusing ssh or rsync error. Only names are printed.
+      - name: Check the deploy secrets are set
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
+          for name in DEPLOY_SSH_KEY DEPLOY_HOST DEPLOY_USER DEPLOY_PATH DEPLOY_KNOWN_HOSTS; do
+            [ -n "${!name}" ] || {
+              echo "::error::Repository secret $name is empty or not set."
+              exit 1
+            }
+          done
+
+      # DEPLOY_PATH is assumed to be the absolute path of the plugin directory
+      # itself on the host, ending in wp-content/plugins/resource-hub-wp, not
+      # the plugins directory above it. Anything else is refused, because
+      # rsync --delete into the wrong directory would remove other plugins.
+      # A CR or LF is refused too, since the value is written to GITHUB_ENV,
+      # where a newline would start a new variable. REMOTE_DIR carries the
+      # checked value to the later steps.
+      - name: Check the deploy path
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          case "$DEPLOY_PATH" in
+            *$'\n'* | *$'\r'*)
+              echo "::error::DEPLOY_PATH must be a single line."
+              exit 1
+              ;;
+          esac
           path="${DEPLOY_PATH%/}"
           case "$path" in
             /*/wp-content/plugins/resource-hub-wp) ;;
@@ -167,8 +198,12 @@ jobs:
           esac
           echo "REMOTE_DIR=$path" >> "$GITHUB_ENV"
 
+      # The deploy never talks to GitHub after checkout, so the token is not
+      # left in .git/config.
       - name: Check out
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
@@ -220,63 +255,42 @@ jobs:
             IdentityFile ~/.ssh/deploy_key
             IdentitiesOnly yes
             UserKnownHostsFile ~/.ssh/known_hosts_deploy
+            GlobalKnownHostsFile /dev/null
             StrictHostKeyChecking yes
             BatchMode yes
             ConnectTimeout 20
+            ServerAliveInterval 15
+            ServerAliveCountMax 3
           EOF
           chmod 600 ~/.ssh/config
 
-      # build/ and vendor/ are gitignored but are sent: rsync does not read
-      # .gitignore. Everything excluded below is development-only. Excluded
-      # paths are also left alone on the host by --delete.
+      # An allowlist: only what WordPress loads at runtime is sent, and
+      # everything else is excluded by the final '*', so a new development-only
+      # file never ships by default. A new runtime file or directory must be
+      # added here. build/ and vendor/ are gitignored but still sent, because
+      # rsync does not read .gitignore. blocks/ is block source and stays
+      # behind; the block will be registered from its compiled copy in build/.
       #
       # --delay-updates writes every changed file aside and renames them all
       # at the end; --delete-delay (--delete, run after that) keeps removals
       # out of the window when old and new files are both being served.
+      # --delete-excluded is not set, so anything on the host outside the
+      # allowlist is left alone, not deleted.
+      #
+      # --omit-dir-times: with ./ as the source, rsync would otherwise set the
+      # mtime of the plugin directory itself, which fails (exit 23) if
+      # DEPLOY_USER does not own it, after the files are already in place.
+      # --timeout ends a stalled transfer instead of waiting for the job limit.
       - name: Sync the plugin
         run: |
-          excludes=(
-            # Version control, CI, and agent tooling
-            '--exclude=/.git'
-            '--exclude=/.github/'
-            '--exclude=/.gitignore'
-            '--exclude=/.claude/'
-            '--exclude=/CLAUDE.md'
-            # Local environment, which can hold the revalidation secret
-            '--exclude=/.wp-env.json'
-            '--exclude=/.wp-env.override.json'
-            '--exclude=/.env*'
-            # JavaScript toolchain and its config
-            '--exclude=/node_modules/'
-            '--exclude=/package.json'
-            '--exclude=/pnpm-lock.yaml'
-            '--exclude=/pnpm-workspace.yaml'
-            '--exclude=/.npmrc'
-            '--exclude=/.nvmrc'
-            '--exclude=/.eslintrc*'
-            '--exclude=/eslint.config.*'
-            '--exclude=/.prettierrc*'
-            '--exclude=/.editorconfig'
-            # Composer manifests; vendor/ carries the generated autoloader
-            '--exclude=/composer.json'
-            '--exclude=/composer.lock'
-            # PHPCS, PHPUnit, and Playwright config, tests, and output
-            '--exclude=/phpcs.xml.dist'
-            '--exclude=/phpcs.xml'
-            '--exclude=/.phpcs.xml'
-            '--exclude=/phpunit.xml.dist'
-            '--exclude=/phpunit.xml'
-            '--exclude=/.phpunit.result.cache'
-            '--exclude=/playwright.config.js'
-            '--exclude=/tests/'
-            '--exclude=/artifacts/'
-            # Documentation
-            '--exclude=/README.md'
-            '--exclude=/docs/'
-          )
           rsync --archive --compress --no-owner --no-group --chmod=D755,F644 \
+            --omit-dir-times --timeout=120 \
             --delete-delay --delay-updates --itemize-changes \
-            "${excludes[@]}" \
+            '--include=/resource-hub.php' \
+            '--include=/src/***' \
+            '--include=/build/***' \
+            '--include=/vendor/***' \
+            '--exclude=*' \
             ./ "deploy:$REMOTE_DIR/"
 
       # WP-CLI walks up from the plugin directory to find WordPress. Current
