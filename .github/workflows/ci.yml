@@ -5,6 +5,9 @@
 # Order matters in one place: PHPUnit reinstalls the tests database, which
 # deactivates every plugin on the tests site, so it runs before Playwright
 # and the Playwright specs re-activate the plugin themselves.
+#
+# The deploy job runs after the gate, only on main and on manual dispatch,
+# and syncs the plugin to the Cloudways host (ADR 0005).
 name: CI
 
 # Pull requests run the gate once. A plain `push:` trigger alongside
@@ -16,9 +19,12 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# A newer push to a pull request supersedes the older run. Runs on main and
+# manual dispatches queue instead: cancelling one would also cancel its deploy
+# job mid-sync, which the deploy job's own concurrency group cannot prevent.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -117,3 +123,184 @@ jobs:
       - name: wp-env logs
         if: failure()
         run: pnpm exec wp-env logs tests --watch=false
+
+  deploy:
+    name: Deploy to the host
+    needs: gate
+    # Pushes only trigger on main already; the ref check keeps that true if the
+    # trigger list ever widens. workflow_dispatch may name any branch or tag,
+    # which is how an earlier ref is redeployed to roll back.
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # One deploy at a time across every ref, and never cancelled part-way:
+    # a second merge waits for the first sync to finish.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    # An explicit bash shell runs with -o pipefail, so a failed curl fails
+    # the smoke check even though jq reads its output.
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      # Assumed to be the absolute path of the plugin directory itself on the
+      # host, ending in wp-content/plugins/resource-hub-wp, not the plugins
+      # directory above it. The first step refuses anything else, because
+      # rsync --delete into the wrong directory would remove other plugins.
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+
+    steps:
+      - name: Check the deploy path
+        run: |
+          path="${DEPLOY_PATH%/}"
+          case "$path" in
+            /*/wp-content/plugins/resource-hub-wp) ;;
+            *)
+              echo "::error::DEPLOY_PATH must be the absolute path of wp-content/plugins/resource-hub-wp on the host."
+              exit 1
+              ;;
+          esac
+          echo "REMOTE_DIR=$path" >> "$GITHUB_ENV"
+
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the block
+        run: pnpm build
+
+      # The gate runs PHP inside the wp-env containers. The deploy only needs
+      # Composer to write a production vendor/ directory, and starting Docker
+      # and wp-env for that would cost minutes, so PHP runs on the runner here,
+      # on the same 8.4 minor version as wp-env and the host.
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer
+          coverage: none
+
+      - name: Install PHP dependencies for production
+        run: composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
+
+      # The host key comes from a secret, so the first connection never trusts
+      # an unknown key. The runner is discarded after the job, key included.
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts_deploy
+          chmod 600 ~/.ssh/known_hosts_deploy
+          cat > ~/.ssh/config <<EOF
+          Host deploy
+            HostName $DEPLOY_HOST
+            User $DEPLOY_USER
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts_deploy
+            StrictHostKeyChecking yes
+            BatchMode yes
+            ConnectTimeout 20
+          EOF
+          chmod 600 ~/.ssh/config
+
+      # build/ and vendor/ are gitignored but are sent: rsync does not read
+      # .gitignore. Everything excluded below is development-only. Excluded
+      # paths are also left alone on the host by --delete.
+      #
+      # --delay-updates writes every changed file aside and renames them all
+      # at the end; --delete-delay (--delete, run after that) keeps removals
+      # out of the window when old and new files are both being served.
+      - name: Sync the plugin
+        run: |
+          excludes=(
+            # Version control, CI, and agent tooling
+            '--exclude=/.git'
+            '--exclude=/.github/'
+            '--exclude=/.gitignore'
+            '--exclude=/.claude/'
+            '--exclude=/CLAUDE.md'
+            # Local environment, which can hold the revalidation secret
+            '--exclude=/.wp-env.json'
+            '--exclude=/.wp-env.override.json'
+            '--exclude=/.env*'
+            # JavaScript toolchain and its config
+            '--exclude=/node_modules/'
+            '--exclude=/package.json'
+            '--exclude=/pnpm-lock.yaml'
+            '--exclude=/pnpm-workspace.yaml'
+            '--exclude=/.npmrc'
+            '--exclude=/.nvmrc'
+            '--exclude=/.eslintrc*'
+            '--exclude=/eslint.config.*'
+            '--exclude=/.prettierrc*'
+            '--exclude=/.editorconfig'
+            # Composer manifests; vendor/ carries the generated autoloader
+            '--exclude=/composer.json'
+            '--exclude=/composer.lock'
+            # PHPCS, PHPUnit, and Playwright config, tests, and output
+            '--exclude=/phpcs.xml.dist'
+            '--exclude=/phpcs.xml'
+            '--exclude=/.phpcs.xml'
+            '--exclude=/phpunit.xml.dist'
+            '--exclude=/phpunit.xml'
+            '--exclude=/.phpunit.result.cache'
+            '--exclude=/playwright.config.js'
+            '--exclude=/tests/'
+            '--exclude=/artifacts/'
+            # Documentation
+            '--exclude=/README.md'
+            '--exclude=/docs/'
+          )
+          rsync --archive --compress --no-owner --no-group --chmod=D755,F644 \
+            --delete-delay --delay-updates --itemize-changes \
+            "${excludes[@]}" \
+            ./ "deploy:$REMOTE_DIR/"
+
+      # WP-CLI walks up from the plugin directory to find WordPress. Current
+      # WP-CLI already exits 0 for an active plugin, but the host's version is
+      # not pinned, so the is-active check keeps the step idempotent anyway.
+      - name: Activate the plugin
+        run: |
+          dir=$(printf '%q' "$REMOTE_DIR")
+          ssh deploy "cd $dir && { wp plugin is-active resource-hub-wp || wp plugin activate resource-hub-wp; }"
+
+      # The site's own home URL, read over SSH, so no hostname is committed and
+      # no extra secret is needed. jq checks the body is the REST index, not
+      # an HTML error page served with a 200.
+      - name: Smoke-check the REST root
+        run: |
+          dir=$(printf '%q' "$REMOTE_DIR")
+          home=$(ssh deploy "cd $dir && wp option get home --skip-plugins --skip-themes")
+          case "$home" in
+            https://*) ;;
+            *)
+              echo "::error::The site's home option is not an https URL: $home"
+              exit 1
+              ;;
+          esac
+          curl -fsS --max-time 20 --retry 3 --retry-delay 5 "${home%/}/wp-json/" \
+            | jq -e '.namespaces | index("wp/v2")' > /dev/null
+          echo "REST root answered at ${home%/}/wp-json/"

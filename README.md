@@ -90,6 +90,24 @@ One interaction to know about: the PHPUnit bootstrap drops and reinstalls the te
 
 The block's compiled output in `build/` is not committed; CI and the start command build it.
 
+## Deployment
+
+The `deploy` job in `.github/workflows/ci.yml` publishes the plugin to the Cloudways host ([ADR 0005](docs/adr/0005-hosted-wordpress-on-cloudways.md)). It runs only after the gate passes, and only for a push to `main` or a manual `workflow_dispatch`. Pull requests never deploy. Deploys queue one at a time and are never cancelled part-way.
+
+From a fresh checkout it builds the block, runs `composer install --no-dev`, and rsyncs the result over SSH into the plugin directory on the host with `--delete-delay --delay-updates`, so changed files are swapped in together at the end and stale ones are removed after that. The host receives only what WordPress loads: `resource-hub.php`, `src/`, `vendor/`, `build/`, and `blocks/`. Tests, docs, toolchain config, lockfiles, and manifests stay behind. It then activates the plugin with WP-CLI if it is not already active, reads the site's `home` URL over SSH, and requests `{home}/wp-json/` to check that the REST API answers.
+
+Five repository secrets feed it:
+
+| Secret | Holds |
+|---|---|
+| `DEPLOY_SSH_KEY` | Private half of a key used only for deploys |
+| `DEPLOY_HOST` | SSH hostname or IP of the server |
+| `DEPLOY_USER` | SSH user |
+| `DEPLOY_PATH` | Absolute path of the plugin directory itself, ending in `wp-content/plugins/resource-hub-wp` |
+| `DEPLOY_KNOWN_HOSTS` | The server's pinned host key line or lines, so the runner never trusts on first use |
+
+**Rolling back** means redeploying an earlier ref. Point a tag or branch at the good commit and run the workflow on it, for example `git tag rollback-<date> <sha> && git push origin rollback-<date>`, then `gh workflow run ci.yml --ref rollback-<date>`. That run goes through the gate before deploying. The ref must contain this deploy job, so commits from before it was added cannot be redeployed this way.
+
 ## Decisions
 
 Each real decision has a record under [`docs/adr/`](docs/adr/). One sentence each:
