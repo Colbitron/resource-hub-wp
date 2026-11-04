@@ -1,7 +1,8 @@
 /**
  * The content model over REST and in the editor: a resource created with meta
  * and the featured flag comes back through the flag-filtered collection, and
- * the editor shows the "Resource details" panel for the post type.
+ * the editor shows the "Resource details" panel for the post type, a Types
+ * panel an administrator can add to, and a Flags panel nobody can add to.
  */
 const { test, expect } = require( './fixtures' );
 
@@ -76,40 +77,44 @@ test.describe( 'Resource content model', () => {
 		expect( found.meta.source_url ).toBe( sourceUrl );
 	} );
 
-	test( 'the editor shows the Resource details panel and the flag checkbox', async ( {
+	test( 'the editor shows the Resource details panel and the term panels', async ( {
 		admin,
 		editor,
 		page,
 	} ) => {
+		// Opens a document-settings panel by its title if it is collapsed.
+		const openPanel = async ( name ) => {
+			const toggle = page.getByRole( 'button', { name, exact: true } );
+			await expect( toggle ).toBeVisible();
+
+			if ( ( await toggle.getAttribute( 'aria-expanded' ) ) !== 'true' ) {
+				await toggle.click();
+			}
+		};
+
 		await admin.createNewPost( { postType: 'resource' } );
 		await editor.openDocumentSettingsSidebar();
 
-		const panelToggle = page.getByRole( 'button', {
-			name: 'Resource details',
-		} );
-		await expect( panelToggle ).toBeVisible();
-
-		if (
-			( await panelToggle.getAttribute( 'aria-expanded' ) ) !== 'true'
-		) {
-			await panelToggle.click();
-		}
+		await openPanel( 'Resource details' );
 		await expect( page.getByLabel( 'Summary' ) ).toBeVisible();
 		await expect( page.getByLabel( 'Source URL' ) ).toBeVisible();
 
-		const flagsToggle = page.getByRole( 'button', { name: 'Flags' } );
-		await expect( flagsToggle ).toBeVisible();
+		// Types: an administrator can add a type, so the button shows with the
+		// taxonomy's own label. This is the control for the Flags check below: it
+		// proves the label is real and the selector finds the button when present.
+		await openPanel( 'Types' );
+		await expect(
+			page.getByRole( 'button', { name: 'Add New Type' } )
+		).toBeVisible();
 
-		if (
-			( await flagsToggle.getAttribute( 'aria-expanded' ) ) !== 'true'
-		) {
-			await flagsToggle.click();
-		}
+		// Flags: nobody can create flags (edit_terms is do_not_allow), so the
+		// same button, with the flag's own label, is absent even for an admin.
+		await openPanel( 'Flags' );
 		await expect(
 			page.getByRole( 'checkbox', { name: 'Featured' } )
 		).toBeVisible();
 		await expect(
 			page.getByRole( 'button', { name: 'Add New Flag' } )
-		).toBeHidden();
+		).toHaveCount( 0 );
 	} );
 } );

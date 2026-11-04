@@ -36,12 +36,12 @@ final class ContentModelTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Topic and type are flat; flag is hierarchical. All three are attached to `resource` and in REST under their own names.
+	 * Topic is flat; type and flag are hierarchical. All three are attached to `resource` and in REST under their own names.
 	 */
 	public function test_taxonomies_are_registered_for_rest(): void {
 		$expected = array(
 			Taxonomies::TOPIC => false,
-			Taxonomies::TYPE  => false,
+			Taxonomies::TYPE  => true,
 			Taxonomies::FLAG  => true,
 		);
 
@@ -74,6 +74,131 @@ final class ContentModelTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Editors and administrators manage types; anyone who can write a resource can assign one.
+	 */
+	public function test_type_terms_are_managed_by_editors(): void {
+		$caps = get_taxonomy( Taxonomies::TYPE )->cap;
+
+		$this->assertSame( 'manage_categories', $caps->manage_terms );
+		$this->assertSame( 'manage_categories', $caps->edit_terms );
+		$this->assertSame( 'manage_categories', $caps->delete_terms );
+		$this->assertSame( 'edit_posts', $caps->assign_terms );
+	}
+
+	/**
+	 * Every label the editor or admin shows names the taxonomy's own terms, so nothing falls back to
+	 * core's "Category" or "Tag" wording.
+	 */
+	public function test_taxonomies_have_their_own_labels(): void {
+		foreach ( array(
+			Taxonomies::TOPIC => 'Topic',
+			Taxonomies::TYPE  => 'Type',
+			Taxonomies::FLAG  => 'Flag',
+		) as $name => $singular ) {
+			$labels = get_taxonomy( $name )->labels;
+
+			$this->assertSame( "Add New {$singular}", $labels->add_new_item );
+			$this->assertSame( "New {$singular} Name", $labels->new_item_name );
+			$this->assertSame( "Search {$singular}s", $labels->search_items );
+
+			foreach ( get_object_vars( $labels ) as $key => $label ) {
+				if ( is_string( $label ) ) {
+					$this->assertDoesNotMatchRegularExpression( '/categor|\btags?\b/i', $label, "{$name} label {$key} uses core's default wording." );
+				}
+			}
+		}
+
+		$this->assertSame( 'Parent Type', get_taxonomy( Taxonomies::TYPE )->labels->parent_item );
+		$this->assertSame( 'Parent Flag', get_taxonomy( Taxonomies::FLAG )->labels->parent_item );
+	}
+
+	/**
+	 * Creating a term over REST, as real users. Hierarchical taxonomies need `edit_terms`; the flat
+	 * topic taxonomy needs only `assign_terms`, so authors can add topics.
+	 *
+	 * @dataProvider term_creation_cases
+	 *
+	 * @param string $taxonomy Taxonomy REST base (the same as its name here).
+	 * @param string $role     Role of the user making the request.
+	 * @param int    $status   Expected HTTP status.
+	 */
+	public function test_term_creation_over_rest( string $taxonomy, string $role, int $status ): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/' . $taxonomy );
+		$request->set_body_params( array( 'name' => "Made by {$role}" ) );
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( $status, $response->get_status() );
+		$this->assertSame( 201 === $status, get_term_by( 'name', "Made by {$role}", $taxonomy ) instanceof \WP_Term );
+	}
+
+	/**
+	 * Cases for test_term_creation_over_rest().
+	 *
+	 * @return array<string, array{0: string, 1: string, 2: int}>
+	 */
+	public function term_creation_cases(): array {
+		return array(
+			'flag, editor'        => array( Taxonomies::FLAG, 'editor', 403 ),
+			'flag, administrator' => array( Taxonomies::FLAG, 'administrator', 403 ),
+			'type, contributor'   => array( Taxonomies::TYPE, 'contributor', 403 ),
+			'type, author'        => array( Taxonomies::TYPE, 'author', 403 ),
+			'type, editor'        => array( Taxonomies::TYPE, 'editor', 201 ),
+			'type, administrator' => array( Taxonomies::TYPE, 'administrator', 201 ),
+			'topic, author'       => array( Taxonomies::TOPIC, 'author', 201 ),
+			'topic, contributor'  => array( Taxonomies::TOPIC, 'contributor', 201 ),
+			'topic, subscriber'   => array( Taxonomies::TOPIC, 'subscriber', 403 ),
+		);
+	}
+
+	/**
+	 * An author can flag their own resource as featured over REST.
+	 */
+	public function test_author_can_feature_own_resource(): void {
+		$author_id = self::factory()->user->create( array( 'role' => 'author' ) );
+		$post_id   = self::factory()->post->create(
+			array(
+				'post_type'   => PostType::NAME,
+				'post_status' => 'publish',
+				'post_author' => $author_id,
+			)
+		);
+
+		wp_set_current_user( $author_id );
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/resources/' . $post_id );
+		$request->set_body_params( array( Taxonomies::FLAG => array( Taxonomies::featured_flag_id() ) ) );
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertTrue( has_term( Taxonomies::FEATURED, Taxonomies::FLAG, $post_id ) );
+	}
+
+	/**
+	 * A contributor cannot edit someone else's resource over REST.
+	 */
+	public function test_contributor_cannot_edit_others_resource(): void {
+		$post_id = self::factory()->post->create(
+			array(
+				'post_type'   => PostType::NAME,
+				'post_status' => 'draft',
+				'post_author' => self::factory()->user->create( array( 'role' => 'author' ) ),
+				'post_title'  => 'Original',
+			)
+		);
+
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'contributor' ) ) );
+
+		$request = new WP_REST_Request( 'POST', '/wp/v2/resources/' . $post_id );
+		$request->set_body_params( array( 'title' => 'Changed' ) );
+		$response = rest_get_server()->dispatch( $request );
+
+		$this->assertSame( 403, $response->get_status() );
+		$this->assertSame( 'Original', get_post( $post_id )->post_title );
+	}
+
+	/**
 	 * The plugin creates the `featured` flag on `init`, and a second `init` does not duplicate it.
 	 */
 	public function test_featured_flag_exists_after_init(): void {
@@ -93,6 +218,25 @@ final class ContentModelTest extends WP_UnitTestCase {
 				)
 			)
 		);
+	}
+
+	/**
+	 * If the lookup misses but the insert finds the term already there (another request created it in
+	 * between), the existing term's ID is returned, not 0.
+	 */
+	public function test_ensure_featured_flag_returns_existing_id_on_race(): void {
+		$existing_id = Taxonomies::featured_flag_id();
+		$this->assertGreaterThan( 0, $existing_id );
+
+		// Make only the next term query come back empty, as if the term did not exist yet.
+		$miss_once = static function () use ( &$miss_once ) {
+			remove_filter( 'terms_pre_query', $miss_once );
+			return array();
+		};
+		add_filter( 'terms_pre_query', $miss_once );
+
+		$this->assertSame( $existing_id, ( new Taxonomies() )->ensure_featured_flag() );
+		$this->assertFalse( has_filter( 'terms_pre_query', $miss_once ), 'The lookup should have consumed the filter.' );
 	}
 
 	/**
