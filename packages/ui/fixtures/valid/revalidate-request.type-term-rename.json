@@ -1,0 +1,17 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "term",
+			"taxonomy": "resource_type",
+			"event": "update",
+			"id": 5,
+			"slug": "webinar",
+			"name": "Webinar",
+			"previous": {
+				"slug": "webinars",
+				"name": "Webinars"
+			}
+		}
+	]
+}

@@ -1,0 +1,17 @@
+{
+	"code": "rest_invalid_param",
+	"message": "Invalid parameter(s): count",
+	"data": {
+		"status": 400,
+		"params": {
+			"count": "count must be between 1 (inclusive) and 10 (inclusive)"
+		},
+		"details": {
+			"count": {
+				"code": "rest_out_of_bounds",
+				"message": "count must be between 1 (inclusive) and 10 (inclusive)",
+				"data": null
+			}
+		}
+	}
+}

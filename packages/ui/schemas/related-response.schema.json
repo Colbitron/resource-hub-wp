@@ -1,0 +1,36 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://raw.githubusercontent.com/Colbitron/resource-hub-wp/main/packages/ui/schemas/related-response.schema.json",
+	"title": "Related resources response",
+	"description": "The 200 body of GET /wp-json/resource-hub/v1/related/{id}?count=n, the plugin's related-resources route. count is 1 to 10 and defaults to 3; a count outside that range or an id that is not a public resource is answered with a WordPress REST error (wp-error.schema.json). The body lists IDs only, by design: the front end then reads the full objects with GET /wp-json/wp/v2/resources?include={ids}&orderby=include&_embed, so one code path renders a resource everywhere and this route stays small and cacheable.",
+	"type": "object",
+	"properties": {
+		"items": {
+			"description": "The related resources in display order, hand-picked ones first and then those sharing a topic. At most 10, never more than count, and never including the resource itself. Empty when nothing is related.",
+			"type": "array",
+			"items": { "$ref": "#/$defs/item" },
+			"maxItems": 10
+		}
+	},
+	"required": [ "items" ],
+	"additionalProperties": false,
+	"$defs": {
+		"item": {
+			"description": "One related resource: its post ID and why it is here.",
+			"type": "object",
+			"properties": {
+				"id": {
+					"description": "The post ID of the related resource, to pass to the core collection's include parameter.",
+					"$ref": "common.schema.json#/$defs/id"
+				},
+				"source": {
+					"description": "Why this resource was selected: pick means an editor chose it for this resource, topic means it shares at least one resource_topic term and was chosen by the plugin's related query.",
+					"type": "string",
+					"enum": [ "pick", "topic" ]
+				}
+			},
+			"required": [ "id", "source" ],
+			"additionalProperties": false
+		}
+	}
+}

@@ -1,0 +1,14 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "term",
+			"taxonomy": "resource_type",
+			"event": "create",
+			"id": 15,
+			"slug": "case-study",
+			"name": "Case study",
+			"previous": null
+		}
+	]
+}

@@ -1,0 +1,13 @@
+{
+	"revalidated": [
+		"/resources/",
+		"/resources/podcast/",
+		"/resources/webinar/",
+		"/resources/topic/performance/",
+		"/resources/topic/accessibility/",
+		"/resources/podcast/topic/performance/",
+		"/resources/webinar/topic/accessibility/",
+		"/resources/webinar/x/",
+		"/resources/podcast/x/"
+	]
+}

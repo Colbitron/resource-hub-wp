@@ -1,0 +1,14 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "term",
+			"taxonomy": "resource_flag",
+			"event": "create",
+			"id": 2,
+			"slug": "featured",
+			"name": "Featured",
+			"previous": null
+		}
+	]
+}

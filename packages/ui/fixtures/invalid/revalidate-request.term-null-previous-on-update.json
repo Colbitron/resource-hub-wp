@@ -1,0 +1,14 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "term",
+			"taxonomy": "resource_topic",
+			"event": "update",
+			"id": 9,
+			"slug": "renamed",
+			"name": "Renamed",
+			"previous": null
+		}
+	]
+}

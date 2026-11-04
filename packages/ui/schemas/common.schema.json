@@ -1,0 +1,54 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://raw.githubusercontent.com/Colbitron/resource-hub-wp/main/packages/ui/schemas/common.schema.json",
+	"title": "Resource Hub shared definitions",
+	"description": "Building blocks the other Resource Hub schemas reference: identifiers, slugs, and the lists of topic and type slugs that describe where a resource is listed. Nothing here is a payload on its own.",
+	"$defs": {
+		"id": {
+			"description": "A WordPress object ID (post ID or term ID): a positive integer, never a string.",
+			"type": "integer",
+			"minimum": 1
+		},
+		"slug": {
+			"description": "A WordPress slug (post_name or term slug) as it appears in a URL path segment: non-empty, at most 200 characters (WordPress's post_name column width), with no slash and no whitespace. Any character set WordPress itself allows is accepted; the schema does not restrict it to ASCII.",
+			"type": "string",
+			"minLength": 1,
+			"maxLength": 200,
+			"pattern": "^[^/\\s]+$"
+		},
+		"reservedTypeSlugs": {
+			"description": "Words a resource_type slug may never be, because the front end's routes already use them as path segments: /resources/topic/[topic]/ and /resources/[type]/page/[n]/ would collide with a type named topic or page.",
+			"type": "string",
+			"enum": [ "topic", "page" ]
+		},
+		"typeSlug": {
+			"description": "The slug of a term in the resource_type taxonomy (for example webinar or podcast). A slug, with the reserved words topic and page excluded because they are route segments on the front end.",
+			"allOf": [
+				{ "$ref": "#/$defs/slug" },
+				{ "not": { "$ref": "#/$defs/reservedTypeSlugs" } }
+			]
+		},
+		"topicSlug": {
+			"description": "The slug of a term in the resource_topic taxonomy (for example performance). Topics have no reserved words: they only ever appear after the fixed /topic/ segment.",
+			"$ref": "#/$defs/slug"
+		},
+		"typeList": {
+			"description": "The resource_type terms assigned to a resource. Exactly one: a resource has one type, because the type is a URL segment (/resources/[type]/[slug]/) and a resource has one canonical URL.",
+			"type": "array",
+			"items": { "$ref": "#/$defs/typeSlug" },
+			"minItems": 1,
+			"maxItems": 1
+		},
+		"topicList": {
+			"description": "The resource_topic terms assigned to a resource, as slugs, each listed once. May be empty: a resource with no topic is still listed at /resources/ and /resources/[type]/.",
+			"type": "array",
+			"items": { "$ref": "#/$defs/topicSlug" },
+			"uniqueItems": true
+		},
+		"path": {
+			"description": "A front-end URL path, absolute from the site root, as the front end revalidates it: starts with a slash. Listing paths end with a trailing slash (/resources/, /resources/webinar/page/2/).",
+			"type": "string",
+			"pattern": "^/"
+		}
+	}
+}

@@ -1,0 +1,16 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://raw.githubusercontent.com/Colbitron/resource-hub-wp/main/packages/ui/schemas/revalidate-response-ok.schema.json",
+	"title": "Revalidation response (200)",
+	"description": "The body the front end returns with status 200 after it has accepted a revalidation batch: the paths it revalidated. WordPress stores the status and this body in the post's _rh_last_revalidation meta and shows them to the editor as an admin notice.",
+	"type": "object",
+	"properties": {
+		"revalidated": {
+			"description": "Every front-end path the batch caused to be revalidated, each absolute from the site root (for example /resources/ or /resources/webinar/example/). The union over all events in the batch, for the editor's information; the front end also invalidates cache tags, which are not listed here.",
+			"type": "array",
+			"items": { "$ref": "common.schema.json#/$defs/path" }
+		}
+	},
+	"required": [ "revalidated" ],
+	"additionalProperties": false
+}

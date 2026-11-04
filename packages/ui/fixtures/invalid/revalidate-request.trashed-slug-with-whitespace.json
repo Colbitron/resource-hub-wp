@@ -1,0 +1,15 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "resource",
+			"event": "trash",
+			"id": 1,
+			"slug": "has a space",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/1",
+			"types": [ "article" ],
+			"topics": [],
+			"previous": null
+		}
+	]
+}
