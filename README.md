@@ -126,12 +126,15 @@ Each real decision has a record under [`docs/adr/`](docs/adr/). One sentence eac
 - [0007](docs/adr/0007-one-post-type-with-a-type-taxonomy.md) One `resource` post type with a `resource_type` taxonomy, because core REST has no cross-type collection that returns full objects and filters by taxonomy, and the kinds share a shape today; types are a fixed list editors manage, topics are open.
 - [0008](docs/adr/0008-meta-in-code-not-acf.md) Meta is registered in code with `register_post_meta()`, not ACF, because in a headless build every field is a developer change anyway and belongs in reviewed, tested code.
 - [0009](docs/adr/0009-featured-is-a-term-not-meta.md) `featured` is a term in a code-managed `resource_flag` taxonomy, not boolean meta, because term relationships are indexed and meta-value filtering fails the slow-query sniff; `hierarchical` is what stops editors creating flags.
+- [0010](docs/adr/0010-contract-as-json-schema-in-a-shared-package.md) The contract with the front end is JSON Schema in the shared `packages/ui` package, consumed by PHPUnit here and by Zod on the front end, because prose in two `CLAUDE.md` files drifts and a schema turns drift into a failing test in whichever repository moved first.
 
 Decisions still to be made as the features land: the custom REST route versus filtering on the client, `transition_post_status` versus `save_post` for the revalidation hook, server-rendered versus React-rendered block, and the cache strategy for the related query.
 
 ## Contract with the front end
 
 Both repositories change together when this changes.
+
+The machine-checked definition is the JSON Schema package in [`packages/ui`](packages/ui/) ([ADR 0010](docs/adr/0010-contract-as-json-schema-in-a-shared-package.md)); the summary below is being brought up to date with it.
 
 - **Read:** `GET /wp-json/wp/v2/resources?_embed&per_page=…&resource_topic=…&resource_type=…&resource_flag=…`, `GET /wp-json/wp/v2/resources/{id}`, the three taxonomy endpoints, and `GET /wp-json/resource-hub/v1/related/{id}?count=3`. Meta is `summary` and `source_url`.
 - **Revalidate:** `POST {FRONTEND_URL}/api/revalidate` with `Authorization: Bearer {secret}` and a JSON body of `type`, `event`, `id`, `slug`, `rest_url`, `topics`, and `types`. The front end answers `200` with the paths it revalidated, `400` for a malformed body, `401` for a bad bearer, or `500` on failure. The plugin stores the status and body in post meta and shows them to the editor as an admin notice.
