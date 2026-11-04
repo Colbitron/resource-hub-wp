@@ -5,9 +5,9 @@ date: 2026-11-04
 
 # Filters and pagination are path segments, not search params
 
-The library filters by topic and by type and paginates. The obvious App Router shape is `/resources?topic=…&type=…&page=…`, which is what CLAUDE.md first described. Reading `searchParams` makes a page dynamic: a function runs on every request and nothing is prerendered or served from the full-route cache, which defeats ISR and on-demand revalidation. We put every filter and the page number in the path instead: `/resources/[type]/`, `/resources/topic/[topic]/`, `/resources/[type]/topic/[topic]/`, and `…/page/[n]/` on every listing. Path segments can be prerendered and revalidated by tag like any other page.
+The library filters by topic and by type and paginates. The obvious App Router shape is `/resources?topic=…&type=…&page=…`. Reading `searchParams` makes a page dynamic: a function runs on every request and nothing is prerendered or served from the full-route cache, which defeats ISR and on-demand revalidation. We put every filter and the page number in the path instead: `/resources/[type]/`, `/resources/topic/[topic]/`, `/resources/[type]/topic/[topic]/`, and `…/page/[n]/` on every listing. Path segments can be prerendered and revalidated by tag like any other page.
 
-Filtering is one topic and one type at a time. That keeps the set of listings finite and small: six type options by six topic options, 36 combinations, times their pages.
+Filtering is one topic and one type at a time. That keeps the set of listings finite and small: five types plus "any" by five topics plus "any" is 36 listings, times their pages. Topics are managed by editors, so the count grows with them.
 
 ## Considered options
 

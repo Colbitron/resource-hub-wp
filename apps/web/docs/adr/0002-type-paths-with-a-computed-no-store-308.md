@@ -9,9 +9,11 @@ A single resource's URL includes its one type, mirroring the CMS's permalink (Wo
 
 A type can change and change back. With a stored redirect and header-less permanent redirects, browsers keep the first redirect and loop. A Playwright test on 2026-11-04 across Chromium 156, Firefox 157 and WebKit 27.2 showed it: Chromium caches a header-less 308 indefinitely and fails webinar → podcast → webinar with `ERR_TOO_MANY_REDIRECTS`, while with `no-store`, `no-cache` or a `max-age` all three engines asked the server again. Chromium's `GetFreshnessLifetimes` gives 301 and 308 `TimeDelta::Max()` unless a header overrules it; Firefox gives 0 heuristic freshness without `Last-Modified`; WebKit gives a 301 365 days and a 308 zero, and drops redirects marked `no-store`, `no-cache` or `must-revalidate`. Google asks for permanent redirects only "when you're sure that the redirect won't be reverted".
 
+The requirement is fixed: a single-hop 308 with `Cache-Control: no-store`. The mechanism that sends it is chosen and verified in slice 3. Next.js's `permanentRedirect()` documents no way to set response headers, and while a response is streaming it falls back to a meta refresh, so slice 3 checks what Vercel actually sends for it and otherwise uses `proxy.ts` or a route handler that sets the status and headers itself.
+
 ## Considered options
 
-- **`/resources/[slug]/`.** The original shape. Rejected: no hierarchy in the URL.
+- **`/resources/[slug]/`.** Rejected: no hierarchy in the URL.
 - **A stored redirect table with plain 301s.** Rejected: the loop above.
 
 ## Consequences

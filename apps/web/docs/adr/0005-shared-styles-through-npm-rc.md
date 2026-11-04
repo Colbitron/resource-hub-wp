@@ -11,9 +11,11 @@ The package is private because it is the internal contract of two repositories, 
 
 Vercel installs from GitHub's registry through an `NPM_RC` environment variable; `NPM_TOKEN` alone covers only npmjs. `NPM_RC` holds a `registry=https://registry.npmjs.org` line, a `@colbitron` scope line for `npm.pkg.github.com`, and a classic personal access token with `read:packages` only and an expiry. This repository's Actions use `GITHUB_TOKEN` once the package grants it access under "Manage Actions access".
 
+Vercel does not document pnpm with `NPM_RC`, so this starts with a spike: publish 0.0.1 with `tokens.css` and deploy a preview that imports it. If the spike fails, the owner decides the delivery route again; there is no automatic fallback to a public package.
+
 ## Considered options
 
-- **A public package on npmjs.** Needs no token. Rejected as the default because it would list an internal contract as a general-use package. It is the fallback only: Vercel does not document pnpm with `NPM_RC`, so this starts with a spike (publish 0.0.1 with `tokens.css`, deploy a preview that imports it), and only if the spike fails does the package go public on npmjs, marked internal and unsupported.
+- **A public package on npmjs.** Needs no token. Rejected by the owner: a public listing makes an internal contract discoverable as if it were a general-use package.
 
 ## Consequences
 

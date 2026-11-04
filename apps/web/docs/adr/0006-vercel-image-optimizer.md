@@ -5,11 +5,11 @@ date: 2026-11-04
 
 # Images go through Vercel's image optimizer
 
-Resource images are uploaded to WordPress and served from the CMS host. `next/image` with Vercel's image optimizer resizes them per device and serves modern formats, and the Vercel plan already includes 5,000 optimized images a month. We keep the optimizer.
+Resource images are uploaded to WordPress and served from the CMS host. `next/image` with Vercel's image optimizer resizes them per device and serves modern formats, and the owner's Vercel plan, by the owner's account, includes 5,000 optimized images a month. We keep the optimizer.
 
 ## Considered options
 
-- **Proxy the originals and WordPress's generated sizes through Cloudflare, with no transformations.** The fallback if the optimizer's quota or cost ever becomes a problem: WordPress already generates several sizes, and Cloudflare already sits in front of the CMS.
+- **Proxy the originals and WordPress's generated sizes through Cloudflare, with no transformations.** The fallback if the optimizer's quota or cost ever becomes a problem: WordPress generates several sizes of every upload, and Cloudflare sits in front of the CMS.
 
 ## Consequences
 
