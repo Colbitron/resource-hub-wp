@@ -13,6 +13,6 @@ Resource images are uploaded to WordPress and served from the CMS host. `next/im
 
 ## Consequences
 
-- `next/image` needs the CMS host allowed as a remote image source in `next.config.ts`.
+- Image sources are same-origin `/media/…` paths, rewritten to the CMS's uploads directory ([ADR 0007](0007-the-cms-url-never-reaches-the-browser.md)), so the CMS host is not listed in `images.remotePatterns`; if `images.localPatterns` is set, it must allow `/media/**`.
 - Every image has a width and height, so late images cause no layout shift.
 - Optimized-image usage is the number to watch against the plan's monthly allowance.
