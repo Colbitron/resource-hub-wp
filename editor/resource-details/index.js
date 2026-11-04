@@ -35,6 +35,8 @@ function ResourceDetailsPanel() {
 
 	const summary = meta.summary ?? '';
 	const sourceUrl = meta.source_url ?? '';
+	// `length` counts UTF-16 units and PHP counts code points, so the editor is
+	// stricter by at most one per astral character (emoji); that is acceptable.
 	const remaining = SUMMARY_MAX_LENGTH - summary.length;
 
 	return (
