@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <ruleset name="Resource Hub">
-	<description>WordPress Coding Standards as the base, with the PSR-12 sniffs that do not conflict with it layered on top.</description>
+	<description>WordPress Coding Standards as the base, the WordPress VIP Minimum ruleset added to it, and the PSR-12 sniffs that do not conflict with either layered on top.</description>
 
 	<file>resource-hub.php</file>
 	<file>src</file>
@@ -38,6 +38,24 @@
 		</properties>
 	</rule>
 
+	<!-- VIP Minimum, not WordPress-VIP-Go: VIP-Go relaxes sniffs for VIP's own infrastructure (permitted file writes, a meta_key/meta_value
+	     index, trusted translations), which Cloudways and wp-env lack. Minimum swaps some WordPress sniffs for stricter VIP ones but drops
+	     three outright (MissingUnslash and two trailing-whitespace checks); they are restored below. -->
+	<rule ref="WordPressVIPMinimum"/>
+	<!-- Minimum excludes MissingUnslash; we want wp_unslash() before sanitising input, so restore it. A bare ref does not. -->
+	<rule ref="WordPress.Security.ValidatedSanitizedInput.MissingUnslash">
+		<severity>5</severity>
+	</rule>
+	<!-- Minimum also excludes the trailing-whitespace check that WordPress enforces; restore it. -->
+	<rule ref="Squiz.WhiteSpace.SuperfluousWhitespace.EndLine">
+		<severity>5</severity>
+	</rule>
+	<!-- The PHPUnit bootstrap includes the core test library from WP_TESTS_DIR by design: there is no fixed path to write,
+	     and it is the only file where that is true. -->
+	<rule ref="WordPressVIPMinimum.Files.IncludingFile">
+		<exclude-pattern>*/tests/phpunit/bootstrap\.php$</exclude-pattern>
+	</rule>
+
 	<rule ref="PSR12">
 		<!-- Where PSR-12 and WordPress disagree, WordPress wins. Each exclusion names the conflict. -->
 		<exclude name="Generic.WhiteSpace.DisallowTabIndent"/><!-- WP indents with tabs. -->
@@ -58,6 +76,12 @@
 		<exclude name="PSR12.Operators.OperatorSpacing"/>
 		<exclude name="PSR2.Namespaces.UseDeclaration"/>
 		<exclude name="PSR12.Properties.ConstantVisibility"/>
+	</rule>
+
+	<!-- WordPress forbids stacked blank lines inside functions; PSR-12 silences that check (severity 0) and Minimum excludes it.
+	     WordPress wins (ADR 0003), so it is restored here, after the PSR-12 block, where it takes effect. -->
+	<rule ref="Squiz.WhiteSpace.SuperfluousWhitespace.EmptyLines">
+		<severity>5</severity>
 	</rule>
 
 	<rule ref="PHPCompatibilityWP"/>
