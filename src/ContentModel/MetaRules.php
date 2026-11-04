@@ -24,8 +24,11 @@ final class MetaRules {
 	public const SUMMARY_MAX_LENGTH = 300;
 
 	/**
-	 * Rule: `summary` is plain text, with no HTML tags and no HTML escaping, so whoever displays
-	 * it escapes it like any other text.
+	 * Rule: `summary` is stored as plain text: markup is removed, entities are decoded, and nothing
+	 * is HTML-escaped, so whoever displays it escapes it like any other text. Because entities are
+	 * decoded, text typed as `&lt;script&gt;` is stored as the characters `<script>`; that is text,
+	 * not markup, and output escaping shows it literally. The rule is not idempotent: sanitising a
+	 * stored value again treats those characters as a tag and removes them.
 	 *
 	 * In order:
 	 * - A non-scalar becomes an empty string. A scalar is cast to a string (`true` is "1").
@@ -36,10 +39,11 @@ final class MetaRules {
 	 *   the next step leaves it alone, and the decoding step after that undoes the escaping.
 	 * - Everything else `wp_strip_all_tags()` treats as a tag is removed, and so are the
 	 *   contents of `script` and `style` elements. `x<y and y>z` is stored as `xz`.
-	 * - Core's `wp_specialchars_decode()` then turns the entities for `&`, `<`, `>`, `"`, and `'`
-	 *   into characters, including entities that were typed: `1 &lt; 2` is stored as `1 < 2`,
-	 *   and `&lt;b&gt;` as the text `<b>`, which a later save removes as a tag. Other entities,
-	 *   such as `&copy;`, are not decoded.
+	 * - Core's `wp_specialchars_decode()` then turns the entities it knows (`&amp;`, `&lt;`, `&gt;`,
+	 *   `&quot;`, `&#039;`, and decimal forms such as `&#34;` and `&#60;`) into characters, once,
+	 *   including entities that were typed: `1 &lt; 2` is stored as `1 < 2`, and `&lt;b&gt;` as
+	 *   the text `<b>`, which a later save removes as a tag. Other entities are left as typed:
+	 *   `&copy;`, `&nbsp;`, `&apos;`, and hex forms such as `&#x3C;`.
 	 * - Line endings become `\n`, tabs are kept, and leading and trailing whitespace is trimmed.
 	 * - The result is cut to SUMMARY_MAX_LENGTH characters, so a stored value never exceeds the
 	 *   schema's `maxLength`. That matters because core checks stored meta against the schema

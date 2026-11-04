@@ -204,9 +204,10 @@ final class Seeder {
 	/**
 	 * Seeds types, topics, the featured flag, and up to `$count` resources.
 	 *
-	 * @param int $count How many resources to ensure exist, capped at the catalogue size.
 	 * A failed term assignment does not stop the run; it is recorded in `errors` and the resource
 	 * still counts as created.
+	 *
+	 * @param int $count How many resources to ensure exist, capped at the catalogue size.
 	 *
 	 * @return array{created: int, skipped: int, total: int, terms: int, errors: string[]} What happened.
 	 */
