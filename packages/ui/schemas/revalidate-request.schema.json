@@ -54,7 +54,7 @@
 					"const": "resource"
 				},
 				"event": {
-					"description": "What happened. publish: the resource became public (first publish, or a draft or private post made public). update: a public resource was saved while staying public. unpublish: a public resource was moved to draft, pending or private. trash: a public resource was trashed. delete: a public resource was permanently deleted (from the trash, or directly). Changes that never touch public state, such as editing a draft, send nothing.",
+					"description": "What happened. publish: the resource became public (first publish, or a draft or private post made public). update: a public resource was saved while staying public. unpublish: a public resource was moved to draft, pending, private or scheduled (future), so rescheduling a live resource counts. trash: a public resource was trashed. delete: a public resource was permanently deleted without passing through the trash (a force delete through WP-CLI or the REST API); permanently deleting a resource that is already in the trash sends nothing, because its trash event was already sent. Changes that never touch public state, such as editing a draft, send nothing.",
 					"type": "string",
 					"enum": [ "publish", "update", "unpublish", "trash", "delete" ]
 				},

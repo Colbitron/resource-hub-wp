@@ -70,7 +70,7 @@ Schemas reference `common.schema.json` by relative `$ref`, resolved against each
 
 `rest_url` uses `format: uri`. Formats are not part of a draft 2020-12 validator's core: Ajv needs a formats plugin, `ajv-formats` (the test here calls `addFormats( ajv )`), and without one a validator either ignores `format` or throws on the unknown format when it compiles the schema. The `^https?://` pattern on `rest_url` holds either way.
 
-Publishing to GitHub Packages is planned and not yet wired.
+The package is not published to GitHub Packages; consumers copy or reference the files by path, and each schema's `$id` is its raw URL on `main`.
 
 ## License
 
