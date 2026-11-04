@@ -15,11 +15,11 @@ Headless WordPress with Next.js over REST (GraphQL as a stretch); custom Gutenbe
 A WordPress plugin, `resource-hub`, plus a `wp-env` development environment, that models a filterable resources library and pushes changes to a Next.js front end.
 
 **Core:**
-1. Custom post type `resource` with taxonomies `resource_topic` and `resource_type`, all `show_in_rest`, REST base `resources`. Registered in the plugin, not a theme.
-2. Post meta registered for REST with `register_post_meta` and sanitize and auth callbacks: `summary` (string), `source_url` (URL), `featured` (bool).
+1. Custom post type `resource` with taxonomies `resource_topic` and `resource_type` (flat) and `resource_flag` (hierarchical, code-managed; its one term is `featured`), all `show_in_rest`, REST base `resources`. Registered in the plugin, not a theme.
+2. Post meta registered for REST with `register_post_meta` and sanitize and auth callbacks: `summary` (string) and `source_url` (URL). Featured is the `resource_flag` term, not meta (ADR 0009).
 3. One custom REST route, `GET /resource-hub/v1/related/{id}`, returning related resources by shared topic, with a `permission_callback`, argument validation, and a cache-friendly response.
 4. One dynamic Gutenberg block, `resource-hub/related-resources`, registered from `block.json` with a PHP `render_callback`, attributes `count` and `topic`. Server-rendered so the same HTML serves the editor preview and the classic front end.
-5. The revalidation hook: on publish, update, or trash of a `resource` (hook on `transition_post_status` or `save_post_resource`, plus `wp_trash_post`), POST to the front end's `/api/revalidate` per the contract below. Handle every response code; store the last result in post meta `_rh_last_revalidation` and surface it as an admin notice. Never block the editor on a slow front end: fire after the save completes and time out at 5 seconds.
+5. The revalidation hook: on publish, update, or trash of a `resource` (hook on `transition_post_status` or `save_post_resource`, plus `wp_trash_post`), POST to the front end's `/api/revalidate` per the contract below. Handle every response code; store the last result in post meta `_rh_last_revalidation` and surface it as an admin notice. Never block the editor on a slow front end: fire after the save completes and time out at 3 seconds (the VIP sniff's cap; ADR 0006).
 6. Tests and gates: PHPUnit (wp-env test suite) for the meta sanitizers, the REST route, the block render, and the revalidation payload and response handling (HTTP mocked); PHPCS on WordPress Coding Standards, the WordPress VIP Minimum ruleset, plus PSR-12; a Playwright smoke test against wp-env (create a resource, see the block render). All of it in GitHub Actions on every pull request and every push to `main`.
 7. `composer.json` at the repo root managing PHPCS, the WordPress standards, PHPUnit, and the plugin's autoloader (PSR-4 under `src/`).
 8. `README.md` with an architecture diagram and a decisions section; one ADR per real decision under `docs/adr/`.
@@ -33,7 +33,7 @@ A WordPress plugin, `resource-hub`, plus a `wp-env` development environment, tha
 
 Change this only by changing both repos in the same sitting.
 
-- **Content read:** the front end reads `GET /wp-json/wp/v2/resources?_embed&per_page=…&resource_topic=…&resource_type=…` and `GET /wp-json/wp/v2/resources/{id}`, plus the taxonomy endpoints. Meta appears under `meta` because of `show_in_rest`. Related items: `GET /wp-json/resource-hub/v1/related/{id}?count=3`.
+- **Content read:** the front end reads `GET /wp-json/wp/v2/resources?_embed&per_page=…&resource_topic=…&resource_type=…&resource_flag=…` and `GET /wp-json/wp/v2/resources/{id}`, plus the taxonomy endpoints `/wp-json/wp/v2/resource_topic`, `/wp-json/wp/v2/resource_type`, and `/wp-json/wp/v2/resource_flag`. Meta is `summary` and `source_url`, under `meta` because of `show_in_rest`. Related items: `GET /wp-json/resource-hub/v1/related/{id}?count=3`.
 - **Revalidation request** (WordPress to front end): `POST {FRONTEND_URL}/api/revalidate`, header `Authorization: Bearer {REVALIDATE_SECRET}`, header `Content-Type: application/json`, body:
   ```json
   { "type": "resource", "event": "publish" | "update" | "trash", "id": 123, "slug": "example", "rest_url": "https://cms.example/wp-json/wp/v2/resources/123", "topics": ["topic-slug"], "types": ["type-slug"] }

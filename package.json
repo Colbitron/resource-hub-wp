@@ -24,8 +24,8 @@
 		"test:php": "wp-env run tests-cli --env-cwd=wp-content/plugins/resource-hub-wp composer test",
 		"build": "wp-scripts build --webpack-src-dir=blocks",
 		"start": "wp-scripts start --webpack-src-dir=blocks",
-		"lint:js": "wp-scripts lint-js blocks tests/e2e playwright.config.js",
-		"format": "wp-scripts format blocks tests/e2e playwright.config.js",
+		"lint:js": "wp-scripts lint-js blocks editor tests/e2e playwright.config.js webpack.config.js",
+		"format": "wp-scripts format blocks editor tests/e2e playwright.config.js webpack.config.js",
 		"test:e2e": "wp-scripts test-playwright",
 		"test:e2e:debug": "wp-scripts test-playwright --debug"
 	},
@@ -34,9 +34,13 @@
 		"@wordpress/block-editor": "^19.0.0",
 		"@wordpress/blocks": "^17.0.0",
 		"@wordpress/components": "^43.0.0",
+		"@wordpress/core-data": "^9.0.0",
+		"@wordpress/data": "^11.0.0",
 		"@wordpress/e2e-test-utils-playwright": "^3.1.0",
+		"@wordpress/editor": "^16.0.0",
 		"@wordpress/env": "^12.0.0",
 		"@wordpress/i18n": "^7.0.0",
+		"@wordpress/plugins": "^8.0.0",
 		"@wordpress/scripts": "^37.0.0",
 		"@wordpress/server-side-render": "^7.0.0"
 	}

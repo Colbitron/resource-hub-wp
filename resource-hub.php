@@ -30,4 +30,7 @@ if ( ! is_readable( __DIR__ . '/vendor/autoload.php' ) ) {
 
 require_once __DIR__ . '/vendor/autoload.php';
 
+// Activation clears the stored rewrite rules so /resources/ URLs work at once; see Plugin::activate().
+register_activation_hook( __FILE__, array( ResourceHub\Plugin::class, 'activate' ) );
+
 ( new ResourceHub\Plugin( __FILE__ ) )->boot();

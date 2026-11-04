@@ -9,6 +9,12 @@ declare(strict_types=1);
 
 namespace ResourceHub;
 
+use ResourceHub\Cli\SeedCommand;
+use ResourceHub\ContentModel\Meta;
+use ResourceHub\ContentModel\PostType;
+use ResourceHub\ContentModel\Taxonomies;
+use ResourceHub\Editor\SidebarAssets;
+
 /**
  * Boots the plugin once per request.
  */
@@ -50,6 +56,32 @@ final class Plugin {
 		}
 
 		self::$booted = true;
+
+		add_action( 'init', array( new PostType(), 'register' ) );
+		add_action( 'init', array( new Taxonomies(), 'register' ) );
+		add_action( 'init', array( new Meta(), 'register' ) );
+		add_action( 'enqueue_block_editor_assets', array( new SidebarAssets( $this->file ), 'enqueue' ) );
+
+		if ( defined( 'WP_CLI' ) && WP_CLI ) {
+			\WP_CLI::add_command( 'resource-hub seed', SeedCommand::class );
+		}
+	}
+
+	/**
+	 * Makes pretty permalinks for resources work without a visit to Settings > Permalinks.
+	 * Registered with `register_activation_hook()` in the entry file.
+	 *
+	 * It deletes the stored rewrite rules rather than calling `flush_rewrite_rules()`, which the
+	 * VIP Minimum ruleset forbids. Core regenerates missing rules on the next request that needs
+	 * them, after `init` has registered the post type and taxonomies, so the effect is the same
+	 * flush, done lazily. The post type and taxonomies are also registered here so that anything
+	 * regenerating the rules later in this same request already sees them. `wp rewrite flush`
+	 * is the manual equivalent.
+	 */
+	public static function activate(): void {
+		( new PostType() )->register();
+		( new Taxonomies() )->register();
+		delete_option( 'rewrite_rules' );
 	}
 
 	/**
