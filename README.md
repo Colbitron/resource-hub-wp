@@ -65,6 +65,8 @@ pnpm wp resource-hub seed   # optional: fictional sample resources to list and f
 
 Log in at `http://localhost:8888/wp-admin` with `admin` / `password`.
 
+Activating the plugin makes the pretty permalinks for `/resources/` and single resources work without a visit to Settings > Permalinks: it deletes the stored rewrite rules, and WordPress regenerates them on the next request (`flush_rewrite_rules()` itself is forbidden by the VIP ruleset). If the URLs 404 after a deploy that did not reactivate the plugin, `pnpm wp rewrite flush` (or `wp rewrite flush` on the host) is the manual equivalent.
+
 The revalidation secret and front-end URL are read from `RESOURCE_HUB_FRONTEND_URL` and `RESOURCE_HUB_REVALIDATE_SECRET`. Locally, define them in a gitignored `.wp-env.override.json` under `config`; on the host they are `define()`d in `wp-config.php`. They are never committed.
 
 ## Commands

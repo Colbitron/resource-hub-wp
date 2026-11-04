@@ -52,7 +52,8 @@ final class PostType {
 					'item_updated'          => __( 'Resource updated.', 'resource-hub' ),
 				),
 				'description'     => __( 'A filterable library of articles, ebooks, webinars, podcasts, and case studies.', 'resource-hub' ),
-				// Public with a rewrite slug so permalinks exist for the server-rendered block; the headless front end is the primary reader.
+				// Public with a rewrite slug so resources have WordPress URLs for the server-rendered block; the headless front end is the
+				// primary reader. Pretty URLs under /resources/ work once rewrite rules are regenerated, which activation triggers (Plugin::activate()).
 				'public'          => true,
 				'has_archive'     => true,
 				'rewrite'         => array(
