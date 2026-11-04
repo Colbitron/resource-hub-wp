@@ -46,9 +46,9 @@
 			"uniqueItems": true
 		},
 		"path": {
-			"description": "A front-end URL path, absolute from the site root, as the front end revalidates it: starts with a slash. Listing paths end with a trailing slash (/resources/, /resources/webinar/page/2/).",
+			"description": "A front-end URL path, absolute from the site root, as the front end revalidates it: starts with a single slash and contains no whitespace. A leading // is rejected because it is a protocol-relative URL naming another host, not a path. Listing paths end with a trailing slash (/resources/, /resources/webinar/page/2/).",
 			"type": "string",
-			"pattern": "^/"
+			"pattern": "^/(?!/)\\S*$"
 		}
 	}
 }

@@ -67,9 +67,10 @@
 					"$ref": "common.schema.json#/$defs/slug"
 				},
 				"rest_url": {
-					"description": "The absolute URL of this resource in the core REST API, {WP_URL}/wp-json/wp/v2/resources/{id}, so the front end can refetch it without building the URL itself.",
+					"description": "The absolute URL of this resource in the core REST API, {WP_URL}/wp-json/wp/v2/resources/{id}, so the front end can refetch it without building the URL itself. Always http or https; the pattern rejects other schemes such as javascript: and mailto:, which format uri alone accepts. The schema cannot know the WordPress origin, so before fetching this URL the front end must also check that its host matches its configured WordPress origin and refuse it otherwise: that check is the guard against server-side request forgery, and it lives on the front end.",
 					"type": "string",
-					"format": "uri"
+					"format": "uri",
+					"pattern": "^https?://"
 				},
 				"types": {
 					"description": "The resource's one resource_type term in the public state this event concerns, as a one-element array.",

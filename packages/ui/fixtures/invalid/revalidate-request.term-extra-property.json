@@ -1,0 +1,15 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "term",
+			"taxonomy": "resource_topic",
+			"event": "create",
+			"id": 9,
+			"slug": "accessibility",
+			"name": "Accessibility",
+			"previous": null,
+			"count": 0
+		}
+	]
+}
