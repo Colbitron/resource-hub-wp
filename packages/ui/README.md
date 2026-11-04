@@ -20,7 +20,7 @@ The bearer token on the revalidation request is a header and is not part of any 
 
 ## Semantics the schemas assume
 
-**A revalidation request is a batch.** `{ "version": 1, "events": [ … ] }`, with 1 to 25 events. One WordPress PHP request produces one batch, so a bulk edit or a bulk trash in the admin is one request to the front end, not one per post. Events for the same id within a batch are deduplicated to one event carrying the earliest `previous` and the latest current state. A batch that would exceed 25 events is split into several requests.
+**A revalidation request is a batch.** `{ "version": 1, "events": [ … ] }`, with 1 to 25 events. One WordPress PHP request produces one batch, so a bulk edit or a bulk trash in the admin is one request to the front end, not one per post. Events within a batch are deduplicated per resource ID for resource events and per (taxonomy, term ID) for term events, so a post and a term that share a numeric ID never merge; each group becomes one event carrying the earliest `previous` and the latest current state. A batch that would exceed 25 events is split into several requests.
 
 **Resource events describe the public state the event concerns.** The top-level `slug`, `types` and `topics` are the state after the save for `publish` and `update`, and the last public state before removal for `unpublish`, `trash` and `delete`. A trashed post's slug is therefore the slug readers used, never the `__trashed` form WordPress renames it to.
 
@@ -31,6 +31,8 @@ The bearer token on the revalidation request is a header and is not part of any 
 **A resource has exactly one type.** `types` is a one-element array because the type is a URL segment and a resource has one canonical URL. The array form keeps the field the same shape as `topics`.
 
 **Reserved type slugs.** A `resource_type` slug is never `topic` or `page`, because the front end's routes `/resources/topic/[topic]/` and `/resources/[type]/page/[n]/` would collide with a type of that name. The schemas enforce it wherever a type slug appears: a resource event's `types` and `previous.types`, a term event's `slug` and `previous.slug` when its taxonomy is `resource_type`, and the resolve response's `type`.
+
+**`rest_url` is fetched, so the front end checks its host.** The schema pins its scheme to `http` or `https`, which rejects `javascript:`, `mailto:` and the like, but it cannot know the WordPress origin. Before fetching `rest_url` the front end must check that its host matches the WordPress origin it is configured with, and refuse it otherwise. That check is the guard against server-side request forgery, and it lives on the front end.
 
 **Related items are IDs only.** The related route returns `{ "id", "source" }` pairs, at most 10, and the front end fetches the full objects with `GET /wp-json/wp/v2/resources?include={ids}&orderby=include&_embed`, so one code path renders a resource everywhere.
 
@@ -64,7 +66,9 @@ The package exports `./schemas/*`, so a consumer imports a schema by file name:
 import request from '@colbitron/resource-hub-ui/schemas/revalidate-request.schema.json' with { type: 'json' };
 ```
 
-Schemas reference `common.schema.json` by relative `$ref`, resolved against each schema's `$id`, so a validator needs all of them registered, not only the one it checks. Publishing to GitHub Packages is planned and not yet wired.
+Schemas reference `common.schema.json` by relative `$ref`, resolved against each schema's `$id`, so a validator needs all of them registered, not only the one it checks.
+
+`rest_url` uses `format: uri`. Formats are not part of a draft 2020-12 validator's core: Ajv needs a formats plugin, `ajv-formats` (the test here calls `addFormats( ajv )`), and without one a validator either ignores `format` or throws on the unknown format when it compiles the schema. The `^https?://` pattern on `rest_url` holds either way. Publishing to GitHub Packages is planned and not yet wired.
 
 ## License
 
