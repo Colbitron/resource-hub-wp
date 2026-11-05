@@ -29,9 +29,18 @@
  * refetch after invalidation decides what is shown: a removed resource's
  * refetch returns nothing and its page becomes `notFound()`.
  *
- * Pure: no Next.js, `server-only` or Zod import.
+ * Pure: no Next.js, `server-only` or Zod import at run time. The event types
+ * are the ones the revalidate route's reader schema infers
+ * (`lib/wp/schemas/revalidate.ts`), imported as types only.
  */
 
+import type {
+  ResourceEvent,
+  ResourceState,
+  RevalidationEvent,
+  TermEvent,
+  TermState,
+} from "./wp/schemas/revalidate";
 import {
   isSlug,
   isTypeSlug,
@@ -67,48 +76,8 @@ export function typeTag(slug: string): string {
   return `type:${checked("type", slug, isTypeSlug)}`;
 }
 
-/*
- * TODO(reconcile): a minimal structural copy of the events in
- * packages/ui/schemas/revalidate-request.schema.json. A parallel pull request
- * adds Zod-inferred types for the same schema; whichever lands second replaces
- * these with those and keeps `eventsToInvalidations` accepting them.
- */
 
-/** Where a resource is listed: its slug, its one type and its topics. */
-export interface ResourceState {
-  readonly slug: string;
-  /** Exactly one element, by the schema. */
-  readonly types: readonly string[];
-  readonly topics: readonly string[];
-}
-
-/** A change to one resource post. */
-export interface ResourceEvent extends ResourceState {
-  readonly type: "resource";
-  readonly event: "publish" | "update" | "unpublish" | "trash" | "delete";
-  readonly id: number;
-  readonly rest_url: string;
-  /** Set on `update` only. */
-  readonly previous: ResourceState | null;
-}
-
-/** A term's slug and name. */
-export interface TermState {
-  readonly slug: string;
-  readonly name: string;
-}
-
-/** A change to one `resource_topic` or `resource_type` term. */
-export interface TermEvent extends TermState {
-  readonly type: "term";
-  readonly taxonomy: "resource_topic" | "resource_type";
-  readonly event: "create" | "update" | "delete";
-  readonly id: number;
-  /** Set on `update` only. */
-  readonly previous: TermState | null;
-}
-
-export type RevalidationEvent = ResourceEvent | TermEvent;
+export type { ResourceEvent, ResourceState, RevalidationEvent, TermEvent, TermState };
 
 /** What a batch invalidates: tags for `revalidateTag`, paths for `revalidatePath`. */
 export interface Invalidations {

@@ -7,14 +7,28 @@ import {
   topicTag,
   typeTag,
   type ResourceEvent,
+  type ResourceState,
   type RevalidationEvent,
   type TermEvent,
+  type TermState,
 } from "../lib/tags";
+import { resourceEventSchema, termEventSchema } from "../lib/wp/schemas/revalidate";
 
 const REST = "https://cms.example/wp-json/wp/v2/resources/";
 
-function resource(overrides: Partial<ResourceEvent> & Pick<ResourceEvent, "event">): ResourceEvent {
-  return {
+interface ResourceInput {
+  readonly event: ResourceEvent["event"];
+  readonly id?: number;
+  readonly slug?: string;
+  readonly rest_url?: string;
+  readonly types?: readonly [string];
+  readonly topics?: readonly string[];
+  readonly previous?: ResourceState | null;
+}
+
+/** A resource event, parsed by the route's reader schema so every test input is schema-valid. */
+function resource(overrides: ResourceInput): ResourceEvent {
+  return resourceEventSchema.parse({
     type: "resource",
     id: 123,
     slug: "example",
@@ -23,18 +37,28 @@ function resource(overrides: Partial<ResourceEvent> & Pick<ResourceEvent, "event
     topics: ["performance"],
     previous: null,
     ...overrides,
-  };
+  });
 }
 
-function term(overrides: Partial<TermEvent> & Pick<TermEvent, "event" | "taxonomy">): TermEvent {
-  return {
+interface TermInput {
+  readonly event: TermEvent["event"];
+  readonly taxonomy: TermEvent["taxonomy"];
+  readonly id?: number;
+  readonly slug?: string;
+  readonly name?: string;
+  readonly previous?: TermState | null;
+}
+
+/** A term event, parsed by the route's reader schema so every test input is schema-valid. */
+function term(overrides: TermInput): TermEvent {
+  return termEventSchema.parse({
     type: "term",
     id: 45,
     slug: "performance",
     name: "Performance",
     previous: null,
     ...overrides,
-  };
+  });
 }
 
 describe("tag builders", () => {
@@ -339,8 +363,7 @@ describe("eventsToInvalidations", () => {
   });
 
   it("throws on a slug the schema would have rejected", () => {
-    expect(() => eventsToInvalidations([resource({ event: "publish", types: ["page"] })])).toThrow(
-      RangeError,
-    );
+    const invalid = { ...resource({ event: "publish" }), types: ["page"] } as ResourceEvent;
+    expect(() => eventsToInvalidations([invalid])).toThrow(RangeError);
   });
 });
