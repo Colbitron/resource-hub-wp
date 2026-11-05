@@ -18,6 +18,7 @@ use ResourceHub\ContentModel\ReservedTypeSlugs;
 use ResourceHub\ContentModel\Taxonomies;
 use ResourceHub\ContentModel\UsedTypes;
 use ResourceHub\Editor\SidebarAssets;
+use ResourceHub\Rest\ResolveRoute;
 use ResourceHub\Revalidation\Revalidation;
 
 /**
@@ -71,6 +72,7 @@ final class Plugin {
 		( new UsedTypes() )->register();
 		add_action( 'enqueue_block_editor_assets', array( new SidebarAssets( $this->file ), 'enqueue' ) );
 		( new Revalidation() )->register();
+		add_action( 'rest_api_init', array( new ResolveRoute(), 'register' ) );
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			\WP_CLI::add_command( 'resource-hub seed', SeedCommand::class );
