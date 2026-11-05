@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace ResourceHub\Tests\Security;
 
+use IXR_Error;
 use wp_xmlrpc_server;
 use WP_UnitTestCase;
 
@@ -51,6 +52,39 @@ final class XmlRpcTest extends WP_UnitTestCase {
 		$server = new wp_xmlrpc_server();
 
 		$this->assertSame( array(), $server->methods );
+	}
+
+	/**
+	 * A pingback is a `-32601` fault. Core's own filter, which drops `pingback.ping` outside the
+	 * `production` environment type, is removed first, so the method is really there until the
+	 * plugin empties the list; with core's filter in place this test would pass without the plugin.
+	 */
+	public function test_pingback_is_a_fault(): void {
+		remove_filter( 'xmlrpc_methods', 'wp_maybe_disable_xmlrpc_pingback_for_environment' );
+
+		$before = array();
+
+		add_filter(
+			'xmlrpc_methods',
+			static function ( $methods ) use ( &$before ) {
+				$before = $methods;
+				return $methods;
+			},
+			PHP_INT_MAX - 1
+		);
+
+		$server = new wp_xmlrpc_server();
+
+		$this->assertArrayHasKey( 'pingback.ping', $before, 'pingback.ping should be registered before the plugin empties the list, or this test checks nothing.' );
+
+		// What IXR_Server's constructor does before it serves, without reading a request body.
+		$server->callbacks = $server->methods;
+		$server->setCallbacks();
+
+		$result = $server->call( 'pingback.ping', array( 'https://example.com/a-source/', 'https://example.com/a-target/' ) );
+
+		$this->assertInstanceOf( IXR_Error::class, $result );
+		$this->assertSame( -32601, $result->code );
 	}
 
 	/**

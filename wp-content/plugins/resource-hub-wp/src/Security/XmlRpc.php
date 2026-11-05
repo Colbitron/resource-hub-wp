@@ -10,7 +10,7 @@ declare(strict_types=1);
 namespace ResourceHub\Security;
 
 /**
- * Turns off XML-RPC and stops advertising it.
+ * Turns off XML-RPC and stops pointing pages and headers at it.
  *
  * The CMS is headless: the front end reads REST and editors use the block editor, so no client
  * uses XML-RPC. It is also a save path the one-type rule does not guard (ADR 0024), so closing
@@ -20,7 +20,9 @@ namespace ResourceHub\Security;
  * anonymous methods still answer, so the method list is emptied too. Core's IXR server adds
  * `system.listMethods`, `system.getCapabilities` and `system.multicall` itself after the filter,
  * and those three only describe a server with nothing else on it. The `X-Pingback` header and
- * the RSD link in `wp_head` are removed so nothing points a client at `xmlrpc.php`.
+ * the RSD link in `wp_head` are removed, so no page or header points at `xmlrpc.php`. The
+ * endpoint itself still answers `GET /xmlrpc.php?rsd` with an RSD document, which core prints
+ * before the server is built.
  */
 final class XmlRpc {
 	/**
