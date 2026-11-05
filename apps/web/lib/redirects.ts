@@ -47,15 +47,18 @@ import type { WpResource } from "./wp/schemas/rest";
  *
  * How the 308 reaches the wire: `resourceForRequest` calls Next.js's
  * `permanentRedirect()`, and the route that calls it must render on every
- * request, which a dynamic segment without `generateStaticParams` does. In
- * a dynamic render Next.js sends the redirect as a 308 with
+ * request: a dynamic segment with `export const dynamic = "force-dynamic"`
+ * and no `generateStaticParams`. In a dynamic render Next.js sends the
+ * redirect as a 308 with
  * `Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate`
  * and stores nothing. Measured on 2026-11-05 (ADR 0035's amendment): from an
  * ISR route the same call is prerendered and stored as a 308 with
- * `s-maxage=3600`, which browsers keep for ever, and making only the
- * redirecting render dynamic (`connection()`, an uncached fetch) fails with
- * `DYNAMIC_SERVER_USAGE` at runtime. So the route is dynamic, by design, and
- * the e2e suite asserts the header on every redirect. Call it before
+ * `s-maxage=3600` and no `max-age`, which a browser that receives that
+ * header keeps for ever (what Vercel's CDN forwards is unmeasured), and
+ * making only the redirecting render dynamic in an ISR route fails with
+ * `DYNAMIC_SERVER_USAGE` at runtime. `force-dynamic` keeps the route dynamic
+ * even if `generateStaticParams` is added. So the route is dynamic, by
+ * design, and the e2e suite asserts the header on every redirect. Call it before
  * anything is rendered and outside any Suspense boundary or `loading.tsx`:
  * once streaming has begun, Next.js can only send a 200 with a meta refresh.
  *

@@ -13,13 +13,25 @@ import { plainText } from "@/lib/wp/cards";
  * `RH_FIXTURES=1` (see `next.config.ts`).
  *
  * It renders on every request, as the resource page must (no
- * `generateStaticParams`, and `connection()` to say so): that is what makes
- * every redirect a fresh 308 with Next.js's `no-store` header rather than a
- * stored one. The decision runs before anything is rendered and outside any
- * Suspense boundary, so the 308 is an HTTP response, not a meta refresh.
+ * `generateStaticParams`, `export const dynamic = "force-dynamic"`, and
+ * `connection()` to say so): that is what makes every redirect a fresh 308
+ * with Next.js's `no-store` header rather than a stored one. The decision
+ * runs before anything is rendered and outside any Suspense boundary, so the
+ * 308 is an HTTP response, not a meta refresh.
  */
 
 const PREFIX = "/fixtures/redirect";
+
+/**
+ * The guard that survives an added `generateStaticParams`. Measured under
+ * `next start` on 2026-11-05 (ADR 0035): with it, the route stays dynamic and
+ * every redirect is a 308 with `no-store`, whatever `generateStaticParams`
+ * returns; with `connection()` alone, a `generateStaticParams` returning `[]`
+ * makes every request a 500. The data layer's fetches ask for
+ * `cache: "force-cache"` explicitly, so they keep the Data Cache (30 renders,
+ * one CMS request).
+ */
+export const dynamic = "force-dynamic";
 
 /** `resourcePath(type, slug)` with `/resources` replaced by this fixture's prefix. */
 function fixturePath(type: string, slug: string): string {
