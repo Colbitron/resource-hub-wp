@@ -1,7 +1,11 @@
 /**
  * XML-RPC is off (ADR 0044): over HTTP, the server offers nothing but the
- * three `system.*` methods core's IXR server always adds, and a pingback is a
- * fault.
+ * three `system.*` methods core's IXR server always adds.
+ *
+ * No pingback check here: core already drops `pingback.ping` outside the
+ * `production` environment type, and wp-env is `local`, so a pingback over
+ * HTTP would fail with the plugin off too. PHPUnit checks it instead, with
+ * core's environment filter removed.
  */
 const { test, expect } = require( './fixtures' );
 
@@ -43,20 +47,5 @@ test.describe( 'XML-RPC', () => {
 		expect(
 			methods.filter( ( name ) => ! name.startsWith( 'system.' ) )
 		).toEqual( [] );
-	} );
-
-	test( 'answers a pingback with a fault', async ( { request } ) => {
-		const response = await request.post( '/xmlrpc.php', {
-			headers: { 'Content-Type': 'text/xml' },
-			data: call( 'pingback.ping', [
-				'https://example.com/a-source/',
-				'https://example.com/a-target/',
-			] ),
-		} );
-
-		const body = await response.text();
-
-		expect( body ).toContain( '<name>faultCode</name>' );
-		expect( body ).toContain( '-32601' );
 	} );
 } );
