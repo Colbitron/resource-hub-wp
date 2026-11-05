@@ -43,6 +43,11 @@ final class ResultStore {
 	public const PENDING = 'pending';
 
 	/**
+	 * The error stored, with an empty body, when the full record could not be written.
+	 */
+	public const BODY_NOT_STORED = 'The response body could not be stored.';
+
+	/**
 	 * Writes a `pending` record to every object in a batch that is about to be scheduled.
 	 *
 	 * @param string                           $batch_id The batch.
@@ -158,7 +163,8 @@ final class ResultStore {
 	}
 
 	/**
-	 * Writes one record per event, skipping objects that no longer exist.
+	 * Writes one record per event, skipping objects that no longer exist. Should a record fail to
+	 * write, it is written again without its body, so the status never stays `pending`.
 	 *
 	 * @param string                           $batch_id The batch.
 	 * @param array<int, array<string, mixed>> $events   Its events.
@@ -182,22 +188,63 @@ final class ResultStore {
 				'duration_ms' => $result['duration_ms'],
 			);
 
-			if ( 'term' === $event['type'] ) {
-				$term = get_term( (int) $event['id'], (string) $event['taxonomy'] );
+			$object = self::target( $event );
 
-				if ( $term instanceof WP_Term ) {
-					update_term_meta( $term->term_id, self::META_KEY, $record );
-				}
-
+			if ( null === $object ) {
 				continue;
 			}
 
-			$post = get_post( (int) $event['id'] );
+			if ( ! self::write( $object[0], $object[1], $record ) ) {
+				$record['body']  = '';
+				$record['error'] = $record['error'] ?? self::BODY_NOT_STORED;
 
-			if ( $post instanceof WP_Post && PostType::NAME === $post->post_type ) {
-				update_post_meta( $post->ID, self::META_KEY, $record );
+				self::write( $object[0], $object[1], $record );
 			}
 		}
+	}
+
+	/**
+	 * The meta type and ID an event's record goes to, or null when the object no longer exists or is
+	 * not a resource.
+	 *
+	 * @param array<string, mixed> $event The event.
+	 * @return array{0: string, 1: int}|null
+	 */
+	private static function target( array $event ): ?array {
+		if ( 'term' === $event['type'] ) {
+			$term = get_term( (int) $event['id'], (string) $event['taxonomy'] );
+
+			return $term instanceof WP_Term ? array( 'term', $term->term_id ) : null;
+		}
+
+		$post = get_post( (int) $event['id'] );
+
+		return $post instanceof WP_Post && PostType::NAME === $post->post_type ? array( 'post', $post->ID ) : null;
+	}
+
+	/**
+	 * Writes one record and reports whether it is now stored.
+	 *
+	 * Core unslashes meta values before storing them, so the record is slashed first and a body with
+	 * backslashes or quotes is kept exactly. `update_*_meta()` also returns false when the stored value
+	 * is already identical, so a false is checked against what is stored before it counts as a failure.
+	 *
+	 * @param string               $meta_type `post` or `term`.
+	 * @param int                  $object_id Post or term ID.
+	 * @param array<string, mixed> $record    The record.
+	 */
+	private static function write( string $meta_type, int $object_id, array $record ): bool {
+		$written = 'term' === $meta_type
+			? update_term_meta( $object_id, self::META_KEY, wp_slash( $record ) )
+			: update_post_meta( $object_id, self::META_KEY, wp_slash( $record ) );
+
+		if ( false !== $written && ! is_wp_error( $written ) ) {
+			return true;
+		}
+
+		$stored = 'term' === $meta_type ? self::read_term( $object_id ) : self::read_post( $object_id );
+
+		return $stored === $record;
 	}
 
 	/**
@@ -216,7 +263,10 @@ final class ResultStore {
 					'type' => 'string',
 					'enum' => array( self::PENDING, Result::SENT, Result::FAILED ),
 				),
-				'outcome'     => array( 'type' => 'string' ),
+				'outcome'     => array(
+					'type' => 'string',
+					'enum' => array_merge( array( self::PENDING ), Result::OUTCOMES ),
+				),
 				'code'        => array( 'type' => array( 'integer', 'null' ) ),
 				'event'       => array( 'type' => 'string' ),
 				'time'        => array( 'type' => 'string' ),

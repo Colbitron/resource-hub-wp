@@ -30,6 +30,13 @@ final class Sender {
 	public const PATH = '/api/revalidate';
 
 	/**
+	 * Most bytes of a response body read, so a misconfigured URL cannot make the cron request hold a
+	 * large download in memory. Only {@see Result::BODY_LIMIT} bytes are stored, but a 200 is parsed
+	 * whole to check its shape, and its `revalidated` list for a full batch of 25 can run to several KB.
+	 */
+	public const RESPONSE_LIMIT = 65536;
+
+	/**
 	 * Sends one batch and reports the outcome. When the URL or the secret is unset no request is made.
 	 *
 	 * Redirects are not followed: a 3xx comes back as an unexpected code, so the bearer token is only
@@ -42,17 +49,24 @@ final class Sender {
 			return Result::not_configured();
 		}
 
+		$json = wp_json_encode( $payload );
+
+		if ( false === $json ) {
+			return Result::encode_error();
+		}
+
 		$started  = microtime( true );
 		$response = wp_remote_post(
 			Config::frontend_url() . self::PATH,
 			array(
-				'timeout'     => self::TIMEOUT,
-				'redirection' => 0,
-				'headers'     => array(
+				'timeout'             => self::TIMEOUT,
+				'redirection'         => 0,
+				'limit_response_size' => self::RESPONSE_LIMIT,
+				'headers'             => array(
 					'Authorization' => 'Bearer ' . Config::secret(),
 					'Content-Type'  => 'application/json',
 				),
-				'body'        => wp_json_encode( $payload ),
+				'body'                => $json,
 			)
 		);
 		$duration = (int) round( ( microtime( true ) - $started ) * 1000 );
@@ -65,10 +79,15 @@ final class Sender {
 		}
 
 		$code = (int) wp_remote_retrieve_response_code( $response );
-		$body = self::cut( (string) wp_remote_retrieve_body( $response ) );
+		$raw  = (string) wp_remote_retrieve_body( $response );
+		$body = self::cut( $raw );
 
 		switch ( $code ) {
 			case 200:
+				if ( ! self::is_ok_body( $raw ) ) {
+					return new Result( Result::FAILED, Result::BAD_BODY, $code, $body, Result::BAD_BODY_MESSAGE, $duration );
+				}
+
 				return new Result( Result::SENT, Result::OK, $code, $body, null, $duration );
 			case 400:
 				return new Result( Result::FAILED, Result::BAD_REQUEST, $code, $body, null, $duration );
@@ -82,11 +101,28 @@ final class Sender {
 	}
 
 	/**
-	 * The first {@see Result::BODY_LIMIT} bytes of a body, never splitting a multibyte character.
+	 * Whether a 200's body is the contract's: a JSON object whose `revalidated` is an array. Anything
+	 * else (an HTML page, an empty body, another app's JSON) means the URL does not reach the route.
+	 *
+	 * @param string $body Response body, whole.
+	 */
+	public static function is_ok_body( string $body ): bool {
+		// Decoded without `$associative`, so a JSON object is a stdClass and a JSON array a PHP array.
+		$decoded = json_decode( $body );
+
+		return $decoded instanceof \stdClass
+			&& property_exists( $decoded, 'revalidated' )
+			&& is_array( $decoded->revalidated );
+	}
+
+	/**
+	 * The first {@see Result::BODY_LIMIT} bytes of a body as valid UTF-8, never splitting a multibyte
+	 * character. Invalid bytes are replaced first, because core refuses to store a meta value that is
+	 * not valid UTF-8, and the result would stay `pending`.
 	 *
 	 * @param string $body Response body.
 	 */
 	public static function cut( string $body ): string {
-		return mb_strcut( $body, 0, Result::BODY_LIMIT );
+		return mb_strcut( mb_scrub( $body, 'UTF-8' ), 0, Result::BODY_LIMIT, 'UTF-8' );
 	}
 }

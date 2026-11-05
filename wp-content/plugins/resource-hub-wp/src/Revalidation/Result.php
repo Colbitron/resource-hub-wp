@@ -15,12 +15,12 @@ namespace ResourceHub\Revalidation;
  */
 final class Result {
 	/**
-	 * The front end accepted the batch with a 200.
+	 * The front end accepted the batch with a 200 and the contract's `{ "revalidated": [ … ] }` body.
 	 */
 	public const SENT = 'sent';
 
 	/**
-	 * Anything else: a non-200 response, no response, or no configuration.
+	 * Anything else: a non-200 response, a 200 with the wrong body, no response, or no configuration.
 	 */
 	public const FAILED = 'failed';
 
@@ -28,6 +28,7 @@ final class Result {
 	 * The outcomes, one per branch the editor notice has to put into words (ADR 0018).
 	 */
 	public const OK              = 'ok';
+	public const BAD_BODY        = 'bad_body';
 	public const BAD_REQUEST     = 'bad_request';
 	public const UNAUTHORIZED    = 'unauthorized';
 	public const SERVER_ERROR    = 'server_error';
@@ -36,11 +37,39 @@ final class Result {
 	public const TRANSPORT_ERROR = 'transport_error';
 	public const NOT_CONFIGURED  = 'not_configured';
 	public const NO_SINGLE_TYPE  = 'no_single_type';
+	public const ENCODE_ERROR    = 'encode_error';
+
+	/**
+	 * Every outcome, for the REST field's schema.
+	 */
+	public const OUTCOMES = array(
+		self::OK,
+		self::BAD_BODY,
+		self::BAD_REQUEST,
+		self::UNAUTHORIZED,
+		self::SERVER_ERROR,
+		self::UNEXPECTED_CODE,
+		self::TIMEOUT,
+		self::TRANSPORT_ERROR,
+		self::NOT_CONFIGURED,
+		self::NO_SINGLE_TYPE,
+		self::ENCODE_ERROR,
+	);
 
 	/**
 	 * The message stored for a resource event held back because its `types` is not exactly one element.
 	 */
 	public const NO_SINGLE_TYPE_MESSAGE = 'Not sent: a resource needs exactly one type.';
+
+	/**
+	 * The message stored for a 200 whose body is not a JSON object with a `revalidated` array.
+	 */
+	public const BAD_BODY_MESSAGE = 'The front end answered 200 but not with the expected body; check the front-end URL.';
+
+	/**
+	 * The message stored when the payload could not be encoded as JSON, so nothing was sent.
+	 */
+	public const ENCODE_ERROR_MESSAGE = 'Not sent: the events could not be encoded as JSON.';
 
 	/**
 	 * Longest response body kept, in bytes (ADR 0018: "about 1 KB").
@@ -83,6 +112,13 @@ final class Result {
 	}
 
 	/**
+	 * A result for a payload that `wp_json_encode()` could not encode, so no request was made.
+	 */
+	public static function encode_error(): self {
+		return new self( self::FAILED, self::ENCODE_ERROR, null, '', self::ENCODE_ERROR_MESSAGE, 0 );
+	}
+
+	/**
 	 * The fields {@see ResultStore} and {@see PostHog} record, as a plain array.
 	 *
 	 * @return array{status: string, outcome: string, code: int|null, body: string, error: string|null, duration_ms: int}
@@ -105,6 +141,8 @@ final class Result {
 		switch ( $this->outcome ) {
 			case self::OK:
 				return 'Revalidation accepted (200).';
+			case self::BAD_BODY:
+				return 'Revalidation failed: ' . lcfirst( self::BAD_BODY_MESSAGE );
 			case self::BAD_REQUEST:
 				return 'Revalidation rejected: the front end could not read the request (400).';
 			case self::UNAUTHORIZED:
@@ -119,6 +157,8 @@ final class Result {
 				return sprintf( 'Revalidation could not reach the front end: %s', $this->error ?? '' );
 			case self::NO_SINGLE_TYPE:
 				return 'Revalidation ' . lcfirst( self::NO_SINGLE_TYPE_MESSAGE );
+			case self::ENCODE_ERROR:
+				return 'Revalidation ' . lcfirst( self::ENCODE_ERROR_MESSAGE );
 			case self::NOT_CONFIGURED:
 			default:
 				return 'Revalidation skipped: the front-end URL or the secret is not configured.';

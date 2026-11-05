@@ -28,6 +28,11 @@ final class PostHog {
 	public const TIMEOUT = 3;
 
 	/**
+	 * Most bytes of PostHog's answer read. The answer is ignored, so it only needs to be bounded.
+	 */
+	public const RESPONSE_LIMIT = 1024;
+
+	/**
 	 * The project API key; empty when PostHog is off.
 	 *
 	 * @var string
@@ -89,12 +94,19 @@ final class PostHog {
 			),
 		);
 
+		$json = wp_json_encode( $body );
+
+		if ( false === $json ) {
+			return;
+		}
+
 		wp_remote_post(
 			$this->host . '/capture/',
 			array(
-				'timeout' => self::TIMEOUT,
-				'headers' => array( 'Content-Type' => 'application/json' ),
-				'body'    => wp_json_encode( $body ),
+				'timeout'             => self::TIMEOUT,
+				'limit_response_size' => self::RESPONSE_LIMIT,
+				'headers'             => array( 'Content-Type' => 'application/json' ),
+				'body'                => $json,
 			)
 		);
 	}

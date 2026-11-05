@@ -77,6 +77,7 @@ final class PostHogTest extends RevalidationTestCase {
 		$this->assertSame( 'https://eu.i.posthog.com/capture/', $request['url'] );
 		$this->assertSame( 'POST', $request['args']['method'] );
 		$this->assertSame( 3, $request['args']['timeout'] );
+		$this->assertSame( PostHog::RESPONSE_LIMIT, $request['args']['limit_response_size'] );
 		$this->assertSame( 'application/json', $request['args']['headers']['Content-Type'] );
 
 		$body = json_decode( $request['args']['body'], true );

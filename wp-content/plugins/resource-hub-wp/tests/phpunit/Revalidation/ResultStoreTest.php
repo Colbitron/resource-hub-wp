@@ -10,11 +10,13 @@ declare(strict_types=1);
 namespace ResourceHub\Tests\Revalidation;
 
 use ResourceHub\ContentModel\Taxonomies;
+use ResourceHub\Revalidation\Payload;
 use ResourceHub\Revalidation\Result;
 use ResourceHub\Revalidation\ResultStore;
 use ResourceHub\Revalidation\TermEvents;
 use ResourceHub\Revalidation\ResourceEvents;
 use ResourceHub\Revalidation\ResourceState;
+use ResourceHub\Revalidation\Sender;
 use WP_REST_Request;
 
 /**
@@ -96,6 +98,97 @@ final class ResultStoreTest extends RevalidationTestCase {
 		$this->assertSame( Result::TIMEOUT, $record['outcome'] );
 		$this->assertNull( $record['code'] );
 		$this->assertSame( 'cURL error 28: timed out', $record['error'] );
+	}
+
+	/**
+	 * A body with escaped quotes, a backslash path and a multibyte character is stored exactly, on a
+	 * resource and on a term: core unslashes meta input, so the store slashes it first.
+	 */
+	public function test_body_with_backslashes_and_quotes_round_trips(): void {
+		list( $events, $first, , $topic ) = $this->batch();
+		$body                             = '{"error":"bad \\"slug\\" at C:\\temp\\x \\u00e9 é"}';
+
+		( new ResultStore() )->record( 'batch-8', $events, new Result( Result::FAILED, Result::BAD_REQUEST, 400, $body, null, 5 ) );
+
+		$this->assertSame( $body, ResultStore::read_post( $first )['body'] );
+		$this->assertSame( $body, ResultStore::read_term( $topic )['body'] );
+	}
+
+	/**
+	 * A response body that is not valid UTF-8 still leaves a finished record, not `pending`: the sender
+	 * makes it valid before it reaches meta.
+	 */
+	public function test_invalid_utf8_body_does_not_leave_the_record_pending(): void {
+		list( $events, $first ) = $this->batch();
+		$this->configure();
+		$this->responder = static fn(): array => self::http_response( 500, "\xff\xfe bin \xc3" );
+		$store           = new ResultStore();
+
+		$store->mark_pending( 'batch-9', $events );
+		$store->record( 'batch-9', $events, ( new Sender() )->send( Payload::build( $events ) ) );
+
+		$record = ResultStore::read_post( $first );
+		$this->assertSame( Result::FAILED, $record['status'] );
+		$this->assertSame( Result::SERVER_ERROR, $record['outcome'] );
+		$this->assertSame( 'batch-9', $record['batch_id'] );
+		$this->assertTrue( mb_check_encoding( $record['body'], 'UTF-8' ) );
+	}
+
+	/**
+	 * When core will not store the record, it is stored again without its body and with a plain error,
+	 * so the status never stays `pending`.
+	 */
+	public function test_record_that_cannot_be_written_is_stored_without_its_body(): void {
+		list( $events, $first ) = $this->batch();
+		$store                  = new ResultStore();
+		$store->mark_pending( 'batch-10', $events );
+
+		$refuse_bodies = static function ( $check, $object_id, $meta_key, $value ) {
+			return ResultStore::META_KEY === $meta_key && '' !== $value['body'] ? false : $check;
+		};
+		add_filter( 'update_post_metadata', $refuse_bodies, 10, 4 );
+
+		$store->record( 'batch-10', $events, new Result( Result::SENT, Result::OK, 200, '{"revalidated":[]}', null, 7 ) );
+
+		remove_filter( 'update_post_metadata', $refuse_bodies, 10 );
+
+		$record = ResultStore::read_post( $first );
+		$this->assertSame( Result::SENT, $record['status'] );
+		$this->assertSame( 'batch-10', $record['batch_id'] );
+		$this->assertSame( '', $record['body'] );
+		$this->assertSame( ResultStore::BODY_NOT_STORED, $record['error'] );
+	}
+
+	/**
+	 * Writing the same record twice is not mistaken for a failure, although core returns false for an
+	 * unchanged value. The two writes fall in the same second, and so are identical, on any normal run.
+	 */
+	public function test_identical_rewrite_is_not_a_failure(): void {
+		list( $events, $first ) = $this->batch();
+		$store                  = new ResultStore();
+		$result                 = new Result( Result::SENT, Result::OK, 200, '{"revalidated":[]}', null, 7 );
+
+		$store->record( 'batch-11', $events, $result );
+		$store->record( 'batch-11', $events, $result );
+
+		$this->assertSame( '{"revalidated":[]}', ResultStore::read_post( $first )['body'] );
+		$this->assertNull( ResultStore::read_post( $first )['error'] );
+	}
+
+	/**
+	 * The REST field's schema lists every outcome, and `pending`.
+	 */
+	public function test_rest_schema_lists_every_outcome(): void {
+		global $wp_rest_additional_fields;
+
+		rest_get_server();
+
+		$enum = $wp_rest_additional_fields['resource'][ ResultStore::REST_FIELD ]['schema']['properties']['outcome']['enum'];
+
+		$this->assertContains( ResultStore::PENDING, $enum );
+		$this->assertContains( Result::BAD_BODY, $enum );
+		$this->assertContains( Result::ENCODE_ERROR, $enum );
+		$this->assertSame( array_merge( array( ResultStore::PENDING ), Result::OUTCOMES ), $enum );
 	}
 
 	/**
