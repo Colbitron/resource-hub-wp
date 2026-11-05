@@ -12,7 +12,7 @@ declare(strict_types=1);
 namespace ResourceHub\Revalidation;
 
 /**
- * POSTs a payload to `{FRONTEND_URL}/api/revalidate` with a 3-second timeout and no retries (ADR 0013),
+ * POSTs a payload to `{FRONTEND_URL}/api/revalidate/` with a 3-second timeout and no retries (ADR 0013),
  * and turns whatever happens into a {@see Result}.
  *
  * The secret travels only in the `Authorization` header of this request. It is never written to the
@@ -27,7 +27,7 @@ final class Sender {
 	/**
 	 * The route on the front end.
 	 */
-	public const PATH = '/api/revalidate';
+	public const PATH = '/api/revalidate/';
 
 	/**
 	 * Most bytes of a response body read, so a misconfigured URL cannot make the cron request hold a

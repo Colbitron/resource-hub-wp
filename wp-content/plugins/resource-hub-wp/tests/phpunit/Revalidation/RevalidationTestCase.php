@@ -126,7 +126,7 @@ abstract class RevalidationTestCase extends WP_UnitTestCase {
 		return array_values(
 			array_filter(
 				$this->requests,
-				static fn( array $request ): bool => str_ends_with( $request['url'], '/api/revalidate' )
+				static fn( array $request ): bool => str_ends_with( $request['url'], '/api/revalidate/' )
 			)
 		);
 	}
