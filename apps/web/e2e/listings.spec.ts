@@ -413,6 +413,40 @@ test.describe("a resource the reader schema refuses", () => {
   });
 });
 
+test.describe("in forced-colours mode", () => {
+  test.use({ forcedColors: "active" });
+
+  /** The styles that can still tell a link apart once forced colours drop its background. */
+  async function marks(locator: ReturnType<Page["locator"]>) {
+    return locator.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        outline: `${style.outlineStyle} ${style.outlineWidth}`,
+        underline: `${style.textDecorationLine} ${style.textDecorationThickness}`,
+      };
+    });
+  }
+
+  test("the current filter and the current page are marked by more than a fill", async ({ page }) => {
+    await page.goto("/resources/article/");
+    expect(await page.evaluate(() => matchMedia("(forced-colors: active)").matches)).toBe(true);
+    const types = page.getByRole("navigation", { name: "Filter resources" }).getByRole("list", { name: "Type" });
+    const current = await marks(types.getByRole("link", { name: "Article" }));
+    const neighbour = await marks(types.getByRole("link", { name: "Webinar" }));
+    expect(current.outline).not.toEqual(neighbour.outline);
+    expect(current.underline).not.toEqual(neighbour.underline);
+    expect(current.outline).toMatch(/^solid /);
+
+    await page.goto("/resources/page/2/");
+    const nav = page.getByRole("navigation", { name: "Pagination" });
+    const currentPage = await marks(nav.getByRole("link", { name: "Page 2" }));
+    const otherPage = await marks(nav.getByRole("link", { name: "Page 1" }));
+    expect(currentPage.outline).not.toEqual(otherPage.outline);
+    expect(currentPage.underline).not.toEqual(otherPage.underline);
+    expect(currentPage.outline).toMatch(/^solid /);
+  });
+});
+
 test("the HTML never names the CMS", async ({ request }) => {
   for (const path of ["/resources/", "/resources/page/2/", "/resources/webinar/", "/resources/article/topic/accessibility/", "/resources/nope/"]) {
     const html = await (await get(request, path)).text();

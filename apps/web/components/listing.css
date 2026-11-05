@@ -134,3 +134,27 @@
 	margin-right: 0;
 	margin-left: auto;
 }
+
+/*
+ * Forced colours (Windows High Contrast and the like) drop the background
+ * fill that marks the current filter and the current page above, so they
+ * would look like their neighbours. A thick underline and an outline in
+ * system colours mark them instead.
+ */
+
+@media (forced-colors: active) {
+	.rh-filters__link[aria-current],
+	.rh-pagination__link[aria-current="page"] {
+		outline: 2px solid CanvasText;
+		outline-offset: 2px;
+		text-decoration: underline;
+		text-decoration-thickness: 0.2em;
+		text-underline-offset: 0.2em;
+	}
+
+	/* Keep the focus ring distinct from the current-state outline. */
+	.rh-filters__link[aria-current]:focus-visible,
+	.rh-pagination__link[aria-current="page"]:focus-visible {
+		outline: var(--rh-focus-width) solid Highlight;
+	}
+}
