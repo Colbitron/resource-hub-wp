@@ -86,10 +86,12 @@ final class PermalinkTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The pretty URL resolves to the resource.
+	 * The pretty URL resolves to the resource, for a logged-in user: anonymous visitors get a 404
+	 * from every theme page (ADR 0031), which the lockdown tests cover.
 	 */
 	public function test_pretty_url_resolves(): void {
 		$post_id = $this->resource( 'publish', 'measuring-what-readers-feel', 'podcast' );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'subscriber' ) ) );
 
 		$this->go_to( get_permalink( $post_id ) );
 
