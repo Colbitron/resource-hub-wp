@@ -9,7 +9,7 @@ import { slugSchema } from "../lib/wp/schemas/common";
 import { parsePaginationHeaders } from "../lib/wp/schemas/pagination";
 import { resolveResponseSchema, resolveResponseSchemaStrict } from "../lib/wp/schemas/resolve";
 import {
-  isWpTaxonomy,
+  hasWpTaxonomy,
   wpResourceListSchema,
   wpResourceSchema,
   wpTermListSchema,
@@ -417,6 +417,32 @@ describe("core REST fixtures captured from WordPress", () => {
     expect(parsed._embedded).toEqual({ "wp:term": [], "wp:featuredmedia": [] });
   });
 
+  it("gives every parse its own defaulted and caught arrays", () => {
+    const bare = clone(single) as Record<string, unknown>;
+    delete bare._embedded;
+    const first = wpResourceSchema.parse(bare);
+    first._embedded["wp:term"].push([]);
+    first._embedded["wp:featuredmedia"].push(null);
+    const second = wpResourceSchema.parse(bare);
+    expect(second._embedded).toEqual({ "wp:term": [], "wp:featuredmedia": [] });
+    expect(second._embedded["wp:term"]).not.toBe(first._embedded["wp:term"]);
+
+    const caught = clone(single) as { _embedded: Record<string, unknown> };
+    caught._embedded["wp:featuredmedia"] = { id: 16 };
+    wpResourceSchema.parse(caught)._embedded["wp:featuredmedia"].push(null);
+    expect(wpResourceSchema.parse(caught)._embedded["wp:featuredmedia"]).toEqual([]);
+
+    const svg = withFeaturedMedia({ ...media, media_details: {} });
+    const firstImage = wpResourceSchema.parse(svg)._embedded["wp:featuredmedia"][0];
+    firstImage!.media_details.sizes.thumbnail = {
+      source_url: media.source_url as string,
+      width: 1,
+      height: 1,
+    };
+    const secondImage = wpResourceSchema.parse(svg)._embedded["wp:featuredmedia"][0];
+    expect(secondImage?.media_details.sizes).toEqual({});
+  });
+
   /** The single resource with its one featured-media entry replaced. */
   function withFeaturedMedia(entry: unknown) {
     const resource = clone(single) as { _embedded: Record<string, unknown> };
@@ -465,16 +491,38 @@ describe("core REST fixtures captured from WordPress", () => {
     expect(wpResourceSchema.parse(notAnArray)._embedded["wp:featuredmedia"]).toEqual([]);
   });
 
-  it("accepts an embedded term from a taxonomy another plugin attaches", () => {
+  it("drops embedded terms from a taxonomy another plugin attaches, even malformed ones", () => {
     const resource = clone(single) as { _embedded: { "wp:term": unknown[][] } };
     resource._embedded["wp:term"].push([
       { id: 99, name: "Spring", slug: "spring", taxonomy: "season" },
+      { id: 100, name: "", slug: "Not A Slug!", taxonomy: "season" },
+      { id: "101", taxonomy: 7 },
+      "not an object",
+      null,
     ]);
-    const terms = wpResourceSchema.parse(resource)._embedded["wp:term"].flat();
-    expect(terms.map((term) => term.taxonomy)).toContain("season");
-    expect(terms.filter((term) => isWpTaxonomy(term.taxonomy)).map((term) => term.id)).toEqual(
-      [9, 11, 4, 2],
-    );
+    const result = wpResourceSchema.safeParse(resource);
+    expect(result.error?.issues ?? []).toEqual([]);
+    const terms = result.data!._embedded["wp:term"].flat();
+    expect(terms.map((term) => term.id)).toEqual([9, 11, 4, 2]);
+    expect(terms.every((term) => hasWpTaxonomy(term))).toBe(true);
+  });
+
+  it("still rejects a malformed term of a known taxonomy", () => {
+    const resource = clone(single) as { _embedded: { "wp:term": Record<string, unknown>[][] } };
+    const [first] = resource._embedded["wp:term"];
+    first![0] = { ...first![0], slug: "Not A Slug!" };
+    expect(issuePaths(wpResourceSchema.safeParse(resource))).toEqual([
+      ["_embedded", "wp:term", 0, 0, "slug"],
+    ]);
+  });
+
+  it("narrows only objects whose taxonomy is one of the three", () => {
+    for (const taxonomy of ["resource_topic", "resource_type", "resource_flag"]) {
+      expect(hasWpTaxonomy({ taxonomy }), taxonomy).toBe(true);
+    }
+    for (const value of [{ taxonomy: "season" }, { taxonomy: 7 }, {}, null, "resource_topic"]) {
+      expect(hasWpTaxonomy(value), JSON.stringify(value)).toBe(false);
+    }
   });
 
   it("rejects a date or modified with a trailing Z, which WordPress never writes", () => {

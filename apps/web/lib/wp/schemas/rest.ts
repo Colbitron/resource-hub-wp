@@ -43,9 +43,17 @@ const pixelsSchema = z.int().min(1);
 /** The three taxonomies on a resource. */
 export const wpTaxonomySchema = z.enum(["resource_topic", "resource_type", "resource_flag"]);
 
-/** True when `taxonomy` is one of the three the front end knows. */
-export function isWpTaxonomy(taxonomy: string): taxonomy is WpTaxonomy {
-  return wpTaxonomySchema.safeParse(taxonomy).success;
+/**
+ * True when `value` is an object whose `taxonomy` is one of the three the
+ * front end knows, narrowing it to say so. It takes anything, so it can sort
+ * raw `_embedded['wp:term']` entries before they are parsed.
+ */
+export function hasWpTaxonomy<T>(value: T): value is T & { taxonomy: WpTaxonomy } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    wpTaxonomySchema.safeParse((value as { taxonomy?: unknown }).taxonomy).success
+  );
 }
 
 /**
@@ -65,16 +73,22 @@ export const wpTermSchema = z.object({
 
 export const wpTermListSchema = z.array(wpTermSchema);
 
+/** A term as `_embed` includes it in `_embedded['wp:term']`: no `count`. */
+export const wpEmbeddedTermSchema = wpTermSchema.omit({ count: true });
+
 /**
- * A term as `_embed` includes it in `_embedded['wp:term']`: no `count`, and
- * any taxonomy. `wp:term` has one array per REST-visible taxonomy attached to
- * the post type, so a taxonomy another plugin attaches to `resource` shows up
- * here too; a closed enum would fail every resource. Consumers keep the terms
- * whose taxonomy passes `isWpTaxonomy`.
+ * One array of `_embedded['wp:term']`. `wp:term` has one array per
+ * REST-visible taxonomy attached to the post type, so a taxonomy another
+ * plugin attaches to `resource` shows up here too. Its entries are dropped
+ * before the per-term parse, unread, so a malformed term the front end would
+ * ignore anyway (a bad slug, an empty name) cannot fail the resource; every
+ * entry of the three known taxonomies is parsed strictly. An array that is
+ * not an array still fails.
  */
-export const wpEmbeddedTermSchema = wpTermSchema
-  .omit({ count: true })
-  .extend({ taxonomy: z.string().min(1) });
+const wpEmbeddedTermListSchema = z.preprocess(
+  (entries) => (Array.isArray(entries) ? entries.filter(hasWpTaxonomy) : entries),
+  z.array(wpEmbeddedTermSchema),
+);
 
 /** One entry of `media_details.sizes`: a resized copy of the image. */
 const wpMediaSizeSchema = z.object({
@@ -101,7 +115,7 @@ export const wpMediaSchema = z.object({
   media_details: z.object({
     width: pixelsSchema.optional(),
     height: pixelsSchema.optional(),
-    sizes: z.record(z.string(), wpMediaSizeSchema).default({}),
+    sizes: z.record(z.string(), wpMediaSizeSchema).default(() => ({})),
   }),
 });
 
@@ -119,13 +133,21 @@ export const wpFeaturedMediaSchema = wpMediaSchema.nullable().catch(null);
  * leaves out `wp:term` when every term list is empty and `wp:featuredmedia`
  * when there is no featured image, and leaves out `_embedded` itself when
  * nothing is embedded; each becomes an empty array.
+ *
+ * Every default and catch value that is an object or an array is a factory.
+ * Zod copies a plain default value only one level deep and a plain catch
+ * value not at all, so a literal would hand every parse the same inner
+ * arrays, and a change to one parsed resource would show up in the next.
  */
 const wpResourceEmbeddedSchema = z
   .object({
-    "wp:term": z.array(z.array(wpEmbeddedTermSchema)).default([]),
-    "wp:featuredmedia": z.array(wpFeaturedMediaSchema).default([]).catch([]),
+    "wp:term": z.array(wpEmbeddedTermListSchema).default(() => []),
+    "wp:featuredmedia": z
+      .array(wpFeaturedMediaSchema)
+      .default(() => [])
+      .catch(() => []),
   })
-  .default({ "wp:term": [], "wp:featuredmedia": [] });
+  .default(() => ({ "wp:term": [], "wp:featuredmedia": [] }));
 
 /**
  * A resource from `/wp/v2/resources?_embed` (or `/wp/v2/resources/{id}?_embed`).
@@ -133,7 +155,8 @@ const wpResourceEmbeddedSchema = z
  * `resource_type`, `resource_topic` and `resource_flag` are term IDs; the
  * matching terms, with their slugs, are in `_embedded['wp:term']`, one array
  * per taxonomy, empty where the resource has none of its terms (and the whole
- * key absent when it has no terms at all). `resource_type` is not held to
+ * key absent when it has no terms at all); the parsed value keeps only the
+ * terms of those three taxonomies. `resource_type` is not held to
  * exactly one ID here, although the content model gives every resource one
  * type: a resource saved outside the REST API can have none or two (ADR
  * 0016), and one such resource should not fail a whole listing, so the code
