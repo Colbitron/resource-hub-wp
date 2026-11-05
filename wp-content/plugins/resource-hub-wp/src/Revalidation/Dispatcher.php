@@ -18,9 +18,11 @@ namespace ResourceHub\Revalidation;
  *
  * Before batching, each `publish` and `update` event is refreshed from its post, so it carries the
  * state the request left behind ({@see ResourceEvents::refresh()}). Then a resource event whose
- * resource does not have exactly one type is held back: the schema requires one, so sending it would
- * fail the whole batch with a 400. It is recorded on that resource as a failure with a plain message,
- * and the rest of the batch goes out.
+ * top-level `types` is not exactly one element is held back: the schema requires one, so sending it
+ * would fail the whole batch with a 400. It is recorded on that resource as a failure with a plain
+ * message, and the rest of the batch goes out. An `update` whose current state is valid but whose
+ * `previous.types` is not is sent as a `publish` with no `previous` instead
+ * ({@see ResourceState::without_invalid_previous()}), so the save that fixes a resource's type goes out.
  *
  * Two cases are delivered synchronously at `shutdown` instead of through cron. Under WP-CLI there is
  * no editor to block and no later request to pick cron up, so the batch is sent at once and the
@@ -87,6 +89,8 @@ final class Dispatcher {
 					$results[] = $this->hold_back( $event );
 					continue;
 				}
+
+				$event = ResourceState::without_invalid_previous( $event );
 			}
 
 			$sendable[] = $event;
@@ -134,13 +138,18 @@ final class Dispatcher {
 
 	/**
 	 * Sends one event now, as a batch of one: the status page's test button (ADR 0019). A resource
-	 * event without exactly one type is held back and recorded like any other.
+	 * event without exactly one type is held back and recorded like any other, and one whose
+	 * `previous` alone is invalid is sent as a `publish`, as at `shutdown`.
 	 *
 	 * @param array<string, mixed> $event The event.
 	 */
 	public function send_one( array $event ): Result {
-		if ( 'resource' === $event['type'] && ! ResourceState::has_one_type( $event ) ) {
-			return $this->hold_back( $event );
+		if ( 'resource' === $event['type'] ) {
+			if ( ! ResourceState::has_one_type( $event ) ) {
+				return $this->hold_back( $event );
+			}
+
+			$event = ResourceState::without_invalid_previous( $event );
 		}
 
 		return $this->deliver( wp_generate_uuid4(), Payload::build( array( $event ) ) );

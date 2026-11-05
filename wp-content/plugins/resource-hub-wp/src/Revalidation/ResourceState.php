@@ -45,18 +45,33 @@ final class ResourceState {
 	}
 
 	/**
-	 * Whether a resource event can be sent: its `types`, and its `previous.types` when `previous` is set,
-	 * are exactly one element, as the schema's `typeList` requires. A REST save enforces one type, but a
-	 * WP-CLI or PHP save, or a deleted type term, can still leave a resource with none or two.
+	 * Whether a resource event can be sent: its top-level `types` is exactly one element, as the schema's
+	 * `typeList` requires. A REST save enforces one type, but a WP-CLI or PHP save, or a deleted type
+	 * term, can still leave a resource with none or two. `previous` is not checked here; see
+	 * {@see ResourceState::without_invalid_previous()}.
 	 *
 	 * @param array<string, mixed> $event A resource event.
 	 */
 	public static function has_one_type( array $event ): bool {
-		if ( 1 !== count( $event['types'] ) ) {
-			return false;
+		return 1 === count( $event['types'] );
+	}
+
+	/**
+	 * An `update` whose `previous.types` is not exactly one element, turned into a `publish` with
+	 * `previous` null; any other event unchanged. The front end never had a valid page for a state
+	 * without exactly one type, so there is nothing earlier to revalidate, and the save that fixes the
+	 * resource's type is sent rather than held back.
+	 *
+	 * @param array<string, mixed> $event A resource event.
+	 * @return array<string, mixed>
+	 */
+	public static function without_invalid_previous( array $event ): array {
+		if ( is_array( $event['previous'] ) && 1 !== count( $event['previous']['types'] ) ) {
+			$event['event']    = 'publish';
+			$event['previous'] = null;
 		}
 
-		return ! is_array( $event['previous'] ) || 1 === count( $event['previous']['types'] );
+		return $event;
 	}
 
 	/**

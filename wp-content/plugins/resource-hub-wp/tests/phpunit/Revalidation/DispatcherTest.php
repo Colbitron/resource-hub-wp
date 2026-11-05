@@ -18,6 +18,7 @@ use ResourceHub\Revalidation\Result;
 use ResourceHub\Revalidation\ResultStore;
 use ResourceHub\Revalidation\Revalidation;
 use ResourceHub\Revalidation\Sender;
+use WP_REST_Request;
 
 /**
  * Tests for {@see Dispatcher} (ADRs 0012, 0014, 0019).
@@ -343,9 +344,10 @@ final class DispatcherTest extends RevalidationTestCase {
 	}
 
 	/**
-	 * An update whose `previous` had two types is held back too, even though the save fixed it.
+	 * An update whose `previous` had two types but whose current state has one is sent, as a `publish`
+	 * with no `previous`: the front end never had a valid page for the earlier state.
 	 */
-	public function test_update_with_two_previous_types_is_held_back(): void {
+	public function test_update_with_two_previous_types_is_sent_as_publish(): void {
 		$this->configure();
 		$post_id = $this->make_resource( 'publish', 'fixed-now', 'webinar' );
 		wp_set_object_terms( $post_id, array( $this->term_id( Taxonomies::TYPE, 'webinar' ), $this->term_id( Taxonomies::TYPE, 'podcast' ) ), Taxonomies::TYPE );
@@ -364,9 +366,67 @@ final class DispatcherTest extends RevalidationTestCase {
 
 		$results = $this->dispatcher()->flush();
 
+		$this->assertSame( array(), $results, 'Nothing was held back.' );
+		$scheduled = self::scheduled();
+		$this->assertCount( 1, $scheduled );
+		$event = $scheduled[0][1]['events'][0];
+		$this->assertSame( 'publish', $event['event'] );
+		$this->assertSame( $post_id, $event['id'] );
+		$this->assertSame( array( 'podcast' ), $event['types'] );
+		$this->assertNull( $event['previous'] );
+		$this->assert_valid_request( $scheduled[0][1] );
+		$this->assertSame( ResultStore::PENDING, ResultStore::read_post( $post_id )['status'] );
+	}
+
+	/**
+	 * A REST save that gives a typeless published resource its type is sent as a `publish` with the new
+	 * state, not held back for the typeless state it left.
+	 */
+	public function test_rest_save_that_gives_a_typeless_resource_a_type_is_sent(): void {
+		$this->configure();
+		$post_id = $this->make_resource( 'publish', 'was-typeless', 'webinar', array( 'performance' ) );
+		wp_set_object_terms( $post_id, array(), Taxonomies::TYPE );
+		$podcast = $this->term_id( Taxonomies::TYPE, 'podcast' );
+		$this->queue->clear();
+
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+		$request = new WP_REST_Request( 'POST', '/wp/v2/resources/' . $post_id );
+		$request->set_body_params( array( Taxonomies::TYPE => array( $podcast ) ) );
+		$this->assertSame( 200, rest_get_server()->dispatch( $request )->get_status() );
+
+		$this->assertSame( array(), $this->queue->events()[0]['previous']['types'], 'The update saw the typeless state.' );
+
+		$results = $this->dispatcher()->flush();
+
+		$this->assertSame( array(), $results, 'Nothing was held back.' );
+		$scheduled = self::scheduled();
+		$this->assertCount( 1, $scheduled );
+		$event = $scheduled[0][1]['events'][0];
+		$this->assertSame( 'publish', $event['event'] );
+		$this->assertSame( 'was-typeless', $event['slug'] );
+		$this->assertSame( array( 'podcast' ), $event['types'] );
+		$this->assertSame( array( 'performance' ), $event['topics'] );
+		$this->assertNull( $event['previous'] );
+		$this->assert_valid_request( $scheduled[0][1] );
+	}
+
+	/**
+	 * A removal whose top-level state has no type is still held back.
+	 */
+	public function test_removal_without_one_type_is_held_back(): void {
+		$this->configure();
+		$post_id = $this->make_resource( 'publish', 'typeless-trash', 'webinar' );
+		wp_set_object_terms( $post_id, array(), Taxonomies::TYPE );
+		$this->queue->clear();
+
+		wp_trash_post( $post_id );
+
+		$results = $this->dispatcher()->flush();
+
+		$this->assertCount( 1, $results );
 		$this->assertSame( Result::NO_SINGLE_TYPE, $results[0]->outcome );
 		$this->assertSame( array(), self::scheduled() );
-		$this->assertSame( Result::NO_SINGLE_TYPE, ResultStore::read_post( $post_id )['outcome'] );
+		$this->assertSame( 'trash', ResultStore::read_post( $post_id )['event'] );
 	}
 
 	/**
