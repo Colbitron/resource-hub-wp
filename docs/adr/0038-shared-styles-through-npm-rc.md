@@ -1,11 +1,11 @@
 ---
-status: accepted
+status: superseded by 0041
 date: 2026-11-04
 ---
 
 # Shared styles come from a private GitHub package installed through `NPM_RC`
 
-The block's fallback in WordPress and the `<RelatedResources>` component here show the same thing, so they share one set of styles: `tokens.css`, `related.css` and `card.css` in `@colbitron/resource-hub-ui`, which lives in the WordPress repository at `packages/ui/` and is published to GitHub Packages as a private package by a `ui-v*` tag (WordPress side, ADR 0028). This app pins an exact version and imports the CSS from the component that uses it, never from `layout.tsx`, so pages without the component do not load it. The class names (`.rh-related`, `.rh-card…`) and tokens are part of the contract.
+The block's fallback in WordPress and the `<RelatedResources>` component here show the same thing, so they share one set of styles: `tokens.css`, `related.css` and `card.css` in `@colbitron/resource-hub-ui`, which lives in the WordPress repository at `packages/ui/` and is published to GitHub Packages as a private package by a `ui-v*` tag ([ADR 0028](0028-shared-styles-in-a-private-github-package.md)). This app pins an exact version and imports the CSS from the component that uses it, never from `layout.tsx`, so pages without the component do not load it. The class names (`.rh-related`, `.rh-card…`) and tokens are part of the contract.
 
 The package is private because it is the internal contract of two repositories, not a library: the owner prefers it not be discoverable as a general-use package, which a public listing on npmjs would invite whatever its README said.
 

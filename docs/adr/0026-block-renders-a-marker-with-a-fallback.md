@@ -16,7 +16,7 @@ The block stays server-rendered with a PHP `render_callback`, so the editor prev
 
 ## Consequences
 
-- `data-rh-block` and its `data-` attributes are part of the contract, alongside the shared class names ([ADR 0028](0028-shared-styles-in-a-private-github-package.md)).
+- `data-rh-block` and its `data-` attributes are part of the contract, alongside the shared class names ([ADR 0028](0028-shared-styles-in-a-private-github-package.md), delivered as in [ADR 0041](0041-the-shared-package-is-a-workspace-dependency.md)).
 - Carrying both the slug and the ID costs one attribute and saves the front end a term lookup per block: the slug alone cannot filter the core collection, and the ID alone cannot name the cache tag.
 - The attributes the marker carries are [ADR 0027](0027-block-requires-a-topic.md).
 - No shared JavaScript: the swap is a front-end concern and the fallback needs none.

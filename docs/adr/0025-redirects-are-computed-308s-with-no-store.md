@@ -17,6 +17,6 @@ The evidence, gathered 2026-11-04 with a Playwright test across Chromium 156, Fi
 
 ## Consequences
 
-- Rule for both repositories: never send a permanent redirect without a cache header. The CMS sends anonymous visitors no redirects ([ADR 0031](0031-cms-theme-pages-are-for-logged-in-users.md)), so the front end's are the ones in scope; the rule covers any redirect either side adds.
+- Rule for the CMS and the front end alike: never send a permanent redirect without a cache header. The CMS sends anonymous visitors no redirects ([ADR 0031](0031-cms-theme-pages-are-for-logged-in-users.md)), so the front end's are the ones in scope; the rule covers any redirect either side adds.
 - A Playwright round-trip test on the front end changes a type, changes it back, and follows both URLs.
 - Old slugs resolve the same way, through the resolve route ([ADR 0029](0029-old-slugs-resolve-through-core.md)), with the front end sending the 308.

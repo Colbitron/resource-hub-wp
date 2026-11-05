@@ -17,6 +17,6 @@ Filtering is one topic and one type at a time. That keeps the set of listings fi
 ## Consequences
 
 - `topic` and `page` are reserved and can never be a type slug, because `/resources/topic/…` and `/resources/[type]/page/[n]/` would collide with a type of that name. The WordPress side and the shared schemas enforce it.
-- Every path has a trailing slash (`trailingSlash: true`), matching the CMS's permalinks ([ADR 0002](0002-type-paths-with-a-computed-no-store-308.md)).
+- Every path has a trailing slash (`trailingSlash: true`), matching the CMS's permalinks ([ADR 0024](0024-type-paths-mirrored-on-both-sites.md)).
 - The filter controls navigate between these paths rather than writing a query string.
 - Type hubs carry a `type:{slug}` tag and topic listings a `topic:{slug}` tag, so a term event from the CMS can invalidate them.

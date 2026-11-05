@@ -1,6 +1,6 @@
 # @colbitron/resource-hub-ui
 
-The contract between the Resource Hub WordPress plugin ([`resource-hub-wp`](https://github.com/Colbitron/resource-hub-wp)) and its Next.js front end (`resource-hub-next`), written once as JSON Schema (draft 2020-12) so both sides can check themselves against it ([ADR 0010](../../docs/adr/0010-contract-as-json-schema-in-a-shared-package.md)). PHPUnit in the plugin validates the payloads it builds against these schemas once the revalidation hook exists; the front end derives its Zod types from them. When either side drifts from the schemas, its own test fails.
+The contract between the Resource Hub WordPress plugin ([`wp-content/plugins/resource-hub-wp/`](../../wp-content/plugins/resource-hub-wp/)) and its Next.js front end ([`apps/web/`](../../apps/web/)), both in this repository, written once as JSON Schema (draft 2020-12) so both sides can check themselves against it ([ADR 0010](../../docs/adr/0010-contract-as-json-schema-in-a-shared-package.md)). PHPUnit in the plugin validates the payloads it builds against these schemas once the revalidation hook exists; the front end derives its Zod types from them. When either side drifts from the schemas, its own test fails.
 
 Every schema and every property carries a `description` that states what the value means, not only what type it is. The schemas are the contract; this file is the summary.
 
@@ -60,28 +60,15 @@ CI runs it in the gate on every pull request and push to `main`.
 
 ## Using the schemas
 
-The package is private, on GitHub Packages, so installing it needs a token: a classic personal access token with the `read:packages` scope (fine-grained tokens cannot read GitHub's npm registry). The `.npmrc` that supplies it takes two forms.
+The package belongs to this repository's pnpm workspace and is never published ([ADR 0041](../../docs/adr/0041-the-shared-package-is-a-workspace-dependency.md)). A workspace package that needs it adds it to its `package.json` and runs `pnpm install` from the repository root, which links `packages/ui/` in:
 
-**Local.** In `~/.npmrc` or the project's `.npmrc`, point the `@colbitron` scope at GitHub's registry and read the token from the shell, so the file holds no secret:
-
-```ini
-@colbitron:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
+```json
+"dependencies": {
+	"@colbitron/resource-hub-ui": "workspace:*"
+}
 ```
 
-**Vercel.** Set the `NPM_RC` environment variable, which Vercel writes out as `.npmrc` before installing. Its value keeps the default registry line, so every other package still comes from npm, and writes the token literally:
-
-```ini
-registry=https://registry.npmjs.org
-@colbitron:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=<classic token with read:packages>
-```
-
-Mark `NPM_RC` as a Sensitive variable on Vercel. That value is never committed to either repository.
-
-Pin an exact version.
-
-Once installed, the package exports `./schemas/*`, so a consumer imports a schema by file name. The import below uses import attributes (`with { type: 'json' }`), which need Node 22 or newer:
+The package exports `./schemas/*`, so a consumer imports a schema by file name. The import below uses import attributes (`with { type: 'json' }`), which need Node 22 or newer:
 
 ```js
 import request from '@colbitron/resource-hub-ui/schemas/revalidate-request.schema.json' with { type: 'json' };
@@ -90,10 +77,6 @@ import request from '@colbitron/resource-hub-ui/schemas/revalidate-request.schem
 Register every schema with the validator under its `$id`, not only the one being checked. Schemas reference `common.schema.json` by relative `$ref`, and a `$ref` resolves against the referring schema's `$id`. Each `$id` is the file's raw URL on `main`, but it is an identifier, not a location: validators look it up among the schemas they were given and do not fetch it.
 
 `rest_url` uses `format: uri`. Formats are not part of a draft 2020-12 validator's core: Ajv needs a formats plugin, `ajv-formats` (the test here calls `addFormats( ajv )`), and without one a validator either ignores `format` or throws on the unknown format when it compiles the schema. The `^https?://` pattern on `rest_url` holds either way.
-
-## Publishing
-
-The package is publishable: `publishConfig` points it at `https://npm.pkg.github.com`, and it is not marked `private` in `package.json` (that flag would stop `npm publish` altogether; who can install it is set on GitHub). The workflow that publishes a version when a `ui-v*` tag is pushed is a separate change.
 
 ## License
 

@@ -1,25 +1,25 @@
 # Resource Hub: Next.js front end
 
-The front-end half of a two-repo headless WordPress demo, written fresh as a demonstration of the pattern. It is a Next.js 16 App Router app in TypeScript that will render a resources library from the WordPress REST API and rebuild pages on demand when the CMS says so. The CMS half (the WordPress plugin and wp-env) lives in a sibling repo, `resource-hub-wp`.
+The front end of Resource Hub: a Next.js 16 App Router app in TypeScript that will render the resources library from the WordPress REST API and rebuild pages on demand when the CMS says so. It is a demonstration of a pattern, written fresh, not production code.
 
-This is a demo of a pattern, not production code.
+The project's [README](../../README.md) has the architecture, the layout of the repository, the contract with the CMS and the decision records ([`docs/adr/`](../../docs/adr/)); [`CLAUDE.md`](CLAUDE.md) here has what is specific to this app.
 
 ## Running it
 
-Requires Node 24 and pnpm (the version is pinned in `package.json`).
+Requires Node 24 and pnpm (the version is pinned in the root `package.json`). From the repository root:
 
 ```bash
-pnpm install
-cp .env.example .env.local   # fill in WP_API_URL and REVALIDATE_SECRET
-pnpm dev                     # http://localhost:3000
+pnpm install                                # the whole workspace
+cp apps/web/.env.example apps/web/.env.local # fill in WP_API_URL and REVALIDATE_SECRET
+pnpm web:dev                                # http://localhost:3000
 ```
 
-Checks:
+Checks, from the root (or `pnpm typecheck`, `pnpm lint` and `pnpm build` in this directory):
 
 ```bash
-pnpm typecheck   # next typegen && tsc --noEmit
-pnpm lint        # eslint
-pnpm build       # next build
+pnpm web:typecheck   # next typegen && tsc --noEmit
+pnpm web:lint        # eslint
+pnpm web:build       # next build
 ```
 
 ## Configuration
@@ -33,4 +33,4 @@ Both live in `.env.local` (gitignored) and in Vercel project settings, never in 
 
 ## Status
 
-Scaffold only. The resources pages, data layer, revalidation route, tests, CI, architecture diagram, and decision records (`docs/adr/`) are coming in later pull requests. See `CLAUDE.md` for the project brief and the contract with the CMS.
+Scaffold only. The resources pages, data layer, revalidation route and tests are coming in later pull requests; CI already lints, typechecks and builds it.
