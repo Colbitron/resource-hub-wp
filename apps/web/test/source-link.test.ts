@@ -23,8 +23,37 @@ describe("sourceLink", () => {
     expect(sourceLink("http://docs.example.org/", CMS)?.label).toBe("docs.example.org");
   });
 
-  it("shows an internationalised host in Unicode", () => {
-    expect(sourceLink("https://xn--mnchen-3ya.example/report", CMS)?.label).toBe("münchen.example");
+  it("shows an internationalised host in its ASCII (punycode) form, so a look-alike cannot pass for a Latin name", () => {
+    expect(sourceLink("https://xn--mnchen-3ya.example/report", CMS)?.label).toBe("xn--mnchen-3ya.example");
+    expect(sourceLink("https://münchen.example/report", CMS)?.label).toBe("xn--mnchen-3ya.example");
+    // A Cyrillic "а" (U+0430) in place of the Latin "a".
+    expect(sourceLink("https://\u0430pple.example/", CMS)).toEqual({
+      href: "https://\u0430pple.example/",
+      label: "xn--pple-43d.example",
+      external: true,
+    });
+  });
+
+  it("keeps a port that is not the scheme's default in the label", () => {
+    expect(sourceLink("https://example.com:8443/report.pdf", CMS)?.label).toBe("example.com:8443");
+    expect(sourceLink("http://example.com:8080/", CMS)?.label).toBe("example.com:8080");
+    expect(sourceLink("https://example.com:443/report.pdf", CMS)?.label).toBe("example.com");
+    expect(sourceLink("http://example.com:80/", CMS)?.label).toBe("example.com");
+  });
+
+  it("drops a trailing dot from the label", () => {
+    expect(sourceLink("https://example.com./report.pdf", CMS)?.label).toBe("example.com");
+  });
+
+  it("gives nothing for a URL with userinfo, which can pose as a host", () => {
+    for (const url of [
+      "https://example.com@evil.example/",
+      "https://user:pass@example.com/report.pdf",
+      "https://cms.example@evil.example/resources/",
+      "https://user@cms.example/resources/webinar/example/",
+    ]) {
+      expect(sourceLink(url, CMS), url).toBeNull();
+    }
   });
 
   it("maps an upload on the CMS to /media/ and labels it with the file name", () => {
@@ -41,6 +70,21 @@ describe("sourceLink", () => {
       label: "/resources/webinar/example/",
       external: false,
     });
+  });
+
+  it("adds the trailing slash a public URL has, so the click costs no 308", () => {
+    expect(sourceLink("https://cms.example/resources", CMS)).toEqual({ href: "/resources/", label: "/resources/", external: false });
+    expect(sourceLink("https://cms.example/resources/webinar/example", CMS)?.href).toBe("/resources/webinar/example/");
+    expect(sourceLink("https://cms.example/resources?x=1#top", CMS)?.href).toBe("/resources/?x=1#top");
+    expect(sourceLink("https://cms.example/resources/webinar/example/#notes", CMS)?.href).toBe("/resources/webinar/example/#notes");
+  });
+
+  it("recognises the CMS whatever the case or a trailing dot on its host", () => {
+    expect(sourceLink("HTTPS://CMS.EXAMPLE/resources/webinar/example/", CMS)?.href).toBe("/resources/webinar/example/");
+    expect(sourceLink("https://cms.example./resources/webinar/example/", CMS)?.href).toBe("/resources/webinar/example/");
+    expect(sourceLink("https://CMS.Example./wp-content/uploads/a.pdf", CMS)?.href).toBe("/media/a.pdf");
+    expect(sourceLink("HTTPS://CMS.EXAMPLE/wp-admin/", CMS)).toBeNull();
+    expect(sourceLink("https://cms.example./some-theme-page/", CMS)).toBeNull();
   });
 
   it("gives nothing for a CMS URL the front end does not serve", () => {
@@ -62,7 +106,21 @@ describe("sourceLink", () => {
   });
 
   it("gives nothing for a scheme other than http(s)", () => {
-    for (const url of ["javascript:alert(1)", "mailto:someone@example.com", "ftp://example.com/x", "not a url"]) {
+    for (const url of [
+      "javascript:alert(1)",
+      "JavaScript:alert(1)",
+      "data:text/html,<script>alert(1)</script>",
+      "data:application/pdf;base64,JVBERi0=",
+      "mailto:someone@example.com",
+      "ftp://example.com/x",
+      "not a url",
+    ]) {
+      expect(sourceLink(url, CMS), url).toBeNull();
+    }
+  });
+
+  it("gives nothing for a protocol-relative URL, to the CMS or elsewhere", () => {
+    for (const url of ["//example.com/report.pdf", "//cms.example/resources/", "//cms.example/wp-content/uploads/a.pdf", "\\\\example.com/x"]) {
       expect(sourceLink(url, CMS), url).toBeNull();
     }
   });
