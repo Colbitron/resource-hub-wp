@@ -546,6 +546,7 @@ final class StatusPageTest extends RevalidationTestCase {
 			'https with port'     => array( 'https://hub.example:8443/', 'https://hub.example:8443', false ),
 			'https with path'     => array( 'https://hub.example/preview', 'https://kept.example', true ),
 			'route as path'       => array( 'https://hub.example/api/revalidate', 'https://kept.example', true ),
+			'route with a slash'  => array( 'https://hub.example/api/revalidate/', 'https://kept.example', true ),
 			'localhost http'      => array( 'http://localhost:3000', 'http://localhost:3000', false ),
 			'loopback http'       => array( 'http://127.0.0.1:3000/', 'http://127.0.0.1:3000', false ),
 			'empty clears'        => array( '', '', false ),
