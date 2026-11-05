@@ -53,10 +53,25 @@ function embeddedTerm(
 }
 
 /**
+ * The resource's one type, as the embedded term, or `null` when the resource
+ * cannot have a URL: it does not have exactly one type (a resource saved
+ * outside the REST API can have none or two, ADR 0016), its type is not
+ * embedded, or the type's slug cannot be a path segment (`isTypeSlug`). The
+ * card mapping and the resource page's redirect decision (`lib/redirects.ts`)
+ * both read the type through this, so they agree on which resources have a
+ * URL at all.
+ */
+export function resourceType(resource: WpResource): WpEmbeddedTerm | null {
+  if (resource.resource_type.length !== 1) {
+    return null;
+  }
+  const type = embeddedTerm(resource, "resource_type", resource.resource_type[0]);
+  return type === undefined || !isTypeSlug(type.slug) ? null : type;
+}
+
+/**
  * A parsed resource as `ResourceCard`'s props, or `null` when it cannot have
- * a URL: it does not have exactly one type (a resource saved outside the
- * REST API can have none or two, ADR 0016), its type is not embedded, or the
- * type's slug cannot be a path segment. The caller skips a `null`.
+ * a URL (`resourceType`). The caller skips a `null`.
  *
  * - `href`: `resourcePath(type, slug)`, canonical and root-relative.
  * - `typeLabel` and `topicLabels`: the embedded terms' names as plain text,
@@ -69,11 +84,8 @@ function embeddedTerm(
  * - `image`: `featuredImage`, left out when `null`.
  */
 export function toCard(resource: WpResource): ResourceCardProps | null {
-  if (resource.resource_type.length !== 1) {
-    return null;
-  }
-  const type = embeddedTerm(resource, "resource_type", resource.resource_type[0]);
-  if (type === undefined || !isTypeSlug(type.slug)) {
+  const type = resourceType(resource);
+  if (type === null) {
     return null;
   }
   const topicLabels = resource.resource_topic
