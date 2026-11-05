@@ -36,8 +36,4 @@ A Next.js App Router app, TypeScript, deployed on Vercel, that renders a resourc
 
 Open work noted in reviews, each for its own pull request:
 
-- **A scroll wrapper for tables in the HTML pass** (`lib/content/render.tsx`): wrap each body `<table>` in a focusable, labelled region that scrolls horizontally, so a table too wide for a phone scrolls instead of squeezing its cells.
-- **Demote a body's `<h1>` in the HTML pass**: a body heading at level 1 becomes an `<h2>`, so the page keeps one `<h1>`; today `resource.css` only styles it at the second level.
-- **`metadataBase` from a server-only `SITE_URL`**, so the canonical and `og:url` are absolute on every listing and resource page (ADR 0050's follow-up).
-- **A `not-found.tsx`** for the resource route and the listings, in the site's shell, in place of Next.js's default 404 page.
-- **Failure injection in the mock CMS** (a control that makes a route answer 500 or time out), so an e2e test can cover the resource route's 500 and its `error.tsx` boundary.
+- **A 404 page in the HTML for `notFound()`**: on Next.js 16.4.5 a listing's or the resource page's `notFound()` is sent as the framework's empty `__next_error__` document, and `app/not-found.tsx` appears only after hydration; an unmatched URL gets it in the HTML (ADR 0050's 2026-11-05 amendment, pinned in `e2e/errors.spec.ts`). The options are upstream, or a `proxy.ts` rewrite to `/_not-found` for the 404s it can decide without data.
