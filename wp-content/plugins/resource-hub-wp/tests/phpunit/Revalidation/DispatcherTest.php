@@ -171,7 +171,7 @@ final class DispatcherTest extends RevalidationTestCase {
 		$sent = $this->revalidate_requests();
 		$this->assertCount( 1, $sent );
 		$this->assertSame( $payload, json_decode( $sent[0]['args']['body'], true ) );
-		$this->assertSame( 'Bearer test-secret', $sent[0]['args']['headers']['Authorization'] );
+		$this->assertSame( 'Bearer test-secret-0123456789abcdefghijklmn', $sent[0]['args']['headers']['Authorization'] );
 
 		$record = ResultStore::read_post( $post_id );
 		$this->assertSame( Result::SENT, $record['status'] );
@@ -300,7 +300,7 @@ final class DispatcherTest extends RevalidationTestCase {
 	 * the front end's `Authorization` header and nowhere in any PostHog request, body or headers.
 	 */
 	public function test_secret_never_reaches_posthog(): void {
-		$secret = 'never-in-posthog-7f3a';
+		$secret = 'never-in-posthog-7f3a-0123456789abcdef';
 		$this->configure( 'https://hub.example/', $secret );
 		$posthog  = new PostHog( 'phc_key', 'https://eu.i.posthog.com' );
 		$fine     = $this->make_resource( 'publish', 'logged' );

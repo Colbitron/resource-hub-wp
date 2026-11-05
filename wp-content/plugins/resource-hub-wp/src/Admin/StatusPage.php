@@ -237,17 +237,30 @@ final class StatusPage {
 	}
 
 	/**
-	 * The secret option's sanitizer: trimmed, with control characters removed. The field is never
-	 * prefilled, so an empty submission keeps the stored secret rather than clearing it.
+	 * The secret option's sanitizer. A new secret must pass {@see Config::is_valid_secret()}: 32 to
+	 * 256 printable ASCII characters with no whitespace, the rule the front end applies to its own
+	 * `REVALIDATE_SECRET`. It is checked as submitted, not trimmed or cleaned, because a secret
+	 * with a stray space or newline could never match. Anything else is refused with a settings
+	 * error that never repeats the value, and the stored secret is kept. The field is never
+	 * prefilled, so an empty submission keeps the stored secret rather than clearing it, and so does
+	 * null, which `options.php` saves when the field is disabled because its constant is defined.
 	 *
 	 * @param mixed $value The submitted value.
 	 */
 	public function sanitize_secret( $value ): string {
-		$value = is_string( $value ) ? trim( (string) preg_replace( '/[\x00-\x1F\x7F]/', '', $value ) ) : '';
+		if ( ! is_string( $value ) || '' === $value ) {
+			return self::stored( self::SECRET_OPTION );
+		}
 
-		if ( '' !== $value ) {
+		if ( Config::is_valid_secret( $value ) ) {
 			return $value;
 		}
+
+		add_settings_error(
+			self::SECRET_OPTION,
+			'resource_hub_invalid_secret',
+			__( 'The revalidation secret was not saved: it must be 32 to 256 printable ASCII characters, with no spaces, tabs or line breaks. The stored secret is unchanged.', 'resource-hub' )
+		);
 
 		return self::stored( self::SECRET_OPTION );
 	}
@@ -529,6 +542,10 @@ final class StatusPage {
 		$secret_cell   = 'none' === $secret_source
 			? '<em>' . esc_html__( 'Not set', 'resource-hub' ) . '</em>'
 			: esc_html( __( 'Set', 'resource-hub' ) . ' ' . self::source_words( $secret_source, Config::REVALIDATE_SECRET ) );
+
+		if ( 'none' !== $secret_source && ! Config::is_valid_secret( Config::secret() ) ) {
+			$secret_cell .= '<br>' . esc_html__( 'Warning: this secret is not 32 to 256 printable ASCII characters with no spaces, tabs or line breaks, so nothing is sent until it is replaced. The front end refuses such a secret too.', 'resource-hub' );
+		}
 
 		$posthog_cell = Config::posthog_enabled()
 			/* translators: %s: the PostHog host. */

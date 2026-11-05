@@ -10,10 +10,13 @@ declare(strict_types=1);
 namespace ResourceHub\Tests\Admin;
 
 use ResourceHub\Admin\StatusPage;
+use ResourceHub\Revalidation\Config;
+use ResourceHub\Revalidation\Payload;
 use ResourceHub\Revalidation\ResourceEvents;
 use ResourceHub\Revalidation\Result;
 use ResourceHub\Revalidation\ResultStore;
 use ResourceHub\Revalidation\Revalidation;
+use ResourceHub\Revalidation\Sender;
 use ResourceHub\Tests\Revalidation\RevalidationTestCase;
 use RuntimeException;
 use WPDieException;
@@ -22,6 +25,11 @@ use WPDieException;
  * Tests for {@see StatusPage}. The HTTP mock from the base class answers the test button's send.
  */
 final class StatusPageTest extends RevalidationTestCase {
+	/**
+	 * A secret that meets the rule: 32 printable ASCII characters or more, no whitespace.
+	 */
+	private const STORED_SECRET = 'stored-secret-0123456789abcdefghijk';
+
 	/**
 	 * The page under test.
 	 *
@@ -339,7 +347,7 @@ final class StatusPageTest extends RevalidationTestCase {
 		$this->assertStringContainsString( 'No test sent yet.', $html );
 		$this->assertStringContainsString( 'Not configured: results are recorded', $html );
 
-		$this->configure( 'https://hub.example/', 'sup3r-secret-value' );
+		$this->configure( 'https://hub.example/', 'sup3r-secret-value-0123456789abcdef' );
 
 		$html = StatusPage::html();
 		$this->assertStringContainsString( '<code>https://hub.example</code>', $html );
@@ -445,9 +453,9 @@ final class StatusPageTest extends RevalidationTestCase {
 		update_option( StatusPage::URL_OPTION, null );
 		$this->assertSame( 'https://kept.example', get_option( StatusPage::URL_OPTION ) );
 
-		update_option( StatusPage::SECRET_OPTION, 'stored-secret' );
+		update_option( StatusPage::SECRET_OPTION, self::STORED_SECRET );
 		update_option( StatusPage::SECRET_OPTION, null );
-		$this->assertSame( 'stored-secret', get_option( StatusPage::SECRET_OPTION ) );
+		$this->assertSame( self::STORED_SECRET, get_option( StatusPage::SECRET_OPTION ) );
 	}
 
 	/**
@@ -458,24 +466,24 @@ final class StatusPageTest extends RevalidationTestCase {
 		$this->page->register_settings();
 
 		update_option( StatusPage::URL_OPTION, 'https://hub.example' );
-		update_option( StatusPage::SECRET_OPTION, 'new-secret' );
+		update_option( StatusPage::SECRET_OPTION, 'new-secret-0123456789abcdefghijklmnop' );
 
 		wp_cache_delete( 'alloptions', 'options' );
 		$loaded = wp_load_alloptions();
 		$this->assertArrayNotHasKey( StatusPage::URL_OPTION, $loaded );
 		$this->assertArrayNotHasKey( StatusPage::SECRET_OPTION, $loaded );
-		$this->assertSame( 'new-secret', get_option( StatusPage::SECRET_OPTION ) );
+		$this->assertSame( 'new-secret-0123456789abcdefghijklmnop', get_option( StatusPage::SECRET_OPTION ) );
 
 		delete_option( StatusPage::SECRET_OPTION );
-		add_option( StatusPage::SECRET_OPTION, 'old-secret', '', true );
+		add_option( StatusPage::SECRET_OPTION, 'old-secret-0123456789abcdefghijklmnop', '', true );
 		wp_cache_delete( 'alloptions', 'options' );
 		$this->assertArrayHasKey( StatusPage::SECRET_OPTION, wp_load_alloptions(), 'The setup must start autoloaded.' );
 
-		update_option( StatusPage::SECRET_OPTION, 'rotated-secret' );
+		update_option( StatusPage::SECRET_OPTION, 'rotated-secret-0123456789abcdefghijkl' );
 
 		wp_cache_delete( 'alloptions', 'options' );
 		$this->assertArrayNotHasKey( StatusPage::SECRET_OPTION, wp_load_alloptions() );
-		$this->assertSame( 'rotated-secret', get_option( StatusPage::SECRET_OPTION ) );
+		$this->assertSame( 'rotated-secret-0123456789abcdefghijkl', get_option( StatusPage::SECRET_OPTION ) );
 	}
 
 	/**
@@ -489,8 +497,8 @@ final class StatusPageTest extends RevalidationTestCase {
 
 		$cases = array(
 			'same URL'     => array( StatusPage::URL_OPTION, 'https://hub.example', 'https://hub.example' ),
-			'same secret'  => array( StatusPage::SECRET_OPTION, 'kept-secret', 'kept-secret' ),
-			'empty secret' => array( StatusPage::SECRET_OPTION, 'kept-secret', '' ),
+			'same secret'  => array( StatusPage::SECRET_OPTION, self::STORED_SECRET, self::STORED_SECRET ),
+			'empty secret' => array( StatusPage::SECRET_OPTION, self::STORED_SECRET, '' ),
 		);
 
 		foreach ( $cases as $name => list( $option, $stored, $submitted ) ) {
@@ -553,18 +561,148 @@ final class StatusPageTest extends RevalidationTestCase {
 	}
 
 	/**
-	 * The secret sanitizer trims and strips control characters, and an empty submission keeps the
-	 * stored secret, since the field is never prefilled.
+	 * Exactly 32 printable ASCII characters: the shortest secret the rule accepts.
 	 */
-	public function test_sanitize_secret(): void {
-		$this->assertSame( 'new-secret', $this->page->sanitize_secret( " new-secret\n" ) );
-		$this->assertSame( 'ab', $this->page->sanitize_secret( "a\x00b" ) );
+	private const SECRET_32 = 'abcdefghijklmnopqrstuvwxyz012345';
+
+	/**
+	 * Secrets the sanitizer refuses: each would fail the front end's own check, or never match its bearer.
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function weak_secrets(): array {
+		return array(
+			'too short'        => array( substr( self::SECRET_32, 0, 31 ) ),
+			'contains a space' => array( 'abcdefghijklmnop qrstuvwxyz0123456' ),
+			'trailing newline' => array( self::SECRET_32 . "\n" ),
+			'leading space'    => array( ' ' . self::SECRET_32 ),
+			'contains a tab'   => array( "abcdefghijklmnop\tqrstuvwxyz0123456" ),
+			'non-ASCII'        => array( 'abcdefghijklmnopqrstuvwxyz01234é' ),
+			'control char'     => array( "abcdefghijklmnop\x00qrstuvwxyz0123456" ),
+			'whitespace only'  => array( str_repeat( ' ', 40 ) ),
+			'too long'         => array( str_repeat( 'a', 257 ) ),
+		);
+	}
+
+	/**
+	 * A secret that breaks the rule is refused: the stored secret is kept, and one settings error says
+	 * why in plain words without repeating the value.
+	 *
+	 * @dataProvider weak_secrets
+	 *
+	 * @param string $weak What was submitted.
+	 */
+	public function test_sanitize_secret_refuses( string $weak ): void {
+		update_option( StatusPage::SECRET_OPTION, self::STORED_SECRET );
+		$before = count( get_settings_errors( StatusPage::SECRET_OPTION ) );
+
+		$this->assertSame( self::STORED_SECRET, $this->page->sanitize_secret( $weak ) );
+
+		// Settings errors accumulate in a global for the whole run, so only the new ones count.
+		$errors = get_settings_errors( StatusPage::SECRET_OPTION );
+		$this->assertSame( 1, count( $errors ) - $before );
+
+		$error = end( $errors );
+		$this->assertSame( 'resource_hub_invalid_secret', $error['code'] );
+		$this->assertStringContainsString( '32 to 256 printable ASCII characters', $error['message'] );
+		$this->assertStringContainsString( 'The stored secret is unchanged.', $error['message'] );
+		if ( '' !== trim( $weak ) ) {
+			$this->assertStringNotContainsString( trim( $weak ), $error['message'] );
+		}
+	}
+
+	/**
+	 * Through the Settings API, as `options.php` saves, a refused secret leaves the stored one in place.
+	 */
+	public function test_refused_secret_keeps_the_stored_one_through_the_settings_api(): void {
+		$this->page->register_settings();
+		update_option( StatusPage::SECRET_OPTION, self::STORED_SECRET );
+
+		update_option( StatusPage::SECRET_OPTION, self::SECRET_32 . "\n" );
+
+		$this->assertSame( self::STORED_SECRET, get_option( StatusPage::SECRET_OPTION ) );
+	}
+
+	/**
+	 * Secrets the rule accepts are stored exactly as submitted: 32 characters, 256, and every
+	 * printable ASCII character from `!` to `~`.
+	 */
+	public function test_sanitize_secret_accepts(): void {
+		update_option( StatusPage::SECRET_OPTION, self::STORED_SECRET );
+		$before = count( get_settings_errors( StatusPage::SECRET_OPTION ) );
+
+		$every = implode( '', array_map( 'chr', range( 0x21, 0x7E ) ) );
+
+		foreach ( array( self::SECRET_32, str_repeat( 'a', 256 ), $every ) as $secret ) {
+			$this->assertSame( $secret, $this->page->sanitize_secret( $secret ) );
+		}
+
+		$this->assertCount( $before, get_settings_errors( StatusPage::SECRET_OPTION ) );
+	}
+
+	/**
+	 * The field is never prefilled, so an empty submission keeps the stored secret rather than
+	 * clearing it, with no error; so do null (a disabled field) and a non-string. With nothing stored,
+	 * an empty submission stores nothing.
+	 */
+	public function test_empty_secret_keeps_the_stored_one(): void {
 		$this->assertSame( '', $this->page->sanitize_secret( '' ) );
 
-		update_option( StatusPage::SECRET_OPTION, 'stored-secret' );
-		$this->assertSame( 'stored-secret', $this->page->sanitize_secret( '' ) );
-		$this->assertSame( 'stored-secret', $this->page->sanitize_secret( array( 'not' => 'a string' ) ) );
-		$this->assertSame( 'replacement', $this->page->sanitize_secret( 'replacement' ) );
+		update_option( StatusPage::SECRET_OPTION, self::STORED_SECRET );
+		$before = count( get_settings_errors( StatusPage::SECRET_OPTION ) );
+
+		$this->assertSame( self::STORED_SECRET, $this->page->sanitize_secret( '' ) );
+		$this->assertSame( self::STORED_SECRET, $this->page->sanitize_secret( null ) );
+		$this->assertSame( self::STORED_SECRET, $this->page->sanitize_secret( array( 'not' => 'a string' ) ) );
+		$this->assertCount( $before, get_settings_errors( StatusPage::SECRET_OPTION ) );
+
+		$this->page->register_settings();
+		update_option( StatusPage::SECRET_OPTION, '' );
+		$this->assertSame( self::STORED_SECRET, get_option( StatusPage::SECRET_OPTION ) );
+	}
+
+	/**
+	 * A stored option that breaks the rule, such as one saved before the rule existed, is flagged on
+	 * the status page and sends nothing.
+	 */
+	public function test_weak_stored_option_shows_the_warning_and_sends_nothing(): void {
+		$this->configure( 'https://hub.example/', 'short-legacy-secret' );
+
+		$html = StatusPage::html();
+		$this->assertStringContainsString( 'Set (from the option resource_hub_revalidate_secret', $html );
+		$this->assertStringContainsString( 'Warning: this secret is not 32 to 256 printable ASCII characters', $html );
+		$this->assertStringNotContainsString( 'short-legacy-secret', $html );
+
+		$this->assertSame( Result::NOT_CONFIGURED, ( new Sender() )->send( Payload::build( array() ) )->outcome );
+		$this->assertSame( array(), $this->requests );
+
+		$this->configure();
+		$this->assertStringNotContainsString( 'Warning: this secret', StatusPage::html() );
+	}
+
+	/**
+	 * A constant that breaks the rule, here a good secret with a trailing newline, is not trimmed: the
+	 * status page names the constant as the source, warns, never shows the value, and nothing is sent.
+	 * The constant cannot be undefined again, so this runs in its own process.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_weak_constant_shows_the_warning_and_sends_nothing(): void {
+		define( 'RESOURCE_HUB_REVALIDATE_SECRET', self::SECRET_32 . "\n" );
+		$this->configure( 'https://hub.example/', self::STORED_SECRET );
+
+		$this->assertSame( self::SECRET_32 . "\n", Config::secret() );
+		$this->assertSame( 'constant', Config::source_of( Config::REVALIDATE_SECRET ) );
+		$this->assertFalse( Config::is_configured() );
+
+		$html = StatusPage::html();
+		$this->assertStringContainsString( 'Set (from the constant RESOURCE_HUB_REVALIDATE_SECRET)', $html );
+		$this->assertStringContainsString( 'Warning: this secret is not 32 to 256 printable ASCII characters', $html );
+		$this->assertStringNotContainsString( self::SECRET_32, $html );
+
+		$this->assertSame( Result::NOT_CONFIGURED, ( new Sender() )->send( Payload::build( array() ) )->outcome );
+		$this->assertSame( array(), $this->requests );
 	}
 
 	/**
