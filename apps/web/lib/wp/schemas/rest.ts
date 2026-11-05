@@ -174,6 +174,8 @@ export const wpResourceSchema = z.object({
   slug: slugSchema,
   link: httpUrlSchema,
   date: wpDateTimeSchema,
+  /** `date` in UTC, still without an offset: the card appends the `Z`. Set on every published post. */
+  date_gmt: wpDateTimeSchema,
   modified: wpDateTimeSchema,
   title: renderedSchema,
   content: renderedSchema,
