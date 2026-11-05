@@ -38,29 +38,59 @@ const DOT_SEGMENT = /^(?:\.|%2e){1,2}$/i;
 /** Anything that is not a `pchar` (RFC 3986), or a `%` that does not start an escape. */
 const NOT_PCHAR = /%(?![0-9A-Fa-f]{2})|[^A-Za-z0-9\-._~!$&'()*+,;=:@%]/gu;
 
+/** The message for a reserved type slug, shared with the Zod schemas. */
+export const RESERVED_TYPE_SLUG_MESSAGE =
+  'must not be "topic" or "page", which are reserved route segments';
+
 /** True for `topic` and `page`. */
 export function isReservedTypeSlug(value: string): value is ReservedTypeSlug {
   return (RESERVED_TYPE_SLUGS as readonly string[]).includes(value);
 }
 
 /**
- * True for a slug the shared schema accepts (non-empty, at most 200
- * characters, no slash, no whitespace) that is also usable as a path
- * segment: well-formed Unicode and not a dot segment.
+ * Why `value` is not a slug, or `null` when it is one. A slug is what the
+ * shared schema's `$defs/slug` accepts (non-empty, at most 200 characters
+ * counted in code points, no slash, no whitespace) that is also usable as a
+ * path segment: well-formed Unicode and not a dot segment. This is the one
+ * definition: `isSlug`, `isTypeSlug`, the path and tag builders and the Zod
+ * schemas in `lib/wp/schemas/common.ts` all use it, so a slug the schemas
+ * accept can always be put in a path and a cache tag.
  */
+export function slugProblem(value: string): string | null {
+  if (value === "") {
+    return "must not be empty";
+  }
+  if (!/^[^/\s]+$/u.test(value)) {
+    return "must not contain a slash or whitespace";
+  }
+  if (!value.isWellFormed()) {
+    return "must be well-formed Unicode";
+  }
+  if ([...value].length > MAX_SLUG_LENGTH) {
+    return `must be at most ${MAX_SLUG_LENGTH} characters`;
+  }
+  if (DOT_SEGMENT.test(value)) {
+    return "must not be . or .., which URL parsers collapse";
+  }
+  return null;
+}
+
+/** True for a slug: see `slugProblem`. */
 export function isSlug(value: string): boolean {
+  return slugProblem(value) === null;
+}
+
+/** Why `value` is not a `resource_type` slug, or `null` when it is one. */
+export function typeSlugProblem(value: string): string | null {
   return (
-    value !== "" &&
-    value.isWellFormed() &&
-    [...value].length <= MAX_SLUG_LENGTH &&
-    /^[^/\s]+$/u.test(value) &&
-    !DOT_SEGMENT.test(value)
+    slugProblem(value) ??
+    (isReservedTypeSlug(value) ? RESERVED_TYPE_SLUG_MESSAGE : null)
   );
 }
 
 /** True for a slug that may be a `resource_type` slug: a slug that is not reserved. */
 export function isTypeSlug(value: string): boolean {
-  return isSlug(value) && !isReservedTypeSlug(value);
+  return typeSlugProblem(value) === null;
 }
 
 /** True for a page number a builder accepts: a safe integer, 1 or more. */

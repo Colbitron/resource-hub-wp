@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 
-import { slugSchema } from "../lib/wp/schemas/common";
+import { isSlug, isTypeSlug } from "../lib/routes";
+import { slugSchema, typeSlugSchema } from "../lib/wp/schemas/common";
 import { parsePaginationHeaders } from "../lib/wp/schemas/pagination";
 import { resolveResponseSchema, resolveResponseSchemaStrict } from "../lib/wp/schemas/resolve";
 import {
@@ -345,6 +346,53 @@ describe("slug length", () => {
     expect(slugSchema.safeParse("\u{1F600}".repeat(200)).success).toBe(true);
     expect(slugSchema.safeParse("\u{1F600}".repeat(201)).success).toBe(false);
     expect(slugSchema.safeParse("a".repeat(201)).success).toBe(false);
+  });
+});
+
+describe("slug rule", () => {
+  const samples = [
+    "example",
+    "%e6%97%a5",
+    "%E6%97%A5",
+    "日本",
+    "\u{1F600}",
+    "topic",
+    "page",
+    "a?b#c",
+    "100%",
+    "",
+    "a b",
+    "a/b",
+    "a".repeat(200),
+    "a".repeat(201),
+    ".",
+    "..",
+    "%2e",
+    "%2E%2e",
+    "\ud800",
+    "a\udc00b",
+  ];
+
+  it("is the route predicates' rule, so the schema and the builders never disagree", () => {
+    for (const value of samples) {
+      expect(slugSchema.safeParse(value).success, JSON.stringify(value)).toBe(isSlug(value));
+      expect(typeSlugSchema.safeParse(value).success, JSON.stringify(value)).toBe(
+        isTypeSlug(value),
+      );
+    }
+  });
+
+  it("rejects a lone surrogate and a dot segment, which the JSON Schema allows", () => {
+    for (const value of ["\ud800", ".", "..", "%2e"]) {
+      expect(slugSchema.safeParse(value).success, JSON.stringify(value)).toBe(false);
+    }
+  });
+
+  it("reports one issue for each bad slug", () => {
+    for (const value of ["", "a b", "a".repeat(201), "\ud800", "."]) {
+      expect(slugSchema.safeParse(value).error?.issues, JSON.stringify(value)).toHaveLength(1);
+    }
+    expect(typeSlugSchema.safeParse("topic").error?.issues).toHaveLength(1);
   });
 });
 

@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+import {
+  isReservedTypeSlug,
+  RESERVED_TYPE_SLUG_MESSAGE,
+  RESERVED_TYPE_SLUGS,
+  slugProblem,
+  typeSlugProblem,
+} from "../../routes";
+
 /**
  * Building blocks shared by the contract schemas, mirroring the `$defs` in
  * `packages/ui/schemas/common.schema.json`, which stays the source of truth
@@ -15,17 +23,6 @@ import { z } from "zod";
  */
 
 /**
- * The length JSON Schema's `minLength` and `maxLength` count: Unicode code
- * points. Zod's `.min()` and `.max()` on a string count UTF-16 code units
- * (`string.length`), which counts a character outside the Basic Multilingual
- * Plane (an emoji, say) as two, so a limit that must match the schema is a
- * refinement over this instead.
- */
-function codePointLength(value: string): number {
-  return Array.from(value).length;
-}
-
-/**
  * `$defs/id`: a WordPress post or term ID, a positive integer, never a string.
  *
  * Stricter than the schema in one case: `z.int()` accepts only safe integers,
@@ -36,37 +33,49 @@ function codePointLength(value: string): number {
 export const idSchema = z.int().min(1);
 
 /**
- * `$defs/slug`: non-empty, at most 200 characters, no slash and no whitespace.
- * The length is counted in code points, as the schema counts it, and the
- * pattern is the schema's with the `u` flag Ajv compiles patterns with.
+ * A string schema that accepts exactly what `problem` returns `null` for, with
+ * one issue carrying its message otherwise.
  */
-export const slugSchema = z
-  .string()
-  .min(1, { error: "must not be empty" })
-  .regex(/^[^/\s]+$/u, { error: "must not contain a slash or whitespace" })
-  .refine((value) => codePointLength(value) <= 200, {
-    error: "must be at most 200 characters",
+function ruleSchema(problem: (value: string) => string | null) {
+  return z.string().superRefine((value, ctx) => {
+    const message = problem(value);
+    if (message !== null) {
+      ctx.addIssue({ code: "custom", message });
+    }
   });
+}
+
+/**
+ * `$defs/slug`: non-empty, at most 200 characters, no slash and no whitespace.
+ * The length is counted in code points, as the schema counts it (Zod's own
+ * `.max()` counts UTF-16 code units), and the pattern is the schema's with the
+ * `u` flag Ajv compiles patterns with.
+ *
+ * The rule is `slugProblem` in `lib/routes.ts`, the one definition the path and
+ * tag builders and the route's parameter checks share, so a slug this schema
+ * accepts can always be put in a path and a cache tag.
+ *
+ * Stricter than the schema in two cases, both strings that could only ever name
+ * the wrong page:
+ *
+ * - A lone surrogate (`"\ud800"`), which is not well-formed Unicode. JSON lets
+ *   a string escape one; it cannot be percent-encoded into a URL, and PHP's
+ *   `json_encode` never produces one.
+ * - A dot segment, `.` or `..`, literal or percent-encoded (`%2e`), which every
+ *   URL parser collapses, so the path would change. WordPress's
+ *   `sanitize_title` turns every `.` into `-`, so it never stores one.
+ */
+export const slugSchema = ruleSchema(slugProblem);
 
 /**
  * `$defs/reservedTypeSlugs`: the words a `resource_type` slug may never be,
  * because `/resources/topic/[topic]/` and `/resources/[type]/page/[n]/` already
- * use them as path segments (ADR 0034).
+ * use them as path segments (ADR 0034). Defined in `lib/routes.ts`.
  */
-export const RESERVED_TYPE_SLUGS = ["topic", "page"] as const;
+export { isReservedTypeSlug, RESERVED_TYPE_SLUG_MESSAGE, RESERVED_TYPE_SLUGS };
 
-/** True when `slug` is `topic` or `page`. */
-export function isReservedTypeSlug(slug: string): boolean {
-  return (RESERVED_TYPE_SLUGS as readonly string[]).includes(slug);
-}
-
-export const RESERVED_TYPE_SLUG_MESSAGE =
-  'must not be "topic" or "page", which are reserved route segments';
-
-/** `$defs/typeSlug`: a slug that is not a reserved word. */
-export const typeSlugSchema = slugSchema.refine((value) => !isReservedTypeSlug(value), {
-  error: RESERVED_TYPE_SLUG_MESSAGE,
-});
+/** `$defs/typeSlug`: a slug that is not a reserved word; the rule is `typeSlugProblem`. */
+export const typeSlugSchema = ruleSchema(typeSlugProblem);
 
 /** `$defs/topicSlug`: any slug. Topics have no reserved words. */
 export const topicSlugSchema = slugSchema;
