@@ -488,7 +488,25 @@ describe("uploads and everything else", () => {
     expect(svg.headers.get("content-type")).toBe("image/svg+xml");
 
     expect((await fetch(`${server.origin}/wp-content/uploads/2026/11/missing.png`)).status).toBe(404);
-    expect((await fetch(`${server.origin}/wp-content/uploads/%2e%2e/%2e%2e/package.json`)).status).toBe(404);
+  });
+
+  it("refuses to serve a file outside the uploads directory", async () => {
+    // `%2f` keeps this one path segment, so neither fetch nor the URL parser
+    // resolves the `..`; decoded, it names e2e/mock-cms/main.mts, which exists.
+    const target = resolve(__dirname, "../e2e/mock-cms/fixtures/uploads", "../../main.mts");
+    expect(target).toBe(resolve(__dirname, "../e2e/mock-cms/main.mts"));
+    await expect(readFile(target)).resolves.toBeInstanceOf(Buffer);
+
+    const response = await fetch(`${server.origin}/wp-content/uploads/%2e%2e%2f%2e%2e%2fmain.mts`);
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("Not Found");
+  });
+
+  it("answers a malformed percent escape with a 400, not a 500", async () => {
+    for (const path of ["/wp-content/uploads/%", "/wp-content/uploads/%zz.png", "/wp-content/uploads/2026/%E0%A4%A.png"]) {
+      const response = await fetch(`${server.origin}${path}`);
+      expect(response.status, path).toBe(400);
+    }
   });
 
   it("answers a theme page and an unknown REST route with 404s", async () => {

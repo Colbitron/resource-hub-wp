@@ -58,9 +58,21 @@ function plain(res: ServerResponse, status: number, text: string): void {
   res.end(text);
 }
 
-/** An upload under the fixtures directory, or a plain 404 as a web server gives for a missing file. */
+/**
+ * An upload under the fixtures directory, or a plain 404 as a web server
+ * gives for a missing file. A path with a malformed percent escape (`%`,
+ * `%zz`) cannot name a file and is a plain 400, as Apache and nginx answer
+ * it.
+ */
 async function serveUpload(res: ServerResponse, relativePath: string): Promise<void> {
-  const file = resolve(UPLOADS_DIR, decodeURIComponent(relativePath));
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(relativePath);
+  } catch {
+    plain(res, 400, "Bad Request");
+    return;
+  }
+  const file = resolve(UPLOADS_DIR, decoded);
   // Resolved paths that leave the uploads directory (`..`, absolute) are not files.
   if (!file.startsWith(UPLOADS_DIR.replace(/[\\/]$/, "") + sep)) {
     plain(res, 404, "Not Found");
