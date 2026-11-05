@@ -56,9 +56,10 @@ final class Permalink {
 		}
 
 		$terms = get_the_terms( $post, Taxonomies::TYPE );
+		$first = is_array( $terms ) ? reset( $terms ) : false;
 
-		if ( is_array( $terms ) && $terms[0] instanceof WP_Term ) {
-			return str_replace( self::TYPE_TAG, $terms[0]->slug, $post_link );
+		if ( $first instanceof WP_Term ) {
+			return str_replace( self::TYPE_TAG, $first->slug, $post_link );
 		}
 
 		return home_url(

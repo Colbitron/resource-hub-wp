@@ -94,14 +94,33 @@ final class ReservedTypeSlugsAjaxTest extends WP_Ajax_UnitTestCase {
 	}
 
 	/**
-	 * Logs in an administrator, creates the Webinar type and fills the Quick Edit request for it.
+	 * Someone who may not edit types gets core's own refusal, not the slug message, and nothing
+	 * changes.
+	 */
+	public function test_quick_edit_checks_permission_first(): void {
+		$term_id = $this->quick_edit( 'Topic', '', 'author' );
+
+		try {
+			$this->_handleAjax( 'inline-save-tax' );
+			$this->fail( 'Quick Edit was not refused.' );
+		} catch ( WPAjaxDieStopException $refusal ) {
+			$this->assertSame( '-1', $refusal->getMessage() );
+		}
+
+		$this->assertSame( 'webinar', get_term( $term_id )->slug );
+	}
+
+	/**
+	 * Logs in a user, an administrator by default, creates the Webinar type and fills the Quick
+	 * Edit request for it.
 	 *
 	 * @param string $name Name field.
 	 * @param string $slug Slug field.
+	 * @param string $role Role of the user sending it.
 	 * @return int The type's term ID.
 	 */
-	private function quick_edit( string $name, string $slug ): int {
-		$this->_setRole( 'administrator' );
+	private function quick_edit( string $name, string $slug, string $role = 'administrator' ): int {
+		$this->_setRole( $role );
 
 		$created = wp_insert_term( 'Webinar', Taxonomies::TYPE, array( 'slug' => 'webinar' ) );
 		$this->assertIsArray( $created );

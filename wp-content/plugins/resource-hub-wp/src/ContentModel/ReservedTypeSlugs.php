@@ -57,8 +57,8 @@ final class ReservedTypeSlugs {
 
 	/**
 	 * Rule: the slug a term gets is the sanitized slug if that is not empty, else the sanitized
-	 * name; it is refused when it is one of SLUGS. This mirrors `wp_insert_term()` and
-	 * `wp_update_term()`, which sanitize both with `sanitize_title()`.
+	 * name; it is refused when it is one of SLUGS, as stored or once percent-decoded. This mirrors
+	 * `wp_insert_term()` and `wp_update_term()`, which sanitize both with `sanitize_title()`.
 	 *
 	 * @param string $slug Slug as given, possibly empty.
 	 * @param string $name Name as given.
@@ -71,7 +71,25 @@ final class ReservedTypeSlugs {
 			$candidate = sanitize_title( $name );
 		}
 
-		return in_array( $candidate, self::SLUGS, true ) ? $candidate : '';
+		return self::reserved_form( $candidate );
+	}
+
+	/**
+	 * Rule: a sanitized slug is reserved when it is one of SLUGS, or decodes to one.
+	 * `sanitize_title()` keeps percent-encoded octets, so `%74opic` is stored as it is, and a URL
+	 * segment holding it reads as `topic` once decoded.
+	 *
+	 * @param string $slug A slug as `sanitize_title()` leaves it.
+	 * @return string The reserved slug it is or decodes to, or ''.
+	 */
+	private static function reserved_form( string $slug ): string {
+		foreach ( array( $slug, sanitize_title( rawurldecode( $slug ) ) ) as $form ) {
+			if ( in_array( $form, self::SLUGS, true ) ) {
+				return $form;
+			}
+		}
+
+		return '';
 	}
 
 	/**
@@ -166,7 +184,8 @@ final class ReservedTypeSlugs {
 	/**
 	 * Refuses the Types screen's edit form when it would give the type a reserved slug, by sending
 	 * the editor back to the form with an error notice. Hooked to `load-edit-tags.php`, which
-	 * fires before core handles the form; the nonce checked is the one core checks.
+	 * fires before core handles the form. A user who may not edit the type is left to core's own
+	 * refusal; for the rest, the nonce checked is the one core checks.
 	 */
 	public function refuse_admin_update(): void {
 		if ( ! isset( $_POST['action'], $_POST['taxonomy'], $_POST['tag_ID'] ) || 'editedtag' !== $_POST['action'] || Taxonomies::TYPE !== $_POST['taxonomy'] ) {
@@ -174,6 +193,11 @@ final class ReservedTypeSlugs {
 		}
 
 		$term_id = absint( $_POST['tag_ID'] );
+
+		if ( ! current_user_can( 'edit_term', $term_id ) ) {
+			return;
+		}
+
 		check_admin_referer( 'update-tag_' . $term_id );
 
 		$reserved = self::reserved_after_update(
@@ -206,17 +230,25 @@ final class ReservedTypeSlugs {
 
 	/**
 	 * Refuses a Quick Edit of a type that would give it a reserved slug; the Types screen shows
-	 * the message in the row. Hooked to `wp_ajax_inline-save-tax` before core's handler.
+	 * the message in the row. Hooked to `wp_ajax_inline-save-tax` before core's handler. Other
+	 * taxonomies, and a user who may not edit the type, are left to core's handler, which checks
+	 * the nonce and the capability itself; for the rest, the nonce checked is the one core checks.
 	 */
 	public function refuse_quick_edit(): void {
-		check_ajax_referer( 'taxinlineeditnonce', '_inline_edit' );
-
 		if ( ! isset( $_POST['taxonomy'], $_POST['tax_ID'] ) || Taxonomies::TYPE !== $_POST['taxonomy'] ) {
 			return;
 		}
 
+		$term_id = absint( $_POST['tax_ID'] );
+
+		if ( ! current_user_can( 'edit_term', $term_id ) ) {
+			return;
+		}
+
+		check_ajax_referer( 'taxinlineeditnonce', '_inline_edit' );
+
 		$reserved = self::reserved_after_update(
-			absint( $_POST['tax_ID'] ),
+			$term_id,
 			isset( $_POST['slug'] ) ? sanitize_text_field( wp_unslash( $_POST['slug'] ) ) : null,
 			isset( $_POST['name'] ) ? sanitize_text_field( wp_unslash( $_POST['name'] ) ) : null
 		);
@@ -253,7 +285,7 @@ final class ReservedTypeSlugs {
 	 * @return array<string, mixed>
 	 */
 	public function keep_current_slug( $data, $term_id, $taxonomy ) {
-		if ( Taxonomies::TYPE !== $taxonomy || ! isset( $data['slug'] ) || ! in_array( $data['slug'], self::SLUGS, true ) ) {
+		if ( Taxonomies::TYPE !== $taxonomy || ! isset( $data['slug'] ) || '' === self::reserved_form( (string) $data['slug'] ) ) {
 			return $data;
 		}
 

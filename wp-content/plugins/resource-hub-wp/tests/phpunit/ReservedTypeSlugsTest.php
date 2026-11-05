@@ -80,6 +80,8 @@ final class ReservedTypeSlugsTest extends WP_UnitTestCase {
 			'name Topic, slug elsewhere'  => array( 'Topic', 'topic-guide', '' ),
 			'ordinary type'               => array( 'Article', '', '' ),
 			'slug that only contains one' => array( 'Topics', 'topics', '' ),
+			'slug percent-encoded topic'  => array( 'Topical', '%74opic', 'topic' ),
+			'slug page, encoded space'    => array( 'Pages', 'page%20', 'page' ),
 		);
 	}
 
@@ -205,6 +207,30 @@ final class ReservedTypeSlugsTest extends WP_UnitTestCase {
 			$back
 		);
 		$this->assertSame( $expected, $location );
+		$this->assertSame( 'webinar', get_term( $term_id )->slug );
+	}
+
+	/**
+	 * Someone who may not edit types is left to core's own refusal: the form handler neither
+	 * checks the nonce nor redirects.
+	 */
+	public function test_admin_form_checks_permission_first(): void {
+		$term_id = $this->type( 'Webinar', 'webinar' );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'author' ) ) );
+
+		$this->post_form( $term_id, 'Topic', '', admin_url( 'term.php' ) );
+
+		$this->assertNull( $this->redirect_of( array( new ReservedTypeSlugs(), 'refuse_admin_update' ) ) );
+	}
+
+	/**
+	 * Any other edit keeps the current slug when the new one only decodes to a reserved slug.
+	 */
+	public function test_other_edits_keep_the_current_slug_when_encoded(): void {
+		$term_id = $this->type( 'Webinar', 'webinar' );
+
+		wp_update_term( $term_id, Taxonomies::TYPE, array( 'slug' => '%74opic' ) );
+
 		$this->assertSame( 'webinar', get_term( $term_id )->slug );
 	}
 
