@@ -13,9 +13,11 @@ import {
   TERMS_TAG,
   eventsToInvalidations,
   flagListingTags,
+  flagLookupTags,
   listingTags,
   relatedTags,
   resolveTags,
+  resourceByIdTags,
   resourceFetchTags,
   resourceTag,
   taxonomyListTags,
@@ -543,6 +545,14 @@ describe("fetch tags (ADR 0046)", () => {
     expect(() => termLookupTags("resource_type", "page")).toThrow(RangeError);
   });
 
+  it("tag a resource fetched by ID with resources and terms, since its URL names no slug", () => {
+    expect(resourceByIdTags()).toEqual(["resources", "terms"]);
+  });
+
+  it("tag a flag lookup with resources only, since flags send no term events", () => {
+    expect(flagLookupTags()).toEqual(["resources"]);
+  });
+
   it("tag resolve with resources and the filter bar's taxonomy lists with resources and terms", () => {
     expect(resolveTags()).toEqual(["resources"]);
     expect(taxonomyListTags()).toEqual(["resources", "terms"]);
@@ -563,12 +573,14 @@ describe("the tagging rule, against ADR 0046's table written out by hand", () =>
     topic: (p: string) => [`topic:${p}`, "terms"],
     typeTopic: (t: string, p: string) => [`type:${t}`, `topic:${p}`, "terms"],
     resource: (slug: string) => [`resource:${slug}`, "terms"],
+    resourceById: ["resources", "terms"],
     block: (p: string) => [`topic:${p}`, "terms"],
     related: (host: string) => ["resources", "terms", `resource:${host}`],
     featured: ["resources", "terms"],
     termLookup: (taxonomy: TermEvent["taxonomy"], slug: string) => [
       taxonomy === "resource_topic" ? `topic:${slug}` : `type:${slug}`,
     ],
+    flagLookup: ["resources"],
     resolve: ["resources"],
     filterBar: ["resources", "terms"],
   };
@@ -607,9 +619,12 @@ describe("the tagging rule, against ADR 0046's table written out by hand", () =>
         { name: `block for ${topic}`, adr: adr.block(topic), code: listingTags({ topic }) },
       ]),
       { name: `resource ${state.slug}`, adr: adr.resource(state.slug), code: resourceFetchTags(state.slug) },
+      { name: `resource ${state.slug} by ID`, adr: adr.resourceById, code: resourceByIdTags() },
       { name: `related section on ${HOST}`, adr: adr.related(HOST), code: relatedTags(HOST) },
       { name: "featured", adr: adr.featured, code: flagListingTags() },
       { name: "resolve", adr: adr.resolve, code: resolveTags() },
+      // The flag lookup shows no resource, but marking one featured is a resource event, which must reach it.
+      { name: "featured flag lookup", adr: adr.flagLookup, code: flagLookupTags() },
       { name: "filter bar term lists", adr: adr.filterBar, code: taxonomyListTags() },
     ];
   }
