@@ -597,6 +597,46 @@ describe("the block marker", () => {
     expect(output.match(/<h2>More on Headless delivery<\/h2>/g)).toHaveLength(2);
   });
 
+  function markerFor(topic: string, inner = ""): string {
+    return MARKER.replace('data-topic="headless-delivery"', `data-topic="${topic}"`).replace("</ul></div>", `</ul>${inner}</div>`);
+  }
+
+  it("counts the five markers in document order, an outer marker before the ones nested in it", () => {
+    const renderBlock = vi.fn<RenderBlock>((props) => <aside>{props.topic}</aside>);
+    const inner = ["b", "c", "d", "e", "f"].map((topic) => markerFor(topic)).join("");
+    const output = render(markerFor("a", inner), { renderBlock });
+    expect(renderBlock.mock.calls.map(([props]) => props.topic).sort()).toEqual(["a", "b", "c", "d", "e"]);
+    expect(output.startsWith("<aside>a</aside>")).toBe(true);
+  });
+
+  it("renders the fallback for a marker inside a link, so the block's links are not nested in it", () => {
+    const renderBlock = vi.fn<RenderBlock>(() => <aside>never</aside>);
+    const output = render(`<a href="/resources/">${MARKER}</a>`, { renderBlock });
+    expect(renderBlock).not.toHaveBeenCalled();
+    expect(output).toBe(
+      '<a href="/resources/"><div class="wp-block-resource-hub-related-resources rh-related"><h2>More on Headless delivery</h2><ul><li>Example</li></ul></div></a>',
+    );
+  });
+
+  it("renders a block's fallback when renderBlock throws, and the rest of the body as markup", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      let calls = 0;
+      const renderBlock: RenderBlock = (props) => {
+        calls++;
+        if (calls === 1) throw new Error("boom");
+        return <aside>{props.topic}</aside>;
+      };
+      const output = render(`<p>Before</p>${markerFor("a")}${markerFor("b")}`, { renderBlock });
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(output).toBe(
+        '<p>Before</p><div class="wp-block-resource-hub-related-resources rh-related"><h2>More on Headless delivery</h2><ul><li><a href="/resources/webinar/example/">Example</a></li></ul></div><aside>b</aside>',
+      );
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("excludes the post ID passed in, whatever data-exclude says", () => {
     const renderBlock = vi.fn<RenderBlock>(() => null);
     render(MARKER, { renderBlock, postId: 15 });
@@ -898,15 +938,6 @@ describe("deep nesting", () => {
     expect(overCap.warned).toBe(1);
     expect(overCap.result.startsWith("Long a")).toBe(true);
     expect(overCap.result).not.toContain("<");
-  });
-
-  it("renders the body as plain text when the pass throws", () => {
-    const renderBlock: RenderBlock = () => {
-      throw new Error("boom");
-    };
-    const { result, errored } = quietly(() => render(`<p>Before</p>${MARKER}`, { renderBlock }));
-    expect(errored).toBe(1);
-    expect(result).toBe("Before More on Headless delivery Example");
   });
 
   it("takes the CMS out of the plain text: origins removed, then any word that still names it", () => {

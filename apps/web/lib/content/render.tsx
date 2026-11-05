@@ -78,9 +78,10 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   `data-*` attributes is parsed and validated and handed to `renderBlock`
  *   with the wrapper's own rendering as the fallback. The default renders
  *   the fallback; slice 4 plugs in `<RelatedResources>`. An invalid marker,
- *   or one past the first `MAX_MARKERS`, renders the fallback and
- *   `renderBlock` is not called. The post ID passed in `postId` wins over
- *   the marker's `data-exclude`.
+ *   one past the first `MAX_MARKERS` in document order, or one inside an
+ *   `<a>` renders the fallback and `renderBlock` is not called; one whose
+ *   `renderBlock` throws renders the fallback too. The post ID passed in
+ *   `postId` wins over the marker's `data-exclude`.
  * - Embeds: an `<iframe>`, `<video>` or `<audio>` becomes a link to its
  *   `src` (a `<video>` or `<audio>` without one, to its first usable
  *   `<source>`), and an embed block whose wrapper still holds the raw URL as
@@ -992,15 +993,30 @@ function markerProps(node: Element, attributes: Attributes, context: Context): R
  * The block marker (ADR 0037). The fallback is the wrapper with its `class`
  * and its children through the pass; the `data-*` attributes are read here
  * and never rendered, so the marker stays on the server.
+ *
+ * Whether `renderBlock` gets the marker is decided, and counted, before its
+ * children render, so `MAX_MARKERS` counts in document order: a marker
+ * nested inside this one comes after it. A marker inside an `<a>` renders
+ * its fallback, since the block renders links and a browser would not nest
+ * them. A `renderBlock` that throws renders this block's fallback, logged,
+ * and the rest of the body as usual. Only a valid marker that may be handed
+ * on has its heading read, so at most `MAX_MARKERS` headings are walked.
  */
 function marker(node: Element, attributes: Attributes, context: Context): ReactElement {
+  const props = insideLink(context) || context.markers >= MAX_MARKERS ? null : markerProps(node, attributes, context);
+  if (props !== null) {
+    context.markers++;
+  }
   const fallback = createElement("div", checked(globalProps(attributes, context, MARKER_CLASSES), context), children(node, context));
-  const props = markerProps(node, attributes, context);
-  if (props === null || context.markers >= MAX_MARKERS) {
+  if (props === null) {
     return fallback;
   }
-  context.markers++;
-  return createElement(Fragment, null, context.renderBlock(props, fallback));
+  try {
+    return createElement(Fragment, null, context.renderBlock(props, fallback));
+  } catch (error) {
+    console.error("renderContent: renderBlock failed; rendering the block's fallback", error);
+    return fallback;
+  }
 }
 
 /**
