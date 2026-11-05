@@ -1,7 +1,8 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
+import { clearAppCache } from "./app-cache.mts";
 import { mockCms } from "./mock-cms/client.mts";
-import { E2E_REVALIDATE_SECRET, mockCmsOrigin } from "./mock-cms/config.mts";
+import { mockCmsOrigin } from "./mock-cms/config.mts";
 
 /**
  * The data layer against the mock CMS, through the fixture page at
@@ -10,11 +11,13 @@ import { E2E_REVALIDATE_SECRET, mockCmsOrigin } from "./mock-cms/config.mts";
  * The page renders on every request, so the request counters show the
  * Data Cache at work.
  *
- * The app starts each run with an empty Data Cache (e2e/README.md), so the
- * first test's listings are the seed's. The last test publishes a resource
- * the reader schema refuses and clears the listings through the revalidate
- * route, then puts the seed back and clears them again, so no later spec in
- * the run is served its listing.
+ * The app starts each run with an empty Data Cache (e2e/README.md), but
+ * within a run the browser prefetches the header's `/resources/` link on
+ * every page, so a listing can be stored mid-change by any earlier spec;
+ * each test therefore clears the listings after `reset()` (`clearAppCache`).
+ * The last test publishes a resource the reader schema refuses and clears
+ * the listings again, then puts the seed back and clears them once more, so
+ * no later spec in the run is served its listing.
  */
 
 const FIXTURE_PATH = "/fixtures/data-layer/";
@@ -28,33 +31,11 @@ async function restRequests(): Promise<Record<string, number>> {
   return Object.fromEntries(Object.entries(byPath).filter(([path]) => path.startsWith("/wp-json/")));
 }
 
-/** Clears every listing in the Data Cache, as any event from the CMS does (ADR 0046), with an `update` for a seed resource. */
-async function clearListings(request: APIRequestContext): Promise<void> {
-  const { origin, resources } = await cms.state();
-  const seeded = resources.find((resource) => resource.slug === SEEDED_SLUG);
-  if (seeded === undefined || seeded.type === null) throw new Error("the seed has no typed resource to send an event for");
-  const state = { slug: seeded.slug, types: [seeded.type], topics: seeded.topics };
-  const response = await request.post("/api/revalidate/", {
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${E2E_REVALIDATE_SECRET}` },
-    data: JSON.stringify({
-      version: 1,
-      events: [
-        {
-          type: "resource",
-          event: "update",
-          id: seeded.id,
-          rest_url: `${origin}/wp-json/wp/v2/resources/${seeded.id}`,
-          ...state,
-          previous: state,
-        },
-      ],
-    }),
-  });
-  expect(response.status(), await response.text()).toBe(200);
-}
-
-test.beforeEach(async () => {
+test.beforeEach(async ({ request }) => {
   await cms.reset();
+  // The library listing this fixture reads is also a page the browser prefetches
+  // from every page's header, so another spec may have stored it mid-change.
+  await clearAppCache(request);
 });
 
 test("renders two pages of the library and a resource by slug through ResourceCard", async ({ page }) => {
@@ -148,7 +129,7 @@ test("a resource the reader schema refuses leaves the listing, the other resourc
   expect((await cms.state()).resources.find((resource) => resource.title === title)?.slug).toBe(escapedSlug);
 
   try {
-    await clearListings(request);
+    await clearAppCache(request);
     const response = await request.get(FIXTURE_PATH);
     expect(response.status()).toBe(200);
     const html = await response.text();
@@ -177,6 +158,6 @@ test("a resource the reader schema refuses leaves the listing, the other resourc
     expect(own.status()).toBe(404);
   } finally {
     await cms.reset();
-    await clearListings(request);
+    await clearAppCache(request);
   }
 });
