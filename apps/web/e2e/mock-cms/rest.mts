@@ -1,12 +1,12 @@
 import { renderResource, renderTerm } from "./render.mts";
-import { isTaxonomy, slugify, type MockState, type ResourceRecord, type TermRecord } from "./state.mts";
+import { isTaxonomy, MAX_RELATED, slugify, type MockState, type ResourceRecord, type TermRecord } from "./state.mts";
 import type { Taxonomy } from "./types.mts";
 
 /**
  * The public routes under `/wp-json/`, as WordPress core and the plugin
  * answer an anonymous reader: the resources collection and item, the three
- * taxonomy collections and items, the plugin's resolve route, and the REST
- * index. Each handler takes the request URL and returns a status, headers
+ * taxonomy collections and items, the plugin's resolve and related routes,
+ * and the REST index. Each handler takes the request URL and returns a status, headers
  * and a JSON body; the HTTP layer is `server.ts`.
  *
  * Errors are core's `WP_Error` shape (`wp-error.schema.json`), with core's
@@ -476,6 +476,24 @@ function resolve(state: MockState, url: URL): MockResponse {
   return { status: 200, headers: { ...JSON_HEADERS }, body: { id: resource.id, type: type.slug, slug: resource.slug } };
 }
 
+// --- /resource-hub/v1/related/{id} --------------------------------------------------
+
+/**
+ * The plugin's related route (ADRs 0020, 0021, 0030): `count` is an integer
+ * from 1 to 10, default 3, checked by core's schema validation; an ID that is
+ * not a published resource is a 404; the merge is `MockState.related()`.
+ */
+function related(state: MockState, id: number, url: URL): MockResponse {
+  const errors: ParamError[] = [];
+  const count = intParam(url.searchParams, "count", 3, { min: 1, max: MAX_RELATED }, errors);
+  if (errors.length > 0) return invalidParams(errors);
+  const source = state.resource(id);
+  if (!source || source.status !== "publish") {
+    return wpError(404, "resource_hub_not_found", "No published resource has that ID.");
+  }
+  return { status: 200, headers: { ...JSON_HEADERS }, body: { items: state.related(source, count) } };
+}
+
 // --- Routing -----------------------------------------------------------------------
 
 /**
@@ -513,6 +531,9 @@ export function handleRest(state: MockState, method: string, url: URL, origin: s
   }
 
   if (path === "/resource-hub/v1/resolve") return covered(allowGet(resolve(state, url)));
+
+  match = /^\/resource-hub\/v1\/related\/(\d+)$/.exec(path);
+  if (match) return covered(allowGet(related(state, Number(match[1]), url)));
 
   return noRoute();
 }

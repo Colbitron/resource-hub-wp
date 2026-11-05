@@ -33,10 +33,11 @@ Query parameters are read as PHP and core read them: `name[]=` arrays as well as
 - `GET /wp-json/wp/v2/resources/{id}`: 404 `rest_post_invalid_id` for no such post, 401 `rest_forbidden` ("Sorry, you are not allowed to do that.") for a draft or trashed one, as core answers an anonymous reader.
 - `GET /wp-json/wp/v2/resource_topic`, `resource_type` and `resource_flag` with `slug`, `include`, `per_page`, `page`, `orderby`, `hide_empty`, and `/{id}`. `count` is the number of published resources with the term. Unlike the resources collection, a page past the end is a 200 with `[]` and the totals headers, as core's terms controller has no page-number check.
 - `GET /wp-json/resource-hub/v1/resolve?slug=…`: `{ id, type, slug }` for a published resource by its current or an old slug, otherwise the plugin's 404 `resource_hub_not_found`.
+- `GET /wp-json/resource-hub/v1/related/{id}?count=…`: `{ items: [{ id, source }] }` (`related-response.schema.json`). It lists the published picks first, in order, then the newest published resources sharing one of the source's topics, never the source and never an ID twice, at most `count` items. A source with no topics gets its picks alone. `count` is 1 to 10, default 3, and anything else is a 400 `rest_invalid_param`. An ID that is not a published resource is a 404 `resource_hub_not_found`, a code the mock chose because the plugin's route is not written yet.
 - `GET /wp-content/uploads/…`: the files under `mock-cms/fixtures/uploads/`, which `/media/…` on the app proxies.
 - Anything else is a 404, as the CMS's theme answers anonymous visitors (ADR 0031).
 
-The seed (`mock-cms/seed.mts`) has 14 published resources across 5 types and 5 topics, with the captured term IDs, so there is more than one page at the default `per_page`; a resource with no image, one with an SVG image with no dimensions, one whose image has a `sizes` entry; and one (`revalidation-from-the-editors-chair`, ID 33) whose body carries CMS links, an image with a `srcset` and the related-resources block marker.
+The seed (`mock-cms/seed.mts`) has 14 published resources across 5 types and 5 topics, with the captured term IDs, so there is more than one page at the default `per_page`; a resource with no image, one with an SVG image with no dimensions, one whose image has a `sizes` entry; and one (`revalidation-from-the-editors-chair`, ID 33) whose body carries CMS links, an image with a `srcset` and the related-resources block marker. There is also one draft (ID 34), which no listing shows. ID 33's picks are that draft, a resource from another topic (29) and one that also shares a topic (21), and ID 24 picks 26.
 
 ## Control endpoints
 
@@ -45,13 +46,14 @@ Under `/__mock/`, a path the front end never requests. JSON in and out; errors a
 | Endpoint | Does |
 | --- | --- |
 | `GET /__mock/health` | `{ ok: true }`; what Playwright waits for |
-| `GET /__mock/state` | Every resource (term slugs, status, previous slugs), term and media item |
+| `GET /__mock/state` | Every resource (term slugs, status, previous slugs, picks), term and media item |
 | `POST /__mock/reset` | Back to the seed, counters cleared |
 | `POST /__mock/resources` `{ title, type, slug?, topics?, featured?, summary?, sourceUrl?, content?, mediaId? }` | Publishes a new resource |
 | `POST /__mock/resources/{id}/slug` `{ slug }` | Renames the slug; the old one resolves |
 | `POST /__mock/resources/{id}/type` `{ type }` | Changes the type |
 | `POST /__mock/resources/{id}/topics` `{ topics: [] }` | Replaces the topics |
 | `POST /__mock/resources/{id}/status` `{ status }` | `draft` unpublishes, `trash` trashes, `publish` restores |
+| `POST /__mock/resources/{id}/picks` `{ picks: [] }` | Replaces the editor's picks for the related route. Duplicates and the resource itself are dropped and the list is capped at 10, as the plugin does; an unknown ID is a 422 |
 | `POST /__mock/terms/{taxonomy}/{id}` `{ slug?, name? }` | Renames a term |
 | `DELETE /__mock/terms/{taxonomy}/{id}` | Deletes it and takes it off every resource |
 | `GET /__mock/requests` | `{ total, byPath }`: how often each public path with its query string was requested |

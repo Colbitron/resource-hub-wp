@@ -1,5 +1,7 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { createRequire } from "node:module";
+import { join, resolve } from "node:path";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -19,6 +21,39 @@ import { wpErrorSchema } from "../lib/wp/schemas/wp-error";
 
 const NO_CACHE = "no-cache, must-revalidate, max-age=0";
 const TAXONOMIES = ["resource_topic", "resource_type", "resource_flag"] as const;
+
+/**
+ * The contract's JSON Schemas, compiled with the Ajv that `packages/ui`'s own
+ * schema test uses (loaded from that package, as the app does not depend on
+ * it). The related route has no Zod reader in the app yet, so its bodies are
+ * checked against `related-response.schema.json` directly.
+ */
+interface AjvValidator {
+  (data: unknown): boolean;
+  errors?: unknown;
+}
+interface AjvInstance {
+  addSchema(schema: object): AjvInstance;
+  getSchema(id: string): AjvValidator | undefined;
+}
+const uiPackage = resolve(__dirname, "../../../packages/ui");
+const requireFromUi = createRequire(join(uiPackage, "package.json"));
+const Ajv2020 = (requireFromUi("ajv/dist/2020.js") as { default: new (options: object) => AjvInstance }).default;
+const addFormats = (requireFromUi("ajv-formats") as { default: (ajv: AjvInstance) => void }).default;
+const contract = new Ajv2020({ strict: true, allErrors: true });
+addFormats(contract);
+for (const name of readdirSync(join(uiPackage, "schemas")).filter((file) => file.endsWith(".schema.json"))) {
+  contract.addSchema(JSON.parse(readFileSync(join(uiPackage, "schemas", name), "utf8")) as object);
+}
+
+/** Validates against one contract schema by file name, failing with Ajv's errors. */
+function expectContract(schema: string, body: unknown): void {
+  const validate = contract.getSchema(
+    `https://raw.githubusercontent.com/Colbitron/resource-hub-wp/main/packages/ui/schemas/${schema}.schema.json`,
+  );
+  if (!validate) throw new Error(`No contract schema named ${schema}`);
+  expect(validate(body), JSON.stringify(validate.errors)).toBe(true);
+}
 
 let server: MockCms;
 let cms: MockCmsClient;
@@ -330,6 +365,83 @@ describe("GET /resource-hub/v1/resolve", () => {
     expect(empty.status).toBe(400);
     expect(empty.headers.get("cache-control")).toBe(NO_CACHE);
     expect(wpErrorSchema.parse(empty.body).code).toBe("rest_invalid_param");
+  });
+});
+
+describe("GET /resource-hub/v1/related/{id}", () => {
+  it("puts published picks first, skips an unpublished one, then fills with the newest in the source's topics", async () => {
+    // 33's picks are 34 (a draft), 29 (another topic) and 21 (also in topic); 20 is the newest sharing a topic.
+    const response = await cms.related(33);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe(NO_CACHE);
+    expect(response.headers.get("allow")).toBe("GET");
+    expectContract("related-response", response.body);
+    expect(response.body).toEqual({
+      items: [
+        { id: 29, source: "pick" },
+        { id: 21, source: "pick" },
+        { id: 20, source: "topic" },
+      ],
+    });
+
+    // A larger count fills further, newest first, with no duplicate and never the source.
+    const ten = await cms.related(33, 10);
+    expectContract("related-response", ten.body);
+    const items = (ten.body as { items: { id: number; source: string }[] }).items;
+    expect(items.map((item) => item.id)).toEqual([29, 21, 20, 22, 25, 27, 28, 31]);
+    expect(items.filter((item) => item.source === "pick").map((item) => item.id)).toEqual([29, 21]);
+
+    expect((await cms.related(24)).body).toEqual({
+      items: [
+        { id: 26, source: "pick" },
+        { id: 22, source: "topic" },
+        { id: 28, source: "topic" },
+      ],
+    });
+  });
+
+  it("caps picks at count, and gives a source with no topics its picks alone", async () => {
+    expect((await cms.related(33, 1)).body).toEqual({ items: [{ id: 29, source: "pick" }] });
+
+    await cms.setTopics(33, []);
+    const alone = await cms.related(33, 10);
+    expectContract("related-response", alone.body);
+    expect(alone.body).toEqual({ items: [{ id: 29, source: "pick" }, { id: 21, source: "pick" }] });
+
+    await cms.setPicks(33, []);
+    expect((await cms.related(33)).body).toEqual({ items: [] });
+  });
+
+  it("follows the picks the control endpoint sets, sanitized as the plugin sanitizes them", async () => {
+    const summary = await cms.setPicks(20, [27, 27, 20, 32]);
+    expect(summary.picks).toEqual([27, 32]);
+    expect((await cms.related(20, 2)).body).toEqual({
+      items: [
+        { id: 27, source: "pick" },
+        { id: 32, source: "pick" },
+      ],
+    });
+    await expect(cms.setPicks(20, [9999])).rejects.toMatchObject({ status: 422 });
+    await expect(cms.setPicks(20, [0])).rejects.toMatchObject({ status: 422 });
+  });
+
+  it("refuses a count outside 1 to 10 and an ID that is not a published resource", async () => {
+    for (const count of ["0", "11", "abc", "2.5"]) {
+      const response = await cms.related(33, count);
+      expect(response.status, count).toBe(400);
+      expect(response.headers.get("cache-control"), count).toBe(NO_CACHE);
+      expect(wpErrorSchema.parse(response.body)).toMatchObject({ code: "rest_invalid_param", data: { status: 400 } });
+    }
+    expect((await cms.related(33, "11")).body).toMatchObject({
+      data: { params: { count: "count must be between 1 (inclusive) and 10 (inclusive)" }, details: { count: { code: "rest_out_of_bounds" } } },
+    });
+
+    for (const id of [34, 9999]) {
+      const response = await cms.related(id);
+      expect(response.status, String(id)).toBe(404);
+      expect(response.headers.get("cache-control")).toBe(NO_CACHE);
+      expect(wpErrorSchema.parse(response.body)).toMatchObject({ data: { status: 404 } });
+    }
   });
 });
 

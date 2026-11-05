@@ -25,6 +25,8 @@ export interface ResourceSummary {
   featured: boolean;
   /** The featured image's media ID, or `null` for no image. */
   mediaId: number | null;
+  /** `related_picks`: the editor's ordered picks, as post IDs, published or not. */
+  picks: number[];
   date: string;
   modified: string;
 }

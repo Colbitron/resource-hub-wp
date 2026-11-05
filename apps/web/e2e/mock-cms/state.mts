@@ -36,9 +36,20 @@ export interface ResourceRecord {
   sourceUrl: string;
   /** `content.rendered` with `{{origin}}` and `{{topic-slug:ID}}` still in it, or `null` for the default body. */
   content: string | null;
+  /** `related_picks`: the editor's ordered picks, as post IDs. Read only by the related route. */
+  picks: number[];
   date: string;
   modified: string;
 }
+
+/** One entry of the related route's `items`. */
+export interface RelatedItem {
+  id: number;
+  source: "pick" | "topic";
+}
+
+/** `related_picks` holds at most this many IDs, and the related route's `count` goes no higher (ADR 0020). */
+export const MAX_RELATED = 10;
 
 export interface TermRecord {
   id: number;
@@ -109,7 +120,7 @@ export class MockState {
       id: seed.id,
       slug: seed.slug,
       previousSlugs: [],
-      status: "publish",
+      status: seed.status,
       title: seed.title,
       typeIds: [this.requireTerm("resource_type", seed.type).id],
       topicIds: seed.topics.map((slug) => this.requireTerm("resource_topic", slug).id),
@@ -118,6 +129,7 @@ export class MockState {
       summary: seed.summary,
       sourceUrl: seed.sourceUrl,
       content: seed.content,
+      picks: [...seed.picks],
       date,
       modified: date,
     };
@@ -186,6 +198,32 @@ export class MockState {
     return this.media.find((item) => item.id === id);
   }
 
+  /**
+   * The related route's merge (ADRs 0020, 0030): the source's picks in order,
+   * skipping any that is not published; then, when the source has topics, the
+   * newest published resources sharing one; never the source itself, never an
+   * ID twice (a pick that would also be fill stays a pick), at most `count`.
+   */
+  related(source: ResourceRecord, count: number): RelatedItem[] {
+    const items: RelatedItem[] = [];
+    const seen = new Set([source.id]);
+    const add = (resource: ResourceRecord, why: RelatedItem["source"]) => {
+      if (items.length >= count || seen.has(resource.id) || resource.status !== "publish") return;
+      seen.add(resource.id);
+      items.push({ id: resource.id, source: why });
+    };
+    for (const id of source.picks) {
+      const pick = this.resource(id);
+      if (pick) add(pick, "pick");
+    }
+    if (source.topicIds.length > 0) {
+      for (const candidate of this.published()) {
+        if (candidate.topicIds.some((id) => source.topicIds.includes(id))) add(candidate, "topic");
+      }
+    }
+    return items;
+  }
+
   // --- Mutations -----------------------------------------------------------
 
   private requireResource(id: number): ResourceRecord {
@@ -230,6 +268,20 @@ export class MockState {
     return resource;
   }
 
+  /**
+   * Replaces the picks, sanitized as the plugin sanitizes `related_picks`:
+   * duplicates and the resource itself dropped, capped at 10. Unlike the
+   * plugin, an ID no resource has is refused, so a spec's typo fails here.
+   */
+  setPicks(id: number, picks: number[]): ResourceRecord {
+    const resource = this.requireResource(id);
+    const unknown = picks.find((pick) => !this.resource(pick));
+    if (unknown !== undefined) throw new MockError(422, `No resource has the ID ${unknown}.`);
+    resource.picks = [...new Set(picks)].filter((pick) => pick !== id).slice(0, MAX_RELATED);
+    this.touch(resource);
+    return resource;
+  }
+
   setStatus(id: number, status: ResourceStatus): ResourceRecord {
     const resource = this.requireResource(id);
     resource.status = status;
@@ -260,6 +312,7 @@ export class MockState {
       summary: input.summary ?? "",
       sourceUrl: input.sourceUrl ?? "",
       content: input.content ?? null,
+      picks: [],
       date: now,
       modified: now,
     };
@@ -333,6 +386,7 @@ export class MockState {
       topics: resource.topicIds.map((id) => this.term("resource_topic", id)?.slug).filter((s): s is string => s !== undefined),
       featured: resource.flagIds.some((id) => this.term("resource_flag", id)?.slug === "featured"),
       mediaId: resource.mediaId,
+      picks: [...resource.picks],
       date: resource.date,
       modified: resource.modified,
     };

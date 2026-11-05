@@ -91,6 +91,11 @@ export class MockCmsClient {
     return this.control<ResourceSummary>("POST", `/__mock/resources/${id}/status`, { status });
   }
 
+  /** Replaces the editor's picks (`related_picks`) with these IDs, in order. */
+  setPicks(id: number, picks: number[]): Promise<ResourceSummary> {
+    return this.control<ResourceSummary>("POST", `/__mock/resources/${id}/picks`, { picks });
+  }
+
   renameTerm(taxonomy: Taxonomy, id: number, patch: RenameTermInput): Promise<TermSummary> {
     return this.control<TermSummary>("POST", `/__mock/terms/${taxonomy}/${id}`, patch);
   }
@@ -113,6 +118,11 @@ export class MockCmsClient {
   /** `GET /wp-json/resource-hub/v1/resolve?slug=…`. */
   resolve(slug: string): Promise<PublicResponse> {
     return this.get(`/wp-json/resource-hub/v1/resolve?slug=${encodeURIComponent(slug)}`);
+  }
+
+  /** `GET /wp-json/resource-hub/v1/related/{id}`, with `?count=` when given. */
+  related(id: number, count?: number | string): Promise<PublicResponse> {
+    return this.get(`/wp-json/resource-hub/v1/related/${id}${count === undefined ? "" : `?count=${encodeURIComponent(count)}`}`);
   }
 
   private async control<T>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<T> {

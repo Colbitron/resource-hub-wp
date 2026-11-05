@@ -1,4 +1,4 @@
-import type { Taxonomy } from "./types.mts";
+import type { ResourceStatus, Taxonomy } from "./types.mts";
 
 /**
  * The dataset the mock starts from and resets to. The shapes are compact
@@ -19,6 +19,13 @@ import type { Taxonomy } from "./types.mts";
  *   topic's current slug, both filled in at render time.
  * - Dates descend with the rows, so core's default order (`date` desc) is
  *   the row order.
+ * - One draft (ID 34, the last row), so the related route has an
+ *   unpublished pick to skip; it is in no listing.
+ * - Editor picks (`related_picks`) on two resources. ID 33's are the draft,
+ *   a resource from a topic 33 does not have (29), and one that also shares
+ *   a topic (21), so its related list shows a skipped pick, a cross-topic
+ *   pick and a pick that is not repeated by the topic fill. ID 24 has one
+ *   pick followed by topic fill.
  */
 
 export interface TermSeed {
@@ -60,6 +67,9 @@ export interface ResourceSeed {
   sourceUrl: string;
   /** `content.rendered`, or `null` for the default two paragraphs. */
   content: string | null;
+  status: ResourceStatus;
+  /** `related_picks`: the editor's ordered picks, as post IDs. */
+  picks: number[];
 }
 
 export const TERMS: TermSeed[] = [
@@ -162,6 +172,8 @@ function row(
     summary,
     sourceUrl: `https://example.com/downloads/${slug}`,
     content,
+    status: "publish",
+    picks: [],
   };
 }
 
@@ -170,7 +182,7 @@ export const RESOURCES: ResourceSeed[] = [
   row(21, "alt-text-at-scale", "Alt text at scale", "article", ["accessibility", "editorial-workflow"], false, null, "How a small editorial team keeps alt text accurate across thousands of images without a bottleneck."),
   row(22, "choosing-a-headless-architecture", "Choosing a headless architecture", "webinar", ["headless-delivery", "content-modelling"], true, 102, "REST, GraphQL and static export compared for a content site that changes a few times a day."),
   row(23, "measuring-layout-shift-on-listing-pages", "Measuring layout shift on listing pages", "article", ["performance", "accessibility"], false, 103, "Reserved aspect ratios, sized images and why late content is a gate rather than a claim."),
-  row(24, "one-content-model-five-channels", "One content model, five channels", "case-study", ["content-modelling"], false, 101, "A publisher's move from page-shaped content to a model that feeds the web, email, apps and partners."),
+  { ...row(24, "one-content-model-five-channels", "One content model, five channels", "case-study", ["content-modelling"], false, 101, "A publisher's move from page-shaped content to a model that feeds the web, email, apps and partners."), picks: [26] },
   row(25, "editorial-review-without-the-bottleneck", "Editorial review without the bottleneck", "podcast", ["editorial-workflow"], false, 104, "Two editors on review queues, who approves what, and how a headless site shows the result."),
   row(26, "keyboard-first-filters", "Keyboard-first filters", "article", ["accessibility"], true, 103, "Filter controls that work before the mouse arrives: focus order, labels and what to announce."),
   row(27, "cache-tags-explained", "Cache tags explained", "ebook", ["headless-delivery", "performance"], false, 102, "What a cache tag names, which fetches carry which tags, and how an editor's save reaches a page."),
@@ -179,5 +191,12 @@ export const RESOURCES: ResourceSeed[] = [
   row(30, "taxonomies-versus-meta", "Taxonomies versus meta", "article", ["content-modelling"], true, 102, "When a value is a term and when it is a field, with the REST and query consequences of each."),
   row(31, "previewing-drafts-headlessly", "Previewing drafts headlessly", "podcast", ["headless-delivery", "editorial-workflow"], false, 103, "Signed preview tokens, what the front end checks, and what the editor sees."),
   row(32, "an-accessibility-audit-in-a-day", "An accessibility audit in a day", "ebook", ["accessibility"], false, null, "A checklist that fits in a day and catches what automated tools miss."),
-  row(33, "revalidation-from-the-editors-chair", "Revalidation from the editor's chair", "webinar", ["editorial-workflow", "headless-delivery"], false, 101, "What an editor sees when a save reaches the front end, and what to do when it does not.", RICH_CONTENT),
+  {
+    ...row(33, "revalidation-from-the-editors-chair", "Revalidation from the editor's chair", "webinar", ["editorial-workflow", "headless-delivery"], false, 101, "What an editor sees when a save reaches the front end, and what to do when it does not.", RICH_CONTENT),
+    picks: [34, 29, 21],
+  },
+  {
+    ...row(34, "an-unfinished-draft", "An unfinished draft", "article", ["editorial-workflow"], false, null, "Not published: it is picked by resource 33 and must never be shown."),
+    status: "draft",
+  },
 ];

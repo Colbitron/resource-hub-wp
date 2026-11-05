@@ -92,7 +92,7 @@ export function handleControl(state: MockState, method: string, url: URL, body: 
       return json(201, state.summarise(state.createResource(parseCreate(body))));
     }
 
-    let match = /^\/resources\/(\d+)\/(slug|type|topics|status)$/.exec(path);
+    let match = /^\/resources\/(\d+)\/(slug|type|topics|status|picks)$/.exec(path);
     if (match && method === "POST") {
       const id = Number(match[1]);
       if (!isRecord(body)) throw new MockError(422, "The body must be a JSON object.");
@@ -117,6 +117,13 @@ export function handleControl(state: MockState, method: string, url: URL, body: 
             throw new MockError(422, `status must be one of ${STATUSES.join(", ")}.`);
           }
           return json(200, state.summarise(state.setStatus(id, status as ResourceStatus)));
+        }
+        case "picks": {
+          const picks = body.picks;
+          if (!Array.isArray(picks) || !picks.every((pick) => Number.isInteger(pick) && pick > 0)) {
+            throw new MockError(422, "picks must be an array of positive integer IDs.");
+          }
+          return json(200, state.summarise(state.setPicks(id, picks as number[])));
         }
       }
     }
