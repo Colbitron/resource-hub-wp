@@ -7,6 +7,15 @@ import { mediaRewrites } from "./lib/media-rewrites";
 // `next: { tags }`, a long route `revalidate`, and `revalidateTag`), so the
 // flags are left off. The choice is recorded in ADR 0043.
 const nextConfig: NextConfig = {
+  // Test-only pages are named `page.fixture.tsx` and become routes only when
+  // RH_FIXTURES is set, as Playwright's web server sets it: a production build
+  // never includes them. Playwright's e2e/*.spec.ts render app/fixtures/.
+  pageExtensions: [
+    ...(process.env.RH_FIXTURES === "1" ? ["fixture.tsx"] : []),
+    "tsx",
+    "ts",
+  ],
+
   // Every public URL ends in a slash, the same as the CMS's permalinks
   // (ADRs 0024, 0034).
   trailingSlash: true,

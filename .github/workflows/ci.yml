@@ -6,7 +6,7 @@
 # deactivates every plugin on the tests site, so it runs before Playwright
 # and the Playwright specs re-activate the plugin themselves.
 #
-# The web job lints, typechecks, unit-tests and builds the Next.js front end
+# The web job lints, typechecks, unit-tests, builds and end-to-end tests the Next.js front end
 # in apps/web alongside the gate. It needs no secrets: it builds against a
 # placeholder CMS URL and makes no CMS calls at build time.
 #
@@ -179,6 +179,14 @@ jobs:
 
       - name: Build the front end
         run: pnpm web:build
+
+      - name: Install Playwright's browser
+        run: pnpm --filter resource-hub-web exec playwright install --with-deps chromium
+
+      # Builds again with the test-only fixture routes (RH_FIXTURES=1) and
+      # runs the specs against `next start`; see apps/web/playwright.config.ts.
+      - name: Run the front end's end-to-end tests
+        run: pnpm web:test:e2e
 
   deploy:
     name: Deploy to the host
