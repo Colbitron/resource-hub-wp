@@ -20,6 +20,8 @@ Checks, from the root (or `pnpm typecheck`, `pnpm lint` and `pnpm build` in this
 pnpm web:typecheck   # next typegen && tsc --noEmit
 pnpm web:lint        # eslint
 pnpm web:build       # next build
+pnpm web:test        # vitest run (unit tests, *.test.ts)
+pnpm web:test:e2e    # playwright test (end to end, e2e/*.spec.ts; none yet)
 ```
 
 ## Configuration
@@ -28,8 +30,9 @@ pnpm web:build       # next build
 | --- | --- |
 | `WP_API_URL` | Base URL of the CMS's REST API (`/wp-json`). Locally, wp-env serves it at `http://localhost:8888/wp-json`. |
 | `REVALIDATE_SECRET` | Shared secret the CMS sends as a bearer token to `POST /api/revalidate/`. |
+| `WP_MEDIA_ORIGIN` | Optional. The origin `/media/…` is rewritten to, as `/wp-content/uploads/…`; defaults to the origin of `WP_API_URL`. |
 
-Both live in `.env.local` (gitignored) and in Vercel project settings, never in git.
+All are server-only, read and validated in `lib/env.ts` when first used, never `NEXT_PUBLIC_`. They live in `.env.local` (gitignored) and in Vercel project settings, never in git.
 
 ## Status
 

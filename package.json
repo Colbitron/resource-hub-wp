@@ -32,7 +32,9 @@
 		"web:dev": "pnpm --filter resource-hub-web dev",
 		"web:lint": "pnpm --filter resource-hub-web lint",
 		"web:typecheck": "pnpm --filter resource-hub-web typecheck",
-		"web:build": "pnpm --filter resource-hub-web build"
+		"web:build": "pnpm --filter resource-hub-web build",
+		"web:test": "pnpm --filter resource-hub-web test",
+		"web:test:e2e": "pnpm --filter resource-hub-web test:e2e"
 	},
 	"devDependencies": {
 		"@wordpress/env": "^12.0.0"
