@@ -45,7 +45,8 @@ use WP_REST_Request;
  * renames any trashed post that still holds the bare slug (one trashed before WordPress 5.4, or
  * edited in the trash), comparing with the slug as typed. unique_post_slug() does the same with
  * the decoded slug, so `case%2dstudy` takes `case-study` from such a trashed resource exactly as
- * typing `case-study` would.
+ * typing `case-study` would. It does so only inside `wp_insert_post()`, as core does: the
+ * editor's permalink preview reaches the same filter and must not change data.
  *
  * A legacy term whose decoded slug another term in its taxonomy already has cannot be saved, not
  * even by an edit that leaves the slug alone: core's `wp_update_term()` refuses with
@@ -59,9 +60,19 @@ final class SlugEscapes {
 	public const TAXONOMIES = array( Taxonomies::TOPIC, Taxonomies::TYPE, Taxonomies::FLAG );
 
 	/**
+	 * The ID of the resource `wp_insert_post()` is saving, 0 for a new one, from its empty-content
+	 * check until post_data(); null outside a save. Only a save renames a trashed post.
+	 *
+	 * @var int|null
+	 */
+	private ?int $saving = null;
+
+	/**
 	 * Hooks the decoding.
 	 */
 	public function register(): void {
+		// Last, so the flag is set only when no other filter calls the content empty and stops the save.
+		add_filter( 'wp_insert_post_empty_content', array( $this, 'mark_save' ), PHP_INT_MAX, 2 );
 		add_filter( 'pre_wp_unique_post_slug', array( $this, 'unique_post_slug' ), 10, 6 );
 		add_filter( 'wp_insert_post_data', array( $this, 'post_data' ), 10, 2 );
 		// After core's own `sanitize_title`, hooked to `pre_term_slug` at 10.
@@ -182,16 +193,35 @@ final class SlugEscapes {
 	}
 
 	/**
+	 * Marks the start of a `wp_insert_post()` save of a resource that will go ahead, so that
+	 * unique_post_slug() renames a trashed post only within it. Hooked to
+	 * `wp_insert_post_empty_content`, which only `wp_insert_post()` applies, before its
+	 * `wp_unique_post_slug()` call; post_data() clears the mark. A save stopped between the two,
+	 * by an invalid date, leaves it set for that post ID until the next save reaches post_data().
+	 *
+	 * @param mixed                $maybe_empty Whether the post counts as empty, which stops the save.
+	 * @param array<string, mixed> $postarr     Post data, defaults filled in.
+	 * @return mixed The value as given.
+	 */
+	public function mark_save( $maybe_empty, $postarr ) {
+		$is_resource  = is_array( $postarr ) && PostType::NAME === ( $postarr['post_type'] ?? '' );
+		$this->saving = $is_resource && ! $maybe_empty ? (int) ( $postarr['ID'] ?? 0 ) : null;
+
+		return $maybe_empty;
+	}
+
+	/**
 	 * Gives a resource whose slug has such an escape core's unique slug for the decoded form.
 	 * Hooked to `pre_wp_unique_post_slug`, which core does not reach for `draft`, `pending` and
 	 * `auto-draft`; post_data() covers those.
 	 *
-	 * Before that, unless the post is being trashed, it renames any trashed post holding the bare
-	 * decoded slug, as `wp_insert_post()` does for the slug as typed and through the same core
-	 * function and filter, so the decoded slug is freed exactly as a typed one is. Core's other
-	 * caller of `wp_unique_post_slug()`, `get_sample_permalink()` (the editor's permalink preview),
-	 * also reaches this for a resource whose stored slug still has such an escape, and then does
-	 * the same rename the resource's next save would.
+	 * Before that, inside a save of this post that is not a trashing, it renames any trashed post
+	 * holding the bare decoded slug, as `wp_insert_post()` does for the slug as typed and through
+	 * the same core function and filter, so the decoded slug is freed exactly as a typed one is.
+	 * Core's other caller of `wp_unique_post_slug()`, `get_sample_permalink()` (the classic
+	 * editor's permalink preview), also reaches this for a resource whose stored slug still has
+	 * such an escape; outside a save it renames nothing, so opening the screen changes no data, and
+	 * the preview may show a `-2` suffix that the save itself then avoids by renaming.
 	 *
 	 * @param string|null $override    Null, or an earlier filter's slug, which is kept.
 	 * @param string      $slug        Sanitized slug.
@@ -217,8 +247,10 @@ final class SlugEscapes {
 			return '';
 		}
 
+		$in_save = (int) $post_id === $this->saving;
+
 		// Core's own filter, applied as `wp_insert_post()` applies it, so a site that turns the rename off for typed slugs turns it off here too.
-		if ( 'trash' !== $post_status && apply_filters( 'add_trashed_suffix_to_trashed_posts', true, $decoded, (int) $post_id ) ) { // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- core's hook, not ours.
+		if ( $in_save && 'trash' !== $post_status && apply_filters( 'add_trashed_suffix_to_trashed_posts', true, $decoded, (int) $post_id ) ) { // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- core's hook, not ours.
 			wp_add_trashed_suffix_to_post_name_for_trashed_posts( $decoded, (int) $post_id );
 		}
 
@@ -235,6 +267,8 @@ final class SlugEscapes {
 	 * @return array<string, mixed>
 	 */
 	public function post_data( $data, $postarr ) {
+		$this->saving = null;
+
 		if ( ! isset( $data['post_type'], $data['post_name'] ) || PostType::NAME !== $data['post_type'] ) {
 			return $data;
 		}
