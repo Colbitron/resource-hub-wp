@@ -191,18 +191,64 @@ final class NoCacheHeaderTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * A request that matched no route, and an anonymous `edit`-context request, are left alone.
+	 * A request that matched no route is left alone.
 	 */
-	public function test_unmatched_and_edit_context_errors_get_none(): void {
+	public function test_unmatched_request_gets_none(): void {
 		$unmatched = $this->get( '/wp/v2/resources/not-an-id' );
 
 		$this->assertSame( 404, $unmatched->get_status() );
 		$this->assertNull( $this->cache_control( $unmatched ) );
+	}
 
+	/**
+	 * An anonymous `edit`-context request gets the header like any other: exempting on a request
+	 * parameter would leave a future anonymous 200 uncovered.
+	 */
+	public function test_anonymous_edit_context_gets_the_header(): void {
 		$edit = $this->get( '/wp/v2/resources/' . $this->resource, array( 'context' => 'edit' ) );
 
 		$this->assertSame( 401, $edit->get_status() );
-		$this->assertNull( $this->cache_control( $edit ) );
+		$this->assertSame( NoCacheHeader::VALUE, $this->cache_control( $edit ) );
+	}
+
+	/**
+	 * A stricter Cache-Control set by an earlier filter survives.
+	 */
+	public function test_stricter_existing_header_is_kept(): void {
+		$stricter = static function ( $response ) {
+			$response->header( 'Cache-Control', 'private, no-store' );
+
+			return $response;
+		};
+
+		add_filter( 'rest_post_dispatch', $stricter, 5 );
+
+		$response = $this->get( '/wp/v2/resources/' . $this->resource );
+
+		remove_filter( 'rest_post_dispatch', $stricter, 5 );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'private, no-store', $this->cache_control( $response ) );
+	}
+
+	/**
+	 * A weaker Cache-Control set earlier, under any case, is replaced by one header with ours.
+	 */
+	public function test_weaker_existing_header_is_replaced(): void {
+		$weaker = static function ( $response ) {
+			$response->header( 'cache-control', 'public, max-age=600' );
+
+			return $response;
+		};
+
+		add_filter( 'rest_post_dispatch', $weaker, 5 );
+
+		$response = $this->get( '/wp/v2/resources/' . $this->resource );
+
+		remove_filter( 'rest_post_dispatch', $weaker, 5 );
+
+		$this->assertSame( NoCacheHeader::VALUE, $this->cache_control( $response ) );
+		$this->assertArrayNotHasKey( 'cache-control', $response->get_headers() );
 	}
 
 	/**
