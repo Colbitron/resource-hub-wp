@@ -71,18 +71,47 @@ final class SlugEscapes {
 
 	/**
 	 * Rule: decode each `%XX` whose character is in `A-Z a-z 0-9 - _ . ! ~ * ' ( )`, in either hex
-	 * case, once; leave every other escape as it is; then, if anything was decoded, sanitize the
-	 * result with `sanitize_title()`. A slug with nothing to decode is returned unchanged.
+	 * case; leave every other escape as it is; sanitize the result with `sanitize_title()`; and
+	 * repeat until no such escape is left. A slug with nothing to decode is returned unchanged.
 	 *
-	 * The input is a slug as `sanitize_title()` leaves it, where every `%` starts an escape. Then
-	 * one pass is enough: an escape left encoded keeps its own two hex digits, so no decoded
-	 * character can join a `%` to form a new escape, and `sanitize_title()` adds escapes only for
-	 * bytes above 0x7F.
+	 * One pass is not enough, because `sanitize_title()` can create an escape. It protects each
+	 * escape as `---XX---`, strips stray `%`, and turns every `---XX---` back into `%XX`, so dashes
+	 * decoded from `%2d`, two literal hex digits and the protected form of a kept escape can make a
+	 * new one: `%2d%2d%2d41%20` decodes to `---41%20`, which core sanitizes to `%4120`. The next
+	 * pass decodes that `%41`.
 	 *
 	 * @param string $slug A sanitized slug.
-	 * @return string The slug with no such escape; '' if nothing is left once core sanitizes it.
+	 * @return string The slug with no such escape; '' if nothing is left once core sanitizes it,
+	 *                or if the pass cap below is reached.
 	 */
 	public static function decode( string $slug ): string {
+		// Each pass strictly shortens the slug, so the loop ends. Decoding turns at least one
+		// three-byte escape into one byte. `sanitize_title()` never lengthens a string of ASCII
+		// characters and escapes: it adds five bytes for each escape it protects and removes five
+		// for each `---XX---` it restores, and a protected escape it does not restore has lost its
+		// leading dashes to a restore that ends there, so it restores at least as many as it
+		// protects; every other step removes or replaces bytes. The cap is that bound, kept as a
+		// guard against a `sanitize_title` filter that lengthens slugs.
+		$passes_left = intdiv( strlen( $slug ), 2 ) + 1;
+
+		while ( self::has_router_escape( $slug ) ) {
+			if ( 0 === $passes_left-- ) {
+				return '';
+			}
+
+			$slug = sanitize_title( self::decode_once( $slug ) );
+		}
+
+		return $slug;
+	}
+
+	/**
+	 * One decoding pass: each escape of a character in the set replaced by the character, every
+	 * other escape kept. '' if the pattern fails, so no escape survives a failure.
+	 *
+	 * @param string $slug A sanitized slug.
+	 */
+	private static function decode_once( string $slug ): string {
 		$decoded = preg_replace_callback(
 			'/%([0-9A-Fa-f]{2})/',
 			static function ( array $escape ): string {
@@ -93,11 +122,7 @@ final class SlugEscapes {
 			$slug
 		);
 
-		if ( null === $decoded || $decoded === $slug ) {
-			return $slug;
-		}
-
-		return sanitize_title( $decoded );
+		return $decoded ?? '';
 	}
 
 	/**
