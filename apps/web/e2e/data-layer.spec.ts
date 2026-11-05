@@ -11,8 +11,11 @@ import { E2E_REVALIDATE_SECRET, mockCmsOrigin } from "./mock-cms/config.mts";
  * Data Cache at work.
  *
  * The last test publishes a resource the reader schema refuses and clears
- * the Data Cache through the revalidate route, then puts the seed back and
- * clears it again, so no later test or run is served the changed listing.
+ * the listings in the Data Cache through the revalidate route, then puts the
+ * seed back and refills them. The Data Cache outlives the app process on
+ * disk while a revalidated tag does not, so a listing changed in one run
+ * would otherwise be served in the next; each test also starts by clearing
+ * the listings, so a run stopped halfway cannot leak into this file.
  */
 
 const FIXTURE_PATH = "/fixtures/data-layer/";
@@ -26,8 +29,34 @@ async function restRequests(): Promise<Record<string, number>> {
   return Object.fromEntries(Object.entries(byPath).filter(([path]) => path.startsWith("/wp-json/")));
 }
 
-test.beforeEach(async () => {
+/** Clears every listing in the Data Cache, as any event from the CMS does (ADR 0046), with an `update` for a seed resource. */
+async function clearListings(request: APIRequestContext): Promise<void> {
+  const { origin, resources } = await cms.state();
+  const seeded = resources.find((resource) => resource.slug === SEEDED_SLUG);
+  if (seeded === undefined || seeded.type === null) throw new Error("the seed has no typed resource to send an event for");
+  const state = { slug: seeded.slug, types: [seeded.type], topics: seeded.topics };
+  const response = await request.post("/api/revalidate/", {
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${E2E_REVALIDATE_SECRET}` },
+    data: JSON.stringify({
+      version: 1,
+      events: [
+        {
+          type: "resource",
+          event: "update",
+          id: seeded.id,
+          rest_url: `${origin}/wp-json/wp/v2/resources/${seeded.id}`,
+          ...state,
+          previous: state,
+        },
+      ],
+    }),
+  });
+  expect(response.status(), await response.text()).toBe(200);
+}
+
+test.beforeEach(async ({ request }) => {
   await cms.reset();
+  await clearListings(request);
 });
 
 test("renders two pages of the library and a resource by slug through ResourceCard", async ({ page }) => {
@@ -109,31 +138,6 @@ test("a second load is served from the Data Cache, with no new request to the CM
   expect(await restRequests()).toEqual({});
 });
 
-/** Clears every listing in the Data Cache, as any event from the CMS does (ADR 0046), with an `update` for a seed resource. */
-async function clearListings(request: APIRequestContext): Promise<void> {
-  const { origin, resources } = await cms.state();
-  const seeded = resources.find((resource) => resource.slug === SEEDED_SLUG);
-  if (seeded === undefined || seeded.type === null) throw new Error("the seed has no typed resource to send an event for");
-  const state = { slug: seeded.slug, types: [seeded.type], topics: seeded.topics };
-  const response = await request.post("/api/revalidate/", {
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${E2E_REVALIDATE_SECRET}` },
-    data: JSON.stringify({
-      version: 1,
-      events: [
-        {
-          type: "resource",
-          event: "update",
-          id: seeded.id,
-          rest_url: `${origin}/wp-json/wp/v2/resources/${seeded.id}`,
-          ...state,
-          previous: state,
-        },
-      ],
-    }),
-  });
-  expect(response.status(), await response.text()).toBe(200);
-}
-
 test("a resource the reader schema refuses leaves the listing, the other resources still render", async ({
   page,
   request,
@@ -176,5 +180,10 @@ test("a resource the reader schema refuses leaves the listing, the other resourc
   } finally {
     await cms.reset();
     await clearListings(request);
+    // Refill the listings with the seed, twice because Next.js may finish
+    // writing an entry after the response, so the disk cache holds the seed.
+    for (let load = 0; load < 2; load++) {
+      expect((await request.get(FIXTURE_PATH)).status()).toBe(200);
+    }
   }
 });
