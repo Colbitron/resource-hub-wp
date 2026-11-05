@@ -336,6 +336,43 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The editor's permalink preview, `get_sample_permalink()`, also calls `wp_unique_post_slug()`.
+	 * For a legacy resource whose decoded slug a trashed resource holds, it changes nothing: the
+	 * trashed resource keeps its slug and gains no `_wp_desired_post_slug`, and the legacy slug stays.
+	 * The save that follows still renames the trashed resource and takes the slug.
+	 */
+	public function test_sample_permalink_changes_no_data(): void {
+		$trashed = $this->resource( 'publish', 'case-study' );
+		wp_trash_post( $trashed );
+		wp_update_post(
+			array(
+				'ID'        => $trashed,
+				'post_name' => 'case-study',
+			)
+		);
+		$this->assertSame( 'case-study', $this->stored_post_slug( $trashed ), 'The trashed resource does not hold the slug.' );
+		$legacy = $this->with_legacy_post_slug( 'case%2dstudy', fn(): int => $this->resource( 'publish', 'placeholder' ) );
+		$this->assertSame( 'case%2dstudy', $this->stored_post_slug( $legacy ), 'The legacy slug was not stored.' );
+		delete_post_meta( $trashed, '_wp_desired_post_slug' );
+
+		get_sample_permalink( $legacy );
+
+		$this->assertSame( 'case-study', $this->stored_post_slug( $trashed ) );
+		$this->assertFalse( metadata_exists( 'post', $trashed, '_wp_desired_post_slug' ) );
+		$this->assertSame( 'case%2dstudy', $this->stored_post_slug( $legacy ) );
+
+		wp_update_post(
+			array(
+				'ID'         => $legacy,
+				'post_title' => 'Retitled',
+			)
+		);
+
+		$this->assertSame( 'case-study', $this->stored_post_slug( $legacy ) );
+		$this->assertSame( 'case-study__trashed', $this->stored_post_slug( $trashed ) );
+	}
+
+	/**
 	 * A resource stored with such an escape before this rule existed is decoded the next time it
 	 * is saved, even by a save that does not touch the slug.
 	 */
