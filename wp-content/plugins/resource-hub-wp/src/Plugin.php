@@ -26,6 +26,7 @@ use ResourceHub\Lockdown\Lockdown;
 use ResourceHub\Rest\NoCacheHeader;
 use ResourceHub\Rest\ResolveRoute;
 use ResourceHub\Revalidation\Revalidation;
+use ResourceHub\Security\XmlRpc;
 
 /**
  * Boots the plugin once per request.
@@ -85,6 +86,7 @@ final class Plugin {
 		( new StatusPage( $this->file ) )->register();
 		( new Lockdown() )->register();
 		( new NoCacheHeader() )->register();
+		( new XmlRpc() )->register();
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			\WP_CLI::add_command( 'resource-hub seed', SeedCommand::class );
