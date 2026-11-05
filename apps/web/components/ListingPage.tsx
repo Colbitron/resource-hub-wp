@@ -165,9 +165,11 @@ export async function listingMetadata(request: ListingRequest): Promise<Metadata
   const cardCount = listing.items.map(toCard).filter((card) => card !== null).length;
   return {
     title: valid.page === 1 ? name : `${name}, page ${valid.page}`,
-    // A path: Next.js makes it absolute with `metadataBase`, which it takes
-    // from the Vercel deployment's production URL when none is configured.
-    // The CMS's absolute URLs are never used (ADR 0040).
+    // A path. No `metadataBase` is set yet, so it renders relative: Next.js's
+    // fallback to the Vercel deployment's URL covers social images, not
+    // alternates. Setting `metadataBase` from a server-only `SITE_URL` is a
+    // slice 3 follow-up (ADR 0050). The CMS's absolute URLs are never used
+    // (ADR 0040).
     alternates: { canonical: listingPath(valid.filter, valid.page) },
     ...(noneShowable(listing, cardCount) ? { robots: { index: false } } : {}),
   };
