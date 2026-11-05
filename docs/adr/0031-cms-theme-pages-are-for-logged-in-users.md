@@ -9,7 +9,7 @@ WordPress still renders its own pages with its theme: single resources at the mi
 
 "Logged-in only" covers every route the theme answers, including feeds, core sitemaps, author archives and search results, and the oEmbed discovery links are removed from page heads. REST stays public.
 
-The 404 is decided before core's canonical and old-slug redirects run, so an anonymous visitor gets no redirect from the CMS of any kind. On top of that, `robots.txt` disallows the whole CMS, and CMS responses carry `noindex`: a meta robots tag on the pages logged-in users see, and an `X-Robots-Tag: noindex` header.
+The 404 is decided before core's canonical and old-slug redirects run, so an anonymous visitor gets no redirect from the CMS of any kind. On top of that, `robots.txt` disallows the whole CMS, and CMS responses carry `noindex, nofollow`: a meta robots tag on the pages logged-in users see, and an `X-Robots-Tag: noindex, nofollow` header.
 
 ## Why a 404 and not a redirect
 
@@ -26,7 +26,7 @@ The 404 is decided before core's canonical and old-slug redirects run, so an ano
 ## Consequences
 
 - `robots.txt` itself, the uploads directory and the REST API stay reachable anonymously. The uploads are static files the web server serves without WordPress, and the front end's `/media/` rewrite reads them.
-- A crawler that obeys the `robots.txt` disallow never fetches a page, so it never sees the `noindex`; the header is for crawlers that ignore `robots.txt` and for responses reached some other way, and the 404 is what keeps the content out either way.
+- A crawler that obeys the `robots.txt` disallow never fetches a page, so it never sees the `noindex, nofollow`; the header is for crawlers that ignore `robots.txt` and for responses reached some other way, and the 404 is what keeps the content out either way.
 - `get_permalink()` still returns the absolute CMS URL; the front end strips the domain ([ADR 0024](0024-type-paths-mirrored-on-both-sites.md)).
 - 2026-11-05: an anonymous `?wp_customize=on`, `?customize_changeset_uuid=…` or `?preview_id=…&preview_nonce=…` gets core's own `wp_die()` error page, a 500 or a 403, which core sends before `wp()` and so before the gate, with or without the plugin, and which shows no content.
 - 2026-11-05: the 404 renders the active theme's header, and Twenty Twenty-Five's navigation there lists published pages, so the slice-5 theme's 404 template must not render navigation that lists pages.
@@ -41,5 +41,6 @@ The 404 is decided before core's canonical and old-slug redirects run, so an ano
 - **The favicon is a 404 too.** 2026-11-05: `/favicon.ico` is not a theme page, but core answers it with a redirect to the site icon, and the rule is no redirects.
 - **The oEmbed REST endpoint stays.** 2026-11-05: the discovery links are removed; the endpoint is a REST route, REST stays public, and it only describes an embed page that is itself a 404.
 - **REST responses get `X-Robots-Tag: noindex` from core.** 2026-11-05: `WP_REST_Server::serve_request()` sends it on every response, so the plugin adds the header to theme responses only, through `wp_headers`, and a PHPUnit test pins core's behaviour.
+- **Theme responses say `noindex, nofollow`, not `noindex` alone.** 2026-11-05: the meta robots tag and the `X-Robots-Tag` header both carry the two directives, which is what core prints for a site set to discourage search engines; following a link on the CMS leads only to more 404s, so `nofollow` states the intent rather than changing what gets crawled. Core's `follow`, which it adds to search results and embeds on a public site, is removed so the tag never says both. REST keeps core's `noindex` alone.
 - **The 404 is uncacheable, like every core 404.** 2026-11-05: Varnish does not cache it, so every anonymous request reaches PHP; cacheable 404s were not taken because a plain 404 should look like any other.
 

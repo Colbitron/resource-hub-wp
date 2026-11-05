@@ -16,9 +16,9 @@ namespace ResourceHub\Lockdown;
  * The front end is the only public site. {@see Gate} turns an anonymous theme-page request into
  * a 404 before any redirect can run and {@see NoRedirects} keeps it one; {@see Sitemaps} switches
  * core sitemaps off for anonymous visitors whatever the gate decides; {@see Robots} disallows
- * the CMS in `robots.txt` and marks every response `noindex`; {@see Oembed} drops the discovery
- * links that would advertise the embed pages. The REST API, the admin, the login page, cron and
- * the uploads directory are untouched, because none of them goes through the theme.
+ * the CMS in `robots.txt` and marks every theme response `noindex, nofollow`; {@see Oembed} drops
+ * the discovery links that would advertise the embed pages. The REST API, the admin, the login
+ * page, cron and the uploads directory are untouched, because none of them goes through the theme.
  */
 final class Lockdown {
 	/**

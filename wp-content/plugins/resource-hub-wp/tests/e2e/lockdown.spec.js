@@ -2,9 +2,9 @@
  * The CMS's theme pages are for logged-in users only (ADR 0031): an
  * anonymous visitor gets a 404 with no redirect from a resource, the front
  * page, the feed and the sitemap; robots.txt stays reachable and disallows
- * everything; a logged-in user still sees the resource; the REST API stays
- * public and says noindex; and an upload is served by the web server, which
- * the plugin cannot touch.
+ * everything; a logged-in user still sees the resource; theme responses say
+ * noindex, nofollow, while the REST API stays public with core's noindex;
+ * and an upload is served by the web server, which the plugin cannot touch.
  *
  * PHPUnit's reinstall leaves the tests site with plain permalinks, under
  * which core has no rewrite rules, so `/feed/`, `/wp-sitemap.xml` and
@@ -121,7 +121,9 @@ test.describe( 'CMS lockdown', () => {
 			expect( response.status(), path ).toBe( 404 );
 			expect( headers.location, path ).toBeUndefined();
 			expect( headers[ 'content-type' ], path ).toContain( 'text/html' );
-			expect( headers[ 'x-robots-tag' ], path ).toBe( 'noindex' );
+			expect( headers[ 'x-robots-tag' ], path ).toBe(
+				'noindex, nofollow'
+			);
 		}
 	} );
 
@@ -135,6 +137,20 @@ test.describe( 'CMS lockdown', () => {
 		expect( html ).not.toContain( 'application/rss+xml' );
 		expect( html ).not.toContain( 'EditURI' );
 		expect( html ).not.toContain( '/feed/' );
+	} );
+
+	test( 'the 404 page carries meta robots noindex and nofollow', async ( {
+		anonymous,
+	} ) => {
+		const response = await anonymous.get( resource.link );
+		const html = await response.text();
+		const robots = html.match( /<meta name='robots' content='([^']*)'/ );
+
+		expect( response.status() ).toBe( 404 );
+		expect( robots ).not.toBeNull();
+		expect( robots[ 1 ] ).toMatch( /\bnoindex\b/ );
+		expect( robots[ 1 ] ).toMatch( /\bnofollow\b/ );
+		expect( robots[ 1 ] ).not.toMatch( /(^|, )follow\b/ );
 	} );
 
 	test( 'robots.txt is reachable and disallows everything', async ( {
@@ -220,17 +236,22 @@ test.describe( 'CMS lockdown', () => {
 		}
 	} );
 
-	test( 'a logged-in user sees the resource, marked noindex, with no oEmbed links', async ( {
+	test( 'a logged-in user sees the resource, marked noindex and nofollow, with no oEmbed links', async ( {
 		page,
 	} ) => {
 		const response = await page.goto( resource.link );
 
 		expect( response.status() ).toBe( 200 );
 		expect( page.url() ).toBe( resource.link );
-		expect( response.headers()[ 'x-robots-tag' ] ).toBe( 'noindex' );
-		await expect( page.locator( 'meta[name="robots"]' ) ).toHaveAttribute(
+		expect( response.headers()[ 'x-robots-tag' ] ).toBe(
+			'noindex, nofollow'
+		);
+		const robots = page.locator( 'meta[name="robots"]' );
+		await expect( robots ).toHaveAttribute( 'content', /\bnoindex\b/ );
+		await expect( robots ).toHaveAttribute( 'content', /\bnofollow\b/ );
+		await expect( robots ).not.toHaveAttribute(
 			'content',
-			/noindex/
+			/(^|, )follow\b/
 		);
 		await expect(
 			page.locator( 'link[type="application/json+oembed"]' )
@@ -249,7 +270,7 @@ test.describe( 'CMS lockdown', () => {
 		expect( await response.text() ).toContain( '<sitemapindex' );
 	} );
 
-	test( 'the REST API stays public and says noindex', async ( {
+	test( "the REST API stays public and keeps core's noindex", async ( {
 		anonymous,
 	} ) => {
 		const response = await anonymous.get( '/wp-json/wp/v2/resources', {
