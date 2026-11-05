@@ -16,11 +16,13 @@
  * save. The first record that passes fixes the batch, and later polls must
  * match it. An earlier save's late result therefore does not count: either it
  * landed before this save (too old), or the save response carried that
- * earlier save's own record, pending or final (same batch, excluded). The one
- * case left is three saves inside one send's few seconds, where the first
- * save's result overwrites the second's pending before the third save reads
- * it; the record carries nothing that tells those apart (ADR 0018). A later
- * save aborts the earlier poll.
+ * earlier save's own record, pending or final (same batch, excluded). The
+ * store never writes a batch's final result over another batch's pending, so
+ * a later save's records are not overwritten by an earlier send (ADR 0018). A
+ * later save pauses the earlier poll while it runs, and replaces it only if it
+ * succeeds and starts a poll of its own; a save that fails, such as one
+ * refused for breaking the one-type rule, sent nothing, so the earlier save's
+ * poll resumes.
  *
  * Whether a `pending` is stale is judged with the server's clock, from the
  * REST response's `Date` header, never the browser's. The sentences come from
@@ -367,7 +369,11 @@ function RevalidationFeedback() {
 		wasSaving: false,
 		silent: false,
 		statusBefore: '',
+		// The save whose poll had not finished when this save started.
+		interrupted: null,
 	} );
+	// The save whose poll is running, until it shows its result.
+	const running = useRef( null );
 
 	// The last result, once per post.
 	useEffect( () => {
@@ -381,7 +387,9 @@ function RevalidationFeedback() {
 		return () => controller.abort();
 	}, [ isResource, postId ] );
 
-	// A save starting stops the previous poll; a save ending starts one.
+	// A save starting pauses the running poll. A save ending starts a poll of
+	// its own, or, when it starts none (it failed, or sent nothing), resumes
+	// the paused one.
 	useEffect( () => {
 		const track = tracking.current;
 
@@ -396,17 +404,27 @@ function RevalidationFeedback() {
 			track.statusBefore = status;
 
 			if ( ! isSilentSave ) {
+				track.interrupted = running.current;
 				setSave( null );
 			}
 
 			return;
 		}
 
+		if ( track.silent ) {
+			return;
+		}
+
 		const touchesPublic =
 			track.statusBefore === 'publish' || status === 'publish';
+		const interrupted = track.interrupted;
+		track.interrupted = null;
 
-		if ( ! track.silent && touchesPublic && saveSucceeded ) {
+		if ( touchesPublic && saveSucceeded ) {
 			setSave( { postId, known, since: serverTime( modifiedGmt ) } );
+		} else if ( interrupted ) {
+			// A new object, so the poll effect runs again for the same save.
+			setSave( { ...interrupted } );
 		}
 	}, [
 		isResource,
@@ -426,7 +444,17 @@ function RevalidationFeedback() {
 		}
 
 		const controller = new AbortController();
-		pollAfterSave( save, controller.signal );
+		running.current = save;
+
+		pollAfterSave( save, controller.signal ).then(
+			() => {
+				if ( ! controller.signal.aborted ) {
+					running.current = null;
+				}
+			},
+			// Aborted while waiting between polls: nothing to show.
+			() => {}
+		);
 
 		return () => controller.abort();
 	}, [ save ] );

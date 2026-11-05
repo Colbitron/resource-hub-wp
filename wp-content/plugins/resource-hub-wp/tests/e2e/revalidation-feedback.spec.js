@@ -375,6 +375,108 @@ test.describe( 'Revalidation feedback', () => {
 		).toHaveCount( 0 );
 	} );
 
+	test( "a refused save leaves the earlier save's poll to show its result", async ( {
+		admin,
+		page,
+	} ) => {
+		await admin.createNewPost( {
+			postType: 'resource',
+			title: `E2E refused save ${ Date.now() }`,
+		} );
+
+		// Phase 1: the first save's batch is pending. Phase 2: the second save
+		// is refused, so nothing new is sent. Phase 3: the first save's result.
+		let phase = 0;
+		let pendingPolls = 0;
+		let refusals = 0;
+
+		await stubRecord( page, {
+			onPoll: ( date ) => {
+				if ( phase === 0 ) {
+					return undefined;
+				}
+
+				if ( phase === 1 ) {
+					pendingPolls++;
+				}
+
+				return phase < 3
+					? storedRecord( {
+							status: 'pending',
+							outcome: 'pending',
+							batch_id: 'batch-1',
+							time: serverStamp( date ),
+						} )
+					: storedRecord( {
+							status: 'sent',
+							outcome: 'ok',
+							code: 200,
+							batch_id: 'batch-1',
+							time: serverStamp( date ),
+						} );
+			},
+		} );
+
+		// Registered last, so it sees the second save before stubRecord does.
+		await page.route(
+			( url ) => /^\/wp\/v2\/resources\/\d+\/?$/.test( restRoute( url ) ),
+			( route ) => {
+				if ( phase !== 2 || route.request().method() === 'GET' ) {
+					return route.fallback();
+				}
+
+				refusals++;
+
+				return route.fulfill( {
+					status: 400,
+					json: {
+						code: 'resource_hub_type_too_many',
+						message:
+							'A resource can have only one type. Choose one in the Types panel.',
+						data: { status: 400 },
+					},
+				} );
+			}
+		);
+		await collectNotices( page );
+
+		phase = 1;
+		const postId = await page.evaluate( async ( typeId ) => {
+			const { dispatch, select } = window.wp.data;
+			dispatch( 'core/editor' ).editPost( {
+				status: 'publish',
+				resource_type: [ typeId ],
+			} );
+			await dispatch( 'core/editor' ).savePost();
+			return select( 'core/editor' ).getCurrentPostId();
+		}, type.id );
+		createdIds.push( postId );
+
+		// The first save's poll is reading pending; the second save is refused.
+		await expect.poll( () => pendingPolls ).toBeGreaterThan( 0 );
+		phase = 2;
+		const refused = await page.evaluate( async () => {
+			const { dispatch, select } = window.wp.data;
+			dispatch( 'core/editor' ).editPost( { excerpt: 'Refused' } );
+			try {
+				await dispatch( 'core/editor' ).savePost();
+			} catch {
+				// Some editor versions reject; the failure is read below.
+			}
+			return ! select( 'core/editor' ).didPostSaveRequestSucceed();
+		} );
+		expect( refused ).toBe( true );
+		expect( refusals ).toBe( 1 );
+
+		phase = 3;
+		await expect
+			.poll( () => shownNotices( page ), { timeout: 15000 } )
+			.toEqual( [ { status: 'success', content: ACCEPTED } ] );
+		await expect(
+			page.locator( '.components-snackbar' ).getByText( ACCEPTED )
+		).toBeVisible();
+	} );
+
 	test( 'the status page enables the test button only when a resource is published, and the test records its result', async ( {
 		admin,
 		page,

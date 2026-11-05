@@ -19,8 +19,10 @@ use WP_Term;
  *
  * A batch gets one result, written to every object it carried, each copy noting how many other
  * changes travelled with it. The status moves from `pending`, written when the batch is scheduled,
- * to `sent` or `failed` when the cron job records the response. A force-deleted post or a deleted
- * term has nowhere to hold a result; those are recorded by {@see PostHog} alone.
+ * to `sent` or `failed` when the cron job records the response. A final result is not written over
+ * another batch's `pending`: that batch was scheduled by a later save, and its own result replaces
+ * its pending. A force-deleted post or a deleted term has nowhere to hold a result; those are
+ * recorded by {@see PostHog} alone.
  *
  * The REST field is read-only and in the `edit` context only, so it never appears in the public
  * responses the front end reads. Core already refuses `context=edit` to users who cannot edit the
@@ -163,9 +165,11 @@ final class ResultStore {
 	}
 
 	/**
-	 * Writes one record per event, skipping objects that no longer exist. The free-text fields, `body`
-	 * and `error`, are made valid UTF-8 first, since the database refuses a value that is not. Should a
-	 * record still fail to write, it is written again without its body, so the status never stays `pending`.
+	 * Writes one record per event, skipping objects that no longer exist, and skipping a final result
+	 * for an object whose stored record is another batch's `pending` ({@see ResultStore::is_pending_for_another_batch()}).
+	 * The free-text fields, `body` and `error`, are made valid UTF-8 first, since the database refuses
+	 * a value that is not. Should a record still fail to write, it is written again without its body,
+	 * so the status never stays `pending`.
 	 *
 	 * @param string                           $batch_id The batch.
 	 * @param array<int, array<string, mixed>> $events   Its events.
@@ -192,6 +196,10 @@ final class ResultStore {
 			$object = self::target( $event );
 
 			if ( null === $object ) {
+				continue;
+			}
+
+			if ( self::PENDING !== $record['status'] && self::is_pending_for_another_batch( $object[0], $object[1], $batch_id ) ) {
 				continue;
 			}
 
@@ -232,6 +240,30 @@ final class ResultStore {
 		$post = get_post( (int) $event['id'] );
 
 		return $post instanceof WP_Post && PostType::NAME === $post->post_type ? array( 'post', $post->ID ) : null;
+	}
+
+	/**
+	 * Whether the object's stored record is a `pending` from a batch other than this one.
+	 *
+	 * Every batch sent through cron writes its `pending` when it is scheduled, so a stored `pending`
+	 * from another batch belongs to a later save, which the editor may be polling for. Writing an
+	 * older batch's final result over it would make that save's poll read the wrong batch, and the
+	 * later batch's own result replaces its pending anyway. The cost: if that later send never
+	 * completes, this result is lost and the stored record stays `pending` until the stale-pending
+	 * display covers it (ADR 0018). The same holds for a final with no pending of its own (a
+	 * held-back event, a synchronous send, the status page's test) that lands while another batch is
+	 * pending.
+	 *
+	 * @param string $meta_type `post` or `term`.
+	 * @param int    $object_id Post or term ID.
+	 * @param string $batch_id  The batch whose final result is about to be written.
+	 */
+	private static function is_pending_for_another_batch( string $meta_type, int $object_id, string $batch_id ): bool {
+		$stored = 'term' === $meta_type ? self::read_term( $object_id ) : self::read_post( $object_id );
+
+		return null !== $stored
+			&& self::PENDING === ( $stored['status'] ?? null )
+			&& ( $stored['batch_id'] ?? null ) !== $batch_id;
 	}
 
 	/**
