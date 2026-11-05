@@ -46,9 +46,11 @@ const NOTICE_ID = 'resource-hub-revalidation';
 const POLL_INTERVAL_MS = 1000;
 const POLL_ATTEMPTS = 10;
 
-// Mirrors ResultText::STALE_PENDING_SECONDS and ResultText::WITH_ERROR in PHP.
+// Mirrors ResultText::STALE_PENDING_SECONDS, ResultText::WITH_ERROR and
+// ResultText::INVALID_SECRET in PHP.
 const STALE_PENDING_MS = 5 * 60 * 1000;
 const WITH_ERROR = [ 'bad_request', 'server_error', 'transport_error' ];
+const INVALID_SECRET = 'not_configured_invalid_secret';
 
 // Handed over by RevalidationAssets through wp_localize_script().
 const SENTENCES = window.resourceHubRevalidation?.sentences ?? {};
@@ -141,9 +143,22 @@ function describe( record, serverNow ) {
 
 	const known =
 		typeof record.outcome === 'string' &&
-		! [ 'stale', 'failed', 'no_answer' ].includes( record.outcome ) &&
+		! [ 'stale', 'failed', 'no_answer', INVALID_SECRET ].includes(
+			record.outcome
+		) &&
 		SENTENCES[ record.outcome ];
 	let message = known ? sentence( record.outcome ) : sentence( 'failed' );
+
+	// Only an invalid secret stores an error on a `not_configured` record; the
+	// message is not shown, the sentence points to the settings instead.
+	// Mirrors ResultText::is_invalid_secret().
+	if (
+		record.outcome === 'not_configured' &&
+		typeof record.error === 'string' &&
+		record.error.trim() !== ''
+	) {
+		message = sentence( INVALID_SECRET );
+	}
 
 	if ( record.outcome === 'unexpected_code' ) {
 		message = sprintf( message, Number( record.code ) || 0 );

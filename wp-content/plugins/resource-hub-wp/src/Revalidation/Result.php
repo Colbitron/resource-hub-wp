@@ -67,6 +67,12 @@ final class Result {
 	public const BAD_BODY_MESSAGE = 'The front end answered 200 but not with the expected body; check the front-end URL.';
 
 	/**
+	 * The message stored on a `not_configured` result when the cause is a secret that is set but breaks
+	 * the rule in {@see Config::is_valid_secret()}. It names the rule, never the value.
+	 */
+	public const INVALID_SECRET_MESSAGE = 'The revalidation secret is set but is not 32 to 256 printable ASCII characters with no whitespace.';
+
+	/**
 	 * The message stored when the payload could not be encoded as JSON, so nothing was sent.
 	 */
 	public const ENCODE_ERROR_MESSAGE = 'Not sent: the events could not be encoded as JSON.';
@@ -97,10 +103,15 @@ final class Result {
 	}
 
 	/**
-	 * A result for a send that never happened because the front-end URL or the secret is unset.
+	 * A result for a send that never happened because the front-end URL or the secret is unset, or the
+	 * secret is invalid. An invalid secret is the one cause recorded, as
+	 * {@see Result::INVALID_SECRET_MESSAGE} in `error`, so the admin screens can say where to look; an
+	 * unset value leaves `error` null.
+	 *
+	 * @param bool $invalid_secret Whether the secret in force is set but breaks the rule.
 	 */
-	public static function not_configured(): self {
-		return new self( self::FAILED, self::NOT_CONFIGURED, null, '', null, 0 );
+	public static function not_configured( bool $invalid_secret = false ): self {
+		return new self( self::FAILED, self::NOT_CONFIGURED, null, '', $invalid_secret ? self::INVALID_SECRET_MESSAGE : null, 0 );
 	}
 
 	/**
@@ -161,7 +172,9 @@ final class Result {
 				return 'Revalidation ' . lcfirst( self::ENCODE_ERROR_MESSAGE );
 			case self::NOT_CONFIGURED:
 			default:
-				return 'Revalidation skipped: the front-end URL or the secret is not configured.';
+				return null !== $this->error
+					? 'Revalidation skipped: the front-end URL or the secret is not configured. ' . $this->error
+					: 'Revalidation skipped: the front-end URL or the secret is not configured.';
 		}
 	}
 }

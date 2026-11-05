@@ -543,7 +543,7 @@ final class StatusPage {
 			? '<em>' . esc_html__( 'Not set', 'resource-hub' ) . '</em>'
 			: esc_html( __( 'Set', 'resource-hub' ) . ' ' . self::source_words( $secret_source, Config::REVALIDATE_SECRET ) );
 
-		if ( 'none' !== $secret_source && ! Config::is_valid_secret( Config::secret() ) ) {
+		if ( Config::has_invalid_secret() ) {
 			$secret_cell .= '<br>' . esc_html__( 'Warning: this secret is not 32 to 256 printable ASCII characters with no spaces, tabs or line breaks, so nothing is sent until it is replaced. The front end refuses such a secret too.', 'resource-hub' );
 		}
 
@@ -662,7 +662,7 @@ final class StatusPage {
 		$secret_constant = 'constant' === Config::source_of( Config::REVALIDATE_SECRET );
 		$stored_url      = get_option( self::URL_OPTION, '' );
 		$stored_url      = is_string( $stored_url ) ? $stored_url : '';
-		$secret_stored   = '' !== trim( (string) get_option( self::SECRET_OPTION, '' ) );
+		$secret_stored   = 'none' !== Config::source_of( Config::REVALIDATE_SECRET );
 
 		ob_start();
 		settings_fields( self::OPTION_GROUP );

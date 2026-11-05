@@ -37,6 +37,26 @@ final class ResultText {
 	public const WITH_ERROR = array( Result::BAD_REQUEST, Result::SERVER_ERROR, Result::TRANSPORT_ERROR );
 
 	/**
+	 * The sentence key for a `not_configured` record whose cause is an invalid secret: a key of
+	 * {@see ResultText::sentences()}, not an outcome.
+	 */
+	public const INVALID_SECRET = 'not_configured_invalid_secret';
+
+	/**
+	 * Whether a record is a `not_configured` skipped because the secret in force breaks the rule. Only
+	 * that cause stores an `error` on a `not_configured` result ({@see Result::not_configured()}), so
+	 * any non-empty `error` there means it; the message itself is never shown, the sentence says where
+	 * to look instead.
+	 *
+	 * @param array<string, mixed> $record The stored record.
+	 */
+	public static function is_invalid_secret( array $record ): bool {
+		$error = $record['error'] ?? null;
+
+		return Result::NOT_CONFIGURED === ( $record['outcome'] ?? '' ) && is_string( $error ) && '' !== trim( $error );
+	}
+
+	/**
 	 * Whether a record is a `pending` older than {@see ResultText::STALE_PENDING_SECONDS}.
 	 *
 	 * @param array<string, mixed> $record The stored record.
@@ -106,7 +126,7 @@ final class ResultText {
 			case Result::TRANSPORT_ERROR:
 				return __( 'Could not reach the front end', 'resource-hub' );
 			case Result::NOT_CONFIGURED:
-				return __( 'Not configured', 'resource-hub' );
+				return self::is_invalid_secret( $record ) ? __( 'Not configured: invalid secret', 'resource-hub' ) : __( 'Not configured', 'resource-hub' );
 			case Result::NO_SINGLE_TYPE:
 				return __( 'Not sent: needs one type', 'resource-hub' );
 			case Result::ENCODE_ERROR:
@@ -118,7 +138,8 @@ final class ResultText {
 
 	/**
 	 * The sentence for each outcome, keyed by outcome, plus `stale` for a stale pending, `failed` for
-	 * an outcome this version does not know, and `no_answer`, which only the block editor uses, for a
+	 * an outcome this version does not know, {@see ResultText::INVALID_SECRET} for a `not_configured`
+	 * caused by an invalid secret, and `no_answer`, which only the block editor uses, for a
 	 * poll window that closed with no record for the save. `unexpected_code` holds `%d` for the HTTP
 	 * code. This is the one source of the wording: {@see ResultText::sentence()} reads it here, and the
 	 * block editor's script receives it through `wp_localize_script()` (ADR 0018). Nothing in it is
@@ -140,6 +161,7 @@ final class ResultText {
 			Result::TIMEOUT         => __( 'Revalidation timed out: the front end did not answer within 3 seconds.', 'resource-hub' ),
 			Result::TRANSPORT_ERROR => __( 'Revalidation could not reach the front end.', 'resource-hub' ),
 			Result::NOT_CONFIGURED  => __( 'Revalidation skipped: the front-end URL or the secret is not configured.', 'resource-hub' ),
+			self::INVALID_SECRET    => __( 'Revalidation skipped: the front-end URL or the secret is not configured; the secret is set but not valid, so check Settings > Resource Hub.', 'resource-hub' ),
 			Result::NO_SINGLE_TYPE  => __( 'Revalidation not sent: a resource needs exactly one type.', 'resource-hub' ),
 			Result::ENCODE_ERROR    => __( 'Revalidation not sent: the events could not be encoded as JSON.', 'resource-hub' ),
 			'failed'                => __( 'Revalidation failed.', 'resource-hub' ),
@@ -149,7 +171,8 @@ final class ResultText {
 
 	/**
 	 * One plain sentence, from {@see ResultText::sentences()}, the wording the block editor's notice
-	 * also uses: the error message after it for the outcomes in {@see ResultText::WITH_ERROR}, and how
+	 * also uses: the error message after it for the outcomes in {@see ResultText::WITH_ERROR}, a pointer
+	 * to the settings for a `not_configured` caused by an invalid secret, and how
 	 * many other changes travelled in the same request, when any did.
 	 *
 	 * @param array<string, mixed> $record The stored record.
@@ -170,6 +193,10 @@ final class ResultText {
 		}
 
 		$sentence = in_array( $outcome, Result::OUTCOMES, true ) && isset( $sentences[ $outcome ] ) ? $sentences[ $outcome ] : $sentences['failed'];
+
+		if ( self::is_invalid_secret( $record ) ) {
+			$sentence = $sentences[ self::INVALID_SECRET ];
+		}
 
 		if ( Result::UNEXPECTED_CODE === $outcome ) {
 			$sentence = sprintf( $sentence, (int) ( $record['code'] ?? 0 ) );

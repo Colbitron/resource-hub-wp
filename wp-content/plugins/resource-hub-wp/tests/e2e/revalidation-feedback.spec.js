@@ -14,6 +14,8 @@ const { test, expect } = require( './fixtures' );
 
 const NOT_CONFIGURED =
 	'Revalidation skipped: the front-end URL or the secret is not configured.';
+const INVALID_SECRET =
+	'Revalidation skipped: the front-end URL or the secret is not configured; the secret is set but not valid, so check Settings > Resource Hub.';
 const ACCEPTED = 'The front end accepted the revalidation (200).';
 const NOTICE_ID = 'resource-hub-revalidation';
 
@@ -263,6 +265,54 @@ test.describe( 'Revalidation feedback', () => {
 		expect( polls ).toBe( 2 );
 		await expect(
 			page.locator( '.components-snackbar' ).getByText( ACCEPTED )
+		).toBeVisible();
+	} );
+
+	test( 'a skip caused by an invalid secret points to the settings and never quotes the stored message', async ( {
+		admin,
+		page,
+	} ) => {
+		await admin.createNewPost( {
+			postType: 'resource',
+			title: `E2E invalid secret ${ Date.now() }`,
+		} );
+
+		const stored = 'The stored cause, which the notice does not quote.';
+		let stubbing = false;
+
+		await stubRecord( page, {
+			onPoll: ( date ) =>
+				stubbing
+					? storedRecord( {
+							status: 'failed',
+							outcome: 'not_configured',
+							error: stored,
+							batch_id: 'stub-batch',
+							time: serverStamp( date ),
+						} )
+					: undefined,
+		} );
+		await collectNotices( page );
+
+		stubbing = true;
+		const postId = await page.evaluate( async ( typeId ) => {
+			const { dispatch, select } = window.wp.data;
+			dispatch( 'core/editor' ).editPost( {
+				status: 'publish',
+				resource_type: [ typeId ],
+			} );
+			await dispatch( 'core/editor' ).savePost();
+			return select( 'core/editor' ).getCurrentPostId();
+		}, type.id );
+		createdIds.push( postId );
+
+		await expect
+			.poll( () => shownNotices( page ), { timeout: 15000 } )
+			.toEqual( [ { status: 'error', content: INVALID_SECRET } ] );
+		await expect(
+			page
+				.getByRole( 'region', { name: 'Editor content' } )
+				.getByText( INVALID_SECRET )
 		).toBeVisible();
 	} );
 

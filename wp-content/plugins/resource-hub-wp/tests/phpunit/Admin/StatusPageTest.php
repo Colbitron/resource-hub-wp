@@ -673,11 +673,33 @@ final class StatusPageTest extends RevalidationTestCase {
 		$this->assertStringContainsString( 'Warning: this secret is not 32 to 256 printable ASCII characters', $html );
 		$this->assertStringNotContainsString( 'short-legacy-secret', $html );
 
-		$this->assertSame( Result::NOT_CONFIGURED, ( new Sender() )->send( Payload::build( array() ) )->outcome );
+		$result = ( new Sender() )->send( Payload::build( array() ) );
+		$this->assertSame( Result::NOT_CONFIGURED, $result->outcome );
+		$this->assertSame( Result::INVALID_SECRET_MESSAGE, $result->error );
 		$this->assertSame( array(), $this->requests );
 
 		$this->configure();
 		$this->assertStringNotContainsString( 'Warning: this secret', StatusPage::html() );
+	}
+
+	/**
+	 * A stored option of whitespace only is a stored secret, untrimmed, everywhere on the page: the
+	 * table says it is set from the option and warns, and the field's help says a secret is stored.
+	 */
+	public function test_whitespace_only_option_counts_as_stored(): void {
+		$this->configure( 'https://hub.example/', " \n\t" );
+
+		$html = StatusPage::html();
+		$this->assertStringContainsString( 'Set (from the option resource_hub_revalidate_secret', $html );
+		$this->assertStringContainsString( 'Warning: this secret is not 32 to 256 printable ASCII characters', $html );
+		$this->assertStringContainsString( 'A secret is stored. Enter a new one to replace it', $html );
+		$this->assertStringNotContainsString( 'The bearer token the front end expects.', $html );
+
+		$this->configure( 'https://hub.example/', '' );
+
+		$html = StatusPage::html();
+		$this->assertStringNotContainsString( 'A secret is stored.', $html );
+		$this->assertStringContainsString( 'The bearer token the front end expects.', $html );
 	}
 
 	/**

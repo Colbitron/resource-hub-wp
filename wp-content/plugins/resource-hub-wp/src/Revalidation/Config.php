@@ -77,6 +77,17 @@ final class Config {
 	}
 
 	/**
+	 * Whether a secret is in force but breaks the rule in {@see Config::is_valid_secret()}: set, from
+	 * the constant or the option, yet not one the front end would accept. The status page warns about
+	 * it, and a send skipped for it records why.
+	 */
+	public static function has_invalid_secret(): bool {
+		$secret = self::secret();
+
+		return '' !== $secret && ! self::is_valid_secret( $secret );
+	}
+
+	/**
 	 * Whether both values a send needs are set, and the secret is valid. When this is false nothing
 	 * is sent and the result is recorded as not configured; the status page says which value is at
 	 * fault.

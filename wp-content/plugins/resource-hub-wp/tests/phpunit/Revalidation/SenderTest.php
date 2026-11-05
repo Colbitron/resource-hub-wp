@@ -236,6 +236,28 @@ final class SenderTest extends RevalidationTestCase {
 			$this->assertSame( 0, $result->duration_ms );
 		}
 
+		$this->configure( 'https://hub.example', '' );
+		$this->assertNull( ( new Sender() )->send( self::payload() )->error, 'An unset secret records no cause.' );
+
+		$this->assertSame( array(), $this->requests );
+	}
+
+	/**
+	 * A secret that is set but breaks the rule is recorded as the cause, by the rule's message and
+	 * never by its value, and WP-CLI's sentence says so.
+	 */
+	public function test_invalid_secret_is_recorded_as_the_cause(): void {
+		foreach ( array( 'https://hub.example', '' ) as $url ) {
+			$this->configure( $url, 'short-legacy-secret' );
+
+			$result = ( new Sender() )->send( self::payload() );
+
+			$this->assertSame( Result::NOT_CONFIGURED, $result->outcome );
+			$this->assertSame( Result::INVALID_SECRET_MESSAGE, $result->error );
+			$this->assertStringNotContainsString( 'short-legacy-secret', (string) wp_json_encode( $result->to_array() ) );
+			$this->assertStringContainsString( Result::INVALID_SECRET_MESSAGE, $result->describe() );
+		}
+
 		$this->assertSame( array(), $this->requests );
 	}
 

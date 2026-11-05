@@ -103,14 +103,45 @@ final class ResultTextTest extends WP_UnitTestCase {
 	public function test_sentences_are_the_one_source(): void {
 		$sentences = ResultText::sentences();
 
-		foreach ( array_merge( Result::OUTCOMES, array( ResultStore::PENDING, 'stale', 'failed', 'no_answer' ) ) as $key ) {
+		foreach ( array_merge( Result::OUTCOMES, array( ResultStore::PENDING, 'stale', 'failed', 'no_answer', ResultText::INVALID_SECRET ) ) as $key ) {
 			$this->assertArrayHasKey( $key, $sentences );
 			$this->assertNotSame( '', $sentences[ $key ] );
 		}
 
 		$this->assertSame( $sentences[ Result::NOT_CONFIGURED ], ResultText::sentence( self::record( array( 'outcome' => Result::NOT_CONFIGURED ) ) ) );
 		$this->assertSame( $sentences['failed'], ResultText::sentence( self::record( array( 'outcome' => 'no_answer' ) ) ), 'A non-outcome key is not an outcome.' );
+		$this->assertSame( $sentences['failed'], ResultText::sentence( self::record( array( 'outcome' => ResultText::INVALID_SECRET ) ) ), 'Nor is the invalid-secret key.' );
 		$this->assertSame( $sentences['failed'], ResultText::sentence( self::record( array( 'outcome' => 'something_new' ) ) ) );
+	}
+
+	/**
+	 * A `not_configured` skipped for an invalid secret says so and points to the settings, in the
+	 * sentence and the list label, without quoting the stored message; one with no cause keeps the
+	 * plain wording.
+	 */
+	public function test_invalid_secret_points_to_the_settings(): void {
+		$record = self::record(
+			array(
+				'outcome' => Result::NOT_CONFIGURED,
+				'code'    => null,
+				'error'   => Result::INVALID_SECRET_MESSAGE,
+			)
+		);
+		$hint   = 'Revalidation skipped: the front-end URL or the secret is not configured; the secret is set but not valid, so check Settings > Resource Hub.';
+
+		$this->assertTrue( ResultText::is_invalid_secret( $record ) );
+		$this->assertSame( $hint, ResultText::sentence( $record ) );
+		$this->assertSame( ResultText::sentences()[ ResultText::INVALID_SECRET ], ResultText::sentence( $record ) );
+		$this->assertSame( 'Not configured: invalid secret', ResultText::label( $record ) );
+		$this->assertSame( 'error', ResultText::level( $record ) );
+		$this->assertSame( $hint . ' It was sent with 2 other changes.', ResultText::sentence( array( 'others' => 2 ) + $record ) );
+
+		$plain = array( 'error' => null ) + $record;
+		$this->assertFalse( ResultText::is_invalid_secret( $plain ) );
+		$this->assertSame( 'Revalidation skipped: the front-end URL or the secret is not configured.', ResultText::sentence( $plain ) );
+		$this->assertSame( 'Not configured', ResultText::label( $plain ) );
+
+		$this->assertFalse( ResultText::is_invalid_secret( array( 'outcome' => Result::SERVER_ERROR ) + $record ), 'Only a not_configured record.' );
 	}
 
 	/**
