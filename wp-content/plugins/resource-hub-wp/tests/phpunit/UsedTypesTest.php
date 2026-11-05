@@ -174,6 +174,35 @@ final class UsedTypesTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Core reads `action=delete` with `delete_tags` as a bulk delete even when `filter_action` is
+	 * submitted too, so that request is refused the same way.
+	 */
+	public function test_bulk_delete_with_a_filter_submitted_is_refused(): void {
+		$used_id = $this->used_type( 'Webinar' );
+
+		$this->post_bulk_delete( array( $used_id ), admin_url( 'edit-tags.php' ) );
+		$_POST['filter_action']    = 'Filter';
+		$_REQUEST['filter_action'] = 'Filter';
+
+		$this->assertNotNull( $this->redirect_of( array( new UsedTypes(), 'refuse_bulk_delete' ) ) );
+		$this->assertInstanceOf( WP_Term::class, get_term( $used_id, Taxonomies::TYPE ) );
+	}
+
+	/**
+	 * A literal `bulk-delete` with `filter_action` submitted is no action at all to core, which
+	 * deletes nothing, so it is left alone.
+	 */
+	public function test_literal_bulk_delete_with_a_filter_submitted_is_left_alone(): void {
+		$used_id = $this->used_type( 'Webinar' );
+
+		$this->post_bulk_delete( array( $used_id ), admin_url( 'edit-tags.php' ), 'bulk-delete' );
+		$_POST['filter_action']    = 'Filter';
+		$_REQUEST['filter_action'] = 'Filter';
+
+		$this->assertNull( $this->redirect_of( array( new UsedTypes(), 'refuse_bulk_delete' ) ) );
+	}
+
+	/**
 	 * A bulk delete of types no resource has is left to core: the handler neither redirects nor
 	 * deletes, and core then deletes each type, which the capability allows.
 	 */

@@ -169,17 +169,22 @@ final class UsedTypes {
 	 * delete types is left to core's own refusal; for the rest, the nonce checked is the one core
 	 * checks. A bulk delete of unused types is left to core.
 	 *
-	 * The request is a bulk delete when core's list table reads it as `bulk-delete`, as
-	 * `WP_Terms_List_Table::current_action()` does: no filter submitted, and `action` is `delete`
-	 * with `delete_tags` present, or is `bulk-delete` itself. Core reads only `action`; the bottom
-	 * bulk selector is copied into it in the browser.
+	 * The request is a bulk delete when core's list table reads it as `bulk-delete`, decided as
+	 * WordPress 7.1's `WP_Terms_List_Table::current_action()` decides it: `action` is `delete` and
+	 * `delete_tags` is present, whatever else is sent, a submitted `filter_action` included; or,
+	 * failing that, `WP_List_Table::current_action()` gives `bulk-delete`, which it does when
+	 * `action` is `bulk-delete` and no `filter_action` is submitted. Core reads only `action`; the
+	 * bottom bulk selector is copied into it in the browser.
 	 */
 	public function refuse_bulk_delete(): void {
-		if ( ! isset( $_REQUEST['taxonomy'], $_REQUEST['action'] ) || Taxonomies::TYPE !== $_REQUEST['taxonomy'] || ! empty( $_REQUEST['filter_action'] ) ) {
+		if ( ! isset( $_REQUEST['taxonomy'], $_REQUEST['action'] ) || Taxonomies::TYPE !== $_REQUEST['taxonomy'] ) {
 			return;
 		}
 
-		if ( 'bulk-delete' !== $_REQUEST['action'] && ( 'delete' !== $_REQUEST['action'] || ! isset( $_REQUEST['delete_tags'] ) ) ) {
+		$is_bulk_delete = ( 'delete' === $_REQUEST['action'] && isset( $_REQUEST['delete_tags'] ) )
+			|| ( 'bulk-delete' === $_REQUEST['action'] && empty( $_REQUEST['filter_action'] ) );
+
+		if ( ! $is_bulk_delete ) {
 			return;
 		}
 
