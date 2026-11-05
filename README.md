@@ -202,6 +202,7 @@ Each real decision has a record under [`docs/adr/`](docs/adr/). One sentence eac
 - [0043](docs/adr/0043-fetch-cache-with-tags-without-cache-components.md) The front end caches with `fetch`, `next: { tags, revalidate }` and `revalidateTag`/`revalidatePath`, with Cache Components, `'use cache'` and `unstable_cache` left out, because the `fetch` Data Cache persists across deployments and instances and `'use cache'` defaults to memory.
 - [0044](docs/adr/0044-xml-rpc-is-off-in-the-plugin.md) XML-RPC is off in the plugin: no methods, no `X-Pingback`, no RSD link, because no client uses it and it was an unguarded save path for the one-type rule; a host or Cloudflare block was the alternative.
 - [0045](docs/adr/0045-plain-css-on-shared-tokens.md) Styling is plain CSS on shared `--rh-` tokens with `rh-` class names as contract, no framework and no web fonts, dark mode through `prefers-color-scheme`, and the tokens reaching every front-end page through a `Shell` component rather than `layout.tsx`.
+- [0046](docs/adr/0046-which-tags-and-paths-each-event-revalidates.md) Each event revalidates the union of its current and previous state; pagination is covered by tags only; a `terms` tag, produced only by term events and carried by every fetch that embeds terms, reaches every page that shows a term; slugs take WordPress's lower-case percent-encoded form in paths and tags; and every fetch's tags come from the URL, never the response.
 
 ## Contract with the front end
 
