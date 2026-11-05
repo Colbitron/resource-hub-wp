@@ -217,6 +217,64 @@ test.describe("pagination", () => {
     expect(await cardTitles(page)).toHaveLength(14 - PER_PAGE);
   });
 
+  test("a type, a topic and a type within a topic each have a page 2, and no page 3", async ({ page, request }) => {
+    // Thirteen webinars on accessibility: the seed has none, so the combination
+    // alone needs a second page, and the type and the topic do too.
+    const created = PER_PAGE + 1;
+    for (let index = 0; index < created; index++) {
+      await cms.createResource({
+        title: `Paged webinar ${RUN} ${index}`,
+        slug: `paged-webinar-${RUN}-${index}`,
+        type: "webinar",
+        topics: ["accessibility"],
+      });
+    }
+    try {
+      await clearAppCache(request);
+      const listings = [
+        { base: "/resources/webinar/", name: "Webinar resources", total: seededTitles({ type: "webinar" }).length + created },
+        {
+          base: "/resources/topic/accessibility/",
+          name: "Resources on Accessibility",
+          total: seededTitles({ topic: "accessibility" }).length + created,
+        },
+        { base: "/resources/webinar/topic/accessibility/", name: "Webinar resources on Accessibility", total: created },
+      ];
+      for (const { base, name, total } of listings) {
+        expect(total, base).toBeGreaterThan(PER_PAGE);
+        expect(total, base).toBeLessThanOrEqual(2 * PER_PAGE);
+        const second = `${base}page/2/`;
+        // A page stored for this path earlier (a 404 from another test, or a
+        // 200 from an earlier run) may be served once more while it
+        // re-renders, so wait for a card of this run's: the oldest created
+        // resources are on page 2 of all three.
+        await expect
+          .poll(
+            async () => {
+              const response = await page.goto(second);
+              return response?.status() === 200 && (await cardTitles(page)).some((title) => title.includes(RUN));
+            },
+            { message: `${second} after the change`, timeout: 10_000 },
+          )
+          .toBe(true);
+        await expect(page.getByRole("heading", { level: 1 })).toHaveText(name);
+        await expect(page).toHaveTitle(`${name}, page 2 | Resource Hub`);
+        expect(new URL((await page.locator('link[rel="canonical"]').getAttribute("href")) as string, page.url()).pathname, second).toBe(second);
+        const nav = page.getByRole("navigation", { name: "Pagination" });
+        await expect(nav.getByRole("link", { name: "Page 2" })).toHaveAttribute("aria-current", "page");
+        await expect(nav.getByRole("link", { name: "Page 1" })).not.toHaveAttribute("aria-current", "page");
+        await expect(nav.getByRole("link", { name: "Previous" })).toHaveAttribute("href", base);
+        expect(await cardTitles(page), second).toHaveLength(total - PER_PAGE);
+
+        await expectNotFound(request, `${base}page/3/`);
+        await expectCanonicalRedirect(request, `${base}page/1/`, base);
+      }
+    } finally {
+      await cms.reset();
+      await clearAppCache(request);
+    }
+  });
+
   test("is left out of a listing with one page", async ({ page }) => {
     await page.goto("/resources/webinar/");
     await expect(page.getByRole("navigation", { name: "Pagination" })).toHaveCount(0);
