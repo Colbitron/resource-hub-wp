@@ -242,6 +242,15 @@ const DROPPED_WITH_CONTENT = new Set([
 /** Elements that become a link to their `src`. */
 const LINKED_MEDIA = new Set(["iframe", "video", "audio"]);
 
+/**
+ * Elements whose content the pass never renders: the dropped ones, and the
+ * linked media, whose children are fallback for a browser that cannot play
+ * them. An `<h1>` inside one of them is not an `<h1>` of the body
+ * (`outline`), and their text is no part of a name read from the body
+ * (`renderedText`).
+ */
+const UNRENDERED_CONTENT: ReadonlySet<string> = new Set([...DROPPED_WITH_CONTENT, ...LINKED_MEDIA]);
+
 /** Schemes a link may use. Relative references resolve to `https:` and pass. */
 const LINK_SCHEMES = new Set(["http:", "https:", "mailto:", "tel:"]);
 
@@ -330,6 +339,12 @@ interface Context {
    * pre-pass (`outline`) before the parse that renders.
    */
   demoteHeadings: boolean;
+  /**
+   * The label each `<figure>`'s `<figcaption>` gives the tables directly
+   * inside it (`figcaptionLabel`), read once per figure, so a figure
+   * holding many tables is not searched once for each.
+   */
+  readonly figureLabels: Map<Element, string>;
 }
 
 const UPLOADS_DIRECTORY = "/wp-content/uploads";
@@ -888,9 +903,9 @@ function children(node: Element, context: Context): ReactNode {
 }
 
 /**
- * The text inside `node` as the pass renders it: a browser's `textContent`
- * without the elements in `DROPPED_WITH_CONTENT`, so the heading of
- * `<h2><script>…</script>Head</h2>` is `Head`.
+ * The text inside `node`: a browser's `textContent` without the elements in
+ * `DROPPED_WITH_CONTENT`, so the text of `<a><script>…</script>u</a>` is
+ * `u`. For `linkText`; a name read from the body uses `renderedText`.
  */
 function textOf(node: Element): string {
   return node.children
@@ -901,6 +916,44 @@ function textOf(node: Element): string {
       return child instanceof Element && !DROPPED_WITH_CONTENT.has(child.name.toLowerCase()) ? textOf(child) : "";
     })
     .join("");
+}
+
+/**
+ * The text of a name the pass reads from the body (a table's label, the
+ * block's heading): `textOf`, but also without the fallback text inside
+ * `<iframe>`, `<video>` and `<audio>`, which the pass renders as a link, not
+ * as that text (`UNRENDERED_CONTENT`), so the label of
+ * `<caption><video>no support</video>Z</caption>` is `Z`. The walk stops
+ * once it holds `limit` characters or has visited `limit` nodes, so a name
+ * costs at most about `limit` however much `node` holds, text or empty
+ * elements; `truncated` says it stopped there. `linkText` keeps `textOf`:
+ * media fallback in a link keeps the link's text from matching its `href`,
+ * which keeps the link's content as written.
+ */
+function renderedText(node: Element, limit = Infinity): { text: string; truncated: boolean } {
+  const parts: string[] = [];
+  let length = 0;
+  let visited = 0;
+  const walk = (element: Element): boolean => {
+    for (const child of element.children) {
+      if (++visited > limit) {
+        return false;
+      }
+      if (child instanceof Text) {
+        parts.push(child.data);
+        length += child.data.length;
+        if (length >= limit) {
+          return false;
+        }
+      } else if (child instanceof Element && !UNRENDERED_CONTENT.has(child.name.toLowerCase()) && !walk(child)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  const complete = walk(node);
+  const text = parts.join("");
+  return complete ? { text, truncated: false } : { text: text.slice(0, limit), truncated: true };
 }
 
 /**
@@ -1069,7 +1122,7 @@ function markerProps(node: Element, attributes: Attributes, context: Context): R
     return null;
   }
   const headingNode = node.children.find((child) => child instanceof Element && child.name.toLowerCase() === "h2");
-  const heading = headingNode instanceof Element ? textOf(headingNode).trim() : "";
+  const heading = headingNode instanceof Element ? renderedText(headingNode).text.trim() : "";
   return {
     count: countValue,
     topic,
@@ -1142,20 +1195,101 @@ function headingName(name: string, context: Context): string {
   return level === null ? name : `h${Math.min(Number(level[1]) + 1, 6)}`;
 }
 
-/** The scroll region's accessible name when its table has no caption, or a caption with no text. */
+/** The scroll region's accessible name when its table has no caption or figure caption with text. */
 const TABLE_LABEL = "Table";
 
 /**
- * The accessible name of a table's scroll region: the text of its
- * `<caption>` (the first one among its children, as a browser takes it),
- * without the dropped elements' content (`textOf`) and without any word that
- * names the CMS, since it renders as an attribute; `TABLE_LABEL` when there
- * is no caption or nothing is left of it.
+ * The most characters a table's scroll region's name has (ADR 0047). A
+ * caption can hold any amount of text, including a whole nested table, as
+ * htmlparser2 nests a `<table>` inside a `<caption>`: without a cap, each of
+ * a chain of nested tables named by its caption repeats all its
+ * descendants' text, and 500 KB of body becomes 30 MB of HTML.
+ */
+export const MAX_TABLE_LABEL = 150;
+
+/**
+ * How much of a caption's text the label reads (`renderedText`'s limit):
+ * room past `MAX_TABLE_LABEL` for the whitespace that collapses and the
+ * words naming the CMS that are taken out after the read.
+ */
+const TABLE_LABEL_READ = 4 * MAX_TABLE_LABEL;
+
+/** The first child of `node` named `name`, as a browser takes a table's caption. */
+function firstChild(node: Element, name: string): Element | undefined {
+  return node.children.find((child): child is Element => child instanceof Element && child.name.toLowerCase() === name);
+}
+
+/** True for the first half of a UTF-16 surrogate pair. */
+function isHighSurrogate(code: number): boolean {
+  return code >= 0xd800 && code <= 0xdbff;
+}
+
+/**
+ * `text`, a single-spaced string, cut to at most `limit` characters at the
+ * last space within them, with no ellipsis. A first word longer than
+ * `limit` is cut at `limit`, never between the halves of a surrogate pair.
+ */
+function cutAtWord(text: string, limit: number): string {
+  if (text.length <= limit) {
+    return text;
+  }
+  const space = text.lastIndexOf(" ", limit);
+  if (space > 0) {
+    return text.slice(0, space);
+  }
+  return text.slice(0, isHighSurrogate(text.charCodeAt(limit - 1)) ? limit - 1 : limit);
+}
+
+/**
+ * A caption's text as a label: read to `TABLE_LABEL_READ` characters
+ * (`renderedText`, so without the content the pass does not render), without
+ * any word that names the CMS, since it renders as an attribute, whitespace
+ * collapsed, trimmed and cut to `MAX_TABLE_LABEL` at a word boundary; `""`
+ * when nothing is left. A read that stopped at its limit may have stopped
+ * inside a word, a CMS host among them (`https://cms.exa`), so that last
+ * word is dropped before the CMS's words are looked for.
+ */
+function labelText(caption: Element, context: Context): string {
+  const { text, truncated } = renderedText(caption, TABLE_LABEL_READ);
+  const whole = truncated ? text.replace(/\S*$/, "") : text;
+  return cutAtWord(withoutCmsMentions(whole, context).replace(/\s+/g, " ").trim(), MAX_TABLE_LABEL);
+}
+
+/**
+ * The label a `<figure>`'s first `<figcaption>` child gives a table directly
+ * inside it (`labelText`), `""` when it has none; cached per figure in
+ * `Context.figureLabels`.
+ */
+function figcaptionLabel(figure: Element, context: Context): string {
+  let label = context.figureLabels.get(figure);
+  if (label === undefined) {
+    const figcaption = firstChild(figure, "figcaption");
+    label = figcaption === undefined ? "" : labelText(figcaption, context);
+    context.figureLabels.set(figure, label);
+  }
+  return label;
+}
+
+/**
+ * The accessible name of a table's scroll region (`labelText`): its own
+ * `<caption>` (the first one among its children, as a browser takes it);
+ * when that is missing or leaves nothing, the `<figcaption>` of the
+ * `<figure>` that is the table's parent, which is how WordPress's table
+ * block captions a table (`figure.wp-block-table` with a
+ * `figcaption.wp-element-caption`, no `<caption>`); `TABLE_LABEL` when
+ * neither leaves any text. A figure caption names only a table directly in
+ * the figure, never one deeper down, and a figure with no table names
+ * nothing.
  */
 function tableLabel(table: Element, context: Context): string {
-  const caption = table.children.find((child) => child instanceof Element && child.name.toLowerCase() === "caption");
-  const text = caption instanceof Element ? withoutCmsMentions(textOf(caption), context).replace(/\s+/g, " ").trim() : "";
-  return text === "" ? TABLE_LABEL : text;
+  const caption = firstChild(table, "caption");
+  const own = caption === undefined ? "" : labelText(caption, context);
+  if (own !== "") {
+    return own;
+  }
+  const parent = table.parent;
+  const fromFigure = parent instanceof Element && parent.name.toLowerCase() === "figure" ? figcaptionLabel(parent, context) : "";
+  return fromFigure === "" ? TABLE_LABEL : fromFigure;
 }
 
 /**
@@ -1283,12 +1417,6 @@ interface Outline {
   readonly tooDeep: boolean;
   readonly hasH1: boolean;
 }
-
-/**
- * Elements whose content the pass never renders, as their names reach the
- * pre-pass: an `<h1>` inside one of them is not an `<h1>` of the body.
- */
-const UNRENDERED_CONTENT: ReadonlySet<string> = new Set([...DROPPED_WITH_CONTENT, ...LINKED_MEDIA]);
 
 /**
  * The pre-pass over `html`: `tooDeep` when htmlparser2, with
@@ -1480,6 +1608,7 @@ export function renderContent(html: string, cms: CmsUrls, options: RenderContent
     markers: 0,
     links: 0,
     demoteHeadings: false,
+    figureLabels: new Map(),
   };
   if (html.length > MAX_CONTENT_LENGTH) {
     console.warn(`renderContent: the body is longer than ${MAX_CONTENT_LENGTH} characters; rendering it as text`);

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { MAX_CONTENT_LENGTH, MAX_DEPTH, renderContent, type RenderBlock, type RenderContentOptions } from "../lib/content/render";
+import { MAX_CONTENT_LENGTH, MAX_DEPTH, MAX_TABLE_LABEL, renderContent, type RenderBlock, type RenderContentOptions } from "../lib/content/render";
 import type { CmsUrls } from "../lib/urls";
 
 const CMS: CmsUrls = {
@@ -643,6 +643,18 @@ describe("the block marker", () => {
     expect(renderBlock.mock.calls[0]?.[0].heading).toBe("Heading");
   });
 
+  it("leaves the fallback text of iframe, video and audio out of the heading text", () => {
+    const renderBlock = vi.fn<RenderBlock>(() => null);
+    render(
+      MARKER.replace(
+        "<h2>More on Headless delivery</h2>",
+        "<h2><video>no support</video>Head<iframe>frames</iframe><audio>no audio</audio>ing</h2>",
+      ),
+      { renderBlock },
+    );
+    expect(renderBlock.mock.calls[0]?.[0].heading).toBe("Heading");
+  });
+
   it(`hands at most the first five markers to renderBlock and renders the rest as their fallback`, () => {
     const renderBlock = vi.fn<RenderBlock>(() => <aside>related</aside>);
     const output = render(MARKER.repeat(7), { renderBlock });
@@ -1102,12 +1114,93 @@ describe("tables", () => {
     expect(render("<table><caption>cms.example</caption></table>")).toContain(`${REGION}"Table">`);
   });
 
-  it("wraps the table inside a WordPress table block, not the figure", () => {
+  it("wraps the table inside a WordPress table block, not the figure, and names it by the figure's caption", () => {
     expect(
-      render('<figure class="wp-block-table"><table><tbody><tr><td>x</td></tr></tbody></table><figcaption>Caption</figcaption></figure>'),
+      render(
+        '<figure class="wp-block-table"><table><tbody><tr><td>x</td></tr></tbody></table>' +
+          '<figcaption class="wp-element-caption">Plans by <em>price</em></figcaption></figure>',
+      ),
     ).toBe(
-      `<figure class="wp-block-table">${REGION}"Table"><table><tbody><tr><td>x</td></tr></tbody></table></div><figcaption>Caption</figcaption></figure>`,
+      `<figure class="wp-block-table">${REGION}"Plans by price"><table><tbody><tr><td>x</td></tr></tbody></table></div>` +
+        '<figcaption class="wp-element-caption">Plans by <em>price</em></figcaption></figure>',
     );
+  });
+
+  it("takes the table's own caption before the figure's, and the figure's when the caption leaves no text", () => {
+    const figure = (caption: string) =>
+      `<figure class="wp-block-table"><table>${caption}<tr><td>x</td></tr></table><figcaption>From the figure</figcaption></figure>`;
+    expect(render(figure("<caption>From the table</caption>"))).toContain(`${REGION}"From the table">`);
+    expect(render(figure("<caption> <script>x</script> </caption>"))).toContain(`${REGION}"From the figure">`);
+    expect(render(figure("<caption>cms.example</caption>"))).toContain(`${REGION}"From the figure">`);
+  });
+
+  it("takes a figure caption's text without words that name the CMS, or the media's fallback", () => {
+    expect(
+      render(
+        '<figure class="wp-block-table"><table><tr><td>x</td></tr></table>' +
+          "<figcaption>Costs from https://cms.example/wp-admin/ <video>no support</video>today</figcaption></figure>",
+      ),
+    ).toContain(`${REGION}"Costs from today">`);
+    expect(
+      render('<figure class="wp-block-table"><table><tr><td>x</td></tr></table><figcaption>cms.example</figcaption></figure>'),
+    ).toContain(`${REGION}"Table">`);
+  });
+
+  it("names only a table directly in the figure by its caption", () => {
+    expect(render("<figure><div><table><tr><td>x</td></tr></table></div><figcaption>Photo</figcaption></figure>")).toContain(
+      `${REGION}"Table">`,
+    );
+    expect(render('<figure class="wp-block-image"><img src="/a.png" alt=""><figcaption>Photo</figcaption></figure>')).not.toContain(
+      "aria-label",
+    );
+  });
+
+  it("leaves the fallback text of iframe, video and audio out of the caption's label", () => {
+    expect(render("<table><caption><video>no support</video>Z</caption></table>")).toContain(`${REGION}"Z">`);
+    expect(render("<table><caption><iframe>x</iframe>A<audio>y</audio>B</caption></table>")).toContain(`${REGION}"AB">`);
+  });
+
+  it(`cuts a long caption or figure caption to ${MAX_TABLE_LABEL} characters at a word boundary`, () => {
+    const words = Array.from({ length: 60 }, (_, index) => `word${index}`).join(" ");
+    const expected = (() => {
+      let label = "";
+      for (const word of words.split(" ")) {
+        const next = label === "" ? word : `${label} ${word}`;
+        if (next.length > MAX_TABLE_LABEL) break;
+        label = next;
+      }
+      return label;
+    })();
+    const label = (output: string) => /aria-label="([^"]*)"/.exec(output)?.[1];
+    for (const output of [
+      render(`<table><caption>${words}</caption></table>`),
+      render(`<figure class="wp-block-table"><table><tr><td>x</td></tr></table><figcaption>${words}</figcaption></figure>`),
+    ]) {
+      expect(label(output)).toBe(expected);
+      expect(label(output)?.length).toBeLessThanOrEqual(MAX_TABLE_LABEL);
+    }
+    expect(label(render(`<table><caption>${"x".repeat(400)}</caption></table>`))).toBe("x".repeat(MAX_TABLE_LABEL));
+  });
+
+  it("never names a table by a CMS host its label's read stopped inside", () => {
+    // The read stops at 4 × MAX_TABLE_LABEL characters, here after `https://cms.exa`, which names no CMS on its own.
+    const caption = `${" ".repeat(4 * MAX_TABLE_LABEL - 15)}https://cms.example/x`;
+    expect(render(`<table><caption>${caption}</caption></table>`)).toContain(`${REGION}"Table">`);
+    expect(render(`<table><caption>Costs${caption}</caption></table>`)).toContain(`${REGION}"Costs">`);
+  });
+
+  it("stops reading a caption after as many nodes as characters, so empty elements cost no more than text", () => {
+    expect(render(`<table><caption>${"<b></b>".repeat(4 * MAX_TABLE_LABEL)}Late</caption></table>`)).toContain(`${REGION}"Table">`);
+    expect(render(`<table><caption>${"<b></b>".repeat(10)}Early</caption></table>`)).toContain(`${REGION}"Early">`);
+  });
+
+  it("keeps the output linear in the input for tables nested in captions", () => {
+    // htmlparser2 nests a table in a caption, so each label would hold every deeper caption's text.
+    const html = `<table><caption>${"lorem ".repeat(700)}`.repeat(120);
+    expect(html.length).toBeLessThanOrEqual(MAX_CONTENT_LENGTH);
+    const output = render(html);
+    expect(output.match(/rh-table-scroll/g)).toHaveLength(120);
+    expect(output.length).toBeLessThan(2 * html.length);
   });
 
   it("wraps a nested table too, and leaves a table inside a link bare", () => {
