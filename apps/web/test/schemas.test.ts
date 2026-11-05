@@ -436,8 +436,8 @@ describe("slug rule", () => {
     }
   });
 
-  it("rejects a lone surrogate, a dot segment, an over-long encoded form and an escaped unreserved character, which the JSON Schema allows", () => {
-    for (const value of ["\ud800", ".", "..", "%2e", "日".repeat(200), "a%2db", "%41bc", "x%7ey"]) {
+  it("rejects a lone surrogate, a dot segment, an over-long encoded form and an escape Next.js decodes, which the JSON Schema allows", () => {
+    for (const value of ["\ud800", ".", "..", "%2e", "日".repeat(200), "a%2db", "%41bc", "x%7ey", "arti%27cle", "a%2Ab"]) {
       expect(slugSchema.safeParse(value).success, JSON.stringify(value)).toBe(false);
     }
   });

@@ -221,8 +221,8 @@ describe("decideResourceRequest", () => {
  * back through Next.js as a browser would send it, renders or is a 404 and
  * never redirects again, given the CMS answers the same both times.
  *
- * Inputs are built from fragments chosen to break it: escapes of unreserved
- * characters (`%2d`, `%41`), which Next.js decodes, escapes it keeps (`%2F`,
+ * Inputs are built from fragments chosen to break it: escapes of characters
+ * Next.js decodes in params (`%2d`, `%41`, `%27`, `%2a`), escapes it keeps (`%2F`,
  * `%25`, `%5c`) in either hex case, raw CJK and an astral character, `?` and
  * `#`, which must be encoded, and `Topic` and `page`, which are reserved as
  * types in any case. Slugs the reader schemas refuse never reach the
@@ -231,16 +231,21 @@ describe("decideResourceRequest", () => {
  * The one precondition is WordPress's: no two current slugs are equal in
  * canonical form. Three CMS models answer the lookups: exact (a slug matches its canonical
  * form, as WordPress's `post_name` match does), lenient (it also matches
- * once escapes of unreserved characters are decoded on both sides, the
+ * once the escapes Next.js decodes are decoded on both sides, the
  * lookup the reviewer's `case%2dstudy` loop needed), and stale (every slug
  * lookup is a cached miss, so only resolve answers).
  */
 describe("a redirect's target is a fixed point", () => {
-  /** Next.js 16.4.5's `params` normalisation of one segment, as measured (ADR 0035): escapes of unreserved ASCII decoded, every other escape's hex upper-cased. */
+  /**
+   * Next.js 16.4.5's `params` normalisation of one segment, as measured on `next start` with
+   * `a%XXb` for every byte 0x20-0x7e (ADR 0035): an escape of a character `encodeURIComponent`
+   * leaves alone (`A-Z a-z 0-9 - _ . ! ~ * ' ( )`) is decoded, and every other escape's hex is
+   * upper-cased.
+   */
   function nextParam(wire: string): string {
     return wire.replace(/%[0-9A-Fa-f]{2}/g, (escape) => {
       const char = String.fromCharCode(Number.parseInt(escape.slice(1), 16));
-      return /^[A-Za-z0-9\-._~]$/.test(char) ? char : escape.toUpperCase();
+      return /^[A-Za-z0-9\-_.!~*'()]$/.test(char) ? char : escape.toUpperCase();
     });
   }
 
@@ -259,6 +264,7 @@ describe("a redirect's target is a fixed point", () => {
   const FRAGMENTS = [
     "a", "b", "z", "0", "7", "-", "_", "~", ".", "case", "study",
     "%2d", "%2D", "%41", "%61", "%7e", "%2e",
+    "%27", "%21", "%28", "%29", "%2a", "%2A",
     "%2F", "%2f", "%25", "%5c", "%5C", "%20", "%3f", "%e6%97%a5", "%E6%97%A5",
     "日", "本", "😀", "?", "#", "\\", "%", "!", "'", "(", ":", "@",
     "Topic", "topic", "page", "PAGE", "%74opic",
@@ -300,7 +306,7 @@ describe("a redirect's target is a fixed point", () => {
     return parsed.success && resourceType(parsed.data) !== null ? parsed.data : null;
   }
 
-  function decodeUnreserved(slug: string): string {
+  function decodeAsNext(slug: string): string {
     return nextParam(slug).toLowerCase();
   }
 
@@ -315,7 +321,7 @@ describe("a redirect's target is a fixed point", () => {
   function cmsFor(state: State, model: Model): ResourceRequestOptions {
     const same = (stored: string, asked: string) =>
       model === "lenient"
-        ? decodeUnreserved(canonicalSlug(stored)) === decodeUnreserved(asked)
+        ? decodeAsNext(canonicalSlug(stored)) === decodeAsNext(asked)
         : canonicalSlug(stored) === asked;
     return {
       getResourceBySlug: async (slug) =>
@@ -409,6 +415,13 @@ describe("a redirect's target is a fixed point", () => {
     expect(nextParam("a%2fb")).toBe("a%2Fb");
     expect(nextParam("100%25")).toBe("100%25");
     expect(nextParam("%e6%97%a5")).toBe("%E6%97%A5");
+    expect(nextParam("arti%27cle")).toBe("arti'cle");
+    expect(nextParam("%21%28%29%2a%2A")).toBe("!()**");
+    expect(nextParam("a%22b%3c%3e%60")).toBe("a%22b%3C%3E%60");
+  });
+
+  it("refuses a type stored as arti%27cle, so it never reaches a redirect", async () => {
+    expect(cmsResource(1, "a-slug", "arti%27cle")).toBeNull();
   });
 
   it("is a 404, not a loop, for the reviewer's case%2dstudy, which no schema now accepts", async () => {

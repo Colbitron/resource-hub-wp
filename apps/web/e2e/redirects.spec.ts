@@ -275,6 +275,33 @@ test("an unknown slug, a reserved type and an invalid slug are 404s", async ({ r
   await expectNotFound(request, fixturePath("webinar", "a".repeat(201)));
 });
 
+test("a type stored as arti%27cle is refused, never a redirect to its own URL", async ({ request }) => {
+  // WordPress's `sanitize_title` keeps an escape an editor types, so a type term can be stored as
+  // `arti%27cle`. Next.js decodes `%27` in params, so the page would see `arti'cle` and redirect to
+  // `arti%27cle` for ever; the reader schema refuses the term instead (`slugProblem`).
+  const ebook = (await cms.state()).terms.find((term) => term.taxonomy === "resource_type" && term.slug === "ebook");
+  if (ebook === undefined) throw new Error("the mock has no ebook type");
+  await cms.renameTerm("resource_type", ebook.id, { slug: "arti%27cle" });
+  const slug = unique("quoted-type");
+  const { id } = await cms.createResource({ title: "Quoted type", type: "arti%27cle", slug });
+
+  for (const type of ["arti%27cle", "arti'cle", "ARTI%27CLE", "webinar"]) {
+    const response = await get(request, fixturePath(type, slug));
+    // The slug lookup's body fails the reader schema, so the page throws a `CmsError`: a 500, not a 308.
+    expect(response.status(), `${type}: ${response.headers().location ?? ""}`).toBe(500);
+    expect(response.headers().location, type).toBeUndefined();
+  }
+
+  // The event the CMS would send for it is refused too, with a message that names the escape.
+  const event = { ...(await updateEvent(id, {})), previous: null, event: "publish" };
+  const response = await request.post(ROUTE, {
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${E2E_REVALIDATE_SECRET}` },
+    data: JSON.stringify({ version: 1, events: [event] }),
+  });
+  expect(response.status()).toBe(400);
+  expect(await response.text()).toContain("%27");
+});
+
 test("a slug that is found never asks the resolve route", async ({ request }) => {
   await cms.resetRequests();
   await expectRedirect(request, fixturePath("podcast", SEEDED.slug), fixturePath(SEEDED.type, SEEDED.slug));

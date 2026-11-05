@@ -42,8 +42,13 @@ const LIBRARY = "/resources/";
 /** `.` and `..`, literal or percent-encoded: URL parsers collapse them, so the path would change. */
 const DOT_SEGMENT = /^(?:\.|%2e){1,2}$/i;
 
-/** RFC 3986's unreserved characters, which a URL never needs to percent-encode. */
-const UNRESERVED = /^[A-Za-z0-9\-._~]$/;
+/**
+ * The characters Next.js decodes in route params: `encodeURIComponent`'s unescaped set,
+ * RFC 3986's unreserved characters plus `! * ' ( )`. Measured on Next.js 16.4.5 with
+ * `next start`, requesting `a%XXb` for every byte 0x20-0x7e: an escape of one of these
+ * arrives decoded, and every other escape arrives as sent with its hex upper-cased.
+ */
+const DECODED_IN_PARAMS = /^[A-Za-z0-9\-_.!~*'()]$/;
 
 /**
  * A percent escape, a `%` that does not start one, or a character that is not
@@ -78,14 +83,16 @@ function encodeSlug(value: string): string {
  * shared schema's `$defs/slug` accepts (non-empty, at most 200 characters
  * counted in code points, no slash, no whitespace) that is also usable as a
  * path segment and a cache tag: well-formed Unicode, not a dot segment, and at
- * most 200 characters in its canonical form, with no percent escape of an
- * unreserved ASCII character (`%2d`, `%41`, `%7E`). WordPress stores a slug in that
+ * most 200 characters in its canonical form, with no percent escape of a
+ * character Next.js decodes in params (`A-Z a-z 0-9 - _ . ! ~ * ' ( )`, so
+ * `%2d`, `%41`, `%7E`, `%27`, `%2A`). WordPress stores a slug in that
  * form in a 200-character column (`post_name`, and `slug` in `wp_terms`), so a
  * longer one cannot be a stored slug; the cap also keeps every tag under
  * Next.js's 256-character limit, past which Next.js drops a tag with only a
- * warning (200 raw `日` would be 1,800 characters encoded). An escape of an
- * unreserved character has no canonical form a page can see: Next.js decodes
- * it in `params` (`case%2dstudy` arrives as `case-study`), so the slug's own
+ * warning (200 raw `日` would be 1,800 characters encoded). An escape of one
+ * of those characters has no canonical form a page can see: Next.js decodes
+ * it in `params` (`case%2dstudy` arrives as `case-study`, `arti%27cle` as
+ * `arti'cle`), so the slug's own
  * URL would reach the page as another slug, and a redirect to it would loop or
  * the resource would be unreachable. `sanitize_title` keeps an escape an
  * editor types (`case%2dstudy` is saved as is), so WordPress can store one;
@@ -111,9 +118,9 @@ export function slugProblem(value: string): string | null {
   if (DOT_SEGMENT.test(value)) {
     return "must not be . or .., which URL parsers collapse";
   }
-  const encodedUnreserved = unreservedEscape(value);
-  if (encodedUnreserved !== null) {
-    return `must not percent-encode an unreserved character (${encodedUnreserved}), which Next.js decodes before a page sees it`;
+  const decodedEscape = escapeDecodedInParams(value);
+  if (decodedEscape !== null) {
+    return `must not percent-encode a character Next.js decodes in params (${decodedEscape}), as it does A-Z a-z 0-9 - _ . ! ~ * ' ( ) before a page sees it`;
   }
   if (encodeSlug(value).length > MAX_SLUG_LENGTH) {
     return `must be at most ${MAX_SLUG_LENGTH} characters once percent-encoded, as WordPress stores it`;
@@ -122,13 +129,13 @@ export function slugProblem(value: string): string | null {
 }
 
 /**
- * The first percent escape in `value` of an unreserved ASCII character
- * (`A`-`Z`, `a`-`z`, `0`-`9`, `-`, `.`, `_`, `~`), in either hex case, or
- * `null` when there is none.
+ * The first percent escape in `value` of a character Next.js decodes in params
+ * (`A`-`Z`, `a`-`z`, `0`-`9`, `-`, `_`, `.`, `!`, `~`, `*`, `'`, `(`, `)`), in
+ * either hex case, or `null` when there is none.
  */
-function unreservedEscape(value: string): string | null {
+function escapeDecodedInParams(value: string): string | null {
   for (const [escape] of value.matchAll(/%[0-9A-Fa-f]{2}/g)) {
-    if (UNRESERVED.test(String.fromCharCode(Number.parseInt(escape.slice(1), 16)))) {
+    if (DECODED_IN_PARAMS.test(String.fromCharCode(Number.parseInt(escape.slice(1), 16)))) {
       return escape;
     }
   }
@@ -158,7 +165,7 @@ function decodeAsciiEscapesOnce(value: string): string {
  * form is lower case and would turn `Topic` into the `topic` segment, and
  * percent-encoded (`%74opic`, `%54OPIC`), because a URL segment holding one
  * reads as `topic` once decoded. `slugProblem` already refuses those encoded
- * forms, as escapes of unreserved characters, so they fail with its message;
+ * forms, as escapes of characters Next.js decodes, so they fail with its message;
  * the decoding here mirrors the plugin's `ReservedTypeSlugs::reserved_form()`
  * (decode once, lower-case, compare) in case that rule ever loosens.
  */

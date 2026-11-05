@@ -69,8 +69,10 @@ function ruleSchema(problem: (value: string) => string | null) {
  *   stores the encoded form in a 200-character column, so it cannot store
  *   one, and its cache tags would pass Next.js's 256-character limit, past
  *   which Next.js drops a tag with only a warning.
- * - A percent escape of an unreserved ASCII character (`case%2dstudy`,
- *   `%41bc`, `x%7ey`). Next.js decodes it in `params`, so the slug's own URL
+ * - A percent escape of a character Next.js decodes in `params`, which is
+ *   `encodeURIComponent`'s unescaped set `A-Z a-z 0-9 - _ . ! ~ * ' ( )`
+ *   (`case%2dstudy`, `%41bc`, `x%7ey`, `arti%27cle`, `a%2ab`). Next.js
+ *   decodes it before the page runs, so the slug's own URL
  *   reaches the page as a different slug and cannot be served. WordPress's
  *   `sanitize_title` keeps such an escape when an editor types one, so this
  *   one can come from a real CMS; a response or event carrying it fails here.

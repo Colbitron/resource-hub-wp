@@ -32,9 +32,9 @@ import type { WpResource } from "./wp/schemas/rest";
  * Why a redirect cannot loop, in two parts:
  *
  * - Within one state of the CMS, a target is a fixed point. It is built from
- *   canonical segments, which hold no upper-case letter and no escape of an
- *   unreserved character (`slugProblem` refuses a slug with one, because
- *   Next.js would decode it). Next.js's normalisation of the target therefore
+ *   canonical segments, which hold no upper-case letter and no escape of a
+ *   character Next.js decodes in params, `encodeURIComponent`'s unescaped set
+ *   `A-Z a-z 0-9 - _ . ! ~ * ' ( )` (`slugProblem` refuses a slug with one). Next.js's normalisation of the target therefore
  *   only upper-cases the hex of its escapes, which `isCanonicalSegment`
  *   ignores, so the request for the target is found and rendered, or is a
  *   404 when the CMS's answers disagree (a stale cached miss beside resolve).
@@ -98,8 +98,9 @@ function outsideEscapes(segment: string): string {
 /**
  * True when `segment`, as Next.js hands it to the page, is the canonical
  * form `canonical` (from `canonicalSlug`). Next.js normalises a path segment
- * before the page sees it: escapes of unreserved ASCII characters are decoded
- * (`%52esource` arrives as `Resource`) and the hex of every other escape is
+ * before the page sees it: escapes of `encodeURIComponent`'s unescaped set
+ * (`A-Z a-z 0-9 - _ . ! ~ * ' ( )`) are decoded (`%52esource` arrives as
+ * `Resource`, `arti%27cle` as `arti'cle`) and the hex of every other escape is
  * upper-cased (`%e6%97%a5` and `%E6%97%A5` both arrive as `%E6%97%A5`), so the
  * page cannot tell those two requests apart and must treat both as canonical,
  * or the redirect to the lower-case form would loop. A stored slug never holds
