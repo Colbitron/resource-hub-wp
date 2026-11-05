@@ -1,5 +1,6 @@
 import { renderResource, renderTerm } from "./render.mts";
-import { isTaxonomy, MAX_RELATED, slugify, type MockState, type ResourceRecord, type TermRecord } from "./state.mts";
+import { slugify } from "./sanitize.mts";
+import { isTaxonomy, MAX_RELATED, type MockState, type ResourceRecord, type TermRecord } from "./state.mts";
 import type { Taxonomy } from "./types.mts";
 
 /**

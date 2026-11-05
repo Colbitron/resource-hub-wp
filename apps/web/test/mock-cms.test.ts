@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { mockCms, type MockCmsClient } from "../e2e/mock-cms/client.mts";
+import { slugify } from "../e2e/mock-cms/sanitize.mts";
 import { startMockCms, type MockCms } from "../e2e/mock-cms/server.mts";
 import { parsePaginationHeaders } from "../lib/wp/schemas/pagination";
 import { resolveResponseSchemaStrict } from "../lib/wp/schemas/resolve";
@@ -78,6 +79,35 @@ function featuredMedia(resources: unknown[]) {
     return embedded?.["wp:featuredmedia"] ?? [];
   });
 }
+
+describe("slugify, the mock's sanitize_title()", () => {
+  // Expected values are what WordPress 7.1.4's sanitize_title() returns on an en_US site.
+  it.each([
+    ["Hello World", "hello-world"],
+    ["snake_case_slug", "snake_case_slug"],
+    ["Café Déjà Vu", "cafe-deja-vu"],
+    ["Ñandú über Ångström", "nandu-uber-angstrom"],
+    ["Straße", "strase"],
+    ["Œuvre & Æsthetics", "oeuvre-aesthetics"],
+    ["Revalidation from the editor’s chair", "revalidation-from-the-editors-chair"],
+    ["“Quoted” — and dashed", "quoted-and-dashed"],
+    ["1/2 cup, v1.2", "1-2-cup-v1-2"],
+    ["  --multiple---dashes--  ", "multiple-dashes"],
+    ["<b>Bold</b> move", "bold-move"],
+    ["AT&amp;T 3 × 4", "att-3-x-4"],
+    ["100% sure, a%20b", "100-sure-a%20b"],
+    ["日本", "%e6%97%a5%e6%9c%ac"],
+    ["---", ""],
+  ])("%j becomes %j", (title, slug) => {
+    expect(slugify(title)).toBe(slug);
+  });
+
+  it("cuts at 200 characters without splitting an encoded character", () => {
+    expect(slugify("a".repeat(250))).toHaveLength(200);
+    // Each 日 is nine characters encoded: 22 fit in 200.
+    expect(slugify("日".repeat(30))).toBe("%e6%97%a5".repeat(22));
+  });
+});
 
 describe("GET /wp/v2/resources", () => {
   it("serves a first page that the reader schema accepts, with WordPress's headers", async () => {

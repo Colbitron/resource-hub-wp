@@ -1,3 +1,4 @@
+import { slugify } from "./sanitize.mts";
 import { MEDIA, RESOURCES, SEED_DATE, TERMS, type MediaSeed, type ResourceSeed } from "./seed.mts";
 import type {
   CreateResourceInput,
@@ -80,15 +81,6 @@ export function isTaxonomy(value: string): value is Taxonomy {
 /** A WordPress `post_date`: `YYYY-MM-DDTHH:MM:SS` in site time, which the mock takes as UTC. */
 export function siteTime(at: Date = new Date()): string {
   return at.toISOString().slice(0, 19);
-}
-
-/** What `sanitize_title()` does to an ASCII title or slug, near enough for a mock. */
-export function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/['’]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
 
 function daysBefore(date: string, days: number): string {
