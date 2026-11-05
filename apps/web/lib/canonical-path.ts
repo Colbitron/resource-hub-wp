@@ -8,8 +8,11 @@
  * wrong and never changes with the CMS's data:
  *
  * 1. Upper-case ASCII letters outside percent escapes are lower-cased, in
- *    every segment, `resources` included: `/resources/Webinar/` is
- *    `/resources/webinar/`. Every slug the CMS stores is lower case
+ *    every segment after `resources`: `/resources/Webinar/` is
+ *    `/resources/webinar/`. The `resources` segment itself is only ever the
+ *    lower-case word: the proxy's matcher is case-sensitive, so
+ *    `/Resources/…` never reaches it and is the app's 404 by design (ADR
+ *    0035's listings amendment). Every slug the CMS stores is lower case
  *    (`canonicalSlug` in `lib/routes.ts`), so a lower-cased path is the only
  *    one that can be a page's own URL. Escapes are left exactly as sent, hex
  *    case included, because Next.js normalises them before a page sees them
@@ -24,7 +27,12 @@
  *    another slug's. None of those characters is `/`, `%`, `?` or `#`, and
  *    none is one a URL serialiser escapes in a path, so a decoded path keeps
  *    its segments and is sent and received exactly as computed: the proxy
- *    can never redirect a path to itself.
+ *    can never redirect a path to itself. A
+ *    segment holding a `%` that does not begin a well-formed escape (`%4%41`,
+ *    `%zz`, a trailing `%`) is left exactly as sent: decoding the escape
+ *    after a stray `%` would make a new one (`%4%41` to `%4a`, then `j`),
+ *    a chain of hops rather than one. No route can render such a segment, so
+ *    it gets the route's 404 or Next.js's 400 with no redirect first.
  * 2. A trailing `/page/1/` is dropped: page 1 of a listing is the listing's
  *    own path (`listingPath` in `lib/routes.ts`), so `/resources/page/1/` is
  *    `/resources/` and `/resources/webinar/topic/a11y/page/1/` is
@@ -53,12 +61,19 @@ const LIBRARY_PREFIX = "/resources";
 /** A percent escape, or a run of upper-case ASCII letters outside one. */
 const ESCAPE_OR_UPPER = /%[0-9A-Fa-f]{2}|[A-Z]+/g;
 
+/** A `%` that does not begin a well-formed escape. */
+const MALFORMED_ESCAPE = /%(?![0-9A-Fa-f]{2})/;
+
 /**
  * `segment` with every escape of a character in `DECODED_IN_PARAMS` decoded,
  * once, and every other upper-case ASCII letter lower-cased. Other escapes
- * keep their bytes and their hex case.
+ * keep their bytes and their hex case. A segment with a malformed escape is
+ * returned as sent, so a decoded escape can never pair with a stray `%`.
  */
 function canonicalSegment(segment: string): string {
+  if (MALFORMED_ESCAPE.test(segment)) {
+    return segment;
+  }
   const canonical = segment.replace(ESCAPE_OR_UPPER, (match) => {
     if (!match.startsWith("%")) {
       return match.toLowerCase();
@@ -77,11 +92,13 @@ function endsInPageOne(segments: readonly string[]): boolean {
   return segments.length >= 3 && segments.at(-2) === "page" && segments.at(-1) === "1";
 }
 
-/** True when `pathname` is `/resources` or under it, in any letter case. */
+/**
+ * True when `pathname` is `/resources` or under it, with `resources` in lower
+ * case, as the proxy's case-sensitive matcher passes it.
+ */
 export function isResourcesPath(pathname: string): boolean {
-  const head = pathname.slice(0, LIBRARY_PREFIX.length).toLowerCase();
   const next = pathname.charAt(LIBRARY_PREFIX.length);
-  return head === LIBRARY_PREFIX && (next === "" || next === "/");
+  return pathname.startsWith(LIBRARY_PREFIX) && (next === "" || next === "/");
 }
 
 /**

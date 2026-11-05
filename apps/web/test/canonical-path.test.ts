@@ -4,12 +4,15 @@ import { canonicalResourcesPath, isResourcesPath } from "../lib/canonical-path";
 import { canonicalSlug, listingPath, resourcePath, slugProblem } from "../lib/routes";
 
 describe("isResourcesPath", () => {
-  it("is /resources and anything under it, in any case", () => {
+  it("is /resources and anything under it", () => {
     expect(isResourcesPath("/resources")).toBe(true);
     expect(isResourcesPath("/resources/")).toBe(true);
     expect(isResourcesPath("/resources/webinar/")).toBe(true);
-    expect(isResourcesPath("/Resources/")).toBe(true);
-    expect(isResourcesPath("/RESOURCES")).toBe(true);
+  });
+
+  it("is lower case only, as the proxy's case-sensitive matcher is: /Resources/ is a 404 by design", () => {
+    expect(isResourcesPath("/Resources/")).toBe(false);
+    expect(isResourcesPath("/RESOURCES")).toBe(false);
   });
 
   it("is not another path that starts the same way", () => {
@@ -25,6 +28,7 @@ describe("canonicalResourcesPath", () => {
     expect(canonicalResourcesPath("/")).toBeNull();
     expect(canonicalResourcesPath("/About/page/1/")).toBeNull();
     expect(canonicalResourcesPath("/resourcesX/")).toBeNull();
+    expect(canonicalResourcesPath("/Resources/Webinar/")).toBeNull();
   });
 
   it("is null for a canonical listing or resource path", () => {
@@ -44,9 +48,8 @@ describe("canonicalResourcesPath", () => {
     }
   });
 
-  it("lower-cases ASCII letters in every segment, resources included", () => {
+  it("lower-cases ASCII letters in every segment after resources", () => {
     expect(canonicalResourcesPath("/resources/Webinar/")).toBe("/resources/webinar/");
-    expect(canonicalResourcesPath("/Resources/")).toBe("/resources/");
     expect(canonicalResourcesPath("/resources/Topic/Accessibility/")).toBe("/resources/topic/accessibility/");
     expect(canonicalResourcesPath("/resources/WEBINAR/Alt-Text-At-Scale/")).toBe("/resources/webinar/alt-text-at-scale/");
     expect(canonicalResourcesPath("/resources/webinar/Page/2/")).toBe("/resources/webinar/page/2/");
@@ -99,6 +102,16 @@ describe("canonicalResourcesPath", () => {
     expect(canonicalResourcesPath("/resources/%2541/")).toBeNull();
   });
 
+  it("leaves a segment with a malformed escape as sent, so a stray % never pairs with a decoded escape", () => {
+    // Before: `%4%41` went to `%4a` and then to `j`, two hops.
+    expect(canonicalResourcesPath("/resources/x/%4%41/")).toBeNull();
+    expect(canonicalResourcesPath("/resources/x/%4%%%33%34%31/")).toBeNull();
+    expect(canonicalResourcesPath("/resources/topic/A%zz/")).toBeNull();
+    expect(canonicalResourcesPath("/resources/topic/a%/")).toBeNull();
+    // Only that segment: the others are still canonicalised, in the same hop.
+    expect(canonicalResourcesPath("/resources/Topic/%4%41/page/1/")).toBe("/resources/topic/%4%41/");
+  });
+
   it("drops a trailing /page/1/ from any listing", () => {
     expect(canonicalResourcesPath("/resources/page/1/")).toBe("/resources/");
     expect(canonicalResourcesPath("/resources/webinar/page/1/")).toBe("/resources/webinar/");
@@ -116,7 +129,7 @@ describe("canonicalResourcesPath", () => {
 
   it("applies both rules in one step", () => {
     expect(canonicalResourcesPath("/resources/Webinar/Page/1/")).toBe("/resources/webinar/");
-    expect(canonicalResourcesPath("/Resources/Topic/A11y/PAGE/1/")).toBe("/resources/topic/a11y/");
+    expect(canonicalResourcesPath("/resources/Topic/A11y/PAGE/1/")).toBe("/resources/topic/a11y/");
   });
 
   it("leaves other page segments to the route, which answers 404", () => {
@@ -129,14 +142,14 @@ describe("canonicalResourcesPath", () => {
 
   it("keeps the trailing slash as given", () => {
     expect(canonicalResourcesPath("/resources/Webinar")).toBe("/resources/webinar");
-    expect(canonicalResourcesPath("/Resources")).toBe("/resources");
+    expect(canonicalResourcesPath("/resources/Topic")).toBe("/resources/topic");
   });
 
   it("is idempotent: a canonical result is canonical", () => {
     for (const path of [
       "/resources/Webinar/Page/1/",
       "/resources/%57ebinar/Topic/A%20B/",
-      "/Resources/Topic/%E6%97%A5/page/1/",
+      "/resources/Topic/%E6%97%A5/page/1/",
       "/resources/case%2Dstudy/Slug%2Dhere/",
     ]) {
       const canonical = canonicalResourcesPath(path);
@@ -152,14 +165,30 @@ describe("canonicalResourcesPath", () => {
       (x: string) => `/resources/topic/${x}/`,
       (x: string) => `/resources/webinar/topic/${x}/page/1/`,
       (x: string) => `/resources/webinar/${x}/`,
-      (x: string) => `/Resources/${x}/Page/%31/`,
+      (x: string) => `/resources/${x}/Page/%31/`,
+      (x: string) => `/resources/Topic/${x}/`,
       (x: string) => `/resources/page/1/${x}/page/1/`,
       (x: string) => `/resources/${x}`,
     ];
-    const pieces = ["", "A", "page", "1", "%2e", "%2E%2e", "%2541", "%E6%97%a5"];
+    const pieces = [
+      "", "A", "page", "1", "%2e", "%2E%2e", "%2541", "%E6%97%a5",
+      // Malformed escapes: a stray `%` must never pair with a decoded escape
+      // into a new one (`%4%41` was `%4a`, then `j`; the last a 4-hop chain).
+      "%", "%4", "%zz", "%g1", "A%", "%%", "%4%41", "%%34%31", "%4%%34%31", "%4%%%33%34%31",
+    ];
+    const hexDigits = "0123456789abcdefABCDEF";
+    /** An escape of `character` in Next.js's decoded set, so the old code decoded it. */
+    const escapeOf = (character: string) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`;
     for (let byte = 0x20; byte <= 0x7e; byte += 1) {
       for (const hex of [byte.toString(16).toUpperCase(), byte.toString(16).toLowerCase()]) {
-        pieces.push(`%${hex}`, `x%${hex}Y`);
+        // As sent, and as a stray `%` and the first digit before an escape of the second.
+        pieces.push(`%${hex}`, `x%${hex}Y`, `%${hex[0]}${escapeOf(hex[1])}`);
+      }
+    }
+    for (const first of hexDigits) {
+      for (const second of hexDigits) {
+        // `%` then two escapes that decode to two hex digits.
+        pieces.push(`%${escapeOf(first)}${escapeOf(second)}`, `X%${first}${escapeOf(second)}`);
       }
     }
     for (const template of templates) {

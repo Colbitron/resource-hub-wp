@@ -4,7 +4,8 @@ import { canonicalResourcesPath } from "./lib/canonical-path";
 
 /**
  * Canonical-form redirects for `/resources/**`, decided from the path alone
- * (`lib/canonical-path.ts`): an upper-case letter in a segment, or a
+ * (`lib/canonical-path.ts`): an upper-case letter in a segment after
+ * `resources`, or a
  * trailing `/page/1/`, gets one 308 to the canonical path with
  * `Cache-Control: no-store`, before any route runs. ADR 0035's 2026-11-05
  * amendment on the listings records why it is here and not in the pages: a
@@ -36,5 +37,9 @@ export function proxy(request: NextRequest): NextResponse | undefined {
 export const config = {
   // The library, every listing and every resource page, and nothing else:
   // static files, the image optimiser and the API route never pay for it.
+  // The matcher is case-sensitive, so `/Resources/…` never reaches the proxy
+  // and is a 404 by design: no page has ever been served there, and only
+  // the segments after `resources` are lower-cased (ADR 0035's listings
+  // amendment).
   matcher: "/resources/:path*",
 };

@@ -335,6 +335,20 @@ test.describe("non-canonical URLs", () => {
     }
   });
 
+  test("a capitalised /Resources/ prefix is not matched by the proxy and is a 404, by design", async ({ request }) => {
+    for (const path of ["/Resources/", "/RESOURCES/webinar/", "/Resources/page/1/"]) {
+      await expectNotFound(request, path);
+    }
+  });
+
+  test("a malformed escape is left as sent: no redirect, never a chain", async ({ request }) => {
+    for (const path of ["/resources/x/%4%41/", "/resources/topic/a%zz/"]) {
+      const response = await get(request, path);
+      expect(response.status(), path).not.toBe(308);
+      expect(response.headers().location, path).toBeUndefined();
+    }
+  });
+
   test("a browser following the redirect lands on the canonical page once", async ({ page }) => {
     const hops: number[] = [];
     page.on("response", (response) => {
