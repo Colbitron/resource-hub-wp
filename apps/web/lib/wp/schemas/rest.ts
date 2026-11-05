@@ -71,6 +71,11 @@ export const wpTermSchema = z.object({
   taxonomy: wpTaxonomySchema,
 });
 
+/**
+ * A whole term list, for the tests and fixtures. The data layer does not
+ * parse a list with it: `cmsGetList` parses each term with `wpTermSchema`,
+ * so one bad term is skipped rather than failing the list (ADR 0049).
+ */
 export const wpTermListSchema = z.array(wpTermSchema);
 
 /** A term as `_embed` includes it in `_embedded['wp:term']`: no `count`. */
@@ -190,6 +195,12 @@ export const wpResourceSchema = z.object({
   _embedded: wpResourceEmbeddedSchema,
 });
 
+/**
+ * A whole resource list, for the tests and fixtures. The data layer does not
+ * parse a list with it: `cmsGetList` parses each resource with
+ * `wpResourceSchema`, so one bad resource is skipped rather than failing the
+ * list (ADR 0049).
+ */
 export const wpResourceListSchema = z.array(wpResourceSchema);
 
 export type WpTaxonomy = z.infer<typeof wpTaxonomySchema>;

@@ -2,13 +2,17 @@ import "server-only";
 
 import { canonicalSlug, isSlug, isTypeSlug } from "../routes";
 import { flagLookupTags, taxonomyListTags, termLookupTags } from "../tags";
-import { CmsError, cmsGetOk, readPagination } from "./fetch";
-import { wpTermListSchema, type WpTaxonomy, type WpTerm } from "./schemas/rest";
+import { CmsError, cmsGetListOk, readPagination } from "./fetch";
+import { wpTermSchema, type WpTaxonomy, type WpTerm } from "./schemas/rest";
 
 /**
  * The three taxonomies' terms: every term of one (for the filter bar), one
  * by slug (to turn a listing's path segment into the term ID the REST
  * filter takes), and the `featured` flag's ID.
+ *
+ * Both reads of a collection are parsed per item (`cmsGetList`, ADR 0049): a
+ * term the reader schema refuses is left out with a warning, and an answer
+ * of four or more terms in which more than half fail throws a `CmsError`.
  */
 
 /** The `resource_flag` term that marks a featured resource (ADR 0009). */
@@ -24,7 +28,12 @@ const TERMS_PER_PAGE = 100;
  */
 export const MAX_TERM_PAGES = 10;
 
-/** Throws when a term in a taxonomy's list claims another taxonomy. */
+/**
+ * Throws when a term in a taxonomy's list claims another taxonomy. Not
+ * skipped per item: core serves one taxonomy per endpoint, so a term of
+ * another one means the endpoint is answering for the wrong taxonomy, a
+ * systematic fault rather than one bad term.
+ */
 function checkTaxonomy(path: string, taxonomy: WpTaxonomy, terms: readonly WpTerm[]): void {
   if (terms.some((term) => term.taxonomy !== taxonomy)) {
     throw new CmsError(path, "schema", `a term in the list is not in ${taxonomy}`, 200);
@@ -40,6 +49,11 @@ function checkTaxonomy(path: string, taxonomy: WpTaxonomy, terms: readonly WpTer
  * 1,000 terms by name come back and a `console.warn` names the taxonomy
  * (never the CMS origin): a filter bar missing terms is better than every
  * listing page failing, which is what throwing here would do.
+ *
+ * A term the reader schema refuses is skipped and logged, so the bar lacks
+ * it. A page of the collection of four or more terms on which more than half
+ * fail throws; a shorter page only skips, so a last page holding one bad
+ * term leaves the bar one term short instead of failing every listing.
  */
 export async function listTerms(taxonomy: WpTaxonomy): Promise<WpTerm[]> {
   const path = `/wp/v2/${taxonomy}`;
@@ -51,9 +65,9 @@ export async function listTerms(taxonomy: WpTaxonomy): Promise<WpTerm[]> {
       orderby: "name",
       order: "asc",
     }).toString();
-    const result = await cmsGetOk({ path, query, tags: taxonomyListTags(), schema: wpTermListSchema });
-    checkTaxonomy(path, taxonomy, result.data);
-    terms.push(...result.data);
+    const result = await cmsGetListOk({ path, query, tags: taxonomyListTags(), itemSchema: wpTermSchema });
+    checkTaxonomy(path, taxonomy, result.data.items);
+    terms.push(...result.data.items);
     const { totalPages } = readPagination(path, result.headers);
     if (page >= totalPages) {
       return terms;
@@ -77,6 +91,11 @@ export async function listTerms(taxonomy: WpTaxonomy): Promise<WpTerm[]> {
  * Tagged, a miss included, with `termLookupTags` for a topic or type, which a
  * term event for the slug clears, and with `flagLookupTags()` for a flag:
  * flags send no term events (ADR 0046).
+ *
+ * Parsed per item, like `getResourceBySlug`: core returns at most one term
+ * here, and an answer in which every term failed throws whatever its size,
+ * so a matching term that fails the schema fails the listing rather than
+ * making it a 404; a bad term beside a good match is skipped.
  */
 export async function getTermBySlug(taxonomy: WpTaxonomy, slug: string): Promise<WpTerm | null> {
   const valid = taxonomy === "resource_type" ? isTypeSlug(slug) : isSlug(slug);
@@ -86,14 +105,17 @@ export async function getTermBySlug(taxonomy: WpTaxonomy, slug: string): Promise
   const canonical = canonicalSlug(slug);
   const path = `/wp/v2/${taxonomy}`;
   const tags = taxonomy === "resource_flag" ? flagLookupTags() : termLookupTags(taxonomy, canonical);
-  const result = await cmsGetOk({
+  const result = await cmsGetListOk({
     path,
     query: new URLSearchParams({ slug: canonical }).toString(),
     tags,
-    schema: wpTermListSchema,
+    itemSchema: wpTermSchema,
   });
-  checkTaxonomy(path, taxonomy, result.data);
-  return result.data.find((term) => canonicalSlug(term.slug) === canonical) ?? null;
+  checkTaxonomy(path, taxonomy, result.data.items);
+  if (result.data.items.length === 0 && result.data.skipped > 0) {
+    throw new CmsError(path, "schema", `every term in the answer fails the reader schema; the first: ${result.data.firstSkipped}`, 200);
+  }
+  return result.data.items.find((term) => canonicalSlug(term.slug) === canonical) ?? null;
 }
 
 /** The ID of the `featured` flag term, or `null` when the CMS has none. */
