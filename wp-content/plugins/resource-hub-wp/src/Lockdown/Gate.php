@@ -89,7 +89,9 @@ final class Gate {
 	 *
 	 * Core prints the site and comment feed links, the extra feed links and the RSD link on every
 	 * theme page, the 404 included, and the feeds they point to are themselves 404s here. Only this
-	 * request loses them; a logged-in user's pages keep them.
+	 * request loses the feed links; a logged-in user's pages keep them. The RSD link is different:
+	 * it is gone from every page while XML-RPC is off ({@see \ResourceHub\Security\XmlRpc},
+	 * ADR 0044), and removing it here as well keeps the 404 free of it whatever that switch does.
 	 */
 	private function drop_head_links(): void {
 		remove_action( 'wp_head', 'feed_links', 2 );

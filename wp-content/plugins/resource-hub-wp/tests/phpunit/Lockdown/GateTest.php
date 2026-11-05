@@ -310,7 +310,10 @@ final class GateTest extends LockdownTestCase {
 	}
 
 	/**
-	 * The 404's head links to no feed and no RSD endpoint; a logged-in user's page keeps them.
+	 * The 404's head links to no feed and no RSD endpoint; a logged-in user's page keeps its feed
+	 * links. It has no RSD link either: XML-RPC is off for everyone (ADR 0044), which
+	 * {@see \ResourceHub\Tests\Security\XmlRpcTest} covers, so the link is gone before the gate runs;
+	 * {@see self::test_the_gate_drops_the_rsd_link_itself()} covers the gate's own removal.
 	 */
 	public function test_the_404_head_advertises_no_feeds(): void {
 		add_theme_support( 'automatic-feed-links' );
@@ -326,7 +329,22 @@ final class GateTest extends LockdownTestCase {
 		$this->go_to( $url );
 		$head = get_echo( 'wp_head' );
 		$this->assertStringContainsString( 'application/rss+xml', $head );
-		$this->assertStringContainsString( 'EditURI', $head );
+	}
+
+	/**
+	 * The gate drops the RSD link itself, whatever the XML-RPC switch does: with the link put back,
+	 * locking an anonymous request takes it off `wp_head` again. The gate is called directly,
+	 * because `go_to()` restores the hooks backed up at `set_up()` and so would drop the link the
+	 * test adds before the gate ever saw it.
+	 */
+	public function test_the_gate_drops_the_rsd_link_itself(): void {
+		add_action( 'wp_head', 'rsd_link' );
+		$this->assertSame( 10, has_action( 'wp_head', 'rsd_link' ), 'The setup must put the link back.' );
+
+		$this->anonymous();
+		$this->assertTrue( ( new Gate() )->lock( false, new WP_Query() ) );
+
+		$this->assertFalse( has_action( 'wp_head', 'rsd_link' ) );
 	}
 
 	/**
