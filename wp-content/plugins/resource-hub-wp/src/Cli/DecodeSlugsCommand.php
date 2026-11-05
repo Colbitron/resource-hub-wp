@@ -22,14 +22,18 @@ use WP_CLI\Utils;
  */
 final class DecodeSlugsCommand {
 	/**
-	 * Lists every resource, topic, type and flag whose stored slug has an escape of
-	 * `A-Z a-z 0-9 - _ . ! ~ * ' ( )`, with the decoded slug and anything already holding it.
+	 * Lists, and with --apply decodes, slugs stored with a percent escape.
+	 *
+	 * Covers every resource, topic, type and flag whose stored slug has an escape
+	 * of `A-Z a-z 0-9 - _ . ! ~ * ' ( )`, which the front end's router decodes
+	 * (ADR 0024). Each row shows the decoded slug and anything already holding it.
 	 * Changes nothing unless given `--apply`.
 	 *
-	 * With `--apply`, saves each one through core (`wp_update_post()` or `wp_update_term()`), so the
-	 * slug is decoded, the old one kept in `_wp_old_slug`, uniqueness checked and the front end
-	 * revalidated, as on any save. A term whose decoded slug another term has is skipped and
-	 * reported: core refuses the save, and an editor must type a new slug for it.
+	 * With `--apply`, saves each one through core (`wp_update_post()` or
+	 * `wp_update_term()`), so the slug is decoded, the old one kept in
+	 * `_wp_old_slug`, uniqueness checked and the front end revalidated, as on any
+	 * save. A term whose decoded slug another term has is skipped and reported:
+	 * core refuses the save, and an editor must type a new slug for it.
 	 *
 	 * ## OPTIONS
 	 *
