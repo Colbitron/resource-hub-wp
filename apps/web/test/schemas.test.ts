@@ -7,8 +7,9 @@ import type { z } from "zod";
 
 import { slugSchema } from "../lib/wp/schemas/common";
 import { parsePaginationHeaders } from "../lib/wp/schemas/pagination";
-import { resolveResponseSchema } from "../lib/wp/schemas/resolve";
+import { resolveResponseSchema, resolveResponseSchemaStrict } from "../lib/wp/schemas/resolve";
 import {
+  isWpTaxonomy,
   wpResourceListSchema,
   wpResourceSchema,
   wpTermListSchema,
@@ -16,6 +17,7 @@ import {
 } from "../lib/wp/schemas/rest";
 import {
   revalidateRequestSchema,
+  revalidateRequestSchemaStrict,
   revalidateResponseErrorSchema,
   revalidateResponseOkSchema,
 } from "../lib/wp/schemas/revalidate";
@@ -24,8 +26,11 @@ import { wpErrorSchema } from "../lib/wp/schemas/wp-error";
 /**
  * Proves the hand-written Zod schemas against the same fixtures the JSON
  * Schemas are tested with (ADR 0010): every valid fixture in
- * `packages/ui/fixtures/valid/` parses and every invalid one is rejected. Then
- * it parses the core REST payloads captured from a real WordPress.
+ * `packages/ui/fixtures/valid/` parses and every invalid one is rejected. The
+ * conformance runs use the strict mirrors, which reject unknown keys as the
+ * JSON Schemas do; the readers the data layer parses with differ only there
+ * (ADR 0010, amended 2026-11-05). Then it parses the core REST payloads
+ * captured from a real WordPress.
  */
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -34,12 +39,39 @@ const wpFixtures = path.join(here, "fixtures/wp");
 
 /** Contract schemas by fixture prefix, the schema file name without `.schema.json`. */
 const contractSchemas: Record<string, z.ZodType> = {
-  "revalidate-request": revalidateRequestSchema,
+  "revalidate-request": revalidateRequestSchemaStrict,
   "revalidate-response-ok": revalidateResponseOkSchema,
   "revalidate-response-error": revalidateResponseErrorSchema,
-  "resolve-response": resolveResponseSchema,
+  "resolve-response": resolveResponseSchemaStrict,
   "wp-error": wpErrorSchema,
 };
+
+/**
+ * For some invalid fixtures, the path of every issue the rejection must
+ * report, so the fixture is rejected for the reason its name gives and not
+ * for some incidental mistake in it.
+ */
+const expectedIssuePaths: Record<string, (string | number)[][]> = {
+  "resolve-response.extra-top-level-property.json": [[]],
+  "resolve-response.reserved-type.json": [["type"]],
+  "revalidate-request.duplicate-topics.json": [["events", 0, "topics"]],
+  "revalidate-request.extra-key-in-previous.json": [["events", 0, "previous"]],
+  "revalidate-request.previous-on-publish.json": [["events", 0, "previous"]],
+  "revalidate-request.reserved-type-in-previous.json": [["events", 0, "previous", "types", 0]],
+  "revalidate-request.reserved-type-term-previous-slug.json": [["events", 0, "previous", "slug"]],
+  "revalidate-request.string-id.json": [["events", 0, "id"]],
+  "revalidate-request.term-null-previous-on-update.json": [["events", 0, "previous"]],
+  "revalidate-request.term-unknown-taxonomy.json": [["events", 0, "taxonomy"]],
+  "revalidate-request.two-hundred-one-character-slug.json": [["events", 0, "slug"]],
+  "revalidate-request.wrong-version.json": [["version"]],
+  "revalidate-response-ok.protocol-relative-path.json": [["revalidated", 0]],
+  "wp-error.string-status.json": [["data", "status"]],
+};
+
+/** The path of every issue in a failed parse, or `[]` when it succeeded. */
+function issuePaths(result: { error?: z.ZodError }): PropertyKey[][] {
+  return (result.error?.issues ?? []).map((issue) => issue.path);
+}
 
 /** Contract schemas the front end does not read yet: the related route is slice 4. */
 const notYetImplemented = new Set(["related-response"]);
@@ -78,6 +110,13 @@ describe("contract fixtures", () => {
     }
   });
 
+  it("every fixture with expected issue paths exists", () => {
+    const names = new Set(invalid.map((fixture) => fixture.name));
+    for (const name of Object.keys(expectedIssuePaths)) {
+      expect(names.has(name), `${name} is not an invalid fixture`).toBe(true);
+    }
+  });
+
   it("every implemented schema has a valid and an invalid fixture", () => {
     for (const key of Object.keys(contractSchemas)) {
       expect(valid.some((fixture) => fixture.key === key), `${key} has no valid fixture`).toBe(
@@ -112,7 +151,12 @@ describe("contract fixtures", () => {
         continue;
       }
       it(`${name} is rejected`, () => {
-        expect(schema.safeParse(data).success).toBe(false);
+        const result = schema.safeParse(data);
+        expect(result.success).toBe(false);
+        const paths = expectedIssuePaths[name];
+        if (paths !== undefined) {
+          expect(issuePaths(result)).toEqual(paths);
+        }
       });
     }
   });
@@ -122,6 +166,13 @@ describe("revalidate request", () => {
   const twentyFive = readJson(
     path.join(contractFixtures, "valid/revalidate-request.twenty-five-events.json"),
   ) as { version: 1; events: unknown[] };
+
+  /** The first event of the 25-event fixture with `rest_url` replaced. */
+  function withRestUrl(restUrl: string) {
+    const body = clone(twentyFive);
+    body.events = [{ ...(body.events[0] as object), rest_url: restUrl }];
+    return body;
+  }
 
   it("rejects a batch of 26 events", () => {
     const body = clone(twentyFive);
@@ -164,10 +215,10 @@ describe("revalidate request", () => {
   });
 
   it("rejects an upper-case scheme in rest_url, as the schema's pattern does", () => {
-    const body = clone(twentyFive);
-    (body.events[0] as { rest_url: string }).rest_url =
-      "HTTPS://cms.example/wp-json/wp/v2/resources/1";
-    expect(revalidateRequestSchema.safeParse(body).success).toBe(false);
+    const result = revalidateRequestSchema.safeParse(
+      withRestUrl("HTTPS://cms.example/wp-json/wp/v2/resources/1"),
+    );
+    expect(issuePaths(result)).toEqual([["events", 0, "rest_url"]]);
   });
 
   it("rejects a rest_url that format uri rejects but a WHATWG URL parser accepts", () => {
@@ -178,11 +229,113 @@ describe("revalidate request", () => {
       "https://cms.example/wp-json/wp/v2/resources/[1]",
       "https://cms.example/wp-json/wp/v2/resources/1?q=[1]",
       "https://cms.example/wp-json/wp/v2/resources/1#a#b",
+      // [ and ] in the userinfo, which the WHATWG parser ends at the last @.
+      "https://[a]@cms.example/wp-json/wp/v2/resources/1",
+      "https://[::1]@cms.example/wp-json/wp/v2/resources/1",
+      // Two @ before an IPv6 host: no authority in RFC 3986.
+      "https://a@b@[::1]/wp-json/wp/v2/resources/1",
     ]) {
-      const body = clone(twentyFive);
-      (body.events[0] as { rest_url: string }).rest_url = restUrl;
-      expect(revalidateRequestSchema.safeParse(body).success, restUrl).toBe(false);
+      const result = revalidateRequestSchema.safeParse(withRestUrl(restUrl));
+      expect(issuePaths(result), restUrl).toEqual([["events", 0, "rest_url"]]);
     }
+  });
+
+  it("accepts an IPv6 host, with and without userinfo, as format uri does", () => {
+    for (const restUrl of [
+      "https://[::1]/wp-json/wp/v2/resources/1",
+      "https://a@[::1]:8443/wp-json/wp/v2/resources/1",
+    ]) {
+      const result = revalidateRequestSchema.safeParse(withRestUrl(restUrl));
+      expect(result.error?.issues ?? [], restUrl).toEqual([]);
+    }
+  });
+
+  it("rejects a non-null previous on delete, unpublish and trash", () => {
+    const update = readJson(
+      path.join(contractFixtures, "valid/revalidate-request.update-type-change.json"),
+    ) as { version: 1; events: Record<string, unknown>[] };
+    for (const event of ["delete", "unpublish", "trash"]) {
+      const body = clone(update);
+      body.events[0] = { ...body.events[0], event };
+      const result = revalidateRequestSchemaStrict.safeParse(body);
+      expect(issuePaths(result), event).toEqual([["events", 0, "previous"]]);
+    }
+  });
+
+  it("rejects a term update with a null previous", () => {
+    const rename = readJson(
+      path.join(contractFixtures, "valid/revalidate-request.type-term-rename.json"),
+    ) as { version: 1; events: Record<string, unknown>[] };
+    const body = clone(rename);
+    body.events[0] = { ...body.events[0], previous: null };
+    const result = revalidateRequestSchemaStrict.safeParse(body);
+    expect(issuePaths(result)).toEqual([["events", 0, "previous"]]);
+  });
+});
+
+describe("readers drop unknown keys; strict mirrors reject them", () => {
+  type Body = { [key: string]: unknown; events: Record<string, unknown>[] };
+  const resourceUpdate = readJson(
+    path.join(contractFixtures, "valid/revalidate-request.update-type-change.json"),
+  ) as Body;
+  const termUpdate = readJson(
+    path.join(contractFixtures, "valid/revalidate-request.type-term-rename.json"),
+  ) as Body;
+
+  const cases: { level: string; body: Body; add: (body: Body) => void; at: PropertyKey[] }[] = [
+    { level: "the body", body: resourceUpdate, add: (body) => (body.added = 1), at: [] },
+    {
+      level: "a resource event",
+      body: resourceUpdate,
+      add: (body) => (body.events[0]!.added = 1),
+      at: ["events", 0],
+    },
+    {
+      level: "a resource event's previous",
+      body: resourceUpdate,
+      add: (body) => ((body.events[0]!.previous as Record<string, unknown>).added = 1),
+      at: ["events", 0, "previous"],
+    },
+    {
+      level: "a term event",
+      body: termUpdate,
+      add: (body) => (body.events[0]!.added = 1),
+      at: ["events", 0],
+    },
+    {
+      level: "a term event's previous",
+      body: termUpdate,
+      add: (body) => ((body.events[0]!.previous as Record<string, unknown>).added = 1),
+      at: ["events", 0, "previous"],
+    },
+  ];
+
+  for (const { level, body, add, at } of cases) {
+    it(`an extra key on ${level}`, () => {
+      const extended = clone(body);
+      add(extended);
+      // The reader parses it to exactly what the body without the key parses to.
+      expect(revalidateRequestSchema.parse(extended)).toEqual(revalidateRequestSchema.parse(body));
+      const strict = revalidateRequestSchemaStrict.safeParse(extended);
+      expect(issuePaths(strict)).toEqual([at]);
+      expect(strict.error?.issues[0]).toMatchObject({ code: "unrecognized_keys", keys: ["added"] });
+    });
+  }
+
+  it("still holds a known key to the strict rules", () => {
+    const extended = clone(resourceUpdate);
+    extended.added = 1;
+    extended.events[0]!.slug = "has space";
+    expect(issuePaths(revalidateRequestSchema.safeParse(extended))).toEqual([
+      ["events", 0, "slug"],
+    ]);
+  });
+
+  it("an extra key on the resolve response", () => {
+    const renamed = readJson(path.join(contractFixtures, "valid/resolve-response.renamed.json"));
+    const extended = { ...(renamed as object), added: 1 };
+    expect(resolveResponseSchema.parse(extended)).toEqual(resolveResponseSchema.parse(renamed));
+    expect(issuePaths(resolveResponseSchemaStrict.safeParse(extended))).toEqual([[]]);
   });
 });
 
@@ -203,11 +356,11 @@ describe("core REST fixtures captured from WordPress", () => {
     const resources = wpResourceListSchema.parse(list);
     expect(resources).toHaveLength(2);
     const [withImage, withoutImage] = resources;
-    expect(withImage?._embedded["wp:featuredmedia"]?.[0]).toMatchObject({
+    expect(withImage?._embedded["wp:featuredmedia"][0]).toMatchObject({
       source_url: "https://cms.example/wp-content/uploads/2026/11/w-logo-blue.png",
-      media_details: { width: 80, height: 80 },
+      media_details: { width: 80, height: 80, sizes: {} },
     });
-    expect(withoutImage?._embedded["wp:featuredmedia"]).toBeUndefined();
+    expect(withoutImage?._embedded["wp:featuredmedia"]).toEqual([]);
   });
 
   it("parses a single resource and keeps only the fields it names", () => {
@@ -240,23 +393,95 @@ describe("core REST fixtures captured from WordPress", () => {
     expect(result.error?.issues[0]?.path).toEqual(["slug"]);
   });
 
-  it("rejects a resource fetched without _embed", () => {
-    const resource = clone(single) as Record<string, unknown>;
-    delete resource._embedded;
-    expect(wpResourceSchema.safeParse(resource).success).toBe(false);
+  it("parses a published resource with no terms, which core embeds no wp:term for", () => {
+    const resource = clone(single) as Record<string, unknown> & {
+      _embedded: Record<string, unknown>;
+    };
+    resource.resource_type = [];
+    resource.resource_topic = [];
+    resource.resource_flag = [];
+    delete resource._embedded["wp:term"];
+    const parsed = wpResourceSchema.parse(resource);
+    expect(parsed._embedded["wp:term"]).toEqual([]);
+    expect(parsed._embedded["wp:featuredmedia"]).toHaveLength(1);
   });
 
-  it("accepts a featured image core could not embed, as its error", () => {
+  it("parses a resource with nothing embedded, which core sends without _embedded", () => {
+    const resource = clone(single) as Record<string, unknown>;
+    resource.resource_type = [];
+    resource.resource_topic = [];
+    resource.resource_flag = [];
+    resource.featured_media = 0;
+    delete resource._embedded;
+    const parsed = wpResourceSchema.parse(resource);
+    expect(parsed._embedded).toEqual({ "wp:term": [], "wp:featuredmedia": [] });
+  });
+
+  /** The single resource with its one featured-media entry replaced. */
+  function withFeaturedMedia(entry: unknown) {
     const resource = clone(single) as { _embedded: Record<string, unknown> };
-    resource._embedded["wp:featuredmedia"] = [
-      {
+    resource._embedded["wp:featuredmedia"] = [entry];
+    return resource;
+  }
+
+  const media = (
+    (single as { _embedded: Record<string, unknown> })._embedded["wp:featuredmedia"] as Record<
+      string,
+      unknown
+    >[]
+  )[0]!;
+
+  it("parses an image without dimensions, as core sends an SVG, leaving width and height unset", () => {
+    const parsed = wpResourceSchema.parse(withFeaturedMedia({ ...media, media_details: {} }));
+    const image = parsed._embedded["wp:featuredmedia"][0];
+    expect(image?.media_details).toEqual({ sizes: {} });
+    expect(image?.source_url).toBe(media.source_url);
+  });
+
+  it("turns a featured image core could not embed, sent as its error, into no image", () => {
+    const parsed = wpResourceSchema.parse(
+      withFeaturedMedia({
         code: "rest_forbidden",
         message: "Sorry, you are not allowed to do that.",
         data: { status: 401 },
-      },
-    ];
-    const parsed = wpResourceSchema.parse(resource);
-    expect(parsed._embedded["wp:featuredmedia"]?.[0]).toHaveProperty("code", "rest_forbidden");
+      }),
+    );
+    expect(parsed._embedded["wp:featuredmedia"]).toEqual([null]);
+  });
+
+  it("turns an unusable featured image into no image instead of failing the resource", () => {
+    for (const entry of [
+      { ...media, source_url: 42 },
+      { ...media, media_details: { width: 0, height: 80 } },
+      { ...media, media_details: { sizes: { thumbnail: { source_url: "/relative" } } } },
+      "not an object",
+    ]) {
+      const result = wpResourceSchema.safeParse(withFeaturedMedia(entry));
+      expect(result.error?.issues ?? []).toEqual([]);
+      expect(result.data?._embedded["wp:featuredmedia"]).toEqual([null]);
+    }
+    const notAnArray = clone(single) as { _embedded: Record<string, unknown> };
+    notAnArray._embedded["wp:featuredmedia"] = { id: 16 };
+    expect(wpResourceSchema.parse(notAnArray)._embedded["wp:featuredmedia"]).toEqual([]);
+  });
+
+  it("accepts an embedded term from a taxonomy another plugin attaches", () => {
+    const resource = clone(single) as { _embedded: { "wp:term": unknown[][] } };
+    resource._embedded["wp:term"].push([
+      { id: 99, name: "Spring", slug: "spring", taxonomy: "season" },
+    ]);
+    const terms = wpResourceSchema.parse(resource)._embedded["wp:term"].flat();
+    expect(terms.map((term) => term.taxonomy)).toContain("season");
+    expect(terms.filter((term) => isWpTaxonomy(term.taxonomy)).map((term) => term.id)).toEqual(
+      [9, 11, 4, 2],
+    );
+  });
+
+  it("rejects a date or modified with a trailing Z, which WordPress never writes", () => {
+    for (const key of ["date", "modified"]) {
+      const resource = { ...(single as object), [key]: "2026-11-05T09:31:32Z" };
+      expect(issuePaths(wpResourceSchema.safeParse(resource)), key).toEqual([[key]]);
+    }
   });
 
   it("rejects a term whose slug is not a string", () => {
@@ -285,14 +510,19 @@ describe("parsePaginationHeaders", () => {
   });
 
   it("names a header that is missing or not a number", () => {
-    expect(() => parsePaginationHeaders(new Headers({ "X-WP-Total": "12" }))).toThrow(
-      /X-WP-TotalPages/,
-    );
-    expect(() =>
-      parsePaginationHeaders(new Headers({ "X-WP-Total": "twelve", "X-WP-TotalPages": "6" })),
-    ).toThrow(/X-WP-Total/);
-    expect(() =>
-      parsePaginationHeaders(new Headers({ "X-WP-Total": "-1", "X-WP-TotalPages": "6" })),
-    ).toThrow(/X-WP-Total/);
+    /** The issue paths of the ZodError `headers` throws. */
+    function thrownPaths(headers: Record<string, string>): PropertyKey[][] {
+      try {
+        parsePaginationHeaders(new Headers(headers));
+      } catch (error) {
+        return (error as z.ZodError).issues.map((issue) => issue.path);
+      }
+      throw new Error("expected parsePaginationHeaders to throw");
+    }
+    expect(thrownPaths({ "X-WP-Total": "12" })).toEqual([["X-WP-TotalPages"]]);
+    expect(thrownPaths({ "X-WP-Total": "twelve", "X-WP-TotalPages": "6" })).toEqual([
+      ["X-WP-Total"],
+    ]);
+    expect(thrownPaths({ "X-WP-Total": "-1", "X-WP-TotalPages": "6" })).toEqual([["X-WP-Total"]]);
   });
 });
