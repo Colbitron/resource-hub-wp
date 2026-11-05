@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mediaPath, rewriteSrcset, stripCmsOrigin } from "../lib/urls";
+import { mediaPath, rewriteHref, rewriteSrcset, stripCmsOrigin } from "../lib/urls";
 
 const CMS = ["https://cms.example"];
 const UPLOADS = "https://cms.example/wp-content/uploads";
@@ -120,14 +120,156 @@ describe("stripCmsOrigin", () => {
   });
 });
 
+describe("stripCmsOrigin on a trailing-dot host", () => {
+  it("strips the CMS written with one trailing dot, absolute or scheme-relative", () => {
+    expect(stripCmsOrigin("https://cms.example./x/", CMS)).toBe("/x/");
+    expect(stripCmsOrigin("//cms.example./x", CMS)).toBe("/x");
+    expect(stripCmsOrigin("HTTPS://CMS.EXAMPLE.:443/x/", CMS)).toBe("/x/");
+  });
+
+  it("strips the CMS when the configured origin has the trailing dot", () => {
+    expect(stripCmsOrigin("https://cms.example/x/", ["https://cms.example."])).toBe("/x/");
+  });
+
+  it("drops one dot only, and still refuses lookalikes", () => {
+    expect(stripCmsOrigin("https://cms.example../x/", CMS)).toBe("https://cms.example../x/");
+    expect(stripCmsOrigin("https://evilcms.example./x/", CMS)).toBe("https://evilcms.example./x/");
+    expect(stripCmsOrigin("https://cms.example.evil./x/", CMS)).toBe(
+      "https://cms.example.evil./x/",
+    );
+  });
+});
+
+describe("stripCmsOrigin on a subdirectory install", () => {
+  const BLOG = ["https://example.com/blog"];
+
+  it("strips the origin and the install path", () => {
+    expect(stripCmsOrigin("https://example.com/blog/resources/webinar/x/", BLOG)).toBe(
+      "/resources/webinar/x/",
+    );
+    expect(stripCmsOrigin("https://example.com/blog/resources/?a=1#b", BLOG)).toBe(
+      "/resources/?a=1#b",
+    );
+    expect(stripCmsOrigin("https://example.com/blog", BLOG)).toBe("/");
+    expect(stripCmsOrigin("https://example.com/blog/", BLOG)).toBe("/");
+    expect(stripCmsOrigin("//example.com/blog/x/", BLOG)).toBe("/x/");
+  });
+
+  it("accepts the install path with a trailing slash", () => {
+    expect(stripCmsOrigin("https://example.com/blog/x/", ["https://example.com/blog/"])).toBe(
+      "/x/",
+    );
+  });
+
+  it("leaves a same-host URL outside the install path alone", () => {
+    for (const href of [
+      "https://example.com/",
+      "https://example.com/shop/",
+      "https://example.com/blogger/x/",
+      "https://example.com/Blog/x/",
+    ]) {
+      expect(stripCmsOrigin(href, BLOG)).toBe(href);
+    }
+  });
+
+  it("never returns a protocol-relative path from under the install path", () => {
+    expect(stripCmsOrigin("https://example.com/blog//evil.example/", BLOG)).toBe("/evil.example/");
+  });
+
+  it("uses the longest install path that matches", () => {
+    const bases = ["https://example.com", "https://example.com/blog"];
+    expect(stripCmsOrigin("https://example.com/blog/x/", bases)).toBe("/x/");
+    expect(stripCmsOrigin("https://example.com/shop/", bases)).toBe("/shop/");
+    expect(stripCmsOrigin("https://example.com/blog/x/", [...bases].reverse())).toBe("/x/");
+  });
+
+  it("resolves dot segments before checking the install path", () => {
+    expect(stripCmsOrigin("https://example.com/blog/../shop/", BLOG)).toBe(
+      "https://example.com/blog/../shop/",
+    );
+  });
+});
+
+describe("rewriteHref", () => {
+  const urls = { cmsOrigins: CMS, uploadsBase: UPLOADS };
+
+  it("maps a link to an upload to /media/, keeping its query and hash", () => {
+    expect(rewriteHref("https://cms.example/wp-content/uploads/a.pdf", urls)).toBe("/media/a.pdf");
+    expect(rewriteHref("https://cms.example/wp-content/uploads/a.pdf?dl=1#page=2", urls)).toBe(
+      "/media/a.pdf?dl=1#page=2",
+    );
+    expect(rewriteHref("/wp-content/uploads/2026/11/a.pdf", urls)).toBe("/media/2026/11/a.pdf");
+    expect(rewriteHref("//cms.example./wp-content/uploads/a.pdf", urls)).toBe("/media/a.pdf");
+  });
+
+  it("strips the CMS origin from any other CMS link", () => {
+    expect(rewriteHref("https://cms.example/resources/webinar/x/?a=1", urls)).toBe(
+      "/resources/webinar/x/?a=1",
+    );
+    expect(rewriteHref("https://cms.example/wp-content/uploads/../themes/x.css", urls)).toBe(
+      "/wp-content/themes/x.css",
+    );
+  });
+
+  it("leaves everything else alone", () => {
+    for (const href of [
+      "https://other.example/wp-content/uploads/a.pdf",
+      "/resources/",
+      "#top",
+      "mailto:editor@cms.example",
+      "javascript:alert(1)",
+    ]) {
+      expect(rewriteHref(href, urls)).toBe(href);
+    }
+  });
+
+  it("supports uploads on a subdirectory install", () => {
+    const blog = {
+      cmsOrigins: ["https://example.com/blog"],
+      uploadsBase: "https://example.com/blog/wp-content/uploads",
+    };
+    expect(rewriteHref("https://example.com/blog/wp-content/uploads/a.pdf", blog)).toBe(
+      "/media/a.pdf",
+    );
+    expect(rewriteHref("https://example.com/blog/resources/", blog)).toBe("/resources/");
+    expect(rewriteHref("https://example.com/wp-content/uploads/a.pdf", blog)).toBe(
+      "https://example.com/wp-content/uploads/a.pdf",
+    );
+  });
+
+  it("throws on a configured URL that is not http(s)", () => {
+    expect(() => rewriteHref("/x", { cmsOrigins: ["ftp://cms.example"], uploadsBase: UPLOADS })).toThrow(
+      TypeError,
+    );
+    expect(() => rewriteHref("/x", { cmsOrigins: CMS, uploadsBase: "cms.example" })).toThrow(
+      TypeError,
+    );
+  });
+});
+
 describe("mediaPath", () => {
-  it("maps an uploads URL to /media/, keeping the query and hash", () => {
+  it("maps an uploads URL to /media/, keeping the hash and dropping the query", () => {
     expect(mediaPath("https://cms.example/wp-content/uploads/2026/11/photo.jpg", UPLOADS)).toBe(
       "/media/2026/11/photo.jpg",
     );
+    // next.config.ts's localPatterns has search: "", so next/image would refuse ?ver=2.
     expect(mediaPath("https://cms.example/wp-content/uploads/a.jpg?ver=2#x", UPLOADS)).toBe(
-      "/media/a.jpg?ver=2#x",
+      "/media/a.jpg#x",
     );
+    expect(mediaPath("https://cms.example/wp-content/uploads/a.jpg?", UPLOADS)).toBe(
+      "/media/a.jpg",
+    );
+  });
+
+  it("accepts a CMS host written with a trailing dot, on either side", () => {
+    expect(mediaPath("https://cms.example./wp-content/uploads/a.jpg", UPLOADS)).toBe(
+      "/media/a.jpg",
+    );
+    expect(mediaPath("//cms.example./wp-content/uploads/a.jpg", UPLOADS)).toBe("/media/a.jpg");
+    expect(
+      mediaPath("https://cms.example/wp-content/uploads/a.jpg", "https://cms.example./wp-content/uploads"),
+    ).toBe("/media/a.jpg");
+    expect(mediaPath("https://cms.example../wp-content/uploads/a.jpg", UPLOADS)).toBeNull();
   });
 
   it("accepts an uploads base with a trailing slash and a subdirectory install", () => {
@@ -250,7 +392,22 @@ describe("rewriteSrcset", () => {
         "https://cms.example/wp-content/uploads/a.jpg?crop=0,0,10,10 1x,https://cms.example/wp-content/uploads/b.jpg 2x",
         UPLOADS,
       ),
-    ).toBe("/media/a.jpg?crop=0,0,10,10 1x, /media/b.jpg 2x");
+    ).toBe("/media/a.jpg 1x, /media/b.jpg 2x");
+    expect(
+      rewriteSrcset(
+        "https://cms.example/wp-content/uploads/a,b.jpg 1x,https://cms.example/wp-content/uploads/c.jpg 2x",
+        UPLOADS,
+      ),
+    ).toBe("/media/a,b.jpg 1x, /media/c.jpg 2x");
+  });
+
+  it("drops the query from every uploads candidate and keeps it on the others", () => {
+    expect(
+      rewriteSrcset(
+        "https://cms.example/wp-content/uploads/a.jpg?ver=1 1x, https://other.example/b.jpg?ver=2 2x",
+        UPLOADS,
+      ),
+    ).toBe("/media/a.jpg 1x, https://other.example/b.jpg?ver=2 2x");
   });
 
   it("leaves candidates that are not uploads as they were", () => {
