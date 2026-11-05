@@ -28,11 +28,11 @@ pnpm web:test:e2e    # playwright test (end to end, e2e/*.spec.ts; none yet)
 
 | Variable | Purpose |
 | --- | --- |
-| `WP_API_URL` | Base URL of the CMS's REST API (`/wp-json`). Locally, wp-env serves it at `http://localhost:8888/wp-json`. |
+| `WP_API_URL` | Base URL of the CMS's REST API, ending in `/wp-json`, with no query, fragment or credentials. Locally, wp-env serves it at `http://localhost:8888/wp-json`. |
 | `REVALIDATE_SECRET` | Shared secret the CMS sends as a bearer token to `POST /api/revalidate/`. |
-| `WP_MEDIA_ORIGIN` | Optional. The origin `/media/…` is rewritten to, as `/wp-content/uploads/…`; defaults to the origin of `WP_API_URL`. |
+| `WP_MEDIA_ORIGIN` | Optional. The site base `/media/…` is rewritten under, as `{base}/wp-content/uploads/…`: an origin, optionally with the path WordPress is installed in (`https://example.com/blog`). Defaults to `WP_API_URL` without `/wp-json`. |
 
-All are server-only, read and validated in `lib/env.ts` when first used, never `NEXT_PUBLIC_`. They live in `.env.local` (gitignored) and in Vercel project settings, never in git.
+All are server-only, read and validated in `lib/env.ts` when first used, never `NEXT_PUBLIC_`. `next.config.ts` reads `WP_API_URL` and `WP_MEDIA_ORIGIN` for the `/media/` rewrite: with neither set, a Vercel build fails and a local or CI build leaves the rewrite out with a warning. They live in `.env.local` (gitignored) and in Vercel project settings, never in git.
 
 ## Status
 

@@ -23,7 +23,7 @@ export function revalidateSecret(): string {
   return parseRevalidateSecret(process.env);
 }
 
-/** The origin behind `/media/…`: `WP_MEDIA_ORIGIN`, or the origin of `WP_API_URL`. */
+/** The base behind `/media/…`: `WP_MEDIA_ORIGIN`, or `WP_API_URL` without `/wp-json`. */
 export function wpMediaOrigin(): string {
   return parseMediaOrigin(process.env);
 }

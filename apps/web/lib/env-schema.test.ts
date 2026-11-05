@@ -26,12 +26,67 @@ describe("parseWpApiUrl", () => {
     );
     expect(() => parseWpApiUrl({ WP_API_URL: "ftp://cms.example/wp-json" })).toThrow(EnvError);
   });
+
+  it("keeps a subdirectory install's path", () => {
+    expect(parseWpApiUrl({ WP_API_URL: "https://example.com/blog/wp-json" })).toBe(
+      "https://example.com/blog/wp-json",
+    );
+  });
+
+  it("rejects a URL whose path is not the /wp-json base", () => {
+    for (const value of [
+      "https://cms.example",
+      "https://cms.example/",
+      "https://cms.example/wp-json/wp/v2",
+      "https://cms.example/not-wp-json",
+    ]) {
+      expect(() => parseWpApiUrl({ WP_API_URL: value })).toThrow(
+        /^WP_API_URL must be the REST API base, ending in \/wp-json\./,
+      );
+    }
+  });
+
+  it("rejects a query string or fragment", () => {
+    for (const value of [
+      "https://cms.example/wp-json?rest_route=/",
+      "https://cms.example/wp-json#top",
+    ]) {
+      expect(() => parseWpApiUrl({ WP_API_URL: value })).toThrow(
+        /^WP_API_URL must not have a query string or fragment\./,
+      );
+    }
+  });
+
+  it("rejects embedded credentials without echoing them", () => {
+    for (const value of [
+      "https://editor:hunter2@cms.example/wp-json",
+      "https://editor@cms.example/wp-json",
+    ]) {
+      let message = "";
+      try {
+        parseWpApiUrl({ WP_API_URL: value });
+      } catch (error) {
+        expect(error).toBeInstanceOf(EnvError);
+        message = (error as Error).message;
+      }
+      expect(message).toMatch(/^WP_API_URL must not contain a user name or password\./);
+      expect(message).not.toContain("editor");
+      expect(message).not.toContain("hunter2");
+      expect(message).not.toContain("cms.example");
+    }
+  });
 });
 
 describe("parseMediaOrigin", () => {
-  it("defaults to the origin of WP_API_URL", () => {
+  it("defaults to WP_API_URL without /wp-json", () => {
     expect(parseMediaOrigin({ WP_API_URL: "https://cms.example:8443/wp-json" })).toBe(
       "https://cms.example:8443",
+    );
+  });
+
+  it("keeps a subdirectory install's path from WP_API_URL", () => {
+    expect(parseMediaOrigin({ WP_API_URL: "https://example.com/blog/wp-json/" })).toBe(
+      "https://example.com/blog",
     );
   });
 
@@ -47,10 +102,28 @@ describe("parseMediaOrigin", () => {
     ).toBe("https://cms.example");
   });
 
-  it("rejects a WP_MEDIA_ORIGIN with a path", () => {
+  it("accepts a WP_MEDIA_ORIGIN with the install path", () => {
+    expect(parseMediaOrigin({ WP_MEDIA_ORIGIN: "https://example.com/blog/" })).toBe(
+      "https://example.com/blog",
+    );
+  });
+
+  it("rejects a WP_MEDIA_ORIGIN that already names the uploads directory", () => {
     expect(() =>
       parseMediaOrigin({ WP_MEDIA_ORIGIN: "https://cms.example/wp-content/uploads" }),
-    ).toThrow(/^WP_MEDIA_ORIGIN must be an origin only/);
+    ).toThrow(/^WP_MEDIA_ORIGIN must be the site's base URL, without \/wp-content\/uploads\./);
+  });
+
+  it("rejects a WP_MEDIA_ORIGIN with a query, fragment or credentials", () => {
+    expect(() => parseMediaOrigin({ WP_MEDIA_ORIGIN: "https://media.example/?v=1" })).toThrow(
+      /^WP_MEDIA_ORIGIN must not have a query string or fragment\./,
+    );
+    expect(() => parseMediaOrigin({ WP_MEDIA_ORIGIN: "https://media.example/#x" })).toThrow(
+      /^WP_MEDIA_ORIGIN must not have a query string or fragment\./,
+    );
+    expect(() =>
+      parseMediaOrigin({ WP_MEDIA_ORIGIN: "https://user:secret@media.example" }),
+    ).toThrow(/^WP_MEDIA_ORIGIN must not contain a user name or password\.(?!.*secret)/);
   });
 });
 
