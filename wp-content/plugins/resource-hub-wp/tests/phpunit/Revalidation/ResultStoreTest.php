@@ -160,6 +160,40 @@ final class ResultStoreTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * A transport error message that is not valid UTF-8 is stored scrubbed, on the first write and on
+	 * the fallback without the body, so the status never stays `pending`.
+	 */
+	public function test_invalid_utf8_error_does_not_leave_the_record_pending(): void {
+		list( $events, $first, $second ) = $this->batch();
+		$store                           = new ResultStore();
+		$store->mark_pending( 'batch-12', $events );
+
+		$store->record( 'batch-12', $events, new Result( Result::FAILED, Result::TRANSPORT_ERROR, null, '', "cURL error 7: \xff\xfe \xc3", 3 ) );
+
+		$record = ResultStore::read_post( $first );
+		$this->assertSame( Result::FAILED, $record['status'] );
+		$this->assertSame( 'batch-12', $record['batch_id'] );
+		$this->assertTrue( mb_check_encoding( $record['error'], 'UTF-8' ) );
+		$this->assertStringStartsWith( 'cURL error 7: ', $record['error'] );
+
+		$refuse_bodies = static function ( $check, $object_id, $meta_key, $value ) {
+			return ResultStore::META_KEY === $meta_key && '' !== $value['body'] ? false : $check;
+		};
+		add_filter( 'update_post_metadata', $refuse_bodies, 10, 4 );
+
+		$store->mark_pending( 'batch-13', $events );
+		$store->record( 'batch-13', $events, new Result( Result::FAILED, Result::SERVER_ERROR, 500, 'oops', "\xff bad \xc3", 4 ) );
+
+		remove_filter( 'update_post_metadata', $refuse_bodies, 10 );
+
+		$record = ResultStore::read_post( $second );
+		$this->assertSame( Result::FAILED, $record['status'] );
+		$this->assertSame( 'batch-13', $record['batch_id'] );
+		$this->assertSame( '', $record['body'] );
+		$this->assertTrue( mb_check_encoding( $record['error'], 'UTF-8' ) );
+	}
+
+	/**
 	 * Writing the same record twice is not mistaken for a failure, although core returns false for an
 	 * unchanged value. The two writes fall in the same second, and so are identical, on any normal run.
 	 */

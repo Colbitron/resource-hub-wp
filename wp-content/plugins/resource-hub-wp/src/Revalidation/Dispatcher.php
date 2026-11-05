@@ -21,8 +21,9 @@ namespace ResourceHub\Revalidation;
  * top-level `types` is not exactly one element is held back: the schema requires one, so sending it
  * would fail the whole batch with a 400. It is recorded on that resource as a failure with a plain
  * message, and the rest of the batch goes out. An `update` whose current state is valid but whose
- * `previous.types` is not is sent as a `publish` with no `previous` instead
- * ({@see ResourceState::without_invalid_previous()}), so the save that fixes a resource's type goes out.
+ * `previous.types` is not is sent as an `update` with the current type standing in for the earlier
+ * ones ({@see ResourceState::with_valid_previous_types()}), so the save that fixes a resource's type
+ * goes out and the old slug and topics are still revalidated.
  *
  * Two cases are delivered synchronously at `shutdown` instead of through cron. Under WP-CLI there is
  * no editor to block and no later request to pick cron up, so the batch is sent at once and the
@@ -90,7 +91,7 @@ final class Dispatcher {
 					continue;
 				}
 
-				$event = ResourceState::without_invalid_previous( $event );
+				$event = ResourceState::with_valid_previous_types( $event );
 			}
 
 			$sendable[] = $event;
@@ -139,7 +140,7 @@ final class Dispatcher {
 	/**
 	 * Sends one event now, as a batch of one: the status page's test button (ADR 0019). A resource
 	 * event without exactly one type is held back and recorded like any other, and one whose
-	 * `previous` alone is invalid is sent as a `publish`, as at `shutdown`.
+	 * `previous.types` alone is invalid is sent with the current type in its place, as at `shutdown`.
 	 *
 	 * @param array<string, mixed> $event The event.
 	 */
@@ -149,7 +150,7 @@ final class Dispatcher {
 				return $this->hold_back( $event );
 			}
 
-			$event = ResourceState::without_invalid_previous( $event );
+			$event = ResourceState::with_valid_previous_types( $event );
 		}
 
 		return $this->deliver( wp_generate_uuid4(), Payload::build( array( $event ) ) );

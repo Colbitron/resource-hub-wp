@@ -7,7 +7,7 @@ date: 2026-11-04
 
 Three events, `publish`, `update` and `trash`, would leave no way to report a published resource moved back to draft, and no way to report a force delete. We use five: `publish` (the resource became public), `update` (a public resource was saved and stayed public), `unpublish` (a public resource moved to draft, pending, private or scheduled), `trash`, and `delete` (a published resource was permanently deleted). The front end sorts them into two groups: refresh for `publish` and `update`, remove for the other three, where its refetch returns nothing and the page becomes a 404.
 
-The top-level `slug`, `types` and `topics` describe the public state the event concerns: the state after the save for `publish` and `update`, and the last public state, taken from `$post_before`, for the three removals. A trashed resource is therefore reported under the slug readers used, never its `__trashed` form.
+The top-level `slug`, `types` and `topics` describe the public state the event concerns: the state after the save for `publish` and `update`, and the last public state, taken from `$post_before`, for the three removals (or, after an `update` in the same request, the state before the request; amended 2026-11-05, see [ADR 0014](0014-one-php-request-is-one-batch.md)). A trashed resource is therefore reported under the slug readers used, never its `__trashed` form.
 
 ## Consequences
 

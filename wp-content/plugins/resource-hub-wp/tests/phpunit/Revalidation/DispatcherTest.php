@@ -420,10 +420,10 @@ final class DispatcherTest extends RevalidationTestCase {
 	}
 
 	/**
-	 * An update whose `previous` had two types but whose current state has one is sent, as a `publish`
-	 * with no `previous`: the front end never had a valid page for the earlier state.
+	 * An update whose `previous` had two types but whose current state has one is sent as an `update`,
+	 * with the current type standing in for the earlier two and the earlier slug and topics kept.
 	 */
-	public function test_update_with_two_previous_types_is_sent_as_publish(): void {
+	public function test_update_with_two_previous_types_is_sent_with_the_current_type(): void {
 		$this->configure();
 		$post_id = $this->make_resource( 'publish', 'fixed-now', 'webinar' );
 		wp_set_object_terms( $post_id, array( $this->term_id( Taxonomies::TYPE, 'webinar' ), $this->term_id( Taxonomies::TYPE, 'podcast' ) ), Taxonomies::TYPE );
@@ -446,28 +446,43 @@ final class DispatcherTest extends RevalidationTestCase {
 		$scheduled = self::scheduled();
 		$this->assertCount( 1, $scheduled );
 		$event = $scheduled[0][1]['events'][0];
-		$this->assertSame( 'publish', $event['event'] );
+		$this->assertSame( 'update', $event['event'] );
 		$this->assertSame( $post_id, $event['id'] );
 		$this->assertSame( array( 'podcast' ), $event['types'] );
-		$this->assertNull( $event['previous'] );
+		$this->assertSame(
+			array(
+				'slug'   => 'fixed-now',
+				'types'  => array( 'podcast' ),
+				'topics' => array(),
+			),
+			$event['previous']
+		);
 		$this->assert_valid_request( $scheduled[0][1] );
 		$this->assertSame( ResultStore::PENDING, ResultStore::read_post( $post_id )['status'] );
 	}
 
 	/**
-	 * A REST save that gives a typeless published resource its type is sent as a `publish` with the new
-	 * state, not held back for the typeless state it left.
+	 * A REST save that gives a typeless published resource its type, renames it and drops a topic is
+	 * sent as an `update` with the new state, not held back for the typeless state it left; `previous`
+	 * keeps the old slug and topics, with the current type in place of the missing one.
 	 */
 	public function test_rest_save_that_gives_a_typeless_resource_a_type_is_sent(): void {
 		$this->configure();
-		$post_id = $this->make_resource( 'publish', 'was-typeless', 'webinar', array( 'performance' ) );
+		$post_id = $this->make_resource( 'publish', 'was-typeless', 'webinar', array( 'performance', 'security' ) );
 		wp_set_object_terms( $post_id, array(), Taxonomies::TYPE );
-		$podcast = $this->term_id( Taxonomies::TYPE, 'podcast' );
+		$podcast     = $this->term_id( Taxonomies::TYPE, 'podcast' );
+		$performance = $this->term_id( Taxonomies::TOPIC, 'performance' );
 		$this->queue->clear();
 
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
 		$request = new WP_REST_Request( 'POST', '/wp/v2/resources/' . $post_id );
-		$request->set_body_params( array( Taxonomies::TYPE => array( $podcast ) ) );
+		$request->set_body_params(
+			array(
+				'slug'            => 'now-typed',
+				Taxonomies::TYPE  => array( $podcast ),
+				Taxonomies::TOPIC => array( $performance ),
+			)
+		);
 		$this->assertSame( 200, rest_get_server()->dispatch( $request )->get_status() );
 
 		$this->assertSame( array(), $this->queue->events()[0]['previous']['types'], 'The update saw the typeless state.' );
@@ -478,12 +493,51 @@ final class DispatcherTest extends RevalidationTestCase {
 		$scheduled = self::scheduled();
 		$this->assertCount( 1, $scheduled );
 		$event = $scheduled[0][1]['events'][0];
-		$this->assertSame( 'publish', $event['event'] );
-		$this->assertSame( 'was-typeless', $event['slug'] );
+		$this->assertSame( 'update', $event['event'] );
+		$this->assertSame( 'now-typed', $event['slug'] );
+		$this->assertSame( array( 'podcast' ), $event['types'] );
+		$this->assertSame( array( 'performance' ), $event['topics'] );
+		$this->assertSame( 'was-typeless', $event['previous']['slug'] );
+		$this->assertSame( array( 'podcast' ), $event['previous']['types'] );
+		$this->assertEqualsCanonicalizing( array( 'performance', 'security' ), $event['previous']['topics'] );
+		$this->assert_valid_request( $scheduled[0][1] );
+	}
+
+	/**
+	 * An update that gives a two-typed resource one type and renames it, then a trash, in one request:
+	 * the trash is reported under the slug and topics from before the request, with the type the update
+	 * left in place of the two, and sent rather than held back.
+	 */
+	public function test_trash_after_an_update_that_fixed_the_type_is_sent(): void {
+		$this->configure();
+		$post_id = $this->make_resource( 'publish', 'two-typed', 'webinar', array( 'performance' ) );
+		wp_set_object_terms( $post_id, array( $this->term_id( Taxonomies::TYPE, 'webinar' ), $this->term_id( Taxonomies::TYPE, 'podcast' ) ), Taxonomies::TYPE );
+		$this->queue->clear();
+
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+		wp_update_post(
+			array(
+				'ID'        => $post_id,
+				'post_name' => 'one-typed',
+				'tax_input' => array( Taxonomies::TYPE => array( $this->term_id( Taxonomies::TYPE, 'podcast' ) ) ),
+			)
+		);
+		wp_trash_post( $post_id );
+
+		$results = $this->dispatcher()->flush();
+
+		$this->assertSame( array(), $results, 'Nothing was held back.' );
+		$scheduled = self::scheduled();
+		$this->assertCount( 1, $scheduled );
+		$this->assertCount( 1, $scheduled[0][1]['events'] );
+		$event = $scheduled[0][1]['events'][0];
+		$this->assertSame( 'trash', $event['event'] );
+		$this->assertSame( 'two-typed', $event['slug'] );
 		$this->assertSame( array( 'podcast' ), $event['types'] );
 		$this->assertSame( array( 'performance' ), $event['topics'] );
 		$this->assertNull( $event['previous'] );
 		$this->assert_valid_request( $scheduled[0][1] );
+		$this->assertSame( ResultStore::PENDING, ResultStore::read_post( $post_id )['status'] );
 	}
 
 	/**

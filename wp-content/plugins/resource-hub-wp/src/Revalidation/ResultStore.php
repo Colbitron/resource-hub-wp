@@ -163,8 +163,9 @@ final class ResultStore {
 	}
 
 	/**
-	 * Writes one record per event, skipping objects that no longer exist. Should a record fail to
-	 * write, it is written again without its body, so the status never stays `pending`.
+	 * Writes one record per event, skipping objects that no longer exist. The free-text fields, `body`
+	 * and `error`, are made valid UTF-8 first, since the database refuses a value that is not. Should a
+	 * record still fail to write, it is written again without its body, so the status never stays `pending`.
 	 *
 	 * @param string                           $batch_id The batch.
 	 * @param array<int, array<string, mixed>> $events   Its events.
@@ -183,8 +184,8 @@ final class ResultStore {
 				'time'        => $time,
 				'batch_id'    => $batch_id,
 				'others'      => $others,
-				'body'        => $result['body'],
-				'error'       => $result['error'],
+				'body'        => self::scrub( $result['body'] ),
+				'error'       => null === $result['error'] ? null : self::scrub( $result['error'] ),
 				'duration_ms' => $result['duration_ms'],
 			);
 
@@ -201,6 +202,16 @@ final class ResultStore {
 				self::write( $object[0], $object[1], $record );
 			}
 		}
+	}
+
+	/**
+	 * A free-text value as valid UTF-8, each invalid byte sequence replaced. A body or a transport error
+	 * message that is not valid UTF-8 would make the meta write fail.
+	 *
+	 * @param string $text The text.
+	 */
+	private static function scrub( string $text ): string {
+		return mb_scrub( $text, 'UTF-8' );
 	}
 
 	/**

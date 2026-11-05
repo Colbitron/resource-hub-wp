@@ -124,6 +124,10 @@ final class Queue {
 	 *   send `trash` under the original slug. A `publish` followed by a `trash` in one request still
 	 *   sends the `trash`, with the latest state; the front end's refetch finds nothing, which costs
 	 *   one revalidation and is never wrong.
+	 * - A resource's earliest state can have no type or two, when the update in the group is the save
+	 *   that fixed its type. The removal then takes `types` from the latest event when that is exactly
+	 *   one type, as {@see ResourceState::with_valid_previous_types()} does for an `update`, so it is
+	 *   sent; otherwise the dispatcher holds it back.
 	 *
 	 * @param array<string, mixed>|null $before The state before the earliest event in the group.
 	 * @param array<string, mixed>      $latest The latest event.
@@ -137,6 +141,10 @@ final class Queue {
 		if ( ! $exists ) {
 			if ( null !== $before ) {
 				$merged = array_merge( $merged, $before );
+
+				if ( ! $is_term && 1 !== count( $before['types'] ) && 1 === count( $latest['types'] ) ) {
+					$merged['types'] = $latest['types'];
+				}
 			}
 
 			$merged['previous'] = null;

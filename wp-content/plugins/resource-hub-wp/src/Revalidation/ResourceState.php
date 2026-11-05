@@ -48,7 +48,7 @@ final class ResourceState {
 	 * Whether a resource event can be sent: its top-level `types` is exactly one element, as the schema's
 	 * `typeList` requires. A REST save enforces one type, but a WP-CLI or PHP save, or a deleted type
 	 * term, can still leave a resource with none or two. `previous` is not checked here; see
-	 * {@see ResourceState::without_invalid_previous()}.
+	 * {@see ResourceState::with_valid_previous_types()}.
 	 *
 	 * @param array<string, mixed> $event A resource event.
 	 */
@@ -57,18 +57,20 @@ final class ResourceState {
 	}
 
 	/**
-	 * An `update` whose `previous.types` is not exactly one element, turned into a `publish` with
-	 * `previous` null; any other event unchanged. The front end never had a valid page for a state
-	 * without exactly one type, so there is nothing earlier to revalidate, and the save that fixes the
-	 * resource's type is sent rather than held back.
+	 * An `update` whose `previous.types` is not exactly one element, with `previous.types` set to the
+	 * event's current `types`; any other event unchanged. Call it only on an event that passed
+	 * {@see ResourceState::has_one_type()}. `previous.slug` and `previous.topics` are kept, so the old
+	 * URL and the topic listings the resource just left are still revalidated; the front end never had
+	 * a valid page under the invalid earlier types, so standing the current type in for them costs at
+	 * most one extra type path. The save that fixes a resource's type is sent rather than held back,
+	 * and the event stays schema-valid.
 	 *
 	 * @param array<string, mixed> $event A resource event.
 	 * @return array<string, mixed>
 	 */
-	public static function without_invalid_previous( array $event ): array {
+	public static function with_valid_previous_types( array $event ): array {
 		if ( is_array( $event['previous'] ) && 1 !== count( $event['previous']['types'] ) ) {
-			$event['event']    = 'publish';
-			$event['previous'] = null;
+			$event['previous']['types'] = $event['types'];
 		}
 
 		return $event;

@@ -46,7 +46,7 @@
 			"additionalProperties": false
 		},
 		"resourceEvent": {
-			"description": "A change to one resource post. The top-level slug, types and topics describe the public state the event concerns: the state after the save for publish and update, and the last public state before removal for unpublish, trash and delete, so a trashed post's slug is the slug readers used, never the __trashed form WordPress renames it to. The front end refreshes on publish and update and removes on unpublish, trash and delete, where its refetch of the resource returns nothing and the page becomes a 404.",
+			"description": "A change to one resource post. The top-level slug, types and topics describe the public state the event concerns: the state after the save for publish and update, and the last public state before removal for unpublish, trash and delete (or, after an update in the same request, the state before the request), so a trashed post's slug is the slug readers used, never the __trashed form WordPress renames it to. The front end refreshes on publish and update and removes on unpublish, trash and delete, where its refetch of the resource returns nothing and the page becomes a 404.",
 			"type": "object",
 			"properties": {
 				"type": {
