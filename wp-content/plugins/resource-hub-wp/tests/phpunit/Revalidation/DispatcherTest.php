@@ -560,6 +560,75 @@ final class DispatcherTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * An update that leaves a two-typed resource two-typed, then a removal, in one request: the
+	 * update's `previous.types` is invalid and so are the removal's own `types`, so no valid type is
+	 * left to stand in and the merged removal is held back, recorded and never scheduled.
+	 *
+	 * @dataProvider removals
+	 *
+	 * @param string $removal `trash` or `unpublish`.
+	 */
+	public function test_removal_after_an_update_that_left_two_types_is_held_back( string $removal ): void {
+		$this->configure();
+		$post_id = $this->make_resource( 'publish', 'still-two', 'webinar', array( 'performance' ) );
+		wp_set_object_terms( $post_id, array( $this->term_id( Taxonomies::TYPE, 'webinar' ), $this->term_id( Taxonomies::TYPE, 'podcast' ) ), Taxonomies::TYPE );
+		$this->queue->clear();
+
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+		wp_update_post(
+			array(
+				'ID'        => $post_id,
+				'post_name' => 'still-two-renamed',
+			)
+		);
+
+		$this->assertCount( 2, $this->queue->events()[0]['previous']['types'], 'The update saw two types before the save.' );
+		$this->assertCount( 2, $this->queue->events()[0]['types'], 'The update left two types.' );
+
+		if ( 'trash' === $removal ) {
+			wp_trash_post( $post_id );
+		} else {
+			wp_update_post(
+				array(
+					'ID'          => $post_id,
+					'post_status' => 'draft',
+				)
+			);
+		}
+
+		$this->assertCount( 1, $this->queue->events() );
+		$this->assertSame( $removal, $this->queue->events()[0]['event'] );
+
+		$results = $this->dispatcher( false, new PostHog( 'phc_key', 'https://eu.i.posthog.com' ) )->flush();
+
+		$this->assertCount( 1, $results );
+		$this->assertSame( Result::NO_SINGLE_TYPE, $results[0]->outcome );
+		$this->assertSame( array(), self::scheduled() );
+		$this->assertSame( array(), $this->revalidate_requests() );
+
+		$record = ResultStore::read_post( $post_id );
+		$this->assertSame( Result::FAILED, $record['status'] );
+		$this->assertSame( Result::NO_SINGLE_TYPE, $record['outcome'] );
+		$this->assertSame( $removal, $record['event'] );
+
+		$posthog = array_values( array_filter( $this->requests, static fn( array $request ): bool => str_contains( $request['url'], 'posthog' ) ) );
+		$this->assertCount( 1, $posthog );
+		$this->assertSame( Result::NO_SINGLE_TYPE, json_decode( $posthog[0]['args']['body'], true )['properties']['outcome'] );
+	}
+
+	/**
+	 * Cases for test_removal_after_an_update_that_left_two_types_is_held_back().
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function removals(): array {
+		return array(
+			'trash'     => array( 'trash' ),
+			'unpublish' => array( 'unpublish' ),
+		);
+	}
+
+	/**
 	 * The test button's entry point sends one real `update` at once and records it; it returns null for
 	 * a draft or a non-resource, and holds back a resource without one type.
 	 */
