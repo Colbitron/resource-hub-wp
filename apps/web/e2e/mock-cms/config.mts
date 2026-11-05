@@ -19,7 +19,8 @@ export const DEFAULT_MOCK_CMS_PORT = 4010;
 /**
  * The `REVALIDATE_SECRET` the app under test is started with, and the bearer
  * `e2e/revalidate.spec.ts` sends. A fixed, obviously-not-secret value: the
- * harness never touches a real CMS or a real secret.
+ * harness never touches a real CMS or a real secret. It keeps to the rule the
+ * route enforces: at least 32 printable ASCII characters, no whitespace.
  */
 export const E2E_REVALIDATE_SECRET = "e2e-revalidate-secret-not-for-real-use";
 

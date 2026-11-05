@@ -14,9 +14,10 @@ const revalidatePath = vi.fn<(path: string) => void>();
 vi.mock("next/cache", () => ({ revalidateTag, revalidatePath }));
 
 const { DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT } = await import("../app/api/revalidate/route");
+const { revalidateResponseErrorSchema, revalidateResponseOkSchema } = await import("../lib/wp/schemas/revalidate");
 
 const URL_WITH_SLASH = "http://localhost:3000/api/revalidate/";
-const SECRET = "a-long-random-secret-for-the-tests";
+const SECRET = "a-long-random-secret-for-the-tests"; // 34 characters, over the 32 minimum
 
 interface RequestOptions {
   readonly method?: string;
@@ -73,12 +74,26 @@ async function expectError(response: Response, status: number, message: string |
   expect(response.headers.get("content-type")).toMatch(/^application\/json/);
   const body = (await response.json()) as { error?: unknown };
   expect(Object.keys(body)).toEqual(["error"]);
+  // The real body against the contract's error reply, not only its keys.
+  expect(revalidateResponseErrorSchema.safeParse(body).success).toBe(true);
   if (typeof message === "string") {
     expect(body.error).toBe(message);
   } else {
     expect(body.error).toMatch(message);
   }
 }
+
+/** The `200` body, checked against the contract's ok reply. */
+async function okBody(response: Response): Promise<{ revalidated: string[] }> {
+  expect(response.status).toBe(200);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  const body: unknown = await response.json();
+  const parsed = revalidateResponseOkSchema.safeParse(body);
+  expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
+  return body as { revalidated: string[] };
+}
+
+const MISMATCH = "The body does not match the revalidation request: ";
 
 beforeEach(() => {
   process.env.REVALIDATE_SECRET = SECRET;
@@ -122,6 +137,61 @@ describe("the secret", () => {
     const response = await POST(request({ body: batch([resourceUpdate()]) }));
     await expectError(response, 500, "The front end has no revalidation secret configured.");
   });
+
+  it("is answered before auth, so a request with no bearer gets the 500 too", async () => {
+    delete process.env.REVALIDATE_SECRET;
+    const incoming = request({ headers: { Authorization: "" }, body: batch([resourceUpdate()]) });
+    await expectError(await POST(incoming), 500, "The front end has no revalidation secret configured.");
+    expect(incoming.bodyUsed).toBe(false);
+  });
+
+  const TOO_SHORT =
+    "The front end's revalidation secret is shorter than 32 characters, so every request is refused.";
+  const BAD_CHARACTERS =
+    "The front end's revalidation secret has characters a bearer token cannot carry, such as a space or line break, so every request is refused.";
+
+  it.each([
+    ["one character", "#"],
+    ["31 characters", "~".repeat(31)],
+  ])("is a 500 when REVALIDATE_SECRET is %s, even with a bearer that matches it", async (_name, value) => {
+    process.env.REVALIDATE_SECRET = value;
+    const response = await POST(
+      request({ headers: { Authorization: `Bearer ${value}` }, body: batch([resourceUpdate()]) }),
+    );
+    const text = await response.clone().text();
+    await expectError(response, 500, TOO_SHORT);
+    expect(text).not.toContain(value);
+    expect(revalidateTag).not.toHaveBeenCalled();
+  });
+
+  it("accepts a secret of exactly 32 characters", async () => {
+    const value = "x".repeat(32);
+    process.env.REVALIDATE_SECRET = value;
+    await okBody(await POST(request({ headers: { Authorization: `Bearer ${value}` }, body: batch([resourceUpdate()]) })));
+  });
+
+  it.each([
+    ["a trailing newline", `${SECRET}\n`],
+    ["a leading space", ` ${SECRET}`],
+    ["a space inside", `${SECRET.slice(0, 10)} ${SECRET.slice(10)}`],
+    ["a non-ASCII character", `${SECRET}é`],
+  ])("is a 500 when REVALIDATE_SECRET has %s, never trimmed into a match, never echoed", async (_name, value) => {
+    process.env.REVALIDATE_SECRET = value;
+    const response = await POST(request({ body: batch([resourceUpdate()]) }));
+    const text = await response.clone().text();
+    await expectError(response, 500, BAD_CHARACTERS);
+    expect(text).not.toContain(SECRET);
+    expect(revalidateTag).not.toHaveBeenCalled();
+  });
+
+  it("logs the rule, never the value", async () => {
+    const value = `${SECRET}\n`;
+    process.env.REVALIDATE_SECRET = value;
+    await POST(request({ body: batch([resourceUpdate()]) }));
+    const logged = vi.mocked(console.error).mock.calls.flat().map(String).join(" ");
+    expect(logged).toMatch(/REVALIDATE_SECRET must be printable ASCII with no whitespace/);
+    expect(logged).not.toContain(SECRET);
+  });
 });
 
 describe("auth", () => {
@@ -160,10 +230,37 @@ describe("auth", () => {
     }
   });
 
-  it("compares the secret byte for byte, never trimmed", async () => {
-    process.env.REVALIDATE_SECRET = ` ${SECRET}`;
-    const response = await POST(request({ body: batch([resourceUpdate()]) }));
-    await expectError(response, 401, "unauthorized");
+  it("checks the bearer before the content type", async () => {
+    const incoming = request({
+      headers: { Authorization: "Bearer wrong", "Content-Type": "text/plain" },
+      body: batch([resourceUpdate()]),
+    });
+    await expectError(await POST(incoming), 401, "unauthorized");
+    expect(incoming.bodyUsed).toBe(false);
+  });
+
+  it("checks the bearer before an oversized Content-Length", async () => {
+    const incoming = request({
+      headers: { Authorization: "Bearer wrong", "Content-Length": String(10 * 1024 * 1024) },
+      body: "{}",
+    });
+    await expectError(await POST(incoming), 401, "unauthorized");
+    expect(incoming.bodyUsed).toBe(false);
+  });
+
+  it("refuses two Authorization headers, even when both carry the secret", async () => {
+    // The Fetch Headers the route reads joins repeated values with ", ", so
+    // two bearers read as one value with a space in it and fail the strict
+    // parse. Behind next start, Node's HTTP parser keeps the first
+    // Authorization and drops the rest before a Request is built, so there
+    // the first wins; either way a second bearer never authorises.
+    const headers = new Headers({ "Content-Type": "application/json" });
+    headers.append("Authorization", `Bearer ${SECRET}`);
+    headers.append("Authorization", `Bearer ${SECRET}`);
+    const incoming = new Request(URL_WITH_SLASH, { method: "POST", headers, body: batch([resourceUpdate()]) });
+    expect(incoming.headers.get("authorization")).toBe(`Bearer ${SECRET}, Bearer ${SECRET}`);
+    await expectError(await POST(incoming), 401, "unauthorized");
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 });
 
@@ -228,9 +325,135 @@ describe("the body size cap", () => {
     };
     const exact = pad(64 * 1024);
     expect(Buffer.byteLength(exact)).toBe(64 * 1024);
-    expect((await POST(request({ body: exact }))).status).toBe(400); // a 65,000-character slug is no slug, but it is read
+    // A 65,000-character topic slug is no slug, so the body is a 400, but for
+    // its content: it was read to the end, not refused for its size.
+    const READ_TO_THE_END = /^The body does not match the revalidation request: events\[0\]\.topics\[0\] /;
+    const atLimit = await POST(request({ body: exact }));
+    await expectError(atLimit, 400, READ_TO_THE_END);
+    const declaredAtLimit = await POST(
+      request({ headers: { "Content-Length": String(64 * 1024) }, body: exact }),
+    );
+    await expectError(declaredAtLimit, 400, READ_TO_THE_END);
     const overBy = pad(64 * 1024 + 1);
     await expectError(await POST(request({ body: overBy })), 400, TOO_LARGE);
+  });
+
+  it("refuses a body of 64 KB plus one byte that arrives in chunks summing past the limit", async () => {
+    // 64 chunks of 1 KB reach the limit exactly; one more byte passes it.
+    const kilobyte = new Uint8Array(1024).fill(0x20);
+    let sent = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sent < 64) {
+          sent += 1;
+          controller.enqueue(kilobyte);
+        } else {
+          controller.enqueue(new Uint8Array([0x20]));
+          controller.close();
+        }
+      },
+    });
+    await expectError(await POST(request({ body: stream, duplex: "half" })), 400, TOO_LARGE);
+  });
+});
+
+describe("reading the body", () => {
+  const TOO_SLOW = "The body took too long to arrive.";
+  const encoder = new TextEncoder();
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Only the timers the route's deadline uses are faked, so streams and promises run as usual. */
+  function fakeTimers() {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  }
+
+  it("is a 400 when the body never finishes, and cancels the read at 2 seconds", async () => {
+    fakeTimers();
+    let cancelled = false;
+    const stalled = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"version":1,'));
+      },
+      pull() {
+        return new Promise<void>(() => {}); // never another byte, never the end
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const pending = POST(request({ body: stalled, duplex: "half" }));
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(cancelled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await expectError(await pending, 400, TOO_SLOW);
+    expect(cancelled).toBe(true);
+    expect(revalidateTag).not.toHaveBeenCalled();
+  });
+
+  it("is a 400 when a body dribbles in slower than the deadline, however valid it would be", async () => {
+    fakeTimers();
+    const body = encoder.encode(batch([resourceUpdate()]));
+    let offset = 0;
+    let pulls = 0;
+    const slow = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        // 10 bytes every 250 ms: several seconds for the whole batch.
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        pulls += 1;
+        controller.enqueue(body.slice(offset, offset + 10));
+        offset += 10;
+        if (offset >= body.byteLength) {
+          controller.close();
+        }
+      },
+    });
+    expect(body.byteLength / 10).toBeGreaterThan(2000 / 250); // it cannot finish in time
+    const pending = POST(request({ body: slow, duplex: "half" }));
+    await vi.advanceTimersByTimeAsync(2000);
+    await expectError(await pending, 400, TOO_SLOW);
+    expect(pulls).toBeLessThanOrEqual(8);
+    expect(revalidateTag).not.toHaveBeenCalled();
+  });
+
+  it("accepts a slow body that finishes inside the deadline", async () => {
+    fakeTimers();
+    const body = encoder.encode(batch([resourceUpdate()]));
+    const half = Math.ceil(body.byteLength / 2);
+    let step = 0;
+    const slowButInTime = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        controller.enqueue(step === 0 ? body.slice(0, half) : body.slice(half));
+        step += 1;
+        if (step === 2) {
+          controller.close();
+        }
+      },
+    });
+    const pending = POST(request({ body: slowButInTime, duplex: "half" }));
+    await vi.advanceTimersByTimeAsync(1900);
+    const ok = await okBody(await pending);
+    expect(ok.revalidated).toContain("/resources/webinar/example/");
+  });
+
+  it("is a 400 when the stream fails partway", async () => {
+    const failing = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"version":1,'));
+      },
+      pull(controller) {
+        controller.error(new Error("socket hang up"));
+      },
+    });
+    await expectError(
+      await POST(request({ body: failing, duplex: "half" })),
+      400,
+      "The body could not be read.",
+    );
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 });
 
@@ -255,6 +478,40 @@ describe("a malformed body", () => {
   });
 });
 
+describe("keys JSON.parse treats specially", () => {
+  it("drops a __proto__ key at the top and in an event, and pollutes nothing", async () => {
+    const event = JSON.stringify(resourceUpdate()).replace(/^\{/, '{"__proto__":{"polluted":true},');
+    const body = `{"__proto__":{"polluted":true},"version":1,"events":[${event}]}`;
+    const ok = await okBody(await POST(request({ body })));
+    expect(ok.revalidated).toContain("/resources/webinar/example/");
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    expect(Object.prototype).not.toHaveProperty("polluted");
+  });
+
+  it("is a 400 for a __proto__ that replaces the events", async () => {
+    // JSON.parse makes "__proto__" an own key, so it never becomes `events`.
+    const body = `{"version":1,"__proto__":{"events":[${JSON.stringify(resourceUpdate())}]}}`;
+    await expectError(await POST(request({ body })), 400, `${MISMATCH}events is missing.`);
+  });
+
+  it("reads a repeated key as JSON.parse does: the last one wins", async () => {
+    // WordPress's encoder never repeats a key; this pins what happens if a body does.
+    const lastIsGood = await POST(request({ body: `{"version":2,"version":1,"events":[${JSON.stringify(resourceUpdate())}]}` }));
+    await okBody(lastIsGood);
+
+    const lastIsBad = await POST(request({ body: `{"version":1,"version":2,"events":[${JSON.stringify(resourceUpdate())}]}` }));
+    await expectError(
+      lastIsBad,
+      400,
+      "The body's version is not one this front end understands; it reads version 1.",
+    );
+
+    const slugTwice = JSON.stringify(resourceUpdate()).replace('"slug":"example"', '"slug":"a/b","slug":"example"');
+    const ok = await okBody(await POST(request({ body: `{"version":1,"events":[${slugTwice}]}` })));
+    expect(ok.revalidated).toContain("/resources/webinar/example/");
+  });
+});
+
 describe("version", () => {
   it("is a 400 when missing", async () => {
     const response = await POST(request({ body: JSON.stringify({ events: [resourceUpdate()] }) }));
@@ -276,10 +533,10 @@ describe("version", () => {
 describe("the events array", () => {
   it("is a 400 when missing, not an array, empty or over 25", async () => {
     const missing = await POST(request({ body: JSON.stringify({ version: 1 }) }));
-    await expectError(missing, 400, /^The body does not match the revalidation request: events /);
+    await expectError(missing, 400, `${MISMATCH}events is missing.`);
 
     const notArray = await POST(request({ body: JSON.stringify({ version: 1, events: {} }) }));
-    await expectError(notArray, 400, /^The body does not match the revalidation request: events /);
+    await expectError(notArray, 400, `${MISMATCH}events must be an array.`);
 
     const empty = await POST(request({ body: batch([]) }));
     await expectError(
@@ -357,6 +614,38 @@ describe("schema failures", () => {
     await expectError(event, 400, /events\[0\]/);
   });
 
+  it.each([
+    ["an unknown event name", { event: "archive", previous: null }, 'events[0].event must be "update", "publish", "unpublish", "trash" or "delete".'],
+    ["an unknown event type", { type: "page" }, 'events[0].type must be "resource" or "term".'],
+    ["a string id", { id: "123" }, "events[0].id must be a number."],
+    ["a fractional id", { id: 1.5 }, "events[0].id must be a whole number."],
+    ["a zero id", { id: 0 }, "events[0].id must be at least 1."],
+    ["a missing slug", { slug: undefined }, "events[0].slug is missing."],
+    ["a previous on publish", { event: "publish" }, "events[0].previous must be null."],
+    ["a previous missing its types", { previous: { slug: "x", topics: [] } }, "events[0].previous.types is missing."],
+    ["two types", { types: ["webinar", "guide"] }, "events[0].types must have at most 1 item."],
+    ["no types", { types: [] }, "events[0].types must not be empty."],
+    ["topics as a string", { topics: "performance" }, "events[0].topics must be an array."],
+  ])("%s has a plain sentence, not Zod's", async (_name, overrides, sentence) => {
+    const response = await POST(request({ body: batch([resourceUpdate(overrides)]) }));
+    await expectError(response, 400, `${MISMATCH}${sentence}`);
+  });
+
+  it("names a term event's taxonomy plainly", async () => {
+    const term = { type: "term", taxonomy: "resource_flag", event: "create", id: 1, slug: "x", name: "X", previous: null };
+    await expectError(
+      await POST(request({ body: batch([term]) })),
+      400,
+      `${MISMATCH}events[0].taxonomy must be "resource_topic" or "resource_type".`,
+    );
+  });
+
+  it("keeps the schema's own messages where it has them", async () => {
+    // `must not list a topic twice` is written on the schema; the plain map never replaces it.
+    const response = await POST(request({ body: batch([resourceUpdate({ topics: ["a", "a"] })]) }));
+    await expectError(response, 400, `${MISMATCH}events[0].topics must not list a topic twice.`);
+  });
+
   it("reports the second event's problem under its index", async () => {
     const response = await POST(
       request({ body: batch([resourceUpdate(), resourceUpdate({ id: 2, slug: "" })]) }),
@@ -372,9 +661,7 @@ describe("schema failures", () => {
 describe("a good batch", () => {
   it("revalidates the union of both states as tags with { expire: 0 } and paths, and lists the paths", async () => {
     const response = await POST(request({ body: batch([resourceUpdate()]) }));
-    expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    const body = (await response.json()) as Record<string, unknown>;
+    const body = await okBody(response);
     const paths = [
       "/resources/",
       "/resources/topic/accessibility/",
@@ -415,8 +702,7 @@ describe("a good batch", () => {
       resourceUpdate({ event: "trash", previous: null, topics: [], extra: true }),
     ];
     const response = await POST(request({ body: batch(events) }));
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({
+    expect(await okBody(response)).toEqual({
       revalidated: ["/resources/", "/resources/webinar/", "/resources/webinar/example/", "/resources/webinars/"],
     });
     expect(revalidateTag.mock.calls.map(([tag]) => tag)).toEqual([

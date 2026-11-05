@@ -2,8 +2,9 @@ import { createHash, timingSafeEqual } from "node:crypto";
 
 import { revalidatePath, revalidateTag } from "next/cache";
 
-import { EnvError } from "@/lib/env-schema";
+import { EnvError, MIN_SECRET_LENGTH, SecretError, type SecretProblem } from "@/lib/env-schema";
 import { revalidateSecret } from "@/lib/env";
+import { plainIssueMessage } from "@/lib/plain-issues";
 import { eventsToInvalidations } from "@/lib/tags";
 import {
   revalidateRequestSchema,
@@ -20,9 +21,12 @@ import {
  * The request is handled in this order, and each step answers before the
  * next one runs:
  *
- * 1. The secret. `REVALIDATE_SECRET` missing is a `500`: the front end is
+ * 1. The secret. `REVALIDATE_SECRET` missing, shorter than 32 characters,
+ *    or holding a character a bearer token cannot carry (anything outside
+ *    printable ASCII, whitespace included) is a `500`: the front end is
  *    misconfigured, and no request can be authorised, so the editor is told
- *    that rather than `unauthorized`.
+ *    that rather than `unauthorized`. This runs before auth on purpose; all
+ *    it tells an unauthenticated caller is that this deploy is misconfigured.
  * 2. Auth, before the body is read. `Authorization: Bearer <token>` with the
  *    scheme in any case, exactly one space and a non-empty token; the token
  *    and the secret are hashed with SHA-256 and the digests compared with
@@ -30,12 +34,13 @@ import {
  *    token's length or content. Any failure is `401 { "error": "unauthorized" }`,
  *    exactly, as the contract says.
  * 3. The body. `Content-Type` must be `application/json`; the body is read
- *    with a cap (`MAX_BODY_BYTES`), never buffered unbounded; then parsed as
+ *    with a cap (`MAX_BODY_BYTES`), never buffered unbounded, and within a
+ *    deadline (`READ_DEADLINE_MS`), never waited on forever; then parsed as
  *    JSON and checked against the reader schema, which drops unknown keys and
  *    holds every known one to the contract. Every problem is a `400` whose
  *    `error` says what was wrong in plain words, naming the first issue's
- *    path but never a value, because the plugin stores this body and shows
- *    it to the editor.
+ *    path but never a value (`lib/plain-issues.ts`), because the plugin
+ *    stores this body and shows it to the editor.
  * 4. Revalidation. `eventsToInvalidations` gives the tags and paths for the
  *    union of every event's current and previous state; each tag goes to
  *    `revalidateTag(tag, { expire: 0 })`, so no page serves one more stale
@@ -65,6 +70,15 @@ import {
  * can make the handler hold more than this in memory.
  */
 const MAX_BODY_BYTES = 64 * 1024;
+
+/**
+ * How long the body may take to arrive, from when the route starts reading
+ * it. The plugin gives up after 3 seconds (ADR 0013), so a body still
+ * arriving after 2 is from a client that is stalled or dribbling bytes, and
+ * holding the request open for it only ties up the function. Past it the
+ * read is cancelled and the request is a `400`.
+ */
+const READ_DEADLINE_MS = 2000;
 
 /** How many events a batch may hold; the schema enforces it, the message names it. */
 const MAX_EVENTS = 25;
@@ -126,14 +140,22 @@ function isJsonContentType(request: Request): boolean {
 }
 
 /** The outcome of reading the body: its bytes, or why it could not be read. */
-type BodyRead = { ok: true; bytes: Uint8Array } | { ok: false; reason: "too-large" | "unreadable" };
+type BodyRead =
+  | { ok: true; bytes: Uint8Array }
+  | { ok: false; reason: "too-large" | "too-slow" | "unreadable" };
 
 /**
  * The body as bytes, read in chunks and abandoned as soon as it passes
  * `limit`, so a long stream is never held in memory. A `Content-Length`
  * over the limit is refused before the first byte.
+ *
+ * The read is also abandoned `deadlineMs` after it starts: a timer cancels
+ * the reader, which settles the pending `read()` at once (a cancelled
+ * stream closes before its source is told), and the loop sees the flag and
+ * reports `too-slow` rather than a short body. The timer is cleared however
+ * the read ends, so nothing runs after the answer.
  */
-async function readBody(request: Request, limit: number): Promise<BodyRead> {
+async function readBody(request: Request, limit: number, deadlineMs: number): Promise<BodyRead> {
   const declared = request.headers.get("content-length");
   if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > limit)) {
     return { ok: false, reason: "too-large" };
@@ -144,9 +166,17 @@ async function readBody(request: Request, limit: number): Promise<BodyRead> {
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
   let received = 0;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    reader.cancel().catch(() => {});
+  }, deadlineMs);
   try {
     for (;;) {
       const { done, value } = await reader.read();
+      if (timedOut) {
+        return { ok: false, reason: "too-slow" };
+      }
       if (done) {
         break;
       }
@@ -158,7 +188,9 @@ async function readBody(request: Request, limit: number): Promise<BodyRead> {
       chunks.push(value);
     }
   } catch {
-    return { ok: false, reason: "unreadable" };
+    return { ok: false, reason: timedOut ? "too-slow" : "unreadable" };
+  } finally {
+    clearTimeout(timer);
   }
   const bytes = new Uint8Array(received);
   let offset = 0;
@@ -181,11 +213,30 @@ function describePath(path: readonly PropertyKey[]): string {
     .join("");
 }
 
+/** The `500` sentence for each way `REVALIDATE_SECRET` can break the rule. */
+const SECRET_PROBLEM_ERRORS: Record<SecretProblem, string> = {
+  "too-short": `The front end's revalidation secret is shorter than ${MIN_SECRET_LENGTH} characters, so every request is refused.`,
+  "bad-characters":
+    "The front end's revalidation secret has characters a bearer token cannot carry, such as a space or line break, so every request is refused.",
+};
+
+/** The `400` sentence for each reason the body could not be read. */
+const READ_ERRORS: Record<Exclude<BodyRead, { ok: true }>["reason"], string> = {
+  "too-large": `The body is larger than ${MAX_BODY_BYTES / 1024} KB, more than a batch of ${MAX_EVENTS} events can be.`,
+  "too-slow": "The body took too long to arrive.",
+  unreadable: "The body could not be read.",
+};
+
 export async function POST(request: Request): Promise<Response> {
   let secret: string;
   try {
     secret = revalidateSecret();
   } catch (caught) {
+    if (caught instanceof SecretError) {
+      // The message names the rule, never the value.
+      console.error(`[revalidate] ${caught.message} Every request is refused.`);
+      return error(500, SECRET_PROBLEM_ERRORS[caught.problem]);
+    }
     if (caught instanceof EnvError) {
       console.error("[revalidate] REVALIDATE_SECRET is not set; every request is refused.");
       return error(500, "The front end has no revalidation secret configured.");
@@ -202,11 +253,9 @@ export async function POST(request: Request): Promise<Response> {
     return error(400, "The request must be sent with Content-Type: application/json.");
   }
 
-  const read = await readBody(request, MAX_BODY_BYTES);
+  const read = await readBody(request, MAX_BODY_BYTES, READ_DEADLINE_MS);
   if (!read.ok) {
-    return read.reason === "too-large"
-      ? error(400, `The body is larger than ${MAX_BODY_BYTES / 1024} KB, more than a batch of ${MAX_EVENTS} events can be.`)
-      : error(400, "The body could not be read.");
+    return error(400, READ_ERRORS[read.reason]);
   }
 
   let parsed: unknown;
@@ -229,7 +278,8 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const result = revalidateRequestSchema.safeParse(parsed);
+  // Zod's own messages are replaced with plain ones; a schema's own message wins.
+  const result = revalidateRequestSchema.safeParse(parsed, { error: plainIssueMessage });
   if (!result.success) {
     const issue = result.error.issues[0];
     const where = describePath(issue?.path ?? []);
