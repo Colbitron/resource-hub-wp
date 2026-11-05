@@ -16,15 +16,16 @@ namespace ResourceHub\Lockdown;
  * `robots.txt` core serves is replaced through its `robots_txt` filter, at the latest priority so
  * nothing appends to it (core adds a `Sitemap:` line at priority 0): a crawler that obeys it never
  * fetches a page. For crawlers that reach a response some other way, every theme page gets the meta
- * robots directives `noindex` and `nofollow` through `wp_robots`, and every front-end response gets
- * an `X-Robots-Tag: noindex, nofollow` header through `wp_headers`, which `send_headers()` applies
- * before the 404 decision, so the 404s carry it too. Following a link on the CMS leads only to more
- * 404s, so `nofollow` is a stated intent, matching what core prints for a site set to discourage
- * search engines, rather than a change in what gets crawled. REST responses already carry a header
- * of their own: `WP_REST_Server::serve_request()` sends `X-Robots-Tag: noindex` on every one, as
- * `admin-ajax.php` does, so the plugin adds nothing there and a PHPUnit test pins it. No physical
- * file is written: the VIP rules forbid filesystem writes, and the filter covers the host as long as
- * no `robots.txt` file shadows it.
+ * robots directives `noindex` and `nofollow` through `wp_robots`, also at the latest priority, so no
+ * later callback (one that calls core's `wp_robots_no_robots()`, say) can add `follow` back; and
+ * every front-end response gets an `X-Robots-Tag: noindex, nofollow` header through `wp_headers`,
+ * which `send_headers()` applies before the 404 decision, so the 404s carry it too. Following a link
+ * on the CMS leads only to more 404s, so `nofollow` is a stated intent, matching what core prints
+ * for a site set to discourage search engines, rather than a change in what gets crawled. REST
+ * responses already carry a header of their own: `WP_REST_Server::serve_request()` sends
+ * `X-Robots-Tag: noindex` on every one, as `admin-ajax.php` does, so the plugin adds nothing there
+ * and a PHPUnit test pins it. No physical file is written: the VIP rules forbid filesystem writes,
+ * and the filter covers the host as long as no `robots.txt` file shadows it.
  */
 final class Robots {
 	/**
@@ -33,14 +34,10 @@ final class Robots {
 	public const HEADER = 'X-Robots-Tag';
 
 	/**
-	 * The meta robots directives every theme page gets, in the order they are printed.
+	 * The robots directives every theme response gets, in the meta tag and the header. In the meta
+	 * tag they follow whatever directives core and other callbacks added first.
 	 */
 	public const DIRECTIVES = array( 'noindex', 'nofollow' );
-
-	/**
-	 * The header value: the same directives, as core's meta tag joins them.
-	 */
-	public const HEADER_VALUE = 'noindex, nofollow';
 
 	/**
 	 * Hooks the filters.
@@ -48,7 +45,7 @@ final class Robots {
 	public function register(): void {
 		// The VIP reminder to flush VIP's robots.txt cache is for VIP's platform; this host has no such cache.
 		add_filter( 'robots_txt', array( $this, 'disallow_all' ), PHP_INT_MAX ); // phpcs:ignore WordPressVIPMinimum.Hooks.RestrictedHooks.robots_txt
-		add_filter( 'wp_robots', array( $this, 'add_directives' ) );
+		add_filter( 'wp_robots', array( $this, 'add_directives' ), PHP_INT_MAX );
 		add_filter( 'wp_headers', array( $this, 'add_header' ) );
 	}
 
@@ -93,8 +90,15 @@ final class Robots {
 	public function add_header( $headers ): array {
 		$headers = is_array( $headers ) ? $headers : array();
 
-		$headers[ self::HEADER ] = self::HEADER_VALUE;
+		$headers[ self::HEADER ] = self::header_value();
 
 		return $headers;
+	}
+
+	/**
+	 * The header value: the directives, joined as core's meta tag joins them.
+	 */
+	public static function header_value(): string {
+		return implode( ', ', self::DIRECTIVES );
 	}
 }
