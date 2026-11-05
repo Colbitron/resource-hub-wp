@@ -35,7 +35,7 @@ final class PluginTest extends WP_UnitTestCase {
 
 	/**
 	 * Activation deletes the stored rewrite rules, and the rules core regenerates on the next read
-	 * include the resource archive and single URLs.
+	 * include the resource archive and the single URL, /resources/{type}/{slug}/ (ADR 0024).
 	 */
 	public function test_activation_regenerates_rewrite_rules(): void {
 		global $wp_rewrite;
@@ -53,7 +53,9 @@ final class PluginTest extends WP_UnitTestCase {
 
 			$this->assertArrayNotHasKey( 'stale/?$', $rules );
 			$this->assertArrayHasKey( 'resources/?$', $rules );
-			$this->assertArrayHasKey( 'resources/([^/]+)(?:/([0-9]+))?/?$', $rules );
+			$this->assertArrayHasKey( 'resources/([^/]+)/([^/]+)(?:/([0-9]+))?/?$', $rules );
+			$this->assertSame( 'index.php?resource_type=$matches[1]&resource=$matches[2]&page=$matches[3]', $rules['resources/([^/]+)/([^/]+)(?:/([0-9]+))?/?$'] );
+			$this->assertArrayNotHasKey( 'resources/([^/]+)(?:/([0-9]+))?/?$', $rules );
 		} finally {
 			$this->set_permalink_structure( '' );
 		}

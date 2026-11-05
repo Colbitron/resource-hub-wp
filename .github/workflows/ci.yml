@@ -363,6 +363,16 @@ jobs:
           dir=$(printf '%q' "$WP_ROOT")
           ssh deploy "cd $dir && { wp plugin is-active resource-hub-wp || wp plugin activate resource-hub-wp; }"
 
+      # Activation clears the rewrite rules only when the plugin was inactive,
+      # so a deploy that changes the permalink structure (ADR 0024) would keep
+      # serving the old rules. A soft flush regenerates them in the database
+      # on every deploy and writes no files. Run from the WordPress root for
+      # the reason given above.
+      - name: Flush rewrite rules
+        run: |
+          dir=$(printf '%q' "$WP_ROOT")
+          ssh deploy "cd $dir && wp rewrite flush"
+
       # The site's own home URL, read over SSH, so no hostname is committed and
       # no extra secret is needed. jq checks the body is the REST index, not
       # an HTML error page served with a 200.

@@ -28,7 +28,8 @@ final class ContentModelTest extends WP_UnitTestCase {
 		$this->assertTrue( $post_type->public );
 		$this->assertTrue( $post_type->show_in_rest );
 		$this->assertSame( 'resources', $post_type->rest_base );
-		$this->assertSame( 'resources', $post_type->rewrite['slug'] );
+		$this->assertSame( 'resources/%resource_type%', $post_type->rewrite['slug'] );
+		$this->assertSame( 'resources', $post_type->has_archive );
 
 		foreach ( array( 'title', 'editor', 'excerpt', 'thumbnail', 'revisions', 'custom-fields' ) as $feature ) {
 			$this->assertTrue( post_type_supports( PostType::NAME, $feature ), "Missing support for {$feature}." );
