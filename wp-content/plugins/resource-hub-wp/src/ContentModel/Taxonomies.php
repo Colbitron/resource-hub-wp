@@ -111,7 +111,8 @@ final class Taxonomies {
 				),
 				'description'       => __( 'What kind of resource it is: article, ebook, webinar, podcast, or case study.', 'resource-hub' ),
 				// A fixed vocabulary (ADR 0007). Hierarchical so creating a term needs `edit_terms`, which
-				// only editors and administrators hold here; the editor shows a checkbox list.
+				// only editors and administrators hold here. A resource has exactly one type (OneType), the
+				// editor shows radio buttons, and `topic` and `page` are reserved (ReservedTypeSlugs; ADR 0024).
 				'hierarchical'      => true,
 				'public'            => true,
 				'show_admin_column' => true,

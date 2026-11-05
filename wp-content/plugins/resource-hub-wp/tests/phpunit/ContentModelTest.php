@@ -164,6 +164,8 @@ final class ContentModelTest extends WP_UnitTestCase {
 				'post_author' => $author_id,
 			)
 		);
+		// A published resource keeps exactly one type through every REST save (OneType).
+		wp_set_object_terms( $post_id, self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) ), Taxonomies::TYPE );
 
 		wp_set_current_user( $author_id );
 
