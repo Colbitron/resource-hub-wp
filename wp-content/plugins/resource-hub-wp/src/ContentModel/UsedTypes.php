@@ -31,10 +31,12 @@ use WP_Term;
  * - the Types screen hides the Delete row action and the bulk-select checkbox, and its delete
  *   link and the row action's AJAX request are refused with core's own message;
  * - REST answers 403, with the message below in place of core's.
- * Not covered: the Types screen's bulk delete checks only the taxonomy's `delete_terms`, not each
- * term, so a request that names a used type (a crafted one, or a page loaded before a resource
- * took the type) still deletes it. WP-CLI and PHP calls to `wp_delete_term()` check no
- * capability, so they are out of reach of `map_meta_cap` too.
+ * The Types screen's bulk delete checks only the taxonomy's `delete_terms`, not each term, so a
+ * request that names a used type (a crafted one, or a page loaded before a resource took the
+ * type) is refused before core handles it: the editor is sent back to the list with a notice
+ * naming the types in use, and nothing is deleted.
+ * Not covered: WP-CLI and PHP calls to `wp_delete_term()` check no capability, so they are out of
+ * reach of `map_meta_cap` and of the screen.
  */
 final class UsedTypes {
 	/**
@@ -48,11 +50,25 @@ final class UsedTypes {
 	public const IGNORED_STATUSES = array( 'trash', 'auto-draft' );
 
 	/**
-	 * Hooks the capability check and the REST message.
+	 * Message number of the bulk-delete refusal on the Types screen, past core's own 1 to 6 and
+	 * ReservedTypeSlugs::ADMIN_MESSAGE.
+	 */
+	public const ADMIN_MESSAGE = 102;
+
+	/**
+	 * Query argument that carries the IDs of the types in use to the refusal's notice.
+	 */
+	public const ADMIN_ARG = 'rh_types_in_use';
+
+	/**
+	 * Hooks the capability check, the REST message and the Types screen's bulk-delete refusal.
 	 */
 	public function register(): void {
 		add_filter( 'map_meta_cap', array( $this, 'deny_delete' ), 10, 4 );
 		add_filter( 'rest_request_after_callbacks', array( $this, 'rest_message' ), 10, 3 );
+		add_action( 'load-edit-tags.php', array( $this, 'refuse_bulk_delete' ) );
+		add_filter( 'term_updated_messages', array( $this, 'admin_messages' ) );
+		add_filter( 'removable_query_args', array( $this, 'removable_query_args' ) );
 	}
 
 	/**
@@ -144,5 +160,130 @@ final class UsedTypes {
 		}
 
 		return new WP_Error( self::ERROR_CODE, self::message(), $response->get_error_data() );
+	}
+
+	/**
+	 * Refuses the Types screen's bulk delete when any selected type is in use, by sending the
+	 * editor back to the list with an error notice naming those types; nothing is deleted. Hooked
+	 * to `load-edit-tags.php`, which fires before core handles the request. A user who may not
+	 * delete types is left to core's own refusal; for the rest, the nonce checked is the one core
+	 * checks. A bulk delete of unused types is left to core.
+	 *
+	 * The request is a bulk delete when core's list table reads it as `bulk-delete`, as
+	 * `WP_Terms_List_Table::current_action()` does: no filter submitted, and `action` is `delete`
+	 * with `delete_tags` present, or is `bulk-delete` itself. Core reads only `action`; the bottom
+	 * bulk selector is copied into it in the browser.
+	 */
+	public function refuse_bulk_delete(): void {
+		if ( ! isset( $_REQUEST['taxonomy'], $_REQUEST['action'] ) || Taxonomies::TYPE !== $_REQUEST['taxonomy'] || ! empty( $_REQUEST['filter_action'] ) ) {
+			return;
+		}
+
+		if ( 'bulk-delete' !== $_REQUEST['action'] && ( 'delete' !== $_REQUEST['action'] || ! isset( $_REQUEST['delete_tags'] ) ) ) {
+			return;
+		}
+
+		$taxonomy = get_taxonomy( Taxonomies::TYPE );
+
+		if ( ! $taxonomy || ! current_user_can( $taxonomy->cap->delete_terms ) ) {
+			return;
+		}
+
+		check_admin_referer( 'bulk-tags' );
+
+		$selected = isset( $_REQUEST['delete_tags'] ) ? array_map( 'absint', (array) wp_unslash( $_REQUEST['delete_tags'] ) ) : array();
+		$in_use   = array();
+
+		foreach ( array_unique( $selected ) as $term_id ) {
+			$term = get_term( $term_id, Taxonomies::TYPE );
+
+			if ( $term instanceof WP_Term && self::in_use( $term ) ) {
+				$in_use[] = $term->term_id;
+			}
+		}
+
+		if ( array() === $in_use ) {
+			return;
+		}
+
+		$back = wp_get_referer();
+
+		if ( ! $back ) {
+			$back = admin_url( 'edit-tags.php?taxonomy=' . Taxonomies::TYPE . '&post_type=' . PostType::NAME );
+		}
+
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'error'         => 1,
+					'message'       => self::ADMIN_MESSAGE,
+					self::ADMIN_ARG => implode( ',', $in_use ),
+				),
+				remove_query_arg( array( '_wp_http_referer', '_wpnonce', 'error', 'message', self::ADMIN_ARG ), $back )
+			)
+		);
+		exit;
+	}
+
+	/**
+	 * Adds the bulk-delete refusal to the Types screen's messages, naming the types in use, escaped.
+	 * The names come from the IDs in ADMIN_ARG, kept only while each is a type still in use, so a
+	 * hand-made link cannot name a type that resources do not have. Hooked to
+	 * `term_updated_messages`, which the Types screen applies when it prints its notice.
+	 *
+	 * @param array<string, array<int, string>> $messages Messages by taxonomy, `_item` the default.
+	 * @return array<string, array<int, string>>
+	 */
+	public function admin_messages( $messages ) {
+		$messages = (array) $messages;
+
+		// Display only: the IDs name the notice's types and change nothing, so no nonce applies.
+		$ids   = isset( $_GET[ self::ADMIN_ARG ] ) ? wp_parse_id_list( sanitize_text_field( wp_unslash( $_GET[ self::ADMIN_ARG ] ) ) ) : array(); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$names = array();
+
+		foreach ( $ids as $term_id ) {
+			$term = get_term( $term_id, Taxonomies::TYPE );
+
+			if ( $term instanceof WP_Term && self::in_use( $term ) ) {
+				$names[] = $term->name;
+			}
+		}
+
+		if ( array() === $names ) {
+			return $messages;
+		}
+
+		$base = $messages[ Taxonomies::TYPE ] ?? $messages['_item'] ?? array();
+
+		$messages[ Taxonomies::TYPE ] = $base + array(
+			self::ADMIN_MESSAGE => esc_html(
+				sprintf(
+					/* translators: %s: the names of the types in use, as a list. */
+					_n(
+						'Types not deleted. Resources still have the type %s. Give those resources another type first.',
+						'Types not deleted. Resources still have the types %s. Give those resources another type first.',
+						count( $names ),
+						'resource-hub'
+					),
+					wp_sprintf_l( '%l', $names )
+				)
+			),
+		);
+
+		return $messages;
+	}
+
+	/**
+	 * Lets core drop ADMIN_ARG from the address bar once the notice is shown, as it does
+	 * `message` and `error`. Hooked to `removable_query_args`.
+	 *
+	 * @param string[] $args Query arguments core removes.
+	 * @return string[]
+	 */
+	public function removable_query_args( $args ) {
+		$args   = (array) $args;
+		$args[] = self::ADMIN_ARG;
+
+		return $args;
 	}
 }

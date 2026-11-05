@@ -22,7 +22,7 @@ The same paths exist on both sites. The post type's rewrite slug is `resources/%
 ## Consequences
 
 - The slug is the identity and the type segment is checked: on the front end, a URL with the wrong type redirects to the canonical one ([ADR 0025](0025-redirects-are-computed-308s-with-no-store.md)).
-- The one-type rule is enforced on REST saves, the block editor's only save path. The type is hidden from Quick and Bulk Edit, which save outside REST, and a type that resources still have cannot be deleted from the Types screen or over REST, because a published resource without one has no path. The Types screen's bulk delete does not check each term, and WP-CLI and PHP calls check nothing, so those are not covered.
+- The one-type rule is enforced on REST saves, the block editor's only save path. The type is hidden from Quick and Bulk Edit, which save outside REST, and a type that resources still have cannot be deleted from the Types screen, including its bulk delete, or over REST, because a published resource without one has no path. WP-CLI and PHP calls check nothing, so those are not covered.
 - Topics are managed by editors, so the number of prerendered listings grows with them.
 - Changing the permalink structure needs a rewrite flush on the host, and activation does not run on a deploy where the plugin is already active, so the deploy job gains a `wp rewrite flush` after activating the plugin, in the same slice as the permalink change.
 - The revalidation payload carries the old type and slug on `update` ([ADR 0016](0016-previous-state-on-update.md)), so the front end can clear the path a resource left.
