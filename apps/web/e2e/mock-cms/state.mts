@@ -1,3 +1,4 @@
+import { Faults } from "./faults.mts";
 import { slugify } from "./sanitize.mts";
 import { MEDIA, RESOURCES, SEED_DATE, TERMS, type MediaSeed, type ResourceSeed } from "./seed.mts";
 import type {
@@ -93,14 +94,17 @@ export class MockState {
   resources: ResourceRecord[] = [];
   terms: TermRecord[] = [];
   media: MediaRecord[] = [];
+  /** The faults in force (`faults.mts`); a reset clears them. */
+  readonly faults = new Faults();
   private counts = new Map<string, number>();
 
   constructor() {
     this.reset();
   }
 
-  /** Back to the seed, counters included. */
+  /** Back to the seed, counters and faults included. */
   reset(): void {
+    this.faults.clear();
     this.terms = TERMS.map((term) => ({ ...term }));
     this.media = MEDIA.map((item) => ({ ...item, sizes: { ...item.sizes } }));
     this.resources = RESOURCES.map((seed, index) => this.fromSeed(seed, daysBefore(SEED_DATE, index)));

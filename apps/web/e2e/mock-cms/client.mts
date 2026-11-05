@@ -2,6 +2,8 @@ import { mockCmsOrigin } from "./config.mts";
 import type {
   ControlError,
   CreateResourceInput,
+  FaultInput,
+  FaultSummary,
   HealthResponse,
   RenameTermInput,
   RequestCounts,
@@ -72,6 +74,20 @@ export class MockCmsClient {
 
   resetRequests(): Promise<RequestCounts> {
     return this.control<RequestCounts>("POST", "/__mock/requests/reset");
+  }
+
+  /** Makes the public routes under `fault.path` fail or slow down (`faults.mts`); returns every fault in force. */
+  addFault(fault: FaultInput): Promise<FaultSummary[]> {
+    return this.control<FaultSummary[]>("POST", "/__mock/faults", fault);
+  }
+
+  faults(): Promise<FaultSummary[]> {
+    return this.control<FaultSummary[]>("GET", "/__mock/faults");
+  }
+
+  /** Clears every fault; `reset()` does too. */
+  clearFaults(): Promise<FaultSummary[]> {
+    return this.control<FaultSummary[]>("DELETE", "/__mock/faults");
   }
 
   /** Publishes a new resource and returns it. */

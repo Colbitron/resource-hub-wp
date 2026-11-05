@@ -19,7 +19,8 @@ import { MockState } from "./state.mts";
  *   a 404 (ADR 0031).
  *
  * `/__mock/…` is the control surface for the specs (`control.ts`). Every
- * request outside it is counted by path and query string.
+ * request outside it is counted by path and query string, and then answers
+ * an injected fault first when one covers its path (`faults.mts`).
  */
 
 export interface MockCmsOptions {
@@ -94,6 +95,12 @@ async function serveUpload(res: ServerResponse, relativePath: string): Promise<v
   res.end(bytes);
 }
 
+function html(res: ServerResponse, status: number, body: string): void {
+  if (res.destroyed) return;
+  res.writeHead(status, { "Content-Type": "text/html; charset=UTF-8", "Content-Length": Buffer.byteLength(body) });
+  res.end(body);
+}
+
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolveBody, reject) => {
     const chunks: Buffer[] = [];
@@ -125,6 +132,20 @@ export async function startMockCms(options: MockCmsOptions): Promise<MockCms> {
       }
 
       state.count(`${url.pathname}${url.search}`);
+
+      const fault = state.faults.take(url.pathname);
+      if (fault !== null) {
+        if (fault.delayMs > 0) {
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, fault.delayMs).unref());
+        }
+        if (fault.status !== null) {
+          // WordPress's own fatal-error page, with the CMS's address in it as
+          // a real one can have, so a spec can show the front end never
+          // passes it on.
+          html(res, fault.status, `<!DOCTYPE html><html><body><p>There has been a critical error on this website.</p><p>${origin}${url.pathname}</p></body></html>`);
+          return;
+        }
+      }
 
       if (url.pathname === "/wp-json" || url.pathname.startsWith("/wp-json/")) {
         send(res, handleRest(state, method, url, origin));

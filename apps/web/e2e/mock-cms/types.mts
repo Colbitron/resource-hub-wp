@@ -102,6 +102,27 @@ export interface HealthResponse {
   origin: string;
 }
 
+/**
+ * `POST /__mock/faults`: make the public routes under `path` answer `status`
+ * instead of their own answer, after `delayMs` when given; a `delayMs`
+ * alone makes them slow but correct. `times` limits it to that many
+ * requests. See `faults.mts`.
+ */
+export interface FaultInput {
+  path: string;
+  status?: number;
+  delayMs?: number;
+  times?: number;
+}
+
+/** A fault in force, as `GET /__mock/faults` lists it; `remaining` is `null` for no limit. */
+export interface FaultSummary {
+  path: string;
+  status: number | null;
+  delayMs: number;
+  remaining: number | null;
+}
+
 /** The body of every control error: a 4xx with a plain message. */
 export interface ControlError {
   error: string;
