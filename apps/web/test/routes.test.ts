@@ -95,6 +95,22 @@ describe("isTypeSlug", () => {
     expect(isSlug("Topic")).toBe(true);
     expect(topicListingPath("Topic")).toBe("/resources/topic/topic/");
   });
+
+  it("rejects the reserved words percent-encoded, decoded once, as the plugin does", () => {
+    for (const value of ["%74opic", "%54OPIC", "%74%6f%70%69%63", "%70AGE", "pag%65", "P%41GE"]) {
+      expect(isTypeSlug(value), value).toBe(false);
+      expect(typeSlugProblem(value), value).toMatch(/reserved/);
+      expect(() => typeListingPath(value), value).toThrow(RangeError);
+    }
+    expect(isSlug("%74opic")).toBe(true);
+    expect(topicListingPath("%74opic")).toBe("/resources/topic/%74opic/");
+  });
+
+  it("decodes only once and leaves escapes that cannot spell a reserved word", () => {
+    for (const value of ["%2574opic", "%74opics", "%e6%97%a5", "%ff", "topic%", "%7"]) {
+      expect(typeSlugProblem(value), value).toBeNull();
+    }
+  });
 });
 
 describe("isPageNumber", () => {

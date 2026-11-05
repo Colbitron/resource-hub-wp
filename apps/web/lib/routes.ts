@@ -112,15 +112,33 @@ export function isSlug(value: string): boolean {
 }
 
 /**
+ * `value` with each escape of an ASCII byte decoded, once and never
+ * recursively (`%2574opic` gives `%74opic`), as PHP's `rawurldecode` would
+ * for the reserved words. Escapes of other bytes are left alone: they cannot
+ * spell `topic` or `page`, and decoding them could throw on invalid UTF-8.
+ */
+function decodeAsciiEscapesOnce(value: string): string {
+  return value.replace(/%[0-7][0-9A-Fa-f]/g, (escape) =>
+    String.fromCharCode(Number.parseInt(escape.slice(1), 16)),
+  );
+}
+
+/**
  * Why `value` is not a `resource_type` slug, or `null` when it is one. The
  * reserved words are checked in any case (`Topic` too), because the canonical
- * form is lower case and would turn `Topic` into the `topic` segment.
+ * form is lower case and would turn `Topic` into the `topic` segment, and
+ * percent-encoded (`%74opic`, `%54OPIC`), because a URL segment holding one
+ * reads as `topic` once decoded. This mirrors the plugin's
+ * `ReservedTypeSlugs::reserved_form()`: decode once, lower-case, compare.
  */
 export function typeSlugProblem(value: string): string | null {
-  return (
-    slugProblem(value) ??
-    (isReservedTypeSlug(value.toLowerCase()) ? RESERVED_TYPE_SLUG_MESSAGE : null)
-  );
+  const problem = slugProblem(value);
+  if (problem !== null) {
+    return problem;
+  }
+  // Defence in depth: the plugin already refuses these, so a stored type slug should never be one.
+  const forms = [value, decodeAsciiEscapesOnce(value)].map((form) => form.toLowerCase());
+  return forms.some(isReservedTypeSlug) ? RESERVED_TYPE_SLUG_MESSAGE : null;
 }
 
 /** True for a slug that may be a `resource_type` slug: a slug that is not reserved. */
@@ -155,9 +173,10 @@ export function parsePageSegment(segment: string): number | null {
  * percent-encoded as UTF-8, and then the whole result lower-cased, the hex of
  * every escape and the ASCII letters `A`-`Z` alike, so `topic:ABC` and
  * `topic:abc` are one tag, as WordPress's slugs are lower case. Nothing is
- * decoded, so a slug is never double-encoded, and the function is idempotent. The result is printable ASCII, which Next.js's
- * `encodeHeaderSafe` passes through unchanged, so a tag built here is the tag
- * Next.js stores and compares.
+ * decoded, so a slug is never double-encoded, and the function is idempotent.
+ * The result is printable ASCII, which Next.js's `encodeHeaderSafe` passes
+ * through unchanged, so a tag built here is the tag Next.js stores and
+ * compares.
  *
  * Validates before normalising: throws a `RangeError` when `value` is not a
  * slug (`slugProblem`), so a lone surrogate never reaches `encodeURIComponent`.

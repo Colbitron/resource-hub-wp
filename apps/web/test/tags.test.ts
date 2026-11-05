@@ -669,6 +669,21 @@ describe("the tagging rule, against ADR 0046's table written out by hand", () =>
     }
   });
 
+  it("clears every term lookup for the state's topics and type, since a term's count changes", () => {
+    for (const state of states) {
+      for (const event of eventsOn(state)) {
+        const { tags } = eventsToInvalidations([event]);
+        const lookups = [
+          ...state.topics.map((topic) => adr.termLookup("resource_topic", topic)),
+          adr.termLookup("resource_type", state.types[0]),
+        ];
+        for (const lookup of lookups) {
+          expect(shares(lookup, tags), `${event.event} ${state.slug}: ${lookup.join()}`).toBe(true);
+        }
+      }
+    }
+  });
+
   it("holds for term events, on every fetch that shows a term", () => {
     for (const event of termEvents) {
       const { tags, paths } = eventsToInvalidations([event]);
