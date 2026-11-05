@@ -15,6 +15,10 @@ Observed on the host, 2026-11-04: Varnish passed `/wp-json` (no `Age` or `X-Cach
 
 ## Consequences
 
-- Logged-in and `edit`-context responses are left alone; the filter targets the anonymous reads the front end makes.
+- Logged-in responses are left alone; core sends its own no-cache headers for them (`rest_send_nocache_headers`).
+- Decided 2026-11-05: every anonymous response on a covered route gets the header, with no exemption for `edit` context. Exempting on a request parameter would leave a future anonymous 200 uncovered, and the logged-in check already leaves core's own headers alone. Anonymous `edit`-context requests (a 401), writes and `OPTIONS` responses get the header too; that is harmless, since none of them is a copy worth caching.
+- Decided 2026-11-05: a `Cache-Control` already on the response that contains `no-store` or `private` is kept, because it is stricter than ours; any other value is replaced.
+- Decided 2026-11-05: error responses on the covered routes get the header too. A 404 is as cacheable as a 200 (Varnish's built-in rules store it), and publishing is what turns one into the other, so a cached 404 from `/wp/v2/resources/{id}` or the resolve route would outlive the revalidation meant to replace it. A request that matches no route is not covered.
+- Decided 2026-11-05: the filter matches the route pattern WordPress dispatched to, against bases read from the registered post type and taxonomies (`rest_get_route_for_post_type_items()`, `rest_get_route_for_taxonomy_items()`), so a changed `rest_base` moves the header with it and the URL's case or trailing slash does not matter.
 - Unverified: that an upstream `no-cache` does not stop Next.js's own fetch cache from storing the response. The front end's data layer has to check it; if the header does stop it, the header changes, not the front end's caching.
 - Cache invalidation is in one place: the front end's revalidate route.
