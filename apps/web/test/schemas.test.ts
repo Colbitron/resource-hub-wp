@@ -419,6 +419,12 @@ describe("slug rule", () => {
     "%2E%2e",
     "\ud800",
     "a\udc00b",
+    "a%2db",
+    "%41bc",
+    "x%7ey",
+    "%74opic",
+    "a%2fb",
+    "100%25",
   ];
 
   it("is the route predicates' rule, so the schema and the builders never disagree", () => {
@@ -430,8 +436,8 @@ describe("slug rule", () => {
     }
   });
 
-  it("rejects a lone surrogate, a dot segment and an over-long encoded form, which the JSON Schema allows", () => {
-    for (const value of ["\ud800", ".", "..", "%2e", "日".repeat(200)]) {
+  it("rejects a lone surrogate, a dot segment, an over-long encoded form and an escaped unreserved character, which the JSON Schema allows", () => {
+    for (const value of ["\ud800", ".", "..", "%2e", "日".repeat(200), "a%2db", "%41bc", "x%7ey"]) {
       expect(slugSchema.safeParse(value).success, JSON.stringify(value)).toBe(false);
     }
   });

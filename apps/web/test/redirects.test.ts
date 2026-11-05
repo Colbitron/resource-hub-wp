@@ -5,9 +5,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { decideResourceRequest, type ResourceRequestOptions } from "../lib/redirects";
-import { resourcePath } from "../lib/routes";
+import { canonicalSlug, isSlug, resourcePath } from "../lib/routes";
 import { resourceType } from "../lib/wp/cards";
-import type { ResolveResponse } from "../lib/wp/schemas/resolve";
+import { resolveResponseSchema, type ResolveResponse } from "../lib/wp/schemas/resolve";
 import { wpResourceSchema, type WpResource } from "../lib/wp/schemas/rest";
 
 /**
@@ -211,6 +211,211 @@ describe("decideResourceRequest", () => {
     it("is a 404 when resolve answers with a type that cannot be a path segment", async () => {
       const deps = lookups({}, { [OLD]: { ...resolved, type: "topic" } });
       await expect(decideResourceRequest(TYPE, OLD, deps)).resolves.toEqual({ kind: "not-found" });
+    });
+  });
+});
+
+/**
+ * The property behind "a redirect cannot loop": whatever a request asks for
+ * and whatever schema-valid data the CMS holds, a redirect's target, sent
+ * back through Next.js as a browser would send it, renders or is a 404 and
+ * never redirects again, given the CMS answers the same both times.
+ *
+ * Inputs are built from fragments chosen to break it: escapes of unreserved
+ * characters (`%2d`, `%41`), which Next.js decodes, escapes it keeps (`%2F`,
+ * `%25`, `%5c`) in either hex case, raw CJK and an astral character, `?` and
+ * `#`, which must be encoded, and `Topic` and `page`, which are reserved as
+ * types in any case. Slugs the reader schemas refuse never reach the
+ * decision, as the data layer would throw on them; the test counts them.
+ *
+ * The one precondition is WordPress's: no two current slugs are equal in
+ * canonical form. Three CMS models answer the lookups: exact (a slug matches its canonical
+ * form, as WordPress's `post_name` match does), lenient (it also matches
+ * once escapes of unreserved characters are decoded on both sides, the
+ * lookup the reviewer's `case%2dstudy` loop needed), and stale (every slug
+ * lookup is a cached miss, so only resolve answers).
+ */
+describe("a redirect's target is a fixed point", () => {
+  /** Next.js 16.4.5's `params` normalisation of one segment, as measured (ADR 0035): escapes of unreserved ASCII decoded, every other escape's hex upper-cased. */
+  function nextParam(wire: string): string {
+    return wire.replace(/%[0-9A-Fa-f]{2}/g, (escape) => {
+      const char = String.fromCharCode(Number.parseInt(escape.slice(1), 16));
+      return /^[A-Za-z0-9\-._~]$/.test(char) ? char : escape.toUpperCase();
+    });
+  }
+
+  /** mulberry32: a small seeded PRNG, so a failure reproduces. */
+  function prng(seed: number): () => number {
+    let state = seed >>> 0;
+    return () => {
+      state = (state + 0x6d2b79f5) >>> 0;
+      let t = state;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  const FRAGMENTS = [
+    "a", "b", "z", "0", "7", "-", "_", "~", ".", "case", "study",
+    "%2d", "%2D", "%41", "%61", "%7e", "%2e",
+    "%2F", "%2f", "%25", "%5c", "%5C", "%20", "%3f", "%e6%97%a5", "%E6%97%A5",
+    "日", "本", "😀", "?", "#", "\\", "%", "!", "'", "(", ":", "@",
+    "Topic", "topic", "page", "PAGE", "%74opic",
+  ];
+
+  type Random = () => number;
+
+  function pick<T>(random: Random, items: readonly T[]): T {
+    return items[Math.floor(random() * items.length)] as T;
+  }
+
+  function compose(random: Random): string {
+    const count = 1 + Math.floor(random() * 4);
+    return Array.from({ length: count }, () => pick(random, FRAGMENTS)).join("");
+  }
+
+  /** How a browser puts `text` in a path: escapes kept, a bare `%` and anything not a `pchar` encoded, and with probability `flip` a letter or a hex digit in the other case. */
+  function wire(random: Random, text: string, flip: number): string {
+    const encoded = text.replace(/%[0-9A-Fa-f]{2}|%|[^A-Za-z0-9\-._~!$&'()*+,;=:@%]/gu, (match) =>
+      match.length === 3 && match.startsWith("%") ? match : encodeURIComponent(match),
+    );
+    return [...encoded]
+      .map((char) => (random() < flip ? (char === char.toLowerCase() ? char.toUpperCase() : char.toLowerCase()) : char))
+      .join("");
+  }
+
+  /** The captured resource's one `resource_type` term ID, whose embedded term carries the generated type slug. */
+  const TYPE_ID = (RAW.resource_type as number[])[0];
+
+  /** The captured resource with another ID, slug and type slug, or `null` when the reader schema refuses it. */
+  function cmsResource(id: number, slug: string, type: string): WpResource | null {
+    const raw = structuredClone(RAW) as Record<string, unknown> & { _embedded: { "wp:term": { taxonomy: string; id: number; slug: string }[][] } };
+    for (const terms of raw._embedded["wp:term"]) {
+      for (const term of terms) {
+        if (term.taxonomy === "resource_type" && term.id === TYPE_ID) term.slug = type;
+      }
+    }
+    const parsed = wpResourceSchema.safeParse({ ...raw, id, slug });
+    return parsed.success && resourceType(parsed.data) !== null ? parsed.data : null;
+  }
+
+  function decodeUnreserved(slug: string): string {
+    return nextParam(slug).toLowerCase();
+  }
+
+  type Model = "exact" | "lenient" | "stale";
+
+  interface State {
+    resources: WpResource[];
+    /** What resolve answers for a slug: `current` entries first, then old slugs, as the route looks a slug up. */
+    resolves: { key: string; current: boolean; answer: ResolveResponse }[];
+  }
+
+  function cmsFor(state: State, model: Model): ResourceRequestOptions {
+    const same = (stored: string, asked: string) =>
+      model === "lenient"
+        ? decodeUnreserved(canonicalSlug(stored)) === decodeUnreserved(asked)
+        : canonicalSlug(stored) === asked;
+    return {
+      getResourceBySlug: async (slug) =>
+        model === "stale" ? null : (state.resources.find((resource) => same(resource.slug, slug)) ?? null),
+      resolveSlug: async (slug) =>
+        (state.resolves.find(({ key, current }) => current && same(key, slug)) ??
+          state.resolves.find(({ key }) => same(key, slug)))?.answer ?? null,
+    };
+  }
+
+  /** The two segments of a `/resources/{type}/{slug}/` path. */
+  function segments(path: string): [string, string] {
+    const match = /^\/resources\/([^/]+)\/([^/]+)\/$/.exec(path);
+    if (match === null) throw new Error(`not a resource path: ${path}`);
+    return [match[1] as string, match[2] as string];
+  }
+
+  it("holds for thousands of generated requests against generated CMS data", async () => {
+    const random = prng(0x5eed);
+    const tally = { states: 0, refused: 0, decisions: 0, redirects: 0, renders: 0, notFound: 0 };
+
+    for (let round = 0; round < 1000; round += 1) {
+      const state: State = { resources: [], resolves: [] };
+      // Each request: a type, a slug, and how often the browser flips a letter's case.
+      const asked: [string, string, number][] = [];
+      const resourceCount = 1 + Math.floor(random() * 3);
+      for (let id = 1; id <= resourceCount; id += 1) {
+        const slug = compose(random);
+        const type = compose(random);
+        const old = Array.from({ length: Math.floor(random() * 3) }, () => compose(random));
+        const resource = cmsResource(id, slug, type);
+        // WordPress's `post_name` is unique and lower case, so no two resources share a canonical slug.
+        // Without that, two resources stored as `Topic` and `topic` make a two-hop chain through resolve.
+        if (resource !== null && state.resources.some((other) => canonicalSlug(other.slug) === canonicalSlug(slug))) {
+          continue;
+        }
+        if (resource === null) {
+          tally.refused += 1;
+          continue;
+        }
+        state.resources.push(resource);
+        const resolvedType = resourceType(resource)?.slug as string;
+        for (const key of [slug, ...old]) {
+          const answer = resolveResponseSchema.safeParse({ id, type: resolvedType, slug });
+          if (!isSlug(key) || !answer.success) {
+            tally.refused += 1;
+            continue;
+          }
+          state.resolves.push({ key, current: key === slug, answer: answer.data });
+        }
+        asked.push(
+          [type, slug, 0],
+          [type, slug, 0.2],
+          [compose(random), slug, 0.1],
+          ...old.map((oldSlug): [string, string, number] => [pick(random, [type, compose(random)]), oldSlug, 0.1]),
+        );
+      }
+      asked.push([compose(random), compose(random), 0.1]);
+      tally.states += 1;
+
+      for (const model of ["exact", "lenient", "stale"] as const) {
+        const cms = cmsFor(state, model);
+        for (const [type, slug, flip] of asked) {
+          const first = await decideResourceRequest(nextParam(wire(random, type, flip)), nextParam(wire(random, slug, flip)), cms);
+          tally.decisions += 1;
+          if (first.kind !== "redirect") {
+            tally[first.kind === "render" ? "renders" : "notFound"] += 1;
+            continue;
+          }
+          tally.redirects += 1;
+          const [targetType, targetSlug] = segments(first.path);
+          // The target is canonical, so a browser sends it unchanged.
+          expect(canonicalSlug(targetType), first.path).toBe(targetType);
+          expect(canonicalSlug(targetSlug), first.path).toBe(targetSlug);
+          const second = await decideResourceRequest(nextParam(targetType), nextParam(targetSlug), cms);
+          expect(second.kind, `${model}: ${JSON.stringify([type, slug])} -> ${first.path} -> ${JSON.stringify(second)}`).not.toBe("redirect");
+        }
+      }
+    }
+
+    // The generator reaches every branch, and the schemas refuse a share of the hostile inputs.
+    expect(tally.redirects).toBeGreaterThan(1000);
+    expect(tally.renders).toBeGreaterThan(1000);
+    expect(tally.notFound).toBeGreaterThan(1000);
+    expect(tally.refused).toBeGreaterThan(100);
+  });
+
+  it("models Next.js's normalisation as measured", () => {
+    expect(nextParam("%41bc")).toBe("Abc");
+    expect(nextParam("foo%2Dbar")).toBe("foo-bar");
+    expect(nextParam("a%2fb")).toBe("a%2Fb");
+    expect(nextParam("100%25")).toBe("100%25");
+    expect(nextParam("%e6%97%a5")).toBe("%E6%97%A5");
+  });
+
+  it("is a 404, not a loop, for the reviewer's case%2dstudy, which no schema now accepts", async () => {
+    expect(cmsResource(1, "case%2dstudy", TYPE)).toBeNull();
+    const state: State = { resources: [], resolves: [] };
+    await expect(decideResourceRequest(TYPE, nextParam("case%2dstudy"), cmsFor(state, "lenient"))).resolves.toEqual({
+      kind: "not-found",
     });
   });
 });

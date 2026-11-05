@@ -29,10 +29,21 @@ import type { WpResource } from "./wp/schemas/rest";
  *   slug redirects to the canonical URL of the resource it now names;
  *   anything else is a 404.
  *
- * The target is always computed from the CMS's current answer, never stored,
- * so a type changed and changed back cannot loop: each request to the old
- * URL asks again. The data layer's Data Cache is what makes that cheap, and
- * the revalidation events clear it (ADR 0046).
+ * Why a redirect cannot loop, in two parts:
+ *
+ * - Within one state of the CMS, a target is a fixed point. It is built from
+ *   canonical segments, which hold no upper-case letter and no escape of an
+ *   unreserved character (`slugProblem` refuses a slug with one, because
+ *   Next.js would decode it). Next.js's normalisation of the target therefore
+ *   only upper-cases the hex of its escapes, which `isCanonicalSegment`
+ *   ignores, so the request for the target is found and rendered, or is a
+ *   404 when the CMS's answers disagree (a stale cached miss beside resolve).
+ *   It never redirects again. `test/redirects.test.ts` checks this as a
+ *   property over thousands of generated slugs and requests.
+ * - Across changes, the target is always computed from the CMS's current
+ *   answer and never stored, so a type changed and changed back cannot loop
+ *   either: each request to the old URL asks again. The data layer's Data
+ *   Cache makes that cheap, and the revalidation events clear it (ADR 0046).
  *
  * How the 308 reaches the wire: `resourceForRequest` calls Next.js's
  * `permanentRedirect()`, and the route that calls it must render on every
@@ -88,7 +99,9 @@ function outsideEscapes(segment: string): string {
  * (`%52esource` arrives as `Resource`) and the hex of every other escape is
  * upper-cased (`%e6%97%a5` and `%E6%97%A5` both arrive as `%E6%97%A5`), so the
  * page cannot tell those two requests apart and must treat both as canonical,
- * or the redirect to the lower-case form would loop. What it can see, and
+ * or the redirect to the lower-case form would loop. A stored slug never holds
+ * an escape Next.js decodes (`slugProblem`), so the decoding cannot turn a
+ * canonical target into a different slug. What it can see, and
  * redirects, is an upper-case ASCII letter outside an escape, and any other
  * difference once both sides are in canonical form (a wrong type segment).
  */

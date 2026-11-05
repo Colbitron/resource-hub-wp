@@ -96,18 +96,19 @@ describe("isTypeSlug", () => {
     expect(topicListingPath("Topic")).toBe("/resources/topic/topic/");
   });
 
-  it("rejects the reserved words percent-encoded, decoded once, as the plugin does", () => {
+  it("rejects the reserved words percent-encoded, as escapes of unreserved letters, before the reserved check", () => {
     for (const value of ["%74opic", "%54OPIC", "%74%6f%70%69%63", "%70AGE", "pag%65", "P%41GE"]) {
       expect(isTypeSlug(value), value).toBe(false);
-      expect(typeSlugProblem(value), value).toMatch(/reserved/);
+      expect(typeSlugProblem(value), value).toMatch(/unreserved/);
       expect(() => typeListingPath(value), value).toThrow(RangeError);
+      // Not a slug of any kind, so not a topic either.
+      expect(isSlug(value), value).toBe(false);
+      expect(() => topicListingPath(value), value).toThrow(RangeError);
     }
-    expect(isSlug("%74opic")).toBe(true);
-    expect(topicListingPath("%74opic")).toBe("/resources/topic/%74opic/");
   });
 
   it("decodes only once and leaves escapes that cannot spell a reserved word", () => {
-    for (const value of ["%2574opic", "%74opics", "%e6%97%a5", "%ff", "topic%", "%7"]) {
+    for (const value of ["%2574opic", "%e6%97%a5", "%ff", "topic%", "%7"]) {
       expect(typeSlugProblem(value), value).toBeNull();
     }
   });
@@ -337,5 +338,36 @@ describe("slugProblem", () => {
     expect(slugProblem("..")).toMatch(/\.\./);
     expect(typeSlugProblem("page")).toMatch(/reserved/);
     expect(typeSlugProblem("webinar")).toBeNull();
+  });
+
+  it("rejects a percent escape of an unreserved ASCII character, in either hex case, which Next.js decodes in params", () => {
+    // `-`, `A` and `~`: Next.js hands a page `a-b`, `Abc` and `x~y`, so the slug's own URL would name another slug.
+    for (const [value, escape] of [
+      ["a%2db", "%2d"],
+      ["a%2Db", "%2D"],
+      ["%41bc", "%41"],
+      ["%61bc", "%61"],
+      ["x%7ey", "%7e"],
+      ["x%7Ey", "%7E"],
+      ["v%30", "%30"],
+      ["a%5fb", "%5f"],
+      ["a%2eb", "%2e"],
+      ["%e6%97%a5-%5A", "%5A"],
+    ]) {
+      expect(slugProblem(value), value).toBe(
+        `must not percent-encode an unreserved character (${escape}), which Next.js decodes before a page sees it`,
+      );
+      expect(isSlug(value), value).toBe(false);
+      expect(isTypeSlug(value), value).toBe(false);
+      expect(() => canonicalSlug(value), value).toThrow(RangeError);
+      expect(() => resourcePath("webinar", value), value).toThrow(RangeError);
+      expect(() => resourcePath(value, "example"), value).toThrow(RangeError);
+    }
+  });
+
+  it("keeps escapes of every other byte, which Next.js leaves encoded", () => {
+    for (const value of ["a%2fb", "a%2Fb", "100%25", "a%5cb", "a%20b", "a%3fb", "a%23b", "%e6%97%a5", "%E6%97%A5", "a%21b", "%ff"]) {
+      expect(slugProblem(value), value).toBeNull();
+    }
   });
 });

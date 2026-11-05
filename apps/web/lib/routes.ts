@@ -42,6 +42,9 @@ const LIBRARY = "/resources/";
 /** `.` and `..`, literal or percent-encoded: URL parsers collapse them, so the path would change. */
 const DOT_SEGMENT = /^(?:\.|%2e){1,2}$/i;
 
+/** RFC 3986's unreserved characters, which a URL never needs to percent-encode. */
+const UNRESERVED = /^[A-Za-z0-9\-._~]$/;
+
 /**
  * A percent escape, a `%` that does not start one, or a character that is not
  * a `pchar` (RFC 3986). With the `u` flag a character outside the Basic
@@ -75,11 +78,19 @@ function encodeSlug(value: string): string {
  * shared schema's `$defs/slug` accepts (non-empty, at most 200 characters
  * counted in code points, no slash, no whitespace) that is also usable as a
  * path segment and a cache tag: well-formed Unicode, not a dot segment, and at
- * most 200 characters in its canonical form. WordPress stores a slug in that
+ * most 200 characters in its canonical form, with no percent escape of an
+ * unreserved ASCII character (`%2d`, `%41`, `%7E`). WordPress stores a slug in that
  * form in a 200-character column (`post_name`, and `slug` in `wp_terms`), so a
  * longer one cannot be a stored slug; the cap also keeps every tag under
  * Next.js's 256-character limit, past which Next.js drops a tag with only a
- * warning (200 raw `日` would be 1,800 characters encoded). This is the one
+ * warning (200 raw `日` would be 1,800 characters encoded). An escape of an
+ * unreserved character has no canonical form a page can see: Next.js decodes
+ * it in `params` (`case%2dstudy` arrives as `case-study`), so the slug's own
+ * URL would reach the page as another slug, and a redirect to it would loop or
+ * the resource would be unreachable. `sanitize_title` keeps an escape an
+ * editor types (`case%2dstudy` is saved as is), so WordPress can store one;
+ * the front end refuses it, in a response or an event, rather than serve a
+ * URL that cannot work. This is the one
  * definition: `isSlug`, `isTypeSlug`, the path and tag builders and the Zod
  * schemas in `lib/wp/schemas/common.ts` all use it, so a slug the schemas
  * accept can always be put in a path and a cache tag.
@@ -100,8 +111,26 @@ export function slugProblem(value: string): string | null {
   if (DOT_SEGMENT.test(value)) {
     return "must not be . or .., which URL parsers collapse";
   }
+  const encodedUnreserved = unreservedEscape(value);
+  if (encodedUnreserved !== null) {
+    return `must not percent-encode an unreserved character (${encodedUnreserved}), which Next.js decodes before a page sees it`;
+  }
   if (encodeSlug(value).length > MAX_SLUG_LENGTH) {
     return `must be at most ${MAX_SLUG_LENGTH} characters once percent-encoded, as WordPress stores it`;
+  }
+  return null;
+}
+
+/**
+ * The first percent escape in `value` of an unreserved ASCII character
+ * (`A`-`Z`, `a`-`z`, `0`-`9`, `-`, `.`, `_`, `~`), in either hex case, or
+ * `null` when there is none.
+ */
+function unreservedEscape(value: string): string | null {
+  for (const [escape] of value.matchAll(/%[0-9A-Fa-f]{2}/g)) {
+    if (UNRESERVED.test(String.fromCharCode(Number.parseInt(escape.slice(1), 16)))) {
+      return escape;
+    }
   }
   return null;
 }
@@ -128,15 +157,18 @@ function decodeAsciiEscapesOnce(value: string): string {
  * reserved words are checked in any case (`Topic` too), because the canonical
  * form is lower case and would turn `Topic` into the `topic` segment, and
  * percent-encoded (`%74opic`, `%54OPIC`), because a URL segment holding one
- * reads as `topic` once decoded. This mirrors the plugin's
- * `ReservedTypeSlugs::reserved_form()`: decode once, lower-case, compare.
+ * reads as `topic` once decoded. `slugProblem` already refuses those encoded
+ * forms, as escapes of unreserved characters, so they fail with its message;
+ * the decoding here mirrors the plugin's `ReservedTypeSlugs::reserved_form()`
+ * (decode once, lower-case, compare) in case that rule ever loosens.
  */
 export function typeSlugProblem(value: string): string | null {
   const problem = slugProblem(value);
   if (problem !== null) {
     return problem;
   }
-  // Defence in depth: the plugin already refuses these, so a stored type slug should never be one.
+  // Defence in depth twice over: the plugin refuses these, and `slugProblem` already refuses an
+  // escape of a letter (`%74opic`), so only a literal reserved word in any case reaches this check.
   const forms = [value, decodeAsciiEscapesOnce(value)].map((form) => form.toLowerCase());
   return forms.some(isReservedTypeSlug) ? RESERVED_TYPE_SLUG_MESSAGE : null;
 }
