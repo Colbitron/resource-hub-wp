@@ -1,5 +1,7 @@
+import { fileURLToPath } from "node:url";
+
 import { isTaxonomy, MockError, type MockState } from "./state.mts";
-import type { CreateResourceInput, RenameTermInput, ResourceStatus } from "./types.mts";
+import type { CreateResourceInput, HealthResponse, RenameTermInput, ResourceStatus } from "./types.mts";
 import type { MockResponse } from "./rest.mts";
 
 /**
@@ -13,6 +15,9 @@ import type { MockResponse } from "./rest.mts";
  */
 
 const JSON_HEADERS = { "Content-Type": "application/json; charset=UTF-8", "Cache-Control": "no-store" };
+
+/** This directory, absolute, without a trailing separator: the mock's identity in `/__mock/health`. */
+export const MOCK_DIR = fileURLToPath(new URL(".", import.meta.url)).replace(/[\\/]$/, "");
 
 function json(status: number, body: unknown): MockResponse {
   return { status, headers: { ...JSON_HEADERS }, body };
@@ -77,7 +82,10 @@ function parseRename(body: unknown): RenameTermInput {
 export function handleControl(state: MockState, method: string, url: URL, body: unknown, origin: string): MockResponse {
   const path = url.pathname.replace(/^\/__mock/, "").replace(/\/+$/, "");
   try {
-    if (method === "GET" && path === "/health") return json(200, { ok: true });
+    if (method === "GET" && path === "/health") {
+      const health: HealthResponse = { ok: true, dir: MOCK_DIR, pid: process.pid, origin };
+      return json(200, health);
+    }
     if (method === "GET" && path === "/state") return json(200, state.summary(origin));
     if (method === "GET" && path === "/requests") return json(200, state.requests());
     if (method === "POST" && path === "/requests/reset") {

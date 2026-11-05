@@ -2,6 +2,7 @@ import { mockCmsOrigin } from "./config.mts";
 import type {
   ControlError,
   CreateResourceInput,
+  HealthResponse,
   RenameTermInput,
   RequestCounts,
   ResourceStatus,
@@ -50,6 +51,11 @@ export class MockCmsClient {
   }
 
   // --- Control ------------------------------------------------------------------
+
+  /** Which mock answered: its directory, process ID and origin. */
+  health(): Promise<HealthResponse> {
+    return this.control<HealthResponse>("GET", "/__mock/health");
+  }
 
   /** Back to the seed dataset, with the request counters cleared. */
   reset(): Promise<StateSummary> {

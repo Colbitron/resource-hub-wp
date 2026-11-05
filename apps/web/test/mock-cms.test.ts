@@ -470,6 +470,15 @@ describe("uploads and everything else", () => {
 });
 
 describe("the control endpoints", () => {
+  it("names the mock that answered in /__mock/health", async () => {
+    expect(await cms.health()).toEqual({
+      ok: true,
+      dir: resolve(__dirname, "../e2e/mock-cms"),
+      pid: process.pid,
+      origin: server.origin,
+    });
+  });
+
   it("publishes a new resource that the public routes then serve", async () => {
     const created = await cms.createResource({
       title: "A brand new webinar",

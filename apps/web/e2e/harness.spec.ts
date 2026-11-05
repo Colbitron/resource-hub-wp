@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
@@ -16,6 +16,12 @@ const cms = mockCms();
 
 test.beforeEach(async () => {
   await cms.reset();
+});
+
+test("the mock answering is this checkout's, not one reused from elsewhere", async () => {
+  const health = await cms.health();
+  expect(health.dir).toBe(join(dirname(test.info().file), "mock-cms"));
+  expect(health.origin).toBe(mockCmsOrigin());
 });
 
 test.describe("the /media/ rewrite", () => {

@@ -87,6 +87,18 @@ export interface RequestCounts {
   byPath: Record<string, number>;
 }
 
+/**
+ * `GET /__mock/health`: which mock answered. `dir` is the absolute path of the
+ * `mock-cms/` directory the process runs from and `pid` its process ID, so a
+ * mock reused from another checkout or an earlier run can be recognised.
+ */
+export interface HealthResponse {
+  ok: true;
+  dir: string;
+  pid: number;
+  origin: string;
+}
+
 /** The body of every control error: a 4xx with a plain message. */
 export interface ControlError {
   error: string;

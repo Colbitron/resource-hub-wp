@@ -10,7 +10,11 @@ From the repository root:
 pnpm web:test:e2e
 ```
 
-Playwright starts the mock first, then builds and starts the app with `WP_API_URL` pointing at the mock (`playwright.config.ts`). Chromium must be installed once: `pnpm exec playwright install chromium` in `apps/web`. Outside CI both servers are reused when already running, so to iterate on a spec you can leave `node e2e/mock-cms/main.mts` and `next start` up and re-run `pnpm exec playwright test`.
+Playwright starts the mock first, then builds and starts the app with `WP_API_URL` pointing at the mock (`playwright.config.ts`). Chromium must be installed once: `pnpm exec playwright install chromium` in `apps/web`.
+
+By default both servers are started fresh, and a port that is already taken fails the run rather than testing whatever answers on it. To iterate on a spec without rebuilding, opt in to reuse with `RH_E2E_REUSE=1`: leave `node e2e/mock-cms/main.mts` and `next start` running (with the same ports and environment the config would give them) and re-run `RH_E2E_REUSE=1 pnpm exec playwright test`. Reuse is never on in CI. A reused mock can be recognised: `GET /__mock/health` answers `{ ok, dir, pid, origin }`, the absolute path of the `mock-cms/` directory it runs from and its process ID, and `harness.spec.ts` fails when `dir` is not this checkout's. A reused app has no such check, so make sure the `next start` you leave running was built from this checkout.
+
+Specs run in one worker, one file at a time (`workers: 1`, `fullyParallel: false`), because they all share one mock process and one app.
 
 The mock's self-check, which proves every response passes the front end's reader schemas, is a unit test: `test/mock-cms.test.ts`, run by `pnpm web:test`.
 
@@ -45,7 +49,7 @@ Under `/__mock/`, a path the front end never requests. JSON in and out; errors a
 
 | Endpoint | Does |
 | --- | --- |
-| `GET /__mock/health` | `{ ok: true }`; what Playwright waits for |
+| `GET /__mock/health` | `{ ok: true, dir, pid, origin }`: what Playwright waits for, and which mock answered |
 | `GET /__mock/state` | Every resource (term slugs, status, previous slugs, picks), term and media item |
 | `POST /__mock/reset` | Back to the seed, counters cleared |
 | `POST /__mock/resources` `{ title, type, slug?, topics?, featured?, summary?, sourceUrl?, content?, mediaId? }` | Publishes a new resource |
@@ -59,4 +63,6 @@ Under `/__mock/`, a path the front end never requests. JSON in and out; errors a
 | `GET /__mock/requests` | `{ total, byPath }`: how often each public path with its query string was requested |
 | `POST /__mock/requests/reset` | Clears the counters |
 
-Control requests are never counted, so the counters show what the app did. Every spec should `reset()` in `beforeEach`: the mock is one process shared by every test, and Playwright runs files in parallel workers, so specs that change the data must not assume another file's state.
+Control requests are never counted, so the counters show what the app did. Every spec should `reset()` in `beforeEach`, because the mock is one process shared by every test and specs that change the data must not assume another file's state.
+
+**A reset does not clear the app's cache.** `/__mock/reset` puts the mock's data back, but the app under test keeps whatever its fetch Data Cache already holds, for as long as the app process runs. A page one test rendered can still be served from the cache in a later test after the mock has changed or been reset. Specs must not rely on a reset to clear it. Either give each test data of its own, such as distinct slugs from `createResource` or `renameSlug`, so no cached entry applies, or call the app's revalidate route for the tags or paths the test changed, as the CMS would.

@@ -16,11 +16,23 @@ import { mockCmsApiUrl, mockCmsOrigin, mockCmsPort, webPort } from "./e2e/mock-c
 // for the /media/ rewrite, which here maps to the mock's uploads.
 const WEB_PORT = webPort();
 const MOCK_PORT = mockCmsPort();
-const reuseExistingServer = !process.env.CI;
+
+// Reusing servers already listening on the two ports is opt-in, never in CI:
+// a silently reused server may be another checkout's build or mock, or one
+// started with different settings, and the run would test that instead.
+// RH_E2E_REUSE=1 opts in while iterating on a spec; harness.spec.ts then
+// checks that the mock answering is this checkout's (`/__mock/health`).
+const reuseExistingServer = process.env.RH_E2E_REUSE === "1" && !process.env.CI;
 
 export default defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.spec.ts",
+  // One worker, files in order: every spec shares the one mock CMS process
+  // and its data, and `/__mock/reset` in one worker would undo another's
+  // setup mid-test. The app's fetch cache is shared too, and no reset clears
+  // it (e2e/README.md). Parallel workers would need a mock per worker.
+  workers: 1,
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
