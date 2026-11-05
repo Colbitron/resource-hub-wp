@@ -181,6 +181,82 @@ final class DispatcherTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * When core refuses to schedule the cron event, the batch is delivered at once instead of being lost:
+	 * one request, a finished record rather than `pending`, and the result returned.
+	 */
+	public function test_schedule_failure_falls_back_to_sending_now(): void {
+		$this->configure();
+		$post_id = $this->make_resource( 'publish', 'cron-refused' );
+		wp_update_post(
+			array(
+				'ID'         => $post_id,
+				'post_title' => 'Cron says no',
+			)
+		);
+		$refuse = static fn(): \WP_Error => new \WP_Error( 'schedule_event_false', 'Refused for the test.' );
+		add_filter( 'pre_schedule_event', $refuse );
+
+		$results = $this->dispatcher()->flush();
+
+		remove_filter( 'pre_schedule_event', $refuse );
+
+		$this->assertCount( 1, $results );
+		$this->assertSame( Result::OK, $results[0]->outcome );
+		$this->assertSame( array(), self::scheduled() );
+
+		$sent = $this->revalidate_requests();
+		$this->assertCount( 1, $sent );
+		$this->assert_valid_request( json_decode( $sent[0]['args']['body'], true ) );
+		$this->assertCount( 1, $this->requests, 'No cron spawn when nothing was scheduled.' );
+
+		$record = ResultStore::read_post( $post_id );
+		$this->assertSame( Result::SENT, $record['status'] );
+		$this->assertSame( Result::OK, $record['outcome'] );
+		$this->assertSame( 'update', $record['event'] );
+		$this->assertSame( 200, $record['code'] );
+	}
+
+	/**
+	 * Through a whole flush and cron run, with a held-back event in the same request, the secret reaches
+	 * the front end's `Authorization` header and nowhere in any PostHog request, body or headers.
+	 */
+	public function test_secret_never_reaches_posthog(): void {
+		$secret = 'never-in-posthog-7f3a';
+		$this->configure( 'https://hub.example/', $secret );
+		$posthog  = new PostHog( 'phc_key', 'https://eu.i.posthog.com' );
+		$fine     = $this->make_resource( 'publish', 'logged' );
+		$typeless = $this->make_resource( 'publish', 'typeless-logged' );
+		wp_set_object_terms( $typeless, array(), Taxonomies::TYPE );
+		$this->queue->clear();
+
+		foreach ( array( $fine, $typeless ) as $id ) {
+			wp_update_post(
+				array(
+					'ID'         => $id,
+					'post_title' => 'Logged',
+				)
+			);
+		}
+
+		$dispatcher = $this->dispatcher( false, $posthog );
+		$dispatcher->flush();
+		list( $batch_id, $payload ) = self::scheduled()[0];
+		$dispatcher->run( $batch_id, $payload );
+
+		$this->assertSame( 'Bearer ' . $secret, $this->revalidate_requests()[0]['args']['headers']['Authorization'] );
+
+		$posthog_requests = array_values( array_filter( $this->requests, static fn( array $request ): bool => str_contains( $request['url'], 'posthog' ) ) );
+		$this->assertCount( 2, $posthog_requests, 'One for the held-back event, one for the sent batch.' );
+
+		foreach ( $posthog_requests as $request ) {
+			$this->assertStringNotContainsString( $secret, $request['url'] );
+			$this->assertStringNotContainsString( $secret, (string) $request['args']['body'] );
+			$this->assertStringNotContainsString( $secret, (string) wp_json_encode( $request['args']['headers'] ) );
+			$this->assertArrayNotHasKey( 'Authorization', $request['args']['headers'] );
+		}
+	}
+
+	/**
 	 * More than 25 events become several cron events of at most 25, each a valid payload, in order.
 	 */
 	public function test_flush_splits_into_batches_of_twenty_five(): void {

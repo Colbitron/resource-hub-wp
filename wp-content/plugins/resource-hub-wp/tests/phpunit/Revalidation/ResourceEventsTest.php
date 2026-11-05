@@ -339,6 +339,37 @@ final class ResourceEventsTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * A scheduled resource published by core's `wp_publish_post()`, as the cron job for a scheduled post
+	 * does, sends `publish` with its state and no `previous`.
+	 */
+	public function test_scheduled_publish_sends_publish(): void {
+		$post_id = self::factory()->post->create(
+			array(
+				'post_type'   => PostType::NAME,
+				'post_status' => 'future',
+				'post_name'   => 'scheduled-one',
+				'post_date'   => gmdate( 'Y-m-d H:i:s', time() + DAY_IN_SECONDS ),
+			)
+		);
+		wp_set_object_terms( $post_id, array( $this->term_id( Taxonomies::TYPE, 'webinar' ) ), Taxonomies::TYPE );
+		wp_set_object_terms( $post_id, array( $this->term_id( Taxonomies::TOPIC, 'performance' ) ), Taxonomies::TOPIC );
+		$this->queue->clear();
+
+		$this->assertSame( 'future', get_post_status( $post_id ) );
+
+		wp_publish_post( $post_id );
+
+		$event = $this->assert_single_queued_event();
+
+		$this->assertSame( 'publish', $event['event'] );
+		$this->assertSame( $post_id, $event['id'] );
+		$this->assertSame( 'scheduled-one', $event['slug'] );
+		$this->assertSame( array( 'webinar' ), $event['types'] );
+		$this->assertSame( array( 'performance' ), $event['topics'] );
+		$this->assertNull( $event['previous'] );
+	}
+
+	/**
 	 * Saves that never touch public state send nothing: editing a draft, trashing a draft, deleting a
 	 * trashed resource, restoring from the trash, and a force delete of a draft.
 	 */
