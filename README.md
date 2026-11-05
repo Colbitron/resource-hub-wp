@@ -107,6 +107,7 @@ The revalidation secret and front-end URL are read from `RESOURCE_HUB_FRONTEND_U
 | `pnpm env:start` / `env:stop` / `env:destroy` | wp-env lifecycle |
 | `pnpm wp <args>` / `pnpm wp:tests <args>` | WP-CLI in the dev or tests container |
 | `pnpm wp resource-hub seed` | Seeds types, topics, and 12 fictional resources on the dev site; `--count=<n>` up to 16; safe to rerun |
+| `pnpm wp resource-hub decode-slugs` | Lists resource and term slugs still stored with an escape the front end's router decodes (ADR 0024); a dry run unless given `--apply`, which saves each through core |
 | `pnpm composer <args>` | Composer in the dev container |
 | `pnpm lint` / `pnpm lint:fix` | PHPCS / PHPCBF |
 | `pnpm lint:js` / `pnpm format` | ESLint and Prettier with the WordPress presets |
