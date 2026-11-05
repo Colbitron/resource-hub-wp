@@ -113,6 +113,16 @@ final class ResolveRouteTest extends WP_UnitTestCase {
 
 		if ( 'trash' === $status ) {
 			wp_trash_post( $id );
+		} elseif ( 'future' === $status ) {
+			$date = time() + DAY_IN_SECONDS;
+			wp_update_post(
+				array(
+					'ID'            => $id,
+					'post_status'   => 'future',
+					'post_date'     => gmdate( 'Y-m-d H:i:s', $date ),
+					'post_date_gmt' => gmdate( 'Y-m-d H:i:s', $date ),
+				)
+			);
 		} else {
 			wp_update_post(
 				array(
@@ -137,8 +147,53 @@ final class ResolveRouteTest extends WP_UnitTestCase {
 			'draft'   => array( 'draft' ),
 			'pending' => array( 'pending' ),
 			'private' => array( 'private' ),
+			'future'  => array( 'future' ),
 			'trash'   => array( 'trash' ),
 		);
+	}
+
+	/**
+	 * A logged-in administrator, who may read drafts elsewhere, still gets a 404 for a draft by current and
+	 * old slug: the route answers for published resources only, whoever asks.
+	 */
+	public function test_draft_is_not_found_for_an_administrator(): void {
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		$id = $this->resource( 'admin-original' );
+		$this->rename( $id, 'admin-renamed' );
+		wp_update_post(
+			array(
+				'ID'          => $id,
+				'post_status' => 'draft',
+			)
+		);
+
+		$this->assertTrue( current_user_can( 'edit_post', $id ) );
+		$this->assert_not_found( 'admin-renamed' );
+		$this->assert_not_found( 'admin-original' );
+	}
+
+	/**
+	 * When an unpublished resource and a published one both once had a slug, core's lookup returns one of
+	 * them with no ordering and no status filter, and today it returns the unpublished one, so the slug is a
+	 * 404. Pinned so a change in core shows up here (ADR 0029).
+	 */
+	public function test_unpublished_holder_of_an_old_slug_hides_a_published_one(): void {
+		$draft = $this->resource( 'twin-a' );
+		$this->rename( $draft, 'twin-draft' );
+		wp_update_post(
+			array(
+				'ID'          => $draft,
+				'post_status' => 'draft',
+			)
+		);
+		$published = $this->resource( 'twin-a' );
+		$this->rename( $published, 'twin-published' );
+
+		$this->assertLessThan( $published, $draft );
+		$this->assertContains( 'twin-a', get_post_meta( $draft, '_wp_old_slug', false ) );
+		$this->assertContains( 'twin-a', get_post_meta( $published, '_wp_old_slug', false ) );
+		$this->assertSame( $draft, $this->core_find( 'twin-a', PostType::NAME ), 'Core now picks another holder of the old slug; revisit ADR 0029.' );
+		$this->assert_not_found( 'twin-a' );
 	}
 
 	/**
@@ -148,6 +203,46 @@ final class ResolveRouteTest extends WP_UnitTestCase {
 		$this->resource( 'something-else' );
 
 		$this->assert_not_found( 'no-such-resource' );
+	}
+
+	/**
+	 * An unknown slug is a 404 even when the global post is a published resource: core's lookup returns 0,
+	 * and `get_post( 0 )` would return the global post.
+	 */
+	public function test_unknown_slug_is_not_found_when_the_global_post_is_a_resource(): void {
+		$GLOBALS['post'] = get_post( $this->resource( 'the-global-post' ) ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- setting the global post is what this test checks.
+
+		try {
+			$this->assert_not_found( 'no-such-resource' );
+		} finally {
+			unset( $GLOBALS['post'] );
+		}
+	}
+
+	/**
+	 * Percent-encoded and multibyte slugs that match nothing are a 404, not a 500.
+	 *
+	 * @dataProvider encoded_slugs
+	 *
+	 * @param string $slug The slug sent.
+	 */
+	public function test_encoded_or_multibyte_unknown_slug_is_not_found( string $slug ): void {
+		$this->assert_not_found( $slug );
+	}
+
+	/**
+	 * Cases for test_encoded_or_multibyte_unknown_slug_is_not_found().
+	 *
+	 * @return array<string, array{string}>
+	 */
+	public static function encoded_slugs(): array {
+		return array(
+			'percent-encoded octets' => array( '%e6%97%a5%e6%9c%ac' ),
+			'a stray percent sign'   => array( '100%-sure' ),
+			'raw multibyte'          => array( '日本語のスラッグ' ),
+			'mixed'                  => array( 'caf%C3%A9-日本' ),
+			'200 bytes of multibyte' => array( str_repeat( '日', 66 ) . 'ab' ),
+		);
 	}
 
 	/**
@@ -200,21 +295,40 @@ final class ResolveRouteTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * A resource whose one type has a reserved slug is a 404: the schema rejects `topic` and `page` as a type.
-	 * The plugin refuses such a term on insert, so the test lifts that guard to build one.
+	 * A resource whose one type has a reserved slug is a 404: the schema rejects `topic` and `page` as a type,
+	 * and a percent-encoded form reads as one of them in a URL. The plugin refuses such a term on insert, so
+	 * the test lifts that guard to build one.
+	 *
+	 * @dataProvider reserved_type_slugs
+	 *
+	 * @param string $slug The type's slug.
 	 */
-	public function test_resource_with_a_reserved_type_slug_is_not_found(): void {
+	public function test_resource_with_a_reserved_type_slug_is_not_found( string $slug ): void {
 		remove_all_filters( 'pre_insert_term' );
 		$reserved = self::factory()->term->create(
 			array(
 				'taxonomy' => Taxonomies::TYPE,
-				'slug'     => 'topic',
+				'slug'     => $slug,
 			)
 		);
 		$id       = $this->resource( 'reserved-typed' );
 		wp_set_object_terms( $id, $reserved, Taxonomies::TYPE );
 
+		$this->assertSame( $slug, get_term( $reserved )->slug );
 		$this->assert_not_found( 'reserved-typed' );
+	}
+
+	/**
+	 * Cases for test_resource_with_a_reserved_type_slug_is_not_found().
+	 *
+	 * @return array<string, array{string}>
+	 */
+	public static function reserved_type_slugs(): array {
+		return array(
+			'topic'           => array( 'topic' ),
+			'page'            => array( 'page' ),
+			'percent-encoded' => array( '%74opic' ),
+		);
 	}
 
 	/**
@@ -284,6 +398,24 @@ final class ResolveRouteTest extends WP_UnitTestCase {
 
 		$this->assertSame( 'unrelated', get_query_var( 'name' ) );
 		$this->assertSame( '2020', get_query_var( 'year' ) );
+	}
+
+	/**
+	 * A query var that was absent before the lookup is absent after it, not left set to an empty string.
+	 */
+	public function test_absent_main_query_vars_stay_absent(): void {
+		global $wp_query;
+
+		$id = $this->resource( 'first' );
+		$this->rename( $id, 'second' );
+		unset( $wp_query->query_vars['monthnum'], $wp_query->query_vars['day'] );
+		set_query_var( 'year', '2020' );
+
+		$this->assert_resolves( 'first', $id, 'second' );
+
+		$this->assertArrayNotHasKey( 'monthnum', $wp_query->query_vars );
+		$this->assertArrayNotHasKey( 'day', $wp_query->query_vars );
+		$this->assertSame( '2020', $wp_query->query_vars['year'] );
 	}
 
 	/**

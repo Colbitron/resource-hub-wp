@@ -49,8 +49,13 @@ final class ResolveRoute {
 
 	/**
 	 * The longest slug accepted, in bytes as sent: the width of WordPress's `post_name` column, and the
-	 * `maxLength` of the contract's `slug`. Checked before sanitizing, because `sanitize_title()` cuts its
-	 * result to 200 characters itself, so a longer slug would otherwise be shortened and looked up.
+	 * `maxLength` of the contract's `slug`. Checked before sanitizing, so an ASCII slug, which
+	 * `sanitize_title()` never lengthens, is looked up whole or refused, never shortened. It does not stop
+	 * every cut: `sanitize_title()` percent-encodes non-ASCII characters, about three times their length in
+	 * bytes, and cuts the encoded result to 200 characters, so a shorter non-ASCII slug can still be cut,
+	 * and two that differ only past the cut look up the same slug. That is harmless: WordPress cuts a stored
+	 * `post_name` the same way on save, so the lookup matches what is stored, and the front end redirects to
+	 * the canonical slug the route returns.
 	 */
 	public const MAX_SLUG_LENGTH = 200;
 
@@ -195,8 +200,9 @@ final class ResolveRoute {
 
 	/**
 	 * The published resource that once had this slug, through core's `_wp_old_slug` record. Core's lookup
-	 * is not status-filtered, so the status is checked here; when two resources once shared the slug, the
-	 * match is core's (ADR 0029).
+	 * is not status-filtered and returns one match with no ordering, so the status is checked here; when two
+	 * resources once shared the slug, the match is core's, and an unpublished one can hide a published one
+	 * (ADR 0029).
 	 *
 	 * @param string $slug A sanitized slug.
 	 */
@@ -205,7 +211,14 @@ final class ResolveRoute {
 			return null;
 		}
 
-		$post = get_post( $this->find_old_slug( $slug ) );
+		$id = $this->find_old_slug( $slug );
+
+		// Checked before `get_post()`, which reads 0 as "the global post" and would return that instead.
+		if ( $id <= 0 ) {
+			return null;
+		}
+
+		$post = get_post( $id );
 
 		if ( ! $post instanceof WP_Post || PostType::NAME !== $post->post_type || 'publish' !== $post->post_status ) {
 			return null;
@@ -216,11 +229,11 @@ final class ResolveRoute {
 
 	/**
 	 * Calls core's old-slug lookup, which reads the slug from the main query's `name` var and narrows by its
-	 * date vars when set. The vars are set for the call and put back afterwards, so the main query is left
-	 * as it was.
+	 * date vars when set. The vars are set for the call and put back afterwards exactly, a var that was
+	 * absent removed again, so the main query is left as it was.
 	 *
 	 * @param string $slug A sanitized slug.
-	 * @return int The post ID, or 0.
+	 * @return int The post ID, or 0 when the lookup returns anything but a positive int.
 	 */
 	private function find_old_slug( string $slug ): int {
 		global $wp_query;
@@ -232,29 +245,39 @@ final class ResolveRoute {
 		$saved = array();
 
 		foreach ( self::FINDER_QUERY_VARS as $var ) {
-			$saved[ $var ] = $wp_query->get( $var );
+			if ( array_key_exists( $var, $wp_query->query_vars ) ) {
+				$saved[ $var ] = $wp_query->query_vars[ $var ];
+			}
+
 			$wp_query->set( $var, 'name' === $var ? $slug : '' );
 		}
 
 		try {
-			return (int) ( $this->old_slug_finder )( PostType::NAME );
+			$id = ( $this->old_slug_finder )( PostType::NAME );
 		} finally {
-			foreach ( $saved as $var => $value ) {
-				$wp_query->set( $var, $value );
+			foreach ( self::FINDER_QUERY_VARS as $var ) {
+				if ( array_key_exists( $var, $saved ) ) {
+					$wp_query->set( $var, $saved[ $var ] );
+				} else {
+					unset( $wp_query->query_vars[ $var ] );
+				}
 			}
 		}
+
+		return is_int( $id ) && $id > 0 ? $id : 0;
 	}
 
 	/**
 	 * The resource's one type slug, or null when it has none, more than one, or a reserved one, any of which
-	 * the response schema would reject.
+	 * the response schema would reject. Reserved means what the type guards refuse: `topic`, `page`, or a
+	 * percent-encoded form that decodes to one.
 	 *
 	 * @param WP_Post $post The resource.
 	 */
 	private static function single_type( WP_Post $post ): ?string {
 		$types = ResourceState::term_slugs( $post, Taxonomies::TYPE );
 
-		if ( 1 !== count( $types ) || in_array( $types[0], ReservedTypeSlugs::SLUGS, true ) ) {
+		if ( 1 !== count( $types ) || '' !== ReservedTypeSlugs::reserved( $types[0], '' ) ) {
 			return null;
 		}
 
