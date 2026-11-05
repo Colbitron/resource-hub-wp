@@ -68,7 +68,7 @@ Every change to a resource moves its `modified` strictly forward, by a second pa
 
 Control requests are never counted, so the counters show what the app did. Every spec should `reset()` in `beforeEach`, because the mock is one process shared by every test and specs that change the data must not assume another file's state.
 
-**A reset does not clear the app's cache.** `/__mock/reset` puts the mock's data back, but the app under test keeps whatever its fetch Data Cache already holds, for as long as the app process runs. A page one test rendered can still be served from the cache in a later test after the mock has changed or been reset. Specs must not rely on a reset to clear it. Either give each test data of its own, such as distinct slugs from `createResource` or `renameSlug`, so no cached entry applies, or call the app's revalidate route for the tags or paths the test changed, as the CMS would.
+**A reset does not clear the app's cache.** `/__mock/reset` puts the mock's data back, but the app under test keeps whatever its fetch Data Cache already holds, for as long as the app process runs, and on disk under `.next/cache/fetch-cache` across runs and rebuilds as well. A page one test rendered can still be served from the cache in a later test after the mock has changed or been reset. Specs must not rely on a reset to clear it. Either give each test data of its own, such as distinct slugs from `createResource` or `renameSlug`, so no cached entry applies, or call the app's revalidate route for the tags or paths the test changed, as the CMS would.
 
 ## Fixture pages
 
@@ -77,3 +77,4 @@ Test-only routes under `app/fixtures/`, built only with `RH_FIXTURES=1`:
 - `/fixtures/cards/`: `ResourceCard` with fixed props (`card.spec.ts`).
 - `/fixtures/data-layer/`: the data layer against the mock, two pages of the library and one resource by slug, rendered on every request so the counters show the Data Cache (`data-layer.spec.ts`). With `?twice={id}` it also reads that resource by ID twice in one render, so the counters show the per-render memoization.
 - `/fixtures/revalidate/`: one tagged, cached fetch of a seeded resource, rendered on every request, so the counters show the Data Cache keeping it and a `POST /api/revalidate/` for it making the next load fetch again (`revalidate.spec.ts`).
+- `/fixtures/redirect/[type]/[slug]/`: the resource page's redirect decision (`lib/redirects.ts`) over the data layer, rendered on every request, with its redirects kept under the fixture's own prefix so a spec can follow one to a 200 (`redirects.spec.ts`). The suite covers this fixture route only: the pull request that adds the resource page must point a spec at the real `/resources/[type]/[slug]/` route.
