@@ -299,9 +299,10 @@ final class ResolveRouteTest extends WP_UnitTestCase {
 
 	/**
 	 * A resource whose one type has a reserved slug is a 404: the schema rejects `topic` and `page` as a type,
-	 * and a percent-encoded form reads as one of them in a URL. The plugin refuses such a slug on insert and
-	 * decodes `%74opic` to `topic` on save (ADR 0024), so the test plants the slug in the row core writes,
-	 * after every plugin filter, as a term stored before those rules existed.
+	 * and a percent-encoded form reads as one of them in a URL. The plugin refuses a reserved slug on insert,
+	 * `%74opic` included, because `pre_insert_term`'s `reserved_form()` decodes it before comparing, and it
+	 * decodes escapes on save (ADR 0024). So the test plants the slug in the row core writes, after every
+	 * plugin filter, as a term stored before those rules existed.
 	 *
 	 * @dataProvider reserved_type_slugs
 	 *
@@ -315,7 +316,7 @@ final class ResolveRouteTest extends WP_UnitTestCase {
 		$id       = $this->resource( 'reserved-typed' );
 		wp_set_object_terms( $id, $reserved, Taxonomies::TYPE );
 
-		$this->assertSame( $slug, get_term( $reserved )->slug );
+		$this->assertSame( $slug, $this->stored_term_slug( $reserved ), 'The legacy type was not stored.' );
 		$this->assert_not_found( 'reserved-typed' );
 	}
 
