@@ -136,23 +136,65 @@ describe("links", () => {
     );
   });
 
-  it("replaces link text that names the CMS, or removes the words that do when there is no target to show", () => {
-    expect(render('<a href="https://example.com/">Mirror of cms.example</a>')).toBe(
-      '<a href="https://example.com/">https://example.com/</a>',
+  it("shows the rewritten target as the text of a link whose text is a CMS URL other than its href", () => {
+    expect(render('<a href="https://cms.example/resources/x/?ref=feed">https://cms.example/resources/x/</a>')).toBe(
+      '<a href="/resources/x/?ref=feed">/resources/x/?ref=feed</a>',
     );
-    expect(render('<a href="javascript:void(0)">Visit CMS.EXAMPLE now</a>')).toBe("<a>Visit now</a>");
+    expect(render('<p><a href="https://cms.example/wp-admin/">HTTPS://CMS.EXAMPLE/wp-admin/edit.php</a></p>')).toBe(
+      "<p>/wp-admin/</p>",
+    );
   });
 
-  it("keeps a link's own content when removing the words that name the CMS would leave nothing", () => {
+  it("keeps any other link's content as written, markup included, even when it names the CMS", () => {
+    expect(render('<a href="https://example.com/">Mirror of cms.example</a>')).toBe(
+      '<a href="https://example.com/">Mirror of cms.example</a>',
+    );
+    expect(render('<a href="javascript:void(0)">Visit CMS.EXAMPLE now</a>')).toBe("<a>Visit CMS.EXAMPLE now</a>");
+    expect(render('<p><a href="https://cms.example/wp-admin/"><b>bold</b> cms.example</a></p>')).toBe(
+      "<p><b>bold</b> cms.example</p>",
+    );
+    expect(render('<a href="https://example.com/"><em>See</em> https://cms.example/resources/</a>')).toBe(
+      '<a href="https://example.com/"><em>See</em> https://cms.example/resources/</a>',
+    );
+    // Not a CMS URL: another host, or no scheme.
+    expect(render('<a href="https://example.com/">https://www.cms.example/</a>')).toBe(
+      '<a href="https://example.com/">https://www.cms.example/</a>',
+    );
+    expect(render('<a href="https://example.com/">cms.example/resources/</a>')).toBe(
+      '<a href="https://example.com/">cms.example/resources/</a>',
+    );
+  });
+
+  it("keeps a link's own content when there is no target to show", () => {
     expect(render('<a href="javascript:void(0)">cms.example</a>')).toBe("<a>cms.example</a>");
-    // The link itself names the CMS, so it is unwrapped; the text the editor typed stays.
-    expect(render('<p><a href="mailto:editor@cms.example">editor@cms.example</a></p>')).toBe("<p>editor@cms.example</p>");
+    expect(render('<a href="javascript:void(0)">https://cms.example/resources/</a>')).toBe(
+      "<a>https://cms.example/resources/</a>",
+    );
     expect(render('<p><a href="https://cms.example:8443/x/">https://cms.example:8443/x/</a></p>')).toBe(
       "<p>https://cms.example:8443/x/</p>",
     );
+  });
+
+  it("keeps a mailto or tel link whose address is on the CMS's domain, as the editor wrote it", () => {
+    expect(render('<p><a href="mailto:editor@cms.example">editor@cms.example</a></p>')).toBe(
+      '<p><a href="mailto:editor@cms.example">editor@cms.example</a></p>',
+    );
+    expect(render('<a href="mailto:editor@cms.example">mailto:editor@cms.example</a>')).toBe(
+      '<a href="mailto:editor@cms.example">mailto:editor@cms.example</a>',
+    );
+    expect(render('<a href="tel:+15555551234;phone-context=cms.example">Call</a>')).toBe(
+      '<a href="tel:+15555551234;phone-context=cms.example">Call</a>',
+    );
+    expect(render('<blockquote cite="mailto:editor@cms.example">q</blockquote>')).toBe(
+      '<blockquote cite="mailto:editor@cms.example">q</blockquote>',
+    );
+    // Only the URL is exempt: any other attribute that names the CMS is still dropped.
+    expect(render('<a href="mailto:editor@cms.example" title="cms.example">Write</a>')).toBe(
+      '<a href="mailto:editor@cms.example">Write</a>',
+    );
     const apex: CmsUrls = { cmsOrigins: ["https://example.com"], uploadsBase: "https://example.com/wp-content/uploads" };
     expect(render('<p>Write to <a href="mailto:info@example.com">info@example.com</a>.</p>', undefined, apex)).toBe(
-      "<p>Write to info@example.com.</p>",
+      '<p>Write to <a href="mailto:info@example.com">info@example.com</a>.</p>',
     );
     expect(render('<p><a href="mailto:info@example.org">info@example.org</a></p>', undefined, apex)).toBe(
       '<p><a href="mailto:info@example.org">info@example.org</a></p>',
@@ -192,6 +234,17 @@ describe("links", () => {
     expect(render('<p title="On cms.example.org">x</p>')).toBe('<p title="On cms.example.org">x</p>');
     for (const title of ["cms.example", "www.cms.example", "cms.example.", "cms.example:8443", "(cms.example)", "CMS.Example/x"]) {
       expect(render(`<p title="${title}">x</p>`), title).toBe("<p>x</p>");
+    }
+  });
+
+  it("names an internationalised CMS host in its punycode form and its Unicode form", () => {
+    const idn: CmsUrls = { cmsOrigins: ["https://münchen.example"], uploadsBase: "https://münchen.example/wp-content/uploads" };
+    for (const title of ["münchen.example", "info@münchen.example", "xn--mnchen-3ya.example", "XN--MNCHEN-3YA.EXAMPLE"]) {
+      expect(render(`<p title="${title}">x</p>`, undefined, idn), title).toBe("<p>x</p>");
+    }
+    expect(render('<p title="münchen.example.org">x</p>', undefined, idn)).toBe('<p title="münchen.example.org">x</p>');
+    for (const href of ["https://münchen.example/resources/", "https://xn--mnchen-3ya.example/resources/"]) {
+      expect(render(`<a href="${href}">${href}</a>`, undefined, idn), href).toBe('<a href="/resources/">/resources/</a>');
     }
   });
 

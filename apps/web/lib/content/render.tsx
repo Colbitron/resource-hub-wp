@@ -8,6 +8,7 @@ import parse, {
 } from "html-react-parser";
 import { Parser, type ParserOptions } from "htmlparser2";
 import Image from "next/image";
+import { domainToUnicode } from "node:url";
 import { cloneElement, createElement, Fragment, type ReactElement, type ReactNode } from "react";
 
 import { canonicalSlug, isSlug } from "../routes";
@@ -37,8 +38,12 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   `/media/…`, links on the CMS become root-relative and other links stay.
  *   A CMS link stays a link only when its rewrite is a front-end route or
  *   `/media/…`; any other (`/wp-admin/`, `/wp-json/…`, `/?p=12`) is
- *   unwrapped to its text. A link whose text is its URL, or names the CMS,
- *   shows the rewritten target instead. A link with `target="_blank"` gets
+ *   unwrapped to its content. A link whose text is its own URL, or a CMS
+ *   URL written out (an autolink), shows the rewritten target instead; any
+ *   other link keeps its content as written. A `mailto:` or `tel:` link is
+ *   kept as written, even when its address is on the CMS's domain: that
+ *   address is content the editor chose, not the CMS's URL. A link with
+ *   `target="_blank"` gets
  *   `rel="noopener noreferrer"`.
  * - Images: a CMS image, one whose origin equals the uploads directory's and
  *   whose path lies under it, with no user name or password, becomes
@@ -50,15 +55,18 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   `https:`, another port, a path outside uploads, credentials in the URL)
  *   is dropped: it cannot be served through `/media/` and showing it would
  *   show the CMS's address.
- * - The CMS host: no attribute this pass renders names it (`mentionsCms`).
- *   A link whose rewritten `href` still names it, in its query, loses the
+ * - The CMS host: no attribute this pass renders names it (`mentionsCms`),
+ *   except the `href` or `cite` of a `mailto:` or `tel:` URL. An
+ *   internationalised host is looked for in its punycode and its Unicode
+ *   form. A link whose rewritten `href` still names it, in its query, loses the
  *   query; in its path or hash, it is unwrapped. A `title`, `id` or
  *   `datetime` that names it is dropped, so is a `class` token, and the
  *   words of an `alt` that name it are removed; `checked` drops any other
  *   value that does, as the last step before an element is created. Text
  *   the editor typed is left as written, in `<code>` and elsewhere, because
  *   rewriting it would corrupt code samples and prose about the CMS; only a
- *   link's text is replaced when it is the link's URL (`linkText`). The
+ *   link's text is replaced, when it is the link's URL or a CMS URL
+ *   (`linkText`). The
  *   plain-text fallback removes CMS origins (`textOnly`).
  * - Sanitising: only the elements in `ALLOWED_ELEMENTS` are rendered, with
  *   the attributes in `GLOBAL_ATTRIBUTES` and the per-element lists below,
@@ -93,6 +101,9 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   that renders, by running htmlparser2 itself over the body and stopping
  *   it at the first element past the limit, so the parser never holds more
  *   than `MAX_DEPTH + 1` open elements and its work per tag stays bounded.
+ *   It is the same pinned version as the parser `html-react-parser` uses,
+ *   not the same copy: `test/content-parser-version.test.ts` holds the two
+ *   together.
  *   Any error inside the parse or the pass also gives the plain-text
  *   rendering, so a body never makes the page fail.
  * - Size: a body longer than `MAX_CONTENT_LENGTH` UTF-16 code units renders
@@ -228,6 +239,19 @@ const LINKED_MEDIA = new Set(["iframe", "video", "audio"]);
 /** Schemes a link may use. Relative references resolve to `https:` and pass. */
 const LINK_SCHEMES = new Set(["http:", "https:", "mailto:", "tel:"]);
 
+/**
+ * Schemes whose URL is an address the editor wrote, never a URL of the CMS:
+ * a `mailto:` or `tel:` link is exempt from the "names the CMS" unwrap, so
+ * `mailto:info@example.com` stays a link on a CMS at `example.com`. Without
+ * it every contact link on an apex-domain CMS would lose its link. The
+ * default chosen while the project owner was away on 2026-11-05, pending
+ * their review (ADR 0047).
+ */
+const CONTACT_SCHEMES = new Set(["mailto:", "tel:"]);
+
+/** The URL attributes a `mailto:` or `tel:` value may keep although it names the CMS (`CONTACT_SCHEMES`). */
+const CONTACT_PROPS = new Set(["href", "cite"]);
+
 /** The base relative links resolve against for the scheme check; its host is never the CMS. */
 const LINK_BASE = "https://front-end.invalid/";
 const LINK_ORIGIN = new URL(LINK_BASE).origin;
@@ -284,7 +308,7 @@ interface Context {
   readonly uploadsOrigin: string;
   /** Every configured base: an image or link on one of them is the CMS's. */
   readonly cmsBases: readonly CmsBase[];
-  /** Each base as text names it, `cms.example` or `example.com/blog`, lower-cased, for `mentionsCms`. */
+  /** Each base as text names it, `cms.example` or `example.com/blog`, lower-cased, for `mentionsCms` (`cmsNamesOf`). */
   readonly cmsNames: readonly string[];
   readonly renderBlock: RenderBlock;
   readonly options: HTMLReactParserOptions;
@@ -308,6 +332,25 @@ function cmsBase(configured: string): CmsBase {
   const path = withoutTrailing(url.pathname, "/");
   const prefix = path.endsWith(UPLOADS_DIRECTORY) ? path.slice(0, -UPLOADS_DIRECTORY.length) : path;
   return { hostname: hostnameKey(url), prefix };
+}
+
+/**
+ * Each base as text names it, lower-cased: `cms.example`, or
+ * `example.com/blog` on a subdirectory install. An internationalised host is
+ * named in both its forms, since `URL` gives the punycode one
+ * (`xn--mnchen-3ya.example`) and an editor types the Unicode one
+ * (`münchen.example`).
+ */
+function cmsNamesOf(bases: readonly CmsBase[]): string[] {
+  const names = new Set<string>();
+  for (const { hostname, prefix } of bases) {
+    for (const host of [hostname, domainToUnicode(hostname)]) {
+      if (host !== "") {
+        names.add(`${host}${prefix}`.toLowerCase());
+      }
+    }
+  }
+  return [...names];
 }
 
 function underPrefix(pathname: string, prefix: string): boolean {
@@ -351,7 +394,12 @@ function isAsciiAlphanumeric(code: number): boolean {
   return (code >= 0x30 && code <= 0x39) || (code >= 0x61 && code <= 0x7a) || (code >= 0x41 && code <= 0x5a);
 }
 
-/** `text` with ASCII letters lower-cased and nothing else changed, so its indices are `text`'s. The CMS's names are ASCII. */
+/**
+ * `text` with ASCII letters lower-cased and nothing else changed, so its
+ * indices are `text`'s. The non-ASCII letters of a CMS name (an
+ * internationalised host's Unicode form) therefore match only as written,
+ * in lower case, which is the form `domainToUnicode` gives.
+ */
 function asciiLower(text: string): string {
   return text.replace(/[A-Z]+/g, (run) => run.toLowerCase());
 }
@@ -483,7 +531,9 @@ function isFrontEndPath(url: URL): boolean {
  * - `unwrap`: a CMS URL whose rewrite is not a front-end route
  *   (`isFrontEndPath`), so there is nothing to link to, or any URL whose
  *   path or hash names the CMS after the rewrite (`mailto:editor@cms.example`,
- *   `/resources/#cms.example`); a link keeps its text and loses the element.
+ *   `/resources/#cms.example`); a link keeps its content and loses the
+ *   element. A `mailto:` or `tel:` URL is never unwrapped for naming the CMS
+ *   (`CONTACT_SCHEMES`).
  *   `text` is the rewrite, for a link whose own text must be replaced, or
  *   `""` when the rewrite still names the CMS.
  * - `drop`: a URL that does not parse or whose scheme is not one of
@@ -506,6 +556,9 @@ function linkTarget(value: string, context: Context): LinkTarget {
   if (after === null) {
     return DROP;
   }
+  if (CONTACT_SCHEMES.has(url.protocol)) {
+    return { kind: "keep", href: rewritten };
+  }
   const isCmsLink = namesCms(url, context) || namesCms(after, context);
   if (isCmsLink && !isFrontEndPath(after)) {
     return { kind: "unwrap", text: mentionsCms(rewritten, context) ? "" : rewritten };
@@ -522,6 +575,12 @@ function withoutQuery(href: string): string {
     return href;
   }
   return href.slice(0, query) + (hash === -1 ? "" : href.slice(hash));
+}
+
+/** True when `value` parses as a `mailto:` or `tel:` URL. */
+function isContactUrl(value: string): boolean {
+  const url = parseUrl(value, LINK_BASE);
+  return url !== null && CONTACT_SCHEMES.has(url.protocol);
 }
 
 /** The `href` to render for `value` where nothing but a link will do (`cite`, embeds): `linkTarget`'s `keep`, or `undefined`. */
@@ -651,25 +710,42 @@ function prefixFragment(href: string): string {
 }
 
 /**
- * The text a link shows instead of its own, or `null` to keep its own. A
- * link whose text, trimmed, is its `href` as written, or names the CMS
- * (WordPress turns a pasted URL into `<a href="u">u</a>`), shows its
- * rewritten target; when there is none to show (the `href` was dropped, or
- * its rewrite still names the CMS), it shows its own text without the words
- * that name the CMS, and when that leaves nothing (`editor@cms.example`),
- * its own content: the editor typed it, and an empty link would hide it.
+ * True when `text` is a CMS URL written out, as an autolink shows one: an
+ * absolute http(s) URL, with no space in it, that `namesCms`.
+ */
+function isCmsUrlText(text: string, context: Context): boolean {
+  if (text === "" || /\s/.test(text)) {
+    return false;
+  }
+  try {
+    return namesCms(new URL(text), context);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The text a link shows in place of its content, or `null` to keep its
+ * content as it is. Only an autolink's content is replaced: a link whose
+ * text, trimmed, is its `href` as written (WordPress turns a pasted URL into
+ * `<a href="u">u</a>`) or a CMS URL written out (`isCmsUrlText`) shows its
+ * rewritten target, when there is one that does not name the CMS; when
+ * there is none (the `href` was dropped, or its rewrite still names the
+ * CMS), its content stays. Any other content is the editor's and stays as
+ * written, markup included, even when it names the CMS (ADR 0047), so
+ * `<a href="https://cms.example/wp-admin/"><b>bold</b> cms.example</a>` is
+ * unwrapped to its content rather than flattened to text.
  */
 function linkText(node: Element, href: string | undefined, target: LinkTarget | undefined, context: Context): string | null {
   if (href === undefined) {
     return null;
   }
   const text = textOf(node).trim();
-  if (text !== href.trim() && !mentionsCms(text, context)) {
+  if (text !== href.trim() && !isCmsUrlText(text, context)) {
     return null;
   }
   const shown = target?.kind === "keep" ? target.href : target?.kind === "unwrap" ? target.text : "";
-  const replacement = shown !== "" && !mentionsCms(shown, context) ? shown : withoutCmsMentions(text, context);
-  return replacement === text || replacement === "" ? null : replacement;
+  return shown === "" || shown === text || mentionsCms(shown, context) ? null : shown;
 }
 
 /**
@@ -708,13 +784,14 @@ function link(node: Element, attributes: Attributes, context: Context): ReactEle
 /**
  * `props` without any string value that names the CMS: the last step before
  * an element of the body is created, so no attribute the pass renders names
- * it. The rules above catch each known case first, with a better result (a
+ * it, except the `href` or `cite` of a `mailto:` or `tel:` URL
+ * (`CONTACT_SCHEMES`). The rules above catch each known case first, with a better result (a
  * query dropped, a word removed); this catches what they do not foresee, a
  * `datetime` or `sizes` that names it, say.
  */
 function checked(props: Props, context: Context): Props {
   for (const [name, value] of Object.entries(props)) {
-    if (typeof value === "string" && mentionsCms(value, context)) {
+    if (typeof value === "string" && mentionsCms(value, context) && !(CONTACT_PROPS.has(name) && isContactUrl(value))) {
       delete props[name];
     }
   }
@@ -776,7 +853,7 @@ const NO_TEXT_CHILDREN = new Set(["tr", "tbody", "thead", "tfoot", "colgroup", "
  * (about a second for 170,000 elements under 255 levels). `parse` has
  * already done it for the whole tree, once, before the first `replace`. The
  * tree is at most `MAX_DEPTH` elements deep, as `nestsDeeperThan` checked on
- * the same parser with the same options, so this recursion is bounded.
+ * the same parser version with the same options, so this recursion is bounded.
  */
 function children(node: Element, context: Context): ReactNode {
   const nodes = node.children;
@@ -1135,7 +1212,11 @@ class DepthProbe extends Parser {
  *
  * It runs the parser itself, so comments, attribute values, `<script>`,
  * `<textarea>`, CDATA, implied end tags and foreign content are read exactly
- * as in the parse that renders; a hand-written scan cannot see end tags the
+ * as in the parse that renders. That is the same version, not the same copy:
+ * `html-react-parser` parses with the htmlparser2 that `html-dom-parser`
+ * bundles in `lib/node_modules/htmlparser2`, this runs the app's own pinned
+ * one, and `test/content-parser-version.test.ts` fails unless the two are
+ * the same release; a hand-written scan cannot see end tags the
  * way the parser does, and markup that hid them from one made the parser
  * nest tens of thousands deep. `onopentagname` fires right after the parser
  * pushes an element onto its stack, and `onclosetag` as it pops one, so
@@ -1283,7 +1364,7 @@ export function renderContent(html: string, cms: CmsUrls, options: RenderContent
     cms,
     uploadsOrigin: new URL(cms.uploadsBase).origin,
     cmsBases,
-    cmsNames: cmsBases.map((base) => `${base.hostname}${base.prefix}`.toLowerCase()),
+    cmsNames: cmsNamesOf(cmsBases),
     renderBlock: options.renderBlock ?? defaultRenderBlock,
     options: {
       htmlparser2: PARSER_OPTIONS,
