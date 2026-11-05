@@ -1,0 +1,70 @@
+/*
+ * Resource Hub design tokens. Part of the contract between the CMS and the
+ * front end (ADRs 0041, 0045): every token here is a name both sides, and the
+ * planned CMS theme, build on, so renaming one is a contract change.
+ *
+ * Plain CSS custom properties on :root, no framework, system font stacks and
+ * no web fonts. Light is the default; dark follows the reader's
+ * `prefers-color-scheme`. Every text-on-background pair below meets WCAG AA
+ * (4.5:1 for text, 3:1 for the focus ring against both surfaces); the ratios
+ * are recorded in ADR 0045.
+ */
+
+:root {
+	color-scheme: light dark;
+
+	/* Colour, light scheme. */
+	--rh-color-text: #1c2024;
+	--rh-color-text-muted: #59636e;
+	--rh-color-surface: #ffffff;
+	--rh-color-surface-raised: #f2f4f6;
+	--rh-color-border: #d2d7dc;
+	--rh-color-accent: #1f4f8f;
+	--rh-color-accent-text: #ffffff;
+	--rh-color-focus: #1f4f8f;
+
+	/* Type. System stacks only: a serif for headings, a sans for everything else. */
+	--rh-font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	--rh-font-serif: Charter, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+	--rh-text-sm: 0.875rem;
+	--rh-text-base: 1rem;
+	--rh-text-md: 1.125rem;
+	--rh-text-lg: 1.375rem;
+	--rh-text-xl: 1.75rem;
+	--rh-text-2xl: 2.25rem;
+	--rh-leading-tight: 1.25;
+	--rh-leading-body: 1.55;
+
+	/* Spacing, on a 4px step. */
+	--rh-space-1: 0.25rem;
+	--rh-space-2: 0.5rem;
+	--rh-space-3: 0.75rem;
+	--rh-space-4: 1rem;
+	--rh-space-5: 1.5rem;
+	--rh-space-6: 2rem;
+	--rh-space-7: 3rem;
+	--rh-space-8: 4rem;
+
+	/* Shape. */
+	--rh-radius-sm: 2px;
+	--rh-radius: 4px;
+	--rh-border-width: 1px;
+	--rh-focus-width: 3px;
+
+	/* Measure: prose line length and the page's content width. */
+	--rh-measure: 65ch;
+	--rh-measure-wide: 72rem;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--rh-color-text: #e8eaed;
+		--rh-color-text-muted: #a6aeb8;
+		--rh-color-surface: #15181b;
+		--rh-color-surface-raised: #1f2327;
+		--rh-color-border: #353b42;
+		--rh-color-accent: #8fb5f0;
+		--rh-color-accent-text: #0f1a2b;
+		--rh-color-focus: #8fb5f0;
+	}
+}
