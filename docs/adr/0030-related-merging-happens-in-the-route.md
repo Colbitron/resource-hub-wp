@@ -11,7 +11,7 @@ The merging rules are where the bugs would be: picks come first, picks that are 
 
 ## Considered options
 
-- **Expose `related_picks` in REST meta and merge two core queries on the front end.** No custom route to write. Rejected: the merging rules would live in TypeScript in the other repository, outside this repository's PHPUnit; the picks list would be public data on every resource; and every render that misses the front end's cache would pay for two queries and the merge instead of one cached answer.
+- **Expose `related_picks` in REST meta and merge two core queries on the front end.** No custom route to write. Rejected: the merging rules would live in TypeScript in the front end, outside the plugin's PHPUnit; the picks list would be public data on every resource; and every render that misses the front end's cache would pay for two queries and the merge instead of one cached answer.
 
 ## Consequences
 
