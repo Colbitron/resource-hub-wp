@@ -39,6 +39,10 @@
  * never treated as the CMS and pass through as they came. Filtering what
  * editors may put in a body is WordPress's job.
  *
+ * No regular expression here can backtrack more than linearly on its input:
+ * trailing runs are trimmed with `withoutTrailing`, a loop, because a pattern
+ * such as `/,+$/` is quadratic on a long run that does not reach the end.
+ *
  * Pure: no Next.js, `server-only` or Zod import.
  */
 
@@ -48,6 +52,17 @@ const ROOT_RELATIVE = /^[/\\](?![/\\])/;
 
 /** The base a scheme-relative URL is resolved against: the front end is served over https. */
 const RESOLVE_BASE = "https://front-end.invalid/";
+
+/**
+ * `value` without any run of `character` at its end. A loop, not
+ * `value.replace(/x+$/, "")`: that pattern retries the run from every
+ * position when something other than `x` follows it, which is quadratic.
+ */
+export function withoutTrailing(value: string, character: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === character) end--;
+  return value.slice(0, end);
+}
 
 function isTrimmable(code: number): boolean {
   return code <= 0x20;
@@ -106,7 +121,7 @@ function configuredBase(value: string, kind: string): ConfiguredBase {
   if (url === null) {
     throw new TypeError(`Not an http or https ${kind}: ${JSON.stringify(value)}`);
   }
-  const base = { hostKey: hostKey(url), prefix: url.pathname.replace(/\/+$/, "") };
+  const base = { hostKey: hostKey(url), prefix: withoutTrailing(url.pathname, "/") };
   if (configuredBases.size >= MAX_CONFIGURED_BASES) {
     configuredBases.clear();
   }
@@ -237,14 +252,17 @@ export interface SrcsetCandidate {
   descriptors: string;
 }
 
-const isSrcsetSpace = (character: string): boolean => /^[ \t\n\f\r]$/.test(character);
+/** The HTML standard's ASCII whitespace: space, tab, newline, form feed, carriage return. */
+const isSrcsetSpace = (character: string): boolean =>
+  character === " " || character === "\t" || character === "\n" || character === "\f" || character === "\r";
 
 /**
  * Splits a `srcset` into candidates as the HTML standard does: a URL is a
  * run of non-space characters (it may contain commas), trailing commas end
  * it, and its descriptors run to the next comma outside parentheses. The
  * HTML pass uses it to check each candidate on its own before rebuilding
- * the attribute; `rewriteSrcset` is the rewrite-only form.
+ * the attribute; `rewriteSrcset` is the rewrite-only form. Linear in the
+ * length of `srcset`: every character is looked at a bounded number of times.
  */
 export function parseSrcset(srcset: string): SrcsetCandidate[] {
   const candidates: SrcsetCandidate[] = [];
@@ -266,7 +284,7 @@ export function parseSrcset(srcset: string): SrcsetCandidate[] {
     let url = srcset.slice(urlStart, position);
     let descriptors = "";
     if (url.endsWith(",")) {
-      url = url.replace(/,+$/, "");
+      url = withoutTrailing(url, ",");
     } else {
       const descriptorStart = position;
       let depth = 0;

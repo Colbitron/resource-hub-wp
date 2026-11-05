@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { renderContent, type RenderBlock, type RenderContentOptions } from "../lib/content/render";
+import { MAX_DEPTH, renderContent, type RenderBlock, type RenderContentOptions } from "../lib/content/render";
 import type { CmsUrls } from "../lib/urls";
 
 const CMS: CmsUrls = {
@@ -55,7 +55,6 @@ describe("links", () => {
       "https://evilcms.example/page",
       "https://cms.example.evil/page",
       "/resources/",
-      "#section",
       "mailto:someone@example.com",
       "tel:+15555551234",
     ]) {
@@ -306,7 +305,7 @@ describe("sanitising", () => {
       "<details open><summary>s</summary>d</details>" +
       "<pre><code>x &lt; y</code></pre><hr><br><abbr title=\"Hypertext\">HT</abbr>";
     expect(render(html)).toBe(
-      '<h2 class="has-text-align-center" id="intro">Intro</h2>' +
+      '<h2 class="has-text-align-center" id="c-intro">Intro</h2>' +
         '<p title="T" lang="fr" dir="ltr">Bonjour</p>' +
         '<ol start="3" reversed="">' +
         "<li>a</li></ol>" +
@@ -493,5 +492,143 @@ describe("the CMS origin never reaches the output", () => {
     expect(output).not.toContain("example.com/blog");
     expect(output).toContain('href="/media/2026/11/photo.jpg"');
     expect(output).toContain('href="/resources/webinar/example/embed/#?secret=abc"');
+  });
+});
+
+describe("ids", () => {
+  it("prefixes every id with c-, so no id can clobber a global the page's scripts read", () => {
+    expect(render('<div id="TURBOPACK">x</div>')).toBe('<div id="c-TURBOPACK">x</div>');
+    expect(render('<span id="webpackChunk_N_E">x</span>')).toBe('<span id="c-webpackChunk_N_E">x</span>');
+    expect(render(`<img id="hero" src="${UPLOAD}" alt="">`)).toBe(
+      '<img id="c-hero" alt="" src="/media/2026/11/photo.jpg" loading="lazy"/>',
+    );
+  });
+
+  it("prefixes a same-page #fragment link to match, so a back-to-top link still reaches its heading", () => {
+    expect(render('<h2 id="top">Top</h2><p>…</p><p><a href="#top">Back to top</a></p>')).toBe(
+      '<h2 id="c-top">Top</h2><p>…</p><p><a href="#c-top">Back to top</a></p>',
+    );
+    expect(render('<a href=" #section-2 ">x</a>')).toBe('<a href="#c-section-2">x</a>');
+  });
+
+  it("leaves other fragments alone: an empty one, one no content id could have, and one on another page", () => {
+    for (const href of ["#", "#1bad", "#__next", "/resources/#top", "https://example.com/#top"]) {
+      expect(render(`<a href="${href}">x</a>`), href).toBe(`<a href="${href}">x</a>`);
+    }
+  });
+});
+
+describe("linear time on hostile attribute values", () => {
+  const SECOND = 1000;
+
+  it("splits a 1 MB comma-heavy srcset in under a second", () => {
+    // A run of commas between two non-commas and a trailing comma made the old `/,+$/` quadratic.
+    const srcset = `a${",".repeat(1_000_000)}a,`;
+    const start = performance.now();
+    const output = render(`<img src="${UPLOAD}" srcset="${srcset}" alt="">`);
+    expect(performance.now() - start).toBeLessThan(SECOND);
+    expect(output).toBe('<img alt="" src="/media/2026/11/photo.jpg" loading="lazy"/>');
+  });
+
+  it("checks a 1 MB srcset descriptor in under a second", () => {
+    // A long run of digits that is not a descriptor made the old `[0-9]*\.?[0-9]+x` quadratic.
+    const srcset = `${UPLOAD} ${"1".repeat(1_000_000)}y`;
+    const start = performance.now();
+    const output = render(`<img src="${UPLOAD}" srcset="${srcset}" alt="">`);
+    expect(performance.now() - start).toBeLessThan(SECOND);
+    expect(output).toBe('<img alt="" src="/media/2026/11/photo.jpg" loading="lazy"/>');
+  });
+
+  it("keeps a srcset candidate only with a width, a density or no descriptor", () => {
+    const upload = (name: string) => `https://cms.example/wp-content/uploads/${name}.jpg`;
+    const kept = ["768w", "2x", "1.5x", ".5x", "0.75x", ""];
+    const dropped = ["0w", "768W", "1.x", "x", "-1x", "1e3w", "768w 2x", "2x 768w", "100h"];
+    const srcset = [...kept, ...dropped].map((descriptor, index) => `${upload(`c${index}`)} ${descriptor}`.trim()).join(", ");
+    expect(render(`<img src="${UPLOAD}" srcset="${srcset}" alt="">`)).toBe(
+      '<img alt="" srcSet="/media/c0.jpg 768w, /media/c1.jpg 2x, /media/c2.jpg 1.5x, /media/c3.jpg .5x, /media/c4.jpg 0.75x, /media/c5.jpg" src="/media/2026/11/photo.jpg" loading="lazy"/>',
+    );
+  });
+});
+
+describe("deep nesting", () => {
+  function nested(depth: number, open = "<div>", close = "</div>", inner = "<p>Deep &amp; down</p>"): string {
+    return open.repeat(depth) + inner + close.repeat(depth);
+  }
+
+  function quietly<T>(run: () => T): { result: T; warned: number; errored: number } {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      return { result: run(), warned: warn.mock.calls.length, errored: error.mock.calls.length };
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
+    }
+  }
+
+  it("renders a body just inside the limit as markup", () => {
+    const depth = MAX_DEPTH - 1; // the paragraph inside is one level more
+    const { result, warned } = quietly(() => render(nested(depth)));
+    expect(warned).toBe(0);
+    expect(result).toBe(nested(depth, "<div>", "</div>", "<p>Deep &amp; down</p>"));
+  });
+
+  it.each([300, 2_000, 20_000])("renders %i nested divs as plain text, without throwing", (depth) => {
+    const { result, warned } = quietly(() => render(nested(depth)));
+    expect(warned).toBe(1);
+    expect(result).toBe("Deep &amp; down");
+  });
+
+  it("drops 300 nested svgs without descending into them, so the rest still renders as markup", () => {
+    const { result, warned } = quietly(() => render(`<p>Before</p>${nested(300, "<svg>", "</svg>", "<text>x</text>")}`));
+    expect(warned).toBe(0);
+    expect(result).toBe("<p>Before</p>");
+  });
+
+  it.each([2_000, 20_000])("renders %i nested svgs as plain text, without throwing", (depth) => {
+    const { result, warned } = quietly(() => render(`<p>Before</p>${nested(depth, "<svg>", "</svg>", "<text>x</text>")}`));
+    expect(warned).toBe(1);
+    expect(result).toBe("Before x");
+  });
+
+  it("does not count void elements, self-closing SVG children or closed siblings as depth", () => {
+    const html =
+      "<p>a<br>b<img src=x alt=''><wbr></p>".repeat(MAX_DEPTH + 1) +
+      `<svg>${"<path d='M0 0'/>".repeat(MAX_DEPTH + 1)}</svg>` +
+      "<ul><li>x</li></ul>".repeat(MAX_DEPTH + 1);
+    const { result, warned } = quietly(() => render(html));
+    expect(warned).toBe(0);
+    expect(result).toContain("<p>a<br/>b<wbr/></p>");
+    expect(result).toContain("<ul><li>x</li></ul>");
+  });
+
+  it("catches depth the pre-scan cannot see (end tags hidden in comments) in the pass or its try", () => {
+    for (const depth of [300, 20_000]) {
+      const { result, warned, errored } = quietly(() => render(`${"<div><!--</div>-->".repeat(depth)}<p>Hidden</p>`));
+      expect(warned + errored, String(depth)).toBe(1);
+      expect(result, String(depth)).toBe("Hidden");
+    }
+  });
+
+  it("renders the body as plain text when the pass throws", () => {
+    const renderBlock: RenderBlock = () => {
+      throw new Error("boom");
+    };
+    const { result, errored } = quietly(() => render(`<p>Before</p>${MARKER}`, { renderBlock }));
+    expect(errored).toBe(1);
+    expect(result).toBe("Before More on Headless delivery Example");
+  });
+
+  it("leaves script and style content, comments and tags out of the plain text, and decodes common entities", () => {
+    const body =
+      "<h2>Title</h2><!-- a <b>comment</b> --><p>Caf&#233; &amp; <strong>bold</strong>, done&#8217;s &hellip; 1 &lt; 2</p>" +
+      "<script>if (a < b) alert(1)</script><style>p { color: red }</style><p>End</p>";
+    const { result } = quietly(() => render(nested(MAX_DEPTH + 1, "<div>", "</div>", body)));
+    expect(result).toBe("Title Café &amp; bold, done’s &amp;hellip; 1 &lt; 2 End");
+  });
+
+  it("still throws a TypeError for a bad configuration rather than rendering text", () => {
+    expect(() => renderContent("<p>x</p>", { cmsOrigins: ["ftp://cms.example"], uploadsBase: CMS.uploadsBase })).toThrow(TypeError);
+    expect(() => renderContent("<p>x</p>", { cmsOrigins: CMS.cmsOrigins, uploadsBase: "not a url" })).toThrow(TypeError);
   });
 });
