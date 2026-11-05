@@ -9,6 +9,9 @@ declare(strict_types=1);
 
 namespace ResourceHub\ContentModel;
 
+use WP_Error;
+use WP_REST_Request;
+
 /**
  * Decodes, on save, the percent escapes of the characters `encodeURIComponent()` leaves
  * unescaped, `A-Z a-z 0-9 - _ . ! ~ * ' ( )`, in `resource` post slugs and in `resource_topic`,
@@ -43,6 +46,11 @@ namespace ResourceHub\ContentModel;
  * edited in the trash), comparing with the slug as typed. unique_post_slug() does the same with
  * the decoded slug, so `case%2dstudy` takes `case-study` from such a trashed resource exactly as
  * typing `case-study` would.
+ *
+ * A legacy term whose decoded slug another term in its taxonomy already has cannot be saved, not
+ * even by an edit that leaves the slug alone: core's `wp_update_term()` refuses with
+ * `duplicate_term_slug`, and the editor must type a new slug. That error has no HTTP status, so
+ * over REST it would be a 500; for the three taxonomies here it is given a 400.
  */
 final class SlugEscapes {
 	/**
@@ -58,6 +66,7 @@ final class SlugEscapes {
 		add_filter( 'wp_insert_post_data', array( $this, 'post_data' ), 10, 2 );
 		// After core's own `sanitize_title`, hooked to `pre_term_slug` at 10.
 		add_filter( 'pre_term_slug', array( $this, 'term_slug' ), 11, 2 );
+		add_filter( 'rest_request_after_callbacks', array( $this, 'duplicate_term_slug_status' ), 10, 3 );
 	}
 
 	/**
@@ -239,5 +248,39 @@ final class SlugEscapes {
 		}
 
 		return self::decode( $slug );
+	}
+
+	/**
+	 * Gives core's `duplicate_term_slug` error a 400 when a REST edit of a term in one of the three
+	 * taxonomies returns it without a status, as the terms controller does when `wp_update_term()`
+	 * refuses a slug another term has. The editor must type a new slug; a 500 would say the server
+	 * failed. Hooked to `rest_request_after_callbacks`.
+	 *
+	 * @param mixed           $response The route's result: a response, or an error.
+	 * @param mixed           $handler  The route handler. Unused.
+	 * @param WP_REST_Request $request  The request.
+	 * @return mixed The result, with the status added when it applies.
+	 */
+	public function duplicate_term_slug_status( $response, $handler, $request ) {
+		if ( ! $response instanceof WP_Error || 'duplicate_term_slug' !== $response->get_error_code() || ! $request instanceof WP_REST_Request ) {
+			return $response;
+		}
+
+		// Each taxonomy's REST base is its name ({@see Taxonomies}).
+		$bases = implode( '|', array_map( static fn( string $taxonomy ): string => preg_quote( $taxonomy, '#' ), self::TAXONOMIES ) );
+
+		if ( ! preg_match( '#^/wp/v2/(?:' . $bases . ')/\d+$#', $request->get_route() ) ) {
+			return $response;
+		}
+
+		$data = $response->get_error_data();
+
+		if ( is_array( $data ) && isset( $data['status'] ) ) {
+			return $response;
+		}
+
+		$response->add_data( array_merge( is_array( $data ) ? $data : array(), array( 'status' => 400 ) ) );
+
+		return $response;
 	}
 }
