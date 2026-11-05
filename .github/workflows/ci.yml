@@ -193,8 +193,11 @@ jobs:
       - name: Install Playwright's browser
         run: pnpm --filter resource-hub-web exec playwright install --with-deps chromium
 
-      # Builds again with the test-only fixture routes (RH_FIXTURES=1) and
-      # runs the specs against `next start`; see apps/web/playwright.config.ts.
+      # Starts the mock CMS (apps/web/e2e/mock-cms, plain Node, no Docker and
+      # no secrets), builds again with the test-only fixture routes
+      # (RH_FIXTURES=1) and WP_API_URL pointing at the mock, and runs the
+      # specs against `next start`; see apps/web/playwright.config.ts and
+      # apps/web/e2e/README.md.
       - name: Run the front end's end-to-end tests
         run: pnpm web:test:e2e
 
