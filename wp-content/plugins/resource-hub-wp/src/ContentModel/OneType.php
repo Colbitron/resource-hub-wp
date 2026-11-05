@@ -15,7 +15,7 @@ use WP_REST_Request;
 use WP_Term;
 
 /**
- * Refuses a REST save that would leave a resource with the wrong number of types.
+ * Refuses a save that would leave a resource with the wrong number of types.
  *
  * The type is a path segment, `/resources/{type}/{slug}/`, and a segment holds one value. The
  * rule, checked on the state the save would leave:
@@ -27,10 +27,22 @@ use WP_Term;
  * `rest_pre_insert_resource`: before WordPress writes the post or its terms, with the request's
  * terms if it sends any and the stored ones if it does not. A refusal is a 400 whose message the
  * editor shows in its "Publishing failed" or "Updating failed" notice, worded to fit both a first
- * publish and an edit of a resource already published. Quick Edit and Bulk Edit on the Resources
- * list do not show the taxonomy (`show_in_quick_edit` is off), so they cannot change the type.
- * Saves that do not go through REST (PHP calls to `wp_insert_post()`, the seeder, WP-CLI) are not
- * checked.
+ * publish and an edit of a resource already published.
+ *
+ * Quick Edit and Bulk Edit on the Resources list save outside REST. Neither can change the type:
+ * the taxonomy is off in Quick Edit (`show_in_quick_edit`), core's Quick Edit handler drops terms
+ * of such a taxonomy from the request, and the Bulk Edit request has its `resource_type` terms
+ * removed here before core reads it. Both can change the status, so while either handler runs,
+ * a move into `publish` or `future` is refused for a resource that does not have exactly one
+ * stored type, judged on the status core is about to write (`wp_insert_post_data`):
+ * - Quick Edit is ended before the post or its terms are written, and answers with the message,
+ *   which the list shows in the row;
+ * - Bulk Edit keeps that resource's status, date and slug as stored, saves the rest, and the list
+ *   names the resources it did not publish.
+ * A resource already published or scheduled keeps its status through either handler, with or
+ * without a type: neither handler publishes it, unpublishes it or gives it a type, so an edit
+ * there leaves it no worse. Such a resource can arise only through the unchecked paths below.
+ * Saves through PHP calls to `wp_insert_post()` and the like, the seeder and WP-CLI are not checked.
  */
 final class OneType {
 	/**
@@ -49,10 +61,41 @@ final class OneType {
 	public const TOO_MANY = 'resource_hub_type_too_many';
 
 	/**
-	 * Hooks the check onto REST saves of `resource`.
+	 * Query argument that carries the IDs of the resources Bulk Edit did not publish to the notice.
+	 */
+	public const ADMIN_ARG = 'rh_not_published';
+
+	/**
+	 * The admin handler running in this request, `quick-edit` or `bulk-edit`, or empty for none.
+	 *
+	 * @var string
+	 */
+	private string $handler = '';
+
+	/**
+	 * IDs of the resources the running admin handler saves.
+	 *
+	 * @var int[]
+	 */
+	private array $guarded = array();
+
+	/**
+	 * IDs of the resources Bulk Edit was kept from publishing.
+	 *
+	 * @var int[]
+	 */
+	private array $refused = array();
+
+	/**
+	 * Hooks the check onto REST saves of `resource`, and onto the Resources list's Quick Edit and
+	 * Bulk Edit handlers.
 	 */
 	public function register(): void {
 		add_filter( 'rest_pre_insert_' . PostType::NAME, array( $this, 'check_rest_save' ), 10, 2 );
+		add_action( 'wp_ajax_inline-save', array( $this, 'guard_quick_edit' ), 0 );
+		add_action( 'load-edit.php', array( $this, 'guard_bulk_edit' ) );
+		add_action( 'admin_notices', array( $this, 'bulk_edit_notice' ) );
+		add_filter( 'removable_query_args', array( $this, 'removable_query_args' ) );
 	}
 
 	/**
@@ -86,6 +129,206 @@ final class OneType {
 		}
 
 		return self::problem( $status, $count ) ?? $prepared_post;
+	}
+
+	/**
+	 * Guards the status of the resource a Quick Edit saves. Hooked to `wp_ajax_inline-save` before
+	 * core's handler: for a resource the user may edit, after the nonce core checks, it adds
+	 * keep_status() to `wp_insert_post_data` for the rest of the request, which core ends once it
+	 * has saved. Other post types, and a user who may not edit the resource, are left to core.
+	 */
+	public function guard_quick_edit(): void {
+		if ( ! isset( $_POST['post_ID'] ) ) {
+			return;
+		}
+
+		$post_id = absint( $_POST['post_ID'] );
+
+		if ( PostType::NAME !== get_post_type( $post_id ) || ! current_user_can( 'edit_post', $post_id ) ) {
+			return;
+		}
+
+		check_ajax_referer( 'inlineeditnonce', '_inline_edit' );
+
+		$this->handler = 'quick-edit';
+		$this->guarded = array( $post_id );
+		add_filter( 'wp_insert_post_data', array( $this, 'keep_status' ), 99, 2 );
+	}
+
+	/**
+	 * Guards a Bulk Edit from the posts list. Hooked to `load-edit.php`, which fires before core
+	 * handles the request; a request without `bulk_edit` or without core's `bulk-posts` nonce is
+	 * left to core. It removes the `resource_type` terms from the request, as core's Quick Edit
+	 * handler does for a taxonomy that is off in Quick Edit, because core's Bulk Edit passes them on
+	 * to `wp_update_post()` otherwise. It then adds keep_status() to `wp_insert_post_data` until
+	 * core's `bulk_edit_posts` action, for the posts selected, whatever list they were selected on.
+	 */
+	public function guard_bulk_edit(): void {
+		if ( ! isset( $_REQUEST['bulk_edit'], $_REQUEST['post'], $_REQUEST['_wpnonce'] ) ) {
+			return;
+		}
+
+		if ( ! wp_verify_nonce( sanitize_key( wp_unslash( $_REQUEST['_wpnonce'] ) ), 'bulk-posts' ) ) {
+			return;
+		}
+
+		if ( isset( $_REQUEST['tax_input'] ) && is_array( $_REQUEST['tax_input'] ) ) {
+			unset( $_REQUEST['tax_input'][ Taxonomies::TYPE ] );
+		}
+
+		if ( isset( $_POST['tax_input'] ) && is_array( $_POST['tax_input'] ) ) {
+			unset( $_POST['tax_input'][ Taxonomies::TYPE ] );
+		}
+
+		if ( isset( $_GET['tax_input'] ) && is_array( $_GET['tax_input'] ) ) {
+			unset( $_GET['tax_input'][ Taxonomies::TYPE ] );
+		}
+
+		$this->handler = 'bulk-edit';
+		$this->guarded = array_map( 'absint', (array) wp_unslash( $_REQUEST['post'] ) );
+		$this->refused = array();
+		add_filter( 'wp_insert_post_data', array( $this, 'keep_status' ), 99, 2 );
+		add_action( 'bulk_edit_posts', array( $this, 'end_bulk_edit' ) );
+	}
+
+	/**
+	 * Rule: while Quick Edit or Bulk Edit saves a resource that is neither published nor
+	 * scheduled, a save that would make it `publish` or `future` without exactly one stored type is
+	 * refused. Quick Edit is ended with the message before anything is written; Bulk Edit keeps
+	 * the resource's stored status, and the date and slug core derived from the new one, and saves
+	 * the rest. Hooked to `wp_insert_post_data`, late, only while one of those handlers runs.
+	 *
+	 * @param array<string, mixed> $data    The post fields core is about to write, slashed.
+	 * @param array<string, mixed> $postarr The post data passed to `wp_insert_post()`.
+	 * @return array<string, mixed>
+	 */
+	public function keep_status( $data, $postarr ) {
+		$post_id = isset( $postarr['ID'] ) ? (int) $postarr['ID'] : 0;
+
+		if ( ! in_array( $post_id, $this->guarded, true ) || ! isset( $data['post_type'], $data['post_status'] ) || PostType::NAME !== $data['post_type'] ) {
+			return $data;
+		}
+
+		$stored = get_post( $post_id );
+
+		if ( ! $stored
+			|| in_array( $stored->post_status, self::PUBLIC_STATUSES, true )
+			|| ! in_array( $data['post_status'], self::PUBLIC_STATUSES, true )
+			|| 1 === count( self::stored_type_ids( $post_id ) )
+		) {
+			return $data;
+		}
+
+		if ( 'quick-edit' === $this->handler ) {
+			wp_die( esc_html( self::admin_message() ) );
+		}
+
+		$data['post_status']   = $stored->post_status;
+		$data['post_date']     = $stored->post_date;
+		$data['post_date_gmt'] = $stored->post_date_gmt;
+		$data['post_name']     = $stored->post_name;
+		$this->refused[]       = $post_id;
+
+		return $data;
+	}
+
+	/**
+	 * Ends the Bulk Edit guard and, if it kept any resource from being published, adds their IDs
+	 * to core's redirect back to the list. Hooked to `bulk_edit_posts` by guard_bulk_edit().
+	 */
+	public function end_bulk_edit(): void {
+		remove_filter( 'wp_insert_post_data', array( $this, 'keep_status' ), 99 );
+		$this->handler = '';
+		$this->guarded = array();
+
+		if ( array() !== $this->refused ) {
+			add_filter( 'wp_redirect', array( $this, 'bulk_edit_redirect' ) );
+		}
+	}
+
+	/**
+	 * Adds the IDs of the resources Bulk Edit did not publish to core's redirect back to the list.
+	 * Hooked to `wp_redirect` by end_bulk_edit(), only when there are any.
+	 *
+	 * @param string $location Where core redirects.
+	 */
+	public function bulk_edit_redirect( $location ): string {
+		return add_query_arg( self::ADMIN_ARG, implode( ',', array_unique( $this->refused ) ), (string) $location );
+	}
+
+	/**
+	 * Prints the Bulk Edit refusal on the Resources list, naming the resources, escaped. The names
+	 * come from the IDs in ADMIN_ARG, kept only while each is a resource the user may edit that is
+	 * neither published nor scheduled and does not have exactly one type, so a hand-made link
+	 * cannot name any other. Hooked to `admin_notices`.
+	 */
+	public function bulk_edit_notice(): void {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+
+		if ( ! $screen || 'edit-' . PostType::NAME !== $screen->id ) {
+			return;
+		}
+
+		// Display only: the IDs name the notice's resources and change nothing, so no nonce applies.
+		$ids    = isset( $_GET[ self::ADMIN_ARG ] ) ? wp_parse_id_list( sanitize_text_field( wp_unslash( $_GET[ self::ADMIN_ARG ] ) ) ) : array(); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$titles = array();
+
+		foreach ( $ids as $post_id ) {
+			$resource = get_post( $post_id );
+
+			if ( ! $resource
+				|| PostType::NAME !== $resource->post_type
+				|| ! current_user_can( 'edit_post', $post_id )
+				|| in_array( $resource->post_status, self::PUBLIC_STATUSES, true )
+				|| 1 === count( self::stored_type_ids( $post_id ) )
+			) {
+				continue;
+			}
+
+			$title    = trim( wp_strip_all_tags( $resource->post_title ) );
+			$titles[] = '' === $title ? __( '(no title)', 'resource-hub' ) : $title;
+		}
+
+		if ( array() === $titles ) {
+			return;
+		}
+
+		printf(
+			'<div class="notice notice-error"><p>%s</p></div>',
+			esc_html(
+				sprintf(
+					/* translators: %s: the titles of the resources, as a list. */
+					_n(
+						'Not published or scheduled: %s. A resource needs a type to be published or scheduled. Edit it to choose one.',
+						'Not published or scheduled: %s. A resource needs a type to be published or scheduled. Edit each one to choose one.',
+						count( $titles ),
+						'resource-hub'
+					),
+					wp_sprintf_l( '%l', $titles )
+				)
+			)
+		);
+	}
+
+	/**
+	 * Lets core drop ADMIN_ARG from the address bar once the notice is shown, as it does its own
+	 * bulk counts. Hooked to `removable_query_args`.
+	 *
+	 * @param string[] $args Query arguments core removes.
+	 * @return string[]
+	 */
+	public function removable_query_args( $args ) {
+		$args   = (array) $args;
+		$args[] = self::ADMIN_ARG;
+
+		return $args;
+	}
+
+	/**
+	 * The Quick Edit refusal's message.
+	 */
+	public static function admin_message(): string {
+		return __( 'A resource needs a type to be published or scheduled. Edit it to choose one.', 'resource-hub' );
 	}
 
 	/**
