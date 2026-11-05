@@ -79,7 +79,22 @@ final class Gate {
 			$GLOBALS['wp']->query_vars['error'] = '404';
 		}
 
+		$this->drop_head_links();
+
 		return true;
+	}
+
+	/**
+	 * Removes the head links that would advertise the feeds and the XML-RPC endpoint from the 404.
+	 *
+	 * Core prints the site and comment feed links, the extra feed links and the RSD link on every
+	 * theme page, the 404 included, and the feeds they point to are themselves 404s here. Only this
+	 * request loses them; a logged-in user's pages keep them.
+	 */
+	private function drop_head_links(): void {
+		remove_action( 'wp_head', 'feed_links', 2 );
+		remove_action( 'wp_head', 'feed_links_extra', 3 );
+		remove_action( 'wp_head', 'rsd_link' );
 	}
 
 	/**

@@ -125,6 +125,18 @@ test.describe( 'CMS lockdown', () => {
 		}
 	} );
 
+	test( 'the 404 page links to no feed and no RSD endpoint', async ( {
+		anonymous,
+	} ) => {
+		const response = await anonymous.get( resource.link );
+		const html = await response.text();
+
+		expect( response.status() ).toBe( 404 );
+		expect( html ).not.toContain( 'application/rss+xml' );
+		expect( html ).not.toContain( 'EditURI' );
+		expect( html ).not.toContain( '/feed/' );
+	} );
+
 	test( 'robots.txt is reachable and disallows everything', async ( {
 		anonymous,
 	} ) => {

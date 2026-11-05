@@ -305,6 +305,26 @@ final class GateTest extends LockdownTestCase {
 	}
 
 	/**
+	 * The 404's head links to no feed and no RSD endpoint; a logged-in user's page keeps them.
+	 */
+	public function test_the_404_head_advertises_no_feeds(): void {
+		add_theme_support( 'automatic-feed-links' );
+		$url = get_permalink( $this->resource() );
+
+		$this->go_to( $url );
+		$head = get_echo( 'wp_head' );
+		$this->assertTrue( is_404() );
+		$this->assertStringNotContainsString( 'application/rss+xml', $head );
+		$this->assertStringNotContainsString( 'EditURI', $head );
+
+		$this->logged_in();
+		$this->go_to( $url );
+		$head = get_echo( 'wp_head' );
+		$this->assertStringContainsString( 'application/rss+xml', $head );
+		$this->assertStringContainsString( 'EditURI', $head );
+	}
+
+	/**
 	 * The gate ignores an earlier callback's claim to have handled the request: anonymous is 404.
 	 */
 	public function test_an_earlier_handler_does_not_exempt_anonymous_visitors(): void {
