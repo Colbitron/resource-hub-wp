@@ -173,7 +173,11 @@ jobs:
 
   deploy:
     name: Deploy to the host
-    needs: [ gate, web ]
+    # The CMS deploy waits only on the CMS's own CI, so a front-end failure or
+    # flake can never block a CMS deploy or a rollback. The dependency runs
+    # the other way: the front-end production deploy (slice 3, once Vercel is
+    # connected) will need both this job and the web job.
+    needs: [ gate ]
     # Pushes only trigger on main already; the ref check keeps that true if the
     # trigger list ever widens. A manual dispatch deploys only from main or a
     # tag: a tag on an earlier commit is how a rollback is redeployed. Pushing
