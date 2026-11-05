@@ -20,9 +20,10 @@ namespace ResourceHub\Security;
  * anonymous methods still answer, so the method list is emptied too. Core's IXR server adds
  * `system.listMethods`, `system.getCapabilities` and `system.multicall` itself after the filter,
  * and those three only describe a server with nothing else on it. The `X-Pingback` header and
- * the RSD link in `wp_head` are removed, so no page or header points at `xmlrpc.php`. The
+ * the RSD link in `wp_head` are removed, so core prints no link or header to `xmlrpc.php`. The
  * endpoint itself still answers `GET /xmlrpc.php?rsd` with an RSD document, which core prints
- * before the server is built.
+ * before the server is built, so the `xmlrpc_enabled` and `xmlrpc_methods` filters do not run
+ * there.
  */
 final class XmlRpc {
 	/**
