@@ -131,6 +131,21 @@ final class SlugEscapesPayloadTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * Trashing a legacy resource whose slug needs more than one decoding pass, because core's
+	 * sanitising after the first makes a new escape, sends the fully decoded slug.
+	 */
+	public function test_trash_of_a_legacy_resource_needing_two_passes(): void {
+		$post_id = $this->legacy_resource( '%69%51-%20%57-%2d-%32d%3a' );
+
+		wp_trash_post( $post_id );
+
+		$events = $this->sent_events( 1 );
+
+		$this->assertSame( 'trash', $events[0]['event'] );
+		$this->assertSame( 'iq-%20w-3a', $events[0]['slug'] );
+	}
+
+	/**
 	 * Force-deleting a legacy resource sends `delete` under the decoded slug.
 	 */
 	public function test_force_delete_of_a_legacy_resource(): void {

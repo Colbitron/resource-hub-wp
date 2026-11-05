@@ -28,6 +28,11 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 	use LegacySlugRows;
 
 	/**
+	 * How many slugs the property test generates.
+	 */
+	private const GENERATED_SLUGS = 20000;
+
+	/**
 	 * Logs in an editor, who can write resources and manage terms.
 	 */
 	public function set_up(): void {
@@ -59,7 +64,7 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 			'%2a asterisk stripped'               => array( 'a%2ab', 'ab' ),
 			'%2A asterisk, upper-case hex'        => array( 'a%2Ab', 'ab' ),
 			'decoded hyphens collapse'            => array( 'a%2d%2d-b', 'a-b' ),
-			'decoded once only'                   => array( 'x%252dy', 'x%252dy' ),
+			'%25 kept, so %252d stays encoded'    => array( 'x%252dy', 'x%252dy' ),
 			'CJK kept'                            => array( '%e6%97%a5%e6%9c%ac', '%e6%97%a5%e6%9c%ac' ),
 			'CJK kept beside a decoded escape'    => array( '%e6%97%a5%2d1', '%e6%97%a5-1' ),
 			'%2f kept, as core keeps it'          => array( 'a%2fb', 'a%2fb' ),
@@ -87,6 +92,79 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 	 */
 	public function test_decode( string $typed, string $stored ): void {
 		$this->assertSame( $stored, SlugEscapes::decode( sanitize_title( $typed ) ) );
+	}
+
+	/**
+	 * Slugs where core's sanitising after one pass makes a new escape of the set: it turns
+	 * `---XX---` back into `%XX`, and decoded dashes, literal hex digits and a kept escape can
+	 * supply those. Decoding repeats until none is left.
+	 *
+	 * @return array<string, array{0: string, 1: string}>
+	 */
+	public function rebuilt_escape_cases(): array {
+		return array(
+			'dashes, hex digits and a kept %20' => array( '%2d%2d%2d41%20', 'a20' ),
+			'dashes, hex digits and kept CJK'   => array( '%2d%2d%2d4a%e6%97%a5', 'je6-%97%a5' ),
+			'dashes on both sides'              => array( '%2d%2d%2d41%2d%2d%2d', 'a' ),
+			'a fuzzed slug'                     => array( '%69%51-%20%57-%2d-%32d%3a', 'iq-%20w-3a' ),
+		);
+	}
+
+	/**
+	 * An escape core's sanitising makes is decoded too, and the result is a fixed point.
+	 *
+	 * @dataProvider rebuilt_escape_cases
+	 *
+	 * @param string $typed  Slug as typed.
+	 * @param string $stored Slug expected to be stored.
+	 */
+	public function test_decode_repeats_until_no_escape_is_left( string $typed, string $stored ): void {
+		$decoded = SlugEscapes::decode( sanitize_title( $typed ) );
+
+		$this->assertSame( $stored, $decoded );
+		$this->assertSame( $stored, SlugEscapes::decode( $decoded ) );
+		$this->assertSame( $stored, SlugEscapes::decode_stored( $typed ) );
+	}
+
+	/**
+	 * A topic saved with a slug whose first pass makes a new escape stores the fully decoded slug.
+	 */
+	public function test_term_save_with_a_rebuilt_escape(): void {
+		$this->assertSame( 'a20', $this->stored_term_slug( $this->term( Taxonomies::TOPIC, 'Rebuilt', '%2d%2d%2d41%20' ) ) );
+	}
+
+	/**
+	 * Over many generated slugs, built from the pieces that combine into escapes (decoded and kept
+	 * escapes, dashes, hex digits, stray `%`), the result never holds an escape of the set and
+	 * decoding it again changes nothing, whether given the slug sanitized or as stored. The fixed
+	 * sequence holds 22 slugs a single decoding pass left with such an escape.
+	 */
+	public function test_decode_property_over_generated_slugs(): void {
+		$pieces = array( '%2d%2d%2d', '%2d', '%2D', '%41', '%4a', '%61', '%32', '%2e', '%7e', '%5f', '%20', '%3a', '%25', '%e6', '%97', '%a5', '%', '-', '---', '4', '1', 'a', 'd', 'F', '2', 'e', '.', '_' );
+		$failed = array();
+		$state  = 20261105;
+		// A fixed linear congruential sequence, so every run checks the same slugs.
+		$next = static function ( int $bound ) use ( &$state ): int {
+			$state = ( $state * 1103515245 + 12345 ) % 2147483648;
+
+			return intdiv( $state, 65536 ) % $bound;
+		};
+
+		for ( $i = 0; $i < self::GENERATED_SLUGS; $i++ ) {
+			$raw = '';
+
+			for ( $n = 1 + $next( 10 ); $n > 0; $n-- ) {
+				$raw .= $pieces[ $next( count( $pieces ) ) ];
+			}
+
+			foreach ( array( SlugEscapes::decode( sanitize_title( $raw ) ), SlugEscapes::decode_stored( $raw ) ) as $result ) {
+				if ( SlugEscapes::has_router_escape( $result ) || SlugEscapes::decode( $result ) !== $result ) {
+					$failed[ $raw ] = $result;
+				}
+			}
+		}
+
+		$this->assertSame( array(), $failed );
 	}
 
 	/**
