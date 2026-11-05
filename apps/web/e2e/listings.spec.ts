@@ -282,6 +282,8 @@ test.describe("filters", () => {
     await expect(page.getByText("No resources match this type and topic yet.")).toBeVisible();
     await expect(page.getByRole("link", { name: "Show all resources" })).toHaveAttribute("href", "/resources/");
     await expect(page.locator(".rh-card")).toHaveCount(0);
+    // An empty combination is a real page, indexable like any other.
+    await expect(page.locator('meta[name="robots"]')).toHaveCount(0);
     await expect(page.getByRole("navigation", { name: "Pagination" })).toHaveCount(0);
   });
 
@@ -407,7 +409,9 @@ test.describe("a resource the reader schema refuses", () => {
     await expect(page.locator(".rh-card")).toHaveCount(0);
     // The count is the CMS's, and the empty state does not contradict it.
     await expect(page.getByText("2 resources")).toBeVisible();
-    await expect(page.getByText("The resources on this page cannot be shown right now.")).toBeVisible();
+    await expect(page.getByText("The resources on this page can't be shown.")).toBeVisible();
+    // The 200 is stored for up to an hour, so it is kept out of the index.
+    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
     await expect(page.getByRole("link", { name: "Show all resources" })).toHaveAttribute("href", "/resources/");
     await expect(page.getByRole("navigation", { name: "Pagination" })).toHaveCount(0);
   });
@@ -491,6 +495,32 @@ test("the keyboard reaches the filters and the pagination in order", async ({ pa
   expect(await focused()).toEqual({ text: "Next", nav: "Pagination" });
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/resources\/page\/2\/$/);
+  // The client navigation puts focus on the new page's heading, not back on <body>.
+  await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
+});
+
+test.describe("focus after a client navigation", () => {
+  test("a full page load leaves focus alone; a filter or page link moves it to the listing's h1", async ({ page }) => {
+    await page.goto("/resources/");
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+
+    const heading = page.getByRole("heading", { level: 1 });
+    const types = page.getByRole("navigation", { name: "Filter resources" }).getByRole("list", { name: "Type" });
+    await types.getByRole("link", { name: "Article" }).click();
+    await expect(page).toHaveURL(/\/resources\/article\/$/);
+    await expect(heading).toHaveText("Article resources");
+    await expect(heading).toBeFocused();
+    await expect(heading).toHaveAttribute("tabindex", "-1");
+
+    // Within one route, too: another type is the same `[type]` page with another param.
+    await types.getByRole("link", { name: "Webinar" }).click();
+    await expect(heading).toHaveText("Webinar resources");
+    await expect(heading).toBeFocused();
+
+    // And the next Tab goes on from the heading into the filters.
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("All types");
+  });
 });
 
 test.describe("a revalidation event from the CMS", () => {

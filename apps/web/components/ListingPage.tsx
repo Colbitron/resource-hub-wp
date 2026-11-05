@@ -3,12 +3,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { FilterNav, type FilterTerm } from "@/components/FilterNav";
+import { ListingFocus } from "@/components/ListingFocus";
 import { Pagination } from "@/components/Pagination";
 import { ResourceCard } from "@/components/ResourceCard";
 import { isSlug, isTypeSlug, listingPath, parsePageSegment, type ListingFilter } from "@/lib/routes";
 import { plainText, toCard } from "@/lib/wp/cards";
 import { NO_SUCH_PAGE } from "@/lib/wp/fetch";
-import { listResources } from "@/lib/wp/resources";
+import { listResources, type ResourceListing } from "@/lib/wp/resources";
 import { getTermBySlug, listTerms } from "@/lib/wp/terms";
 import type { WpTerm } from "@/lib/wp/schemas/rest";
 
@@ -38,8 +39,12 @@ import "./listing.css";
  *   render (ADR 0049's per-item parsing, `ResourceListing.skipped`); the
  *   count and the pagination stay the CMS's, so pages never shift. A page
  *   whose resources all fail, on a list too short to throw, is the empty
- *   state with a 200, saying the CMS's resources cannot be shown rather than
- *   that there are none, since the count above it says there are.
+ *   state with a 200, saying the resources on the page can't be shown
+ *   rather than that there are none, since the count above it says there
+ *   are. That 200 is stored for up to the ISR interval, so its copy makes no
+ *   claim about when it will clear, and its metadata says `noindex`. A list
+ *   of four or more on which more than half fail throws in the data layer
+ *   and is a 500 instead (ADR 0049's threshold).
  *
  * The routes are ISR (`export const revalidate = 3600`, the data layer's
  * interval as a literal, ADR 0049, and `generateStaticParams` returning `[]`,
@@ -129,25 +134,47 @@ function offered(terms: WpTerm[], current: string | undefined): FilterTerm[] {
     .map((term) => ({ slug: term.slug, name: plainText(term.name) }));
 }
 
-/** The metadata for the listing `request`: its title and its canonical URL. */
+/**
+ * True when the CMS counts resources on this page and none of them can be
+ * shown: each failed the reader schema or has no URL. The page then shows
+ * the "can't be shown" state, and its metadata says `noindex`.
+ */
+function noneShowable(listing: ResourceListing, cardCount: number): boolean {
+  return listing.total > 0 && cardCount === 0;
+}
+
+/**
+ * The metadata for the listing `request`: its title, its canonical URL, and
+ * `noindex` when none of the page's resources can be shown. It reads the
+ * same tagged fetches as the page, which the per-render memoization and the
+ * Data Cache answer once.
+ */
 export async function listingMetadata(request: ListingRequest): Promise<Metadata> {
   const valid = validate(request);
   if (valid === null) {
     notFound();
   }
-  const terms = await filterTerms(valid.filter);
-  if (terms === null) {
+  const [terms, listing] = await Promise.all([
+    filterTerms(valid.filter),
+    listResources({ ...valid.filter, page: valid.page }),
+  ]);
+  if (terms === null || listing === null || listing === NO_SUCH_PAGE) {
     notFound();
   }
   const name = heading(terms);
+  const cardCount = listing.items.map(toCard).filter((card) => card !== null).length;
   return {
     title: valid.page === 1 ? name : `${name}, page ${valid.page}`,
     // A path: Next.js makes it absolute with `metadataBase`, which it takes
     // from the Vercel deployment's production URL when none is configured.
     // The CMS's absolute URLs are never used (ADR 0040).
     alternates: { canonical: listingPath(valid.filter, valid.page) },
+    ...(noneShowable(listing, cardCount) ? { robots: { index: false } } : {}),
   };
 }
+
+/** The `<h1>`'s ID, which `ListingFocus` moves focus to after a client navigation. */
+const HEADING_ID = "rh-listing-heading";
 
 /** Cards in the first row at the widest layout, which is where the LCP image usually is. */
 const FIRST_ROW = 3;
@@ -174,16 +201,19 @@ export async function ListingPage({ request }: { request: ListingRequest }) {
 
   return (
     <>
+      <ListingFocus targetId={HEADING_ID} />
       <header className="rh-listing__header">
-        <h1>{name}</h1>
+        <h1 id={HEADING_ID} tabIndex={-1}>
+          {name}
+        </h1>
         {listing.total > 0 && <p className="rh-listing__count">{countLine(listing.total)}</p>}
       </header>
       <FilterNav types={offered(types, filter.type)} topics={offered(topics, filter.topic)} current={filter} />
       {cards.length === 0 ? (
         <div className="rh-listing__empty">
           <p>
-            {listing.total > 0
-              ? "The resources on this page cannot be shown right now."
+            {noneShowable(listing, cards.length)
+              ? "The resources on this page can't be shown."
               : filter.type !== undefined && filter.topic !== undefined
                 ? "No resources match this type and topic yet."
                 : "No resources here yet."}
