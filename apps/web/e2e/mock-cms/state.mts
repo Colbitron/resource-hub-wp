@@ -224,8 +224,20 @@ export class MockState {
     return resource;
   }
 
+  /**
+   * Moves `modified` strictly forward. `siteTime()` has one-second resolution, so two
+   * changes inside the same second would otherwise leave it unchanged; a test that a
+   * change bumps `modified` must see it move every time.
+   */
   private touch(resource: ResourceRecord): void {
-    resource.modified = siteTime();
+    const now = siteTime();
+    if (now > resource.modified) {
+      resource.modified = now;
+      return;
+    }
+    const next = new Date(`${resource.modified}Z`);
+    next.setUTCSeconds(next.getUTCSeconds() + 1);
+    resource.modified = siteTime(next);
   }
 
   private assertSlugFree(slug: string, except?: number): void {

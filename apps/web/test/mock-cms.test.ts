@@ -922,7 +922,12 @@ describe("the control endpoints", () => {
     const after = wpResourceSchema.parse((await cms.get("/wp-json/wp/v2/resources/21?_embed")).body);
     expect(after.title.rendered).toBe("Alt text &#038; scale");
     expect(after.slug).toBe(before.slug);
-    expect(after.modified >= before.modified).toBe(true);
+    expect(after.modified > before.modified).toBe(true);
+
+    // A second change inside the same second still moves modified forward.
+    await cms.setTitle(21, "Alt text at scale, again");
+    const again = wpResourceSchema.parse((await cms.get("/wp-json/wp/v2/resources/21?_embed")).body);
+    expect(again.modified > after.modified).toBe(true);
   });
 
   it("refuses bad input with a 4xx the client throws", async () => {

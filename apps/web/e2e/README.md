@@ -64,6 +64,8 @@ Under `/__mock/`, a path the front end never requests. JSON in and out; errors a
 | `GET /__mock/requests` | `{ total, byPath }`: how often each public path with its query string was requested |
 | `POST /__mock/requests/reset` | Clears the counters |
 
+Every change to a resource moves its `modified` strictly forward, by a second past the old value when the clock has not moved on since the last change, so a spec can check that a change bumped it.
+
 Control requests are never counted, so the counters show what the app did. Every spec should `reset()` in `beforeEach`, because the mock is one process shared by every test and specs that change the data must not assume another file's state.
 
 **A reset does not clear the app's cache.** `/__mock/reset` puts the mock's data back, but the app under test keeps whatever its fetch Data Cache already holds, for as long as the app process runs. A page one test rendered can still be served from the cache in a later test after the mock has changed or been reset. Specs must not rely on a reset to clear it. Either give each test data of its own, such as distinct slugs from `createResource` or `renameSlug`, so no cached entry applies, or call the app's revalidate route for the tags or paths the test changed, as the CMS would.
