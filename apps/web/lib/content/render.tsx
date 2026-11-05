@@ -69,7 +69,9 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   (decoded by the parser) make no difference. The elements in
  *   `DROPPED_WITH_CONTENT` go with everything inside them; any other
  *   element not on the list is unwrapped, and its children are kept and go
- *   through the same checks. Every `id` gets the prefix `c-`, and so does a
+ *   through the same checks. No `class` token may start with `rh-`, the
+ *   prefix of the app's own classes, except `rh-related` on the block
+ *   marker's wrapper. Every `id` gets the prefix `c-`, and so does a
  *   same-page `#fragment` link, so no `id` in a body can clobber a global or
  *   an element the page's own scripts look up (`<div id="TURBOPACK">`).
  * - The block marker: `<div data-rh-block="related-resources">` with its
@@ -230,6 +232,15 @@ const LINK_BASE = "https://front-end.invalid/";
 const LINK_ORIGIN = new URL(LINK_BASE).origin;
 
 const CLASS_TOKEN = /^[A-Za-z0-9_-]+$/;
+/**
+ * The prefix of the app's own classes (`rh-card__link`, whose `::after` is
+ * `inset: 0`; `rh-skip`): a body could use them to restyle the page around
+ * it, so no content class may start with it, in any case.
+ */
+const APP_CLASS_PREFIX = "rh-";
+/** The one app class content may carry: the block marker's wrapper's own, from the plugin (ADR 0038). */
+const MARKER_CLASSES: ReadonlySet<string> = new Set(["rh-related"]);
+const NO_CLASSES: ReadonlySet<string> = new Set();
 const ID_VALUE = /^[A-Za-z][A-Za-z0-9_.:-]*$/;
 const LANG_VALUE = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/;
 const DIR_VALUES = new Set(["ltr", "rtl", "auto"]);
@@ -591,13 +602,20 @@ function hasClass(attributes: Attributes, name: string): boolean {
 
 /**
  * The attributes any allowed element keeps: `class` (tokens of letters,
- * digits, `-` and `_`), `id` (with `ID_PREFIX`), `title`, `lang` and `dir`,
- * each without a value or token that names the CMS. Never `style`, and never
- * an `on*` attribute, which are not read at all.
+ * digits, `-` and `_`, none starting with `APP_CLASS_PREFIX` unless it is in
+ * `appClasses`), `id` (with `ID_PREFIX`), `title`, `lang` and `dir`, each
+ * without a value or token that names the CMS. Never `style`, and never an
+ * `on*` attribute, which are not read at all.
  */
-function globalProps(attributes: Attributes, context: Context): Props {
+function globalProps(attributes: Attributes, context: Context, appClasses: ReadonlySet<string> = NO_CLASSES): Props {
   const props: Props = {};
-  const classes = tokens(attributes.get("class"), (token) => CLASS_TOKEN.test(token) && !mentionsCms(token, context));
+  const classes = tokens(
+    attributes.get("class"),
+    (token) =>
+      CLASS_TOKEN.test(token) &&
+      (!token.toLowerCase().startsWith(APP_CLASS_PREFIX) || appClasses.has(token)) &&
+      !mentionsCms(token, context),
+  );
   if (classes.length > 0) {
     props.className = classes.join(" ");
   }
@@ -976,7 +994,7 @@ function markerProps(node: Element, attributes: Attributes, context: Context): R
  * and never rendered, so the marker stays on the server.
  */
 function marker(node: Element, attributes: Attributes, context: Context): ReactElement {
-  const fallback = createElement("div", checked(globalProps(attributes, context), context), children(node, context));
+  const fallback = createElement("div", checked(globalProps(attributes, context, MARKER_CLASSES), context), children(node, context));
   const props = markerProps(node, attributes, context);
   if (props === null || context.markers >= MAX_MARKERS) {
     return fallback;

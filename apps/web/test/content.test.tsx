@@ -491,6 +491,14 @@ describe("sanitising", () => {
     expect(render('<th scope="anything">x</th>')).toBe("<th>x</th>");
   });
 
+  it("drops class tokens that start with rh-, the app's own prefix, except rh-related on the marker's wrapper", () => {
+    expect(render('<a href="/resources/" class="rh-card__link wp-x RH-skip">x</a>')).toBe('<a class="wp-x" href="/resources/">x</a>');
+    expect(render('<p class="rh-related rh-shell">x</p>')).toBe("<p>x</p>");
+    expect(render(MARKER.replace('class="wp-block-resource-hub-related-resources rh-related"', 'class="rh-related rh-card"'))).toContain(
+      '<div class="rh-related"><h2>',
+    );
+  });
+
   it("unwraps an element it does not know and keeps its children", () => {
     expect(render('<section class="x"><p>a</p></section><font color="red">b</font><center>c</center>')).toBe(
       "<p>a</p>bc",
