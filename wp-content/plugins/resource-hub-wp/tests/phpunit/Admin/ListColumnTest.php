@@ -71,7 +71,6 @@ final class ListColumnTest extends WP_UnitTestCase {
 
 		$cell = ListColumn::cell( $post_id, $at + 120 );
 
-		$this->assertStringContainsString( 'rh-revalidation--success', $cell );
 		$this->assertStringContainsString( '>Accepted<', $cell );
 		$this->assertStringContainsString( '>2 minutes ago</time>', $cell );
 		$this->assertStringContainsString( 'datetime="2027-01-15T10:00:00+00:00"', $cell );
@@ -105,7 +104,6 @@ final class ListColumnTest extends WP_UnitTestCase {
 
 		$cell = ListColumn::cell( $post_id );
 
-		$this->assertStringContainsString( 'rh-revalidation--error', $cell );
 		$this->assertStringContainsString( '>Rejected (401)<', $cell );
 		$this->assertStringNotContainsString( 'BODY-MUST-NOT-APPEAR', $cell );
 		$this->assertStringNotContainsString( 'ERROR-MUST-NOT-APPEAR', $cell );
@@ -129,7 +127,6 @@ final class ListColumnTest extends WP_UnitTestCase {
 
 		$this->assertStringContainsString( '>Pending<', ListColumn::cell( $post_id, $written + 30 ) );
 		$this->assertStringContainsString( '>No answer recorded<', ListColumn::cell( $post_id, $written + 600 ) );
-		$this->assertStringContainsString( 'rh-revalidation--warning', ListColumn::cell( $post_id, $written + 600 ) );
 	}
 
 	/**

@@ -66,6 +66,11 @@ final class StatusPage {
 	public const RESULT_ARG = 'rh_test';
 
 	/**
+	 * The values RESULT_ARG may carry; any other value shows nothing.
+	 */
+	public const RESULTS = array( 'sent', 'none', 'not_published' );
+
+	/**
 	 * How many recently modified published resources the picker lists before a search.
 	 */
 	public const PICKER_LIMIT = 20;
@@ -101,6 +106,38 @@ final class StatusPage {
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue' ) );
 		add_action( 'admin_notices', array( $this, 'test_notice' ) );
 		add_filter( 'removable_query_args', array( $this, 'removable_query_args' ) );
+		add_filter( 'wp_default_autoload_value', array( $this, 'default_autoload' ), 10, 2 );
+		add_action( 'update_option_' . self::URL_OPTION, array( $this, 'keep_off_autoload' ), 10, 3 );
+		add_action( 'update_option_' . self::SECRET_OPTION, array( $this, 'keep_off_autoload' ), 10, 3 );
+	}
+
+	/**
+	 * Creates the two fallback options with autoload off. Only a revalidation send and this page read
+	 * them, so there is no reason to load them on every request; the secret in particular stays out of
+	 * `alloptions`. `options.php` saves through `update_option()` with no autoload argument, which for
+	 * a new option asks this filter (WordPress 6.6+). Hooked to `wp_default_autoload_value`.
+	 *
+	 * @param mixed  $autoload The default so far: null, or what an earlier filter chose.
+	 * @param string $option   The option being added.
+	 * @return mixed False for the two fallback options, else unchanged.
+	 */
+	public function default_autoload( $autoload, $option ) {
+		return in_array( $option, array( self::URL_OPTION, self::SECRET_OPTION ), true ) ? false : $autoload;
+	}
+
+	/**
+	 * Turns autoload off for a fallback option that already existed with it on, for example one
+	 * stored before this plugin set it. `update_option()` with no autoload argument keeps the stored
+	 * flag, so the flag is set after the save; core skips the write when it is already off. Hooked to
+	 * `update_option_{$option}` for both options.
+	 *
+	 * @param mixed  $old_value The previous value.
+	 * @param mixed  $value     The new value.
+	 * @param string $option    The option.
+	 */
+	public function keep_off_autoload( $old_value, $value, $option ): void {
+		unset( $old_value, $value );
+		wp_set_option_autoload_values( array( (string) $option => false ) );
 	}
 
 	/**
@@ -145,14 +182,23 @@ final class StatusPage {
 	}
 
 	/**
-	 * The front-end URL option's sanitizer: an origin, `https://` except for `http://localhost` and
-	 * `http://127.0.0.1` in development, with any port and path, no query, fragment or credentials,
-	 * and no trailing slash. An empty value clears the option. Anything else is refused with a
+	 * The front-end URL option's sanitizer: the site's origin only, `https://` except for
+	 * `http://localhost` and `http://127.0.0.1` in development, with any port, and no path, query,
+	 * fragment or credentials; a trailing slash is dropped. The send appends `/api/revalidate`, so a
+	 * path would double it. An empty value clears the option. Anything else is refused with a
 	 * settings error and the stored value is kept.
+	 *
+	 * A null value means the field was not submitted at all, which is what `options.php` passes when
+	 * the field is disabled because its constant is defined: the stored value is kept, as the secret's
+	 * sanitizer does.
 	 *
 	 * @param mixed $value The submitted value.
 	 */
 	public function sanitize_frontend_url( $value ): string {
+		if ( null === $value ) {
+			return self::stored( self::URL_OPTION );
+		}
+
 		$value = is_string( $value ) ? trim( $value ) : '';
 
 		if ( '' === $value ) {
@@ -168,10 +214,19 @@ final class StatusPage {
 		add_settings_error(
 			self::URL_OPTION,
 			'resource_hub_invalid_url',
-			__( 'The front-end URL was not saved: it must start with https://, or with http://localhost or http://127.0.0.1 for development, and carry no query string or fragment.', 'resource-hub' )
+			__( 'The front-end URL was not saved: give the front end\'s origin only, such as https://hub.example, with no path, query string or fragment. It must start with https://, or with http://localhost or http://127.0.0.1 for development.', 'resource-hub' )
 		);
 
-		$stored = get_option( self::URL_OPTION, '' );
+		return self::stored( self::URL_OPTION );
+	}
+
+	/**
+	 * An option's stored string value, or an empty string.
+	 *
+	 * @param string $option The option.
+	 */
+	private static function stored( string $option ): string {
+		$stored = get_option( $option, '' );
 
 		return is_string( $stored ) ? $stored : '';
 	}
@@ -189,9 +244,7 @@ final class StatusPage {
 			return $value;
 		}
 
-		$stored = get_option( self::SECRET_OPTION, '' );
-
-		return is_string( $stored ) ? $stored : '';
+		return self::stored( self::SECRET_OPTION );
 	}
 
 	/**
@@ -207,6 +260,10 @@ final class StatusPage {
 		}
 
 		if ( isset( $parts['query'] ) || isset( $parts['fragment'] ) || isset( $parts['user'] ) || isset( $parts['pass'] ) ) {
+			return false;
+		}
+
+		if ( '' !== trim( (string) ( $parts['path'] ?? '' ), '/' ) ) {
 			return false;
 		}
 
@@ -239,11 +296,23 @@ final class StatusPage {
 
 		check_admin_referer( self::TEST_ACTION );
 
+		// The picker's own choice, else the default the page named when it was rendered, so the
+		// resource sent is always the one the label showed.
 		$resource_id = isset( $_POST['resource_id'] ) ? absint( $_POST['resource_id'] ) : 0;
-		$resource    = $resource_id > 0 ? get_post( $resource_id ) : self::default_resource();
+
+		if ( 0 === $resource_id ) {
+			$resource_id = isset( $_POST['default_resource_id'] ) ? absint( $_POST['default_resource_id'] ) : 0;
+		}
+
+		if ( 0 === $resource_id ) {
+			$this->redirect( 'none' );
+			return;
+		}
+
+		$resource = get_post( $resource_id );
 
 		if ( ! $resource instanceof WP_Post || PostType::NAME !== $resource->post_type || 'publish' !== $resource->post_status ) {
-			$this->redirect( $resource_id > 0 ? 'not_published' : 'none' );
+			$this->redirect( 'not_published' );
 			return;
 		}
 
@@ -365,12 +434,17 @@ final class StatusPage {
 	}
 
 	/**
-	 * The notice for a test outcome: the recorded result for `sent`, a plain error otherwise.
+	 * The notice for a test outcome: the recorded result for `sent`, a plain error for `none` and
+	 * `not_published`, and nothing for any other value, which the handler never sends.
 	 *
 	 * @param string   $what `sent`, `none` or `not_published`.
 	 * @param int|null $now  Unix time for the stale check; null means now.
 	 */
 	public static function test_notice_html( string $what, ?int $now = null ): string {
+		if ( ! in_array( $what, self::RESULTS, true ) ) {
+			return '';
+		}
+
 		if ( 'sent' === $what ) {
 			$record = self::last_test();
 
@@ -442,7 +516,7 @@ final class StatusPage {
 		$parts = wp_parse_url( $url );
 
 		if ( 'none' !== $url_source && is_array( $parts ) && ! self::is_secure_enough( (string) ( $parts['scheme'] ?? '' ), (string) ( $parts['host'] ?? '' ) ) ) {
-			$url_cell .= '<br><span class="rh-status-warning">' . esc_html__( 'Warning: not HTTPS. The secret travels in a header, so it is sent in the clear.', 'resource-hub' ) . '</span>';
+			$url_cell .= '<br>' . esc_html__( 'Warning: not HTTPS. The secret travels in a header, so it is sent in the clear.', 'resource-hub' );
 		}
 
 		$secret_source = Config::source_of( Config::REVALIDATE_SECRET );
@@ -456,7 +530,7 @@ final class StatusPage {
 			: '<em>' . esc_html__( 'Not configured: results are recorded on each resource and term only.', 'resource-hub' ) . '</em>';
 
 		return '<h2>' . esc_html__( 'Revalidation status', 'resource-hub' ) . '</h2>'
-			. '<table class="widefat striped rh-status" style="max-width:48em">'
+			. '<table class="widefat striped">'
 			. '<tbody>'
 			. '<tr><th scope="row">' . esc_html__( 'Front-end URL', 'resource-hub' ) . '</th><td>' . $url_cell . '</td></tr>'
 			. '<tr><th scope="row">' . esc_html__( 'Revalidation secret', 'resource-hub' ) . '</th><td>' . $secret_cell . '</td></tr>'
@@ -493,7 +567,7 @@ final class StatusPage {
 			return '<em>' . esc_html__( 'No test sent yet.', 'resource-hub' ) . '</em>';
 		}
 
-		$html = '<span class="rh-revalidation rh-revalidation--' . esc_attr( ResultText::level( $record ) ) . '">' . esc_html( ResultText::sentence( $record, $now ) ) . '</span>';
+		$html = esc_html( ResultText::sentence( $record, $now ) );
 		$when = ResultText::relative_time( $record, $now );
 
 		if ( '' !== $when ) {
@@ -514,7 +588,10 @@ final class StatusPage {
 
 	/**
 	 * The "Send test revalidation" form: the picker and the button, disabled with a reason when
-	 * nothing is published.
+	 * nothing is published. The disabled button keeps `aria-disabled` rather than `disabled`, so it
+	 * stays in the tab order and announces its reason, which is also visible text beside it. The
+	 * default resource is resolved here, once, and its ID travels in a hidden field, so the label and
+	 * the resource sent always match.
 	 */
 	private static function test_section(): string {
 		$recent = self::recent_published( self::PICKER_LIMIT );
@@ -523,8 +600,8 @@ final class StatusPage {
 
 		if ( array() === $recent ) {
 			return $html
-				. '<p><button type="button" class="button button-primary" disabled>' . esc_html__( 'Send test revalidation', 'resource-hub' ) . '</button></p>'
-				. '<p class="description" id="rh-test-disabled">' . esc_html__( 'The button is disabled because no resource is published. A test sends a real event for a published resource, so there is nothing to send yet.', 'resource-hub' ) . '</p>';
+				. '<p><button type="button" class="button button-primary disabled" aria-disabled="true" aria-describedby="rh-test-disabled">' . esc_html__( 'Send test revalidation', 'resource-hub' ) . '</button> '
+				. '<span class="description" id="rh-test-disabled">' . esc_html__( 'The button is disabled because no resource is published. A test sends a real event for a published resource, so there is nothing to send yet.', 'resource-hub' ) . '</span></p>';
 		}
 
 		$options = '<option value="">' . esc_html(
@@ -540,14 +617,16 @@ final class StatusPage {
 			. '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" id="rh-test-form">'
 			. wp_nonce_field( self::TEST_ACTION, '_wpnonce', true, false )
 			. '<input type="hidden" name="action" value="' . esc_attr( self::TEST_ACTION ) . '">'
+			. '<input type="hidden" name="default_resource_id" value="' . esc_attr( (string) $recent[0]->ID ) . '">'
 			. '<table class="form-table" role="presentation"><tbody>'
 			. '<tr><th scope="row"><label for="rh-test-search">' . esc_html__( 'Find a resource', 'resource-hub' ) . '</label></th>'
-			. '<td><input type="search" id="rh-test-search" class="regular-text" placeholder="' . esc_attr__( 'Search published resources', 'resource-hub' ) . '" autocomplete="off">'
-			. '<p class="description">' . esc_html__( 'Type to search the published resources; the list below updates. Without a search it lists the most recently modified ones.', 'resource-hub' ) . '</p></td></tr>'
+			. '<td><input type="search" id="rh-test-search" class="regular-text" placeholder="' . esc_attr__( 'Search published resources', 'resource-hub' ) . '" autocomplete="off" aria-describedby="rh-test-search-help">'
+			. '<p class="description" id="rh-test-search-help">' . esc_html__( 'Type to search the published resources; the list below updates. Without a search it lists the most recently modified ones.', 'resource-hub' ) . '</p>'
+			. '<p class="description" id="rh-test-search-status" role="status" aria-live="polite"></p></td></tr>'
 			. '<tr><th scope="row"><label for="rh-test-resource">' . esc_html__( 'Resource to send', 'resource-hub' ) . '</label></th>'
 			. '<td><select name="resource_id" id="rh-test-resource">' . $options . '</select></td></tr>'
 			. '</tbody></table>'
-			. '<p class="submit"><button type="submit" class="button button-primary">' . esc_html__( 'Send test revalidation', 'resource-hub' ) . '</button></p>'
+			. '<p class="submit"><button type="submit" class="button button-primary" id="rh-test-submit">' . esc_html__( 'Send test revalidation', 'resource-hub' ) . '</button></p>'
 			. '</form>';
 	}
 
@@ -574,12 +653,13 @@ final class StatusPage {
 
 		return '<h2>' . esc_html__( 'Fallback settings', 'resource-hub' ) . '</h2>'
 			. '<p>' . esc_html__( 'The constants RESOURCE_HUB_FRONTEND_URL and RESOURCE_HUB_REVALIDATE_SECRET in wp-config.php win. These options are used only when a constant is not defined.', 'resource-hub' ) . '</p>'
+			. '<p>' . esc_html__( 'Each field is saved on its own: a front-end URL that is refused keeps the stored URL, while a new secret in the same submission is still saved.', 'resource-hub' ) . '</p>'
 			. '<form method="post" action="' . esc_url( admin_url( 'options.php' ) ) . '">'
 			. $fields
 			. '<table class="form-table" role="presentation"><tbody>'
 			. '<tr><th scope="row"><label for="rh-frontend-url">' . esc_html__( 'Front-end URL', 'resource-hub' ) . '</label></th>'
 			. '<td><input type="url" id="rh-frontend-url" name="' . esc_attr( self::URL_OPTION ) . '" class="regular-text code" value="' . esc_attr( $stored_url ) . '" placeholder="https://"' . ( $url_constant ? ' disabled' : '' ) . '>'
-			. '<p class="description">' . esc_html( $url_constant ? __( 'Ignored while the constant is defined.', 'resource-hub' ) : __( 'The front end\'s origin, https:// only; http://localhost or http://127.0.0.1 is allowed for development.', 'resource-hub' ) ) . '</p></td></tr>'
+			. '<p class="description">' . esc_html( $url_constant ? __( 'Ignored while the constant is defined.', 'resource-hub' ) : __( 'The front end\'s origin only, with no path, such as https://hub.example; https:// only, with http://localhost or http://127.0.0.1 allowed for development.', 'resource-hub' ) ) . '</p></td></tr>'
 			. '<tr><th scope="row"><label for="rh-revalidate-secret">' . esc_html__( 'Revalidation secret', 'resource-hub' ) . '</label></th>'
 			. '<td><input type="password" id="rh-revalidate-secret" name="' . esc_attr( self::SECRET_OPTION ) . '" class="regular-text" value="" autocomplete="new-password"' . ( $secret_constant ? ' disabled' : '' ) . '>'
 			. '<p class="description">' . esc_html( $secret_help ) . '</p></td></tr>'

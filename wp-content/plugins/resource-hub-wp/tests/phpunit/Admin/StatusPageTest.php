@@ -60,13 +60,18 @@ final class StatusPageTest extends RevalidationTestCase {
 	}
 
 	/**
-	 * Submits the test form as the current user, with a valid nonce unless told otherwise.
+	 * Submits the test form as the current user, with a valid nonce unless told otherwise. The hidden
+	 * default is the one the page would render now, unless given.
 	 *
-	 * @param int  $resource_id The chosen resource, or 0 for the default.
-	 * @param bool $with_nonce  Whether to include a valid nonce.
+	 * @param int      $resource_id The chosen resource, or 0 for the default.
+	 * @param bool     $with_nonce  Whether to include a valid nonce.
+	 * @param int|null $default_id  The hidden default's ID; null means what the page would render now.
 	 */
-	private function submit( int $resource_id = 0, bool $with_nonce = true ): void {
-		$_POST = array( 'resource_id' => (string) $resource_id );
+	private function submit( int $resource_id = 0, bool $with_nonce = true, ?int $default_id = null ): void {
+		$_POST = array(
+			'resource_id'         => (string) $resource_id,
+			'default_resource_id' => (string) ( $default_id ?? StatusPage::default_resource()?->ID ?? 0 ),
+		);
 
 		if ( $with_nonce ) {
 			$_REQUEST['_wpnonce'] = wp_create_nonce( StatusPage::TEST_ACTION );
@@ -163,6 +168,28 @@ final class StatusPageTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * The default is the one the page named when it was rendered, carried in the hidden field: a
+	 * resource modified after the page loaded does not take its place.
+	 */
+	public function test_handler_sends_the_default_the_page_showed(): void {
+		$this->configure();
+		$shown = $this->make_resource( 'publish', 'shown' );
+		$this->set_modified( $shown, '2026-01-01 10:00:00' );
+		$this->assertStringContainsString( 'name="default_resource_id" value="' . $shown . '"', StatusPage::html() );
+
+		$later = $this->make_resource( 'publish', 'modified-after-render' );
+		$this->set_modified( $later, '2026-06-01 10:00:00' );
+		$this->submit( 0, true, $shown );
+
+		$this->assertSame( 'sent', $this->handle() );
+		$this->assertSame( $shown, StatusPage::last_test()['resource_id'] );
+
+		$sent = $this->revalidate_requests();
+		$this->assertCount( 1, $sent );
+		$this->assertSame( $shown, json_decode( $sent[0]['args']['body'], true )['events'][0]['id'] );
+	}
+
+	/**
 	 * A chosen published resource is the one sent; a chosen draft or a non-resource is refused and
 	 * nothing is sent.
 	 */
@@ -229,6 +256,18 @@ final class StatusPageTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * A value the handler never sends shows nothing, rather than a false "no resource is published".
+	 */
+	public function test_notice_ignores_unknown_values(): void {
+		$this->make_resource( 'publish', 'published' );
+		update_option( StatusPage::LAST_TEST_OPTION, ResultTextTest::record(), false );
+
+		foreach ( array( 'bogus', 'sent2', 'error', 'nonee' ) as $what ) {
+			$this->assertSame( '', StatusPage::test_notice_html( $what ), $what );
+		}
+	}
+
+	/**
 	 * With nothing published the button is disabled and says why; with a published resource the form
 	 * is there, the default option names the most recently modified one, and the picker lists the rest.
 	 */
@@ -236,8 +275,8 @@ final class StatusPageTest extends RevalidationTestCase {
 		$this->make_resource( 'draft', 'a-draft' );
 
 		$html = StatusPage::html();
-		$this->assertStringContainsString( 'disabled>Send test revalidation</button>', $html );
-		$this->assertStringContainsString( 'no resource is published', $html );
+		$this->assertStringContainsString( 'aria-disabled="true" aria-describedby="rh-test-disabled">Send test revalidation</button>', $html );
+		$this->assertStringContainsString( '<span class="description" id="rh-test-disabled">The button is disabled because no resource is published.', $html );
 		$this->assertStringNotContainsString( 'id="rh-test-form"', $html );
 
 		$older = $this->make_resource( 'publish', 'older-one' );
@@ -251,7 +290,12 @@ final class StatusPageTest extends RevalidationTestCase {
 		$this->assertStringContainsString( '<option value="' . $older . '">Older one</option>', $html );
 		$this->assertStringContainsString( 'name="action" value="' . StatusPage::TEST_ACTION . '"', $html );
 		$this->assertStringContainsString( 'name="_wpnonce"', $html );
-		$this->assertStringNotContainsString( 'disabled>Send test revalidation', $html );
+		$this->assertStringContainsString( 'name="default_resource_id" value="' . $newer . '"', $html );
+		$this->assertStringContainsString( 'aria-describedby="rh-test-search-help"', $html );
+		$this->assertStringContainsString( 'id="rh-test-search-help"', $html );
+		$this->assertStringContainsString( 'id="rh-test-search-status" role="status" aria-live="polite"', $html );
+		$this->assertStringNotContainsString( 'aria-disabled', $html );
+		$this->assertStringNotContainsString( 'style=', $html );
 	}
 
 	/**
@@ -352,8 +396,55 @@ final class StatusPageTest extends RevalidationTestCase {
 		$this->assertSame( $refused ? 1 : 0, count( $errors ) - $before );
 
 		if ( $refused ) {
+			$this->assertStringContainsString( 'origin only', end( $errors )['message'] );
 			$this->assertStringContainsString( 'must start with https://', end( $errors )['message'] );
 		}
+	}
+
+	/**
+	 * A disabled field is not submitted, so `options.php` saves null: the stored URL is kept, not
+	 * wiped, both from the sanitizer directly and through the Settings API.
+	 */
+	public function test_unsubmitted_url_keeps_the_stored_value(): void {
+		$this->page->register_settings();
+		update_option( StatusPage::URL_OPTION, 'https://kept.example' );
+
+		$this->assertSame( 'https://kept.example', $this->page->sanitize_frontend_url( null ) );
+
+		update_option( StatusPage::URL_OPTION, null );
+		$this->assertSame( 'https://kept.example', get_option( StatusPage::URL_OPTION ) );
+
+		update_option( StatusPage::SECRET_OPTION, 'stored-secret' );
+		update_option( StatusPage::SECRET_OPTION, null );
+		$this->assertSame( 'stored-secret', get_option( StatusPage::SECRET_OPTION ) );
+	}
+
+	/**
+	 * Both fallback options are stored with autoload off: a new one through the default-autoload
+	 * filter, and one that already existed autoloaded once it is next saved, as `options.php` saves.
+	 */
+	public function test_fallback_options_are_not_autoloaded(): void {
+		$this->page->register_settings();
+
+		update_option( StatusPage::URL_OPTION, 'https://hub.example' );
+		update_option( StatusPage::SECRET_OPTION, 'new-secret' );
+
+		wp_cache_delete( 'alloptions', 'options' );
+		$loaded = wp_load_alloptions();
+		$this->assertArrayNotHasKey( StatusPage::URL_OPTION, $loaded );
+		$this->assertArrayNotHasKey( StatusPage::SECRET_OPTION, $loaded );
+		$this->assertSame( 'new-secret', get_option( StatusPage::SECRET_OPTION ) );
+
+		delete_option( StatusPage::SECRET_OPTION );
+		add_option( StatusPage::SECRET_OPTION, 'old-secret', '', true );
+		wp_cache_delete( 'alloptions', 'options' );
+		$this->assertArrayHasKey( StatusPage::SECRET_OPTION, wp_load_alloptions(), 'The setup must start autoloaded.' );
+
+		update_option( StatusPage::SECRET_OPTION, 'rotated-secret' );
+
+		wp_cache_delete( 'alloptions', 'options' );
+		$this->assertArrayNotHasKey( StatusPage::SECRET_OPTION, wp_load_alloptions() );
+		$this->assertSame( 'rotated-secret', get_option( StatusPage::SECRET_OPTION ) );
 	}
 
 	/**
@@ -364,7 +455,10 @@ final class StatusPageTest extends RevalidationTestCase {
 	public function urls(): array {
 		return array(
 			'https'               => array( ' https://hub.example/ ', 'https://hub.example', false ),
-			'https with path'     => array( 'https://hub.example/preview', 'https://hub.example/preview', false ),
+			'https with a slash'  => array( 'https://hub.example//', 'https://hub.example', false ),
+			'https with port'     => array( 'https://hub.example:8443/', 'https://hub.example:8443', false ),
+			'https with path'     => array( 'https://hub.example/preview', 'https://kept.example', true ),
+			'route as path'       => array( 'https://hub.example/api/revalidate', 'https://kept.example', true ),
 			'localhost http'      => array( 'http://localhost:3000', 'http://localhost:3000', false ),
 			'loopback http'       => array( 'http://127.0.0.1:3000/', 'http://127.0.0.1:3000', false ),
 			'empty clears'        => array( '', '', false ),

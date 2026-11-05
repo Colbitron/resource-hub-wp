@@ -156,4 +156,59 @@ test.describe( 'Revalidation feedback', () => {
 		expect( record.rh_last_revalidation.event ).toBe( 'update' );
 		expect( record.rh_last_revalidation.outcome ).toBe( 'not_configured' );
 	} );
+
+	test( 'Enter in the picker search runs the search and sends nothing', async ( {
+		admin,
+		page,
+		requestUtils,
+	} ) => {
+		const stamp = Date.now();
+
+		for ( const name of [ 'Searched', 'Newest' ] ) {
+			const created = await requestUtils.rest( {
+				method: 'POST',
+				path: '/wp/v2/resources',
+				data: {
+					title: `E2E ${ name } ${ stamp }`,
+					status: 'publish',
+					resource_type: [ type.id ],
+				},
+			} );
+			createdIds.push( created.id );
+		}
+
+		const sends = [];
+		page.on( 'request', ( request ) => {
+			if ( request.url().includes( 'admin-post.php' ) ) {
+				sends.push( request.url() );
+			}
+		} );
+
+		await admin.visitAdminPage(
+			'options-general.php',
+			'page=resource-hub'
+		);
+		const search = page.getByRole( 'searchbox', {
+			name: 'Find a resource',
+		} );
+		await expect( search ).toHaveAccessibleDescription(
+			/Type to search the published resources/
+		);
+
+		await search.fill( `E2E Searched ${ stamp }` );
+		await search.press( 'Enter' );
+
+		const status = page.getByRole( 'status' );
+		await expect( status ).toHaveText( '1 resource found' );
+		await expect( page.getByLabel( 'Resource to send' ) ).toContainText(
+			`E2E Searched ${ stamp }`
+		);
+		expect( sends ).toEqual( [] );
+		await expect( page ).not.toHaveURL( /rh_test=/ );
+
+		await search.fill( `no-such-resource-${ stamp }` );
+		await search.press( 'Enter' );
+		await expect( status ).toHaveText( 'No matches' );
+		expect( sends ).toEqual( [] );
+	} );
 } );

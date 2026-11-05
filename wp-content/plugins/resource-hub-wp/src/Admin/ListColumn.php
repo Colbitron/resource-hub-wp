@@ -91,7 +91,7 @@ final class ListColumn {
 			return '<span aria-hidden="true">&mdash;</span><span class="screen-reader-text">' . esc_html__( 'No revalidation recorded', 'resource-hub' ) . '</span>';
 		}
 
-		$html = '<span class="rh-revalidation rh-revalidation--' . esc_attr( ResultText::level( $record ) ) . '">' . esc_html( ResultText::label( $record, $now ) ) . '</span>';
+		$html = '<span>' . esc_html( ResultText::label( $record, $now ) ) . '</span>';
 		$time = ResultText::timestamp( $record );
 
 		if ( null !== $time ) {
