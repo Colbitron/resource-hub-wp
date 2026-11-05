@@ -1,0 +1,58 @@
+# Front-end end-to-end tests
+
+The specs in this directory run the built app (`next build && next start`) against a **mock CMS**, a small Node server in `mock-cms/` that answers the WordPress REST routes the front end reads. Front-end e2e never uses wp-env, Docker or the hosted CMS: the mock needs nothing but Node, so the same run works on a laptop and in CI, and a spec can change the CMS's data mid-test without touching a WordPress install.
+
+## Running
+
+From the repository root:
+
+```sh
+pnpm web:test:e2e
+```
+
+Playwright starts the mock first, then builds and starts the app with `WP_API_URL` pointing at the mock (`playwright.config.ts`). Chromium must be installed once: `pnpm exec playwright install chromium` in `apps/web`. Outside CI both servers are reused when already running, so to iterate on a spec you can leave `node e2e/mock-cms/main.mts` and `next start` up and re-run `pnpm exec playwright test`.
+
+The mock's self-check, which proves every response passes the front end's reader schemas, is a unit test: `test/mock-cms.test.ts`, run by `pnpm web:test`.
+
+## Ports and environment
+
+| What | Default | Override |
+| --- | --- | --- |
+| The app under test (`next start`) | `3310` | `RH_WEB_PORT` |
+| The mock CMS | `4010` | `RH_MOCK_CMS_PORT` |
+
+The mock binds to `127.0.0.1` and names itself `http://127.0.0.1:4010` in every URL it emits; the app is started with `WP_API_URL=http://127.0.0.1:4010/wp-json` and `RH_FIXTURES=1` (the test-only pages under `app/fixtures/`). Both come from `mock-cms/config.mts`, which the config, the specs and the mock share. The app's build makes no CMS request; it needs `WP_API_URL` only for the `/media/` rewrite, which in a test proxies the mock's uploads.
+
+## What the mock serves
+
+Public routes, shaped like a real WordPress running the plugin (the captured fixtures in `test/fixtures/wp/` are the reference), with `Cache-Control: no-cache, must-revalidate, max-age=0` on REST responses (ADR 0023) and WordPress's `WP_Error` bodies for 400s and 404s:
+
+- `GET /wp-json/wp/v2/resources` with `_embed`, `per_page` (1 to 100, default 10), `page`, `slug`, `include` with `orderby=include`, `order`, and the `resource_topic`, `resource_type` and `resource_flag` term-ID filters. `X-WP-Total`, `X-WP-TotalPages` and `Link` headers; a page past the end is core's 400 `rest_post_invalid_page_number`.
+- `GET /wp-json/wp/v2/resources/{id}`: 404 `rest_post_invalid_id` for no such post, 401 `rest_forbidden` for a draft or trashed one, as core answers an anonymous reader.
+- `GET /wp-json/wp/v2/resource_topic`, `resource_type` and `resource_flag` with `slug`, `include`, `per_page`, `page`, `orderby`, `hide_empty`, and `/{id}`. `count` is the number of published resources with the term.
+- `GET /wp-json/resource-hub/v1/resolve?slug=…`: `{ id, type, slug }` for a published resource by its current or an old slug, otherwise the plugin's 404 `resource_hub_not_found`.
+- `GET /wp-content/uploads/…`: the files under `mock-cms/fixtures/uploads/`, which `/media/…` on the app proxies.
+- Anything else is a 404, as the CMS's theme answers anonymous visitors (ADR 0031).
+
+The seed (`mock-cms/seed.mts`) has 14 published resources across 5 types and 5 topics, with the captured term IDs, so there is more than one page at the default `per_page`; a resource with no image, one with an SVG image with no dimensions, one whose image has a `sizes` entry; and one (`revalidation-from-the-editors-chair`, ID 33) whose body carries CMS links, an image with a `srcset` and the related-resources block marker.
+
+## Control endpoints
+
+Under `/__mock/`, a path the front end never requests. JSON in and out; errors are a 4xx `{ "error": "…" }`. `mock-cms/client.mts` wraps them for specs: `const cms = mockCms(); await cms.reset();`.
+
+| Endpoint | Does |
+| --- | --- |
+| `GET /__mock/health` | `{ ok: true }`; what Playwright waits for |
+| `GET /__mock/state` | Every resource (term slugs, status, previous slugs), term and media item |
+| `POST /__mock/reset` | Back to the seed, counters cleared |
+| `POST /__mock/resources` `{ title, type, slug?, topics?, featured?, summary?, sourceUrl?, content?, mediaId? }` | Publishes a new resource |
+| `POST /__mock/resources/{id}/slug` `{ slug }` | Renames the slug; the old one resolves |
+| `POST /__mock/resources/{id}/type` `{ type }` | Changes the type |
+| `POST /__mock/resources/{id}/topics` `{ topics: [] }` | Replaces the topics |
+| `POST /__mock/resources/{id}/status` `{ status }` | `draft` unpublishes, `trash` trashes, `publish` restores |
+| `POST /__mock/terms/{taxonomy}/{id}` `{ slug?, name? }` | Renames a term |
+| `DELETE /__mock/terms/{taxonomy}/{id}` | Deletes it and takes it off every resource |
+| `GET /__mock/requests` | `{ total, byPath }`: how often each public path with its query string was requested |
+| `POST /__mock/requests/reset` | Clears the counters |
+
+Control requests are never counted, so the counters show what the app did. Every spec should `reset()` in `beforeEach`: the mock is one process shared by every test, and Playwright runs files in parallel workers, so specs that change the data must not assume another file's state.
