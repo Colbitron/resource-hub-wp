@@ -1,4 +1,4 @@
 {
 	"phpVersion": "8.4",
-	"plugins": [ "." ]
+	"plugins": [ "./wp-content/plugins/resource-hub-wp" ]
 }

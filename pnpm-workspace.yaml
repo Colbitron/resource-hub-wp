@@ -1,6 +1,9 @@
-# The root is the plugin; packages/ holds what is shared with the front end
-# (the contract schemas in packages/ui, ADR 0010).
+# One workspace for the three things that change together: the WordPress
+# plugin at the path WordPress loads it from, the Next.js front end, and the
+# contract package both consume (ADR 0033).
 packages:
+  - wp-content/plugins/*
+  - apps/*
   - packages/*
 
 # Native or postinstall build scripts pnpm asked about. None are needed:
@@ -8,8 +11,27 @@ packages:
 #   uses in its non-Docker Playground mode. We run Docker.
 # - @parcel/watcher ships prebuilt binaries; its script only compiles a fallback.
 # - core-js and core-js-pure only print a funding message.
+# - sharp and unrs-resolver come in through Next.js and ship prebuilt binaries.
 allowBuilds:
   fs-ext-extra-prebuilt: false
   "@parcel/watcher": false
   core-js: false
   core-js-pure: false
+  sharp: false
+  unrs-resolver: false
+
+# Next 16.4.5 is newer than pnpm's minimum release age; these exclusions let it
+# install. Remove them once the version has aged past the threshold.
+minimumReleaseAgeExclude:
+  - '@next/env@16.4.5'
+  - '@next/eslint-plugin-next@16.4.5'
+  - '@next/swc-darwin-arm64@16.4.5'
+  - '@next/swc-darwin-x64@16.4.5'
+  - '@next/swc-linux-arm64-gnu@16.4.5'
+  - '@next/swc-linux-arm64-musl@16.4.5'
+  - '@next/swc-linux-x64-gnu@16.4.5'
+  - '@next/swc-linux-x64-musl@16.4.5'
+  - '@next/swc-win32-arm64-msvc@16.4.5'
+  - '@next/swc-win32-x64-msvc@16.4.5'
+  - eslint-config-next@16.4.5
+  - next@16.4.5

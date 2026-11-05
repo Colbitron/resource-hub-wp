@@ -1,8 +1,8 @@
 {
-	"name": "resource-hub-wp",
+	"name": "resource-hub",
 	"version": "0.1.0",
 	"private": true,
-	"description": "WordPress plugin and wp-env environment for the Resource Hub headless demo.",
+	"description": "Resource Hub headless WordPress demo: the WordPress plugin, the Next.js front end and the contract package they share, in one workspace.",
 	"license": "GPL-2.0-or-later",
 	"packageManager": "pnpm@12.16.1",
 	"devEngines": {
@@ -22,26 +22,19 @@
 		"lint": "wp-env run cli --env-cwd=wp-content/plugins/resource-hub-wp composer lint",
 		"lint:fix": "wp-env run cli --env-cwd=wp-content/plugins/resource-hub-wp composer lint:fix",
 		"test:php": "wp-env run tests-cli --env-cwd=wp-content/plugins/resource-hub-wp composer test",
-		"build": "wp-scripts build --webpack-src-dir=blocks",
-		"start": "wp-scripts start --webpack-src-dir=blocks",
-		"lint:js": "wp-scripts lint-js blocks editor tests/e2e playwright.config.js webpack.config.js",
-		"format": "wp-scripts format blocks editor tests/e2e playwright.config.js webpack.config.js",
-		"test:e2e": "wp-scripts test-playwright",
-		"test:e2e:debug": "wp-scripts test-playwright --debug"
+		"build": "pnpm --filter resource-hub-wp build",
+		"start": "pnpm --filter resource-hub-wp start",
+		"lint:js": "pnpm --filter resource-hub-wp lint:js",
+		"format": "pnpm --filter resource-hub-wp format",
+		"test:e2e": "pnpm --filter resource-hub-wp test:e2e",
+		"test:e2e:debug": "pnpm --filter resource-hub-wp test:e2e:debug",
+		"test:schemas": "pnpm --filter @colbitron/resource-hub-ui test",
+		"web:dev": "pnpm --filter resource-hub-web dev",
+		"web:lint": "pnpm --filter resource-hub-web lint",
+		"web:typecheck": "pnpm --filter resource-hub-web typecheck",
+		"web:build": "pnpm --filter resource-hub-web build"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.64.1",
-		"@wordpress/block-editor": "^19.0.0",
-		"@wordpress/blocks": "^17.0.0",
-		"@wordpress/components": "^43.0.0",
-		"@wordpress/core-data": "^9.0.0",
-		"@wordpress/data": "^11.0.0",
-		"@wordpress/e2e-test-utils-playwright": "^3.1.0",
-		"@wordpress/editor": "^16.0.0",
-		"@wordpress/env": "^12.0.0",
-		"@wordpress/i18n": "^7.0.0",
-		"@wordpress/plugins": "^8.0.0",
-		"@wordpress/scripts": "^37.0.0",
-		"@wordpress/server-side-render": "^7.0.0"
+		"@wordpress/env": "^12.0.0"
 	}
 }
