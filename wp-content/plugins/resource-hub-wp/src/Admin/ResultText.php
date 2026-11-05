@@ -129,6 +129,8 @@ final class ResultText {
 				return self::is_invalid_secret( $record ) ? __( 'Not configured: invalid secret', 'resource-hub' ) : __( 'Not configured', 'resource-hub' );
 			case Result::NO_SINGLE_TYPE:
 				return __( 'Not sent: needs one type', 'resource-hub' );
+			case Result::RESERVED_TYPE:
+				return __( 'Not sent: reserved type slug', 'resource-hub' );
 			case Result::ENCODE_ERROR:
 				return __( 'Not sent: encoding error', 'resource-hub' );
 			default:
@@ -163,6 +165,7 @@ final class ResultText {
 			Result::NOT_CONFIGURED  => __( 'Revalidation skipped: the front-end URL or the secret is not configured.', 'resource-hub' ),
 			self::INVALID_SECRET    => __( 'Revalidation skipped: the front-end URL or the secret is not configured; the secret is set but not valid, so check Settings > Resource Hub.', 'resource-hub' ),
 			Result::NO_SINGLE_TYPE  => __( 'Revalidation not sent: a resource needs exactly one type.', 'resource-hub' ),
+			Result::RESERVED_TYPE   => __( 'Revalidation not sent: a type\'s slug cannot be topic or page. Give this type a different slug and save it again.', 'resource-hub' ),
 			Result::ENCODE_ERROR    => __( 'Revalidation not sent: the events could not be encoded as JSON.', 'resource-hub' ),
 			'failed'                => __( 'Revalidation failed.', 'resource-hub' ),
 			'no_answer'             => __( 'No answer has arrived from the front end yet for this save. Reload later to check, or save again to retry.', 'resource-hub' ),
