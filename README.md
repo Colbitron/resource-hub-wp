@@ -1,6 +1,6 @@
-# Resource Hub (WordPress side)
+# Resource Hub
 
-The CMS half of a two-repository headless WordPress demo. This repository is a WordPress plugin, `resource-hub`, plus the `wp-env` environment it runs in. The other half, [`resource-hub-next`](../resource-hub-next), is a Next.js front end on Vercel that reads this site over REST and is told when to revalidate.
+A headless WordPress demo in one repository ([ADR 0033](docs/adr/0033-one-repository-for-the-plugin-the-front-end-and-the-contract.md)): a WordPress plugin, `resource-hub`, at [`wp-content/plugins/resource-hub-wp/`](wp-content/plugins/resource-hub-wp/) with the `wp-env` environment it runs in; a Next.js front end on Vercel at [`apps/web/`](apps/web/) that reads the site over REST and is told when to revalidate; and the contract package both share at [`packages/ui/`](packages/ui/). This file and `CLAUDE.md` describe the WordPress side; the front end's own [`README.md`](apps/web/README.md) and [`CLAUDE.md`](apps/web/CLAUDE.md) still describe it as a sibling repository until the documentation is consolidated in a follow-up.
 
 The plugin models a filterable resources library: a `resource` post type with `resource_topic`, `resource_type`, and `resource_flag` taxonomies, REST-exposed meta (`summary`, `source_url`, `related_picks`), two custom REST routes (related items and old-slug resolution), one server-rendered Gutenberg block, and a hook that notifies the front end in batches whenever a public resource or one of its terms changes.
 
@@ -61,10 +61,10 @@ The front end reads content through the core REST API and the two custom routes,
 Requirements on the host: Docker, Node 24, pnpm. PHP, Composer, and WP-CLI run inside the containers.
 
 ```sh
-pnpm install
+pnpm install            # one workspace: the plugin, the front end and packages/ui
 pnpm env:start          # WordPress at http://localhost:8888, tests site at :8889
-pnpm composer install   # inside the container; vendor/ lands in the repo
-pnpm build              # compiles the block and editor-panel scripts into build/
+pnpm composer install   # inside the container; vendor/ lands in the plugin directory
+pnpm build              # compiles the block and editor-panel scripts into the plugin's build/
 pnpm wp resource-hub seed   # optional: fictional sample resources to list and filter
 ```
 
@@ -87,6 +87,10 @@ The revalidation secret and front-end URL are read from `RESOURCE_HUB_FRONTEND_U
 | `pnpm build` / `pnpm start` | Block build, once or watching |
 | `pnpm test:php` | PHPUnit in the tests container |
 | `pnpm test:e2e` / `pnpm test:e2e:debug` | Playwright against the tests site |
+| `pnpm test:schemas` | The contract schema test in `packages/ui` |
+| `pnpm web:dev` / `web:lint` / `web:typecheck` / `web:build` | The Next.js app in `apps/web` |
+
+The wp-env scripts run from the root, where `.wp-env.json` is; `build`, `lint:js`, `format`, `test:e2e` and the `web:*` scripts delegate with `pnpm --filter` to the plugin package (`wp-content/plugins/resource-hub-wp/package.json`) or the app, which also accept the same commands from their own directories.
 
 ## Testing
 
@@ -96,15 +100,17 @@ Three gates, all run by `.github/workflows/ci.yml` on every pull request and on 
 - **PHPUnit 9.6** inside the WordPress core test library that wp-env provides ([ADR 0004](docs/adr/0004-phpunit-9-matches-the-core-test-library.md)).
 - **Playwright** against the wp-env tests site on port 8889, using the WordPress e2e utilities.
 
-One interaction to know about: the PHPUnit bootstrap drops and reinstalls the tests database, which deactivates every plugin on the tests site. CI runs PHPUnit before Playwright, and a shared worker-scoped fixture (`tests/e2e/fixtures.js`) activates the plugin before any spec runs rather than assuming it.
+One interaction to know about: the PHPUnit bootstrap drops and reinstalls the tests database, which deactivates every plugin on the tests site. CI runs PHPUnit before Playwright, and a shared worker-scoped fixture (`wp-content/plugins/resource-hub-wp/tests/e2e/fixtures.js`) activates the plugin before any spec runs rather than assuming it.
 
-The compiled output in `build/` (the block and the editor sidebar panel) is not committed; CI and the start command build it. `webpack.config.js` extends the `@wordpress/scripts` config with the one non-block entry under `editor/`.
+The compiled output in the plugin's `build/` (the block and the editor sidebar panel) is not committed; CI and the start command build it. The plugin's `webpack.config.js` extends the `@wordpress/scripts` config with the one non-block entry under `editor/`.
+
+A second CI job, `web`, lints, typechecks and builds the front end in `apps/web` on the same triggers. It needs no secrets, because the scaffold makes no CMS calls at build time.
 
 ## Deployment
 
 The `deploy` job in `.github/workflows/ci.yml` publishes the plugin to the Cloudways host ([ADR 0005](docs/adr/0005-hosted-wordpress-on-cloudways.md)). It runs only after the gate passes, and only for a push to `main` or a manual `workflow_dispatch` on `main` or a tag. Pull requests and other branches never deploy. One deploy runs at a time, and a running deploy is never cancelled. GitHub keeps only one waiting run, so a newer merge replaces any run still waiting; that is safe because the newer commit includes the older one.
 
-From a fresh checkout it builds the block, runs `composer install --no-dev`, and rsyncs the result over SSH into the plugin directory on the host with `--delete-delay --delay-updates`, so changed files are swapped in together at the end and stale ones are removed after that. The rsync is an allowlist, so the host receives only what WordPress loads: `resource-hub.php`, `src/`, `build/`, and `vendor/`. Everything else stays behind by default: the block source in `blocks/`, tests, docs, toolchain config, lockfiles, and manifests. A new runtime file or directory has to be added to the allowlist in the workflow. It then activates the plugin with WP-CLI if it is not already active, reads the site's `home` URL over SSH, and requests `{home}/wp-json/` to check that the REST API answers. WP-CLI runs from the WordPress root, not the plugin directory, because the host's `wp-config.php` requires `wp-salt.php` by a relative path, which resolves against the working directory.
+From a fresh checkout it builds the block, runs `composer install --no-dev` in `wp-content/plugins/resource-hub-wp/`, and rsyncs that directory over SSH into the plugin directory on the host with `--delete-delay --delay-updates`, so changed files are swapped in together at the end and stale ones are removed after that. The rsync is an allowlist, so the host receives only what WordPress loads: `resource-hub.php`, `src/`, `build/`, and `vendor/`. Everything else stays behind by default: the block source in `blocks/`, tests, docs, toolchain config, lockfiles, and manifests. A new runtime file or directory has to be added to the allowlist in the workflow. It then activates the plugin with WP-CLI if it is not already active, reads the site's `home` URL over SSH, and requests `{home}/wp-json/` to check that the REST API answers. WP-CLI runs from the WordPress root, not the plugin directory, because the host's `wp-config.php` requires `wp-salt.php` by a relative path, which resolves against the working directory.
 
 Five repository secrets feed it:
 
@@ -123,7 +129,7 @@ Five repository secrets feed it:
 Each real decision has a record under [`docs/adr/`](docs/adr/). One sentence each:
 
 - [0001](docs/adr/0001-wp-env-for-the-local-environment.md) wp-env on Docker is the only environment, so the laptop and CI run the same test setup.
-- [0002](docs/adr/0002-repository-root-is-the-plugin.md) The repository root is the plugin, so one mount serves wp-env, Composer, and CI.
+- [0002](docs/adr/0002-repository-root-is-the-plugin.md) The repository root is the plugin, so one mount serves wp-env, Composer, and CI. Superseded by 0033.
 - [0003](docs/adr/0003-wordpress-coding-standards-over-psr-12.md) WordPress Coding Standards win over PSR-12 where they conflict; each exclusion names the conflict.
 - [0004](docs/adr/0004-phpunit-9-matches-the-core-test-library.md) PHPUnit stays on 9.6 because the WordPress core test library tops out there.
 - [0005](docs/adr/0005-hosted-wordpress-on-cloudways.md) The CMS is hosted on Cloudways so Vercel can reach it over HTTPS; PHP is pinned to 8.4 to match.
@@ -154,6 +160,7 @@ Each real decision has a record under [`docs/adr/`](docs/adr/). One sentence eac
 - [0030](docs/adr/0030-related-merging-happens-in-the-route.md) Picks and topic fill are merged in the related route, not on the front end, so the merging rules live in one PHPUnit-tested place, the picks list stays in the REST `edit` context, and the answer is cached in Redis.
 - [0031](docs/adr/0031-cms-theme-pages-are-for-logged-in-users.md) The CMS's theme pages are for logged-in users only and answer anonymous visitors with a 404, not a redirect, with `robots.txt` and `noindex` on top, because the front end is the only public site and a redirecting CMS would be a second router.
 - [0032](docs/adr/0032-revalidation-results-logged-to-posthog.md) Every revalidation result is also sent to PostHog as a server-side event when configured, because force deletes and term deletes leave nothing to store a result on and `error_log()` fails the VIP ruleset.
+- [0033](docs/adr/0033-one-repository-for-the-plugin-the-front-end-and-the-contract.md) One repository holds the plugin (`wp-content/plugins/resource-hub-wp/`), the front end (`apps/web/`) and the contract package (`packages/ui/`), because a contract change is one change to all three and should be one pull request with one diff; the package becomes a workspace link instead of a published dependency.
 
 ## Contract with the front end
 
