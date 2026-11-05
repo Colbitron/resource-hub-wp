@@ -373,6 +373,92 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Saves of a legacy resource that core stops before it writes the row: the extra fields the
+	 * save sends, whether a `wp_insert_post_empty_content` filter added last vetoes it, and the
+	 * error core returns.
+	 *
+	 * @return array<string, array{0: array<string, string>, 1: bool, 2: string}>
+	 */
+	public function stopped_save_cases(): array {
+		return array(
+			'invalid date'                  => array( array( 'post_date' => '2026-13-45 00:00:00' ), false, 'invalid_date' ),
+			'empty-content veto after ours' => array( array(), true, 'empty_content' ),
+		);
+	}
+
+	/**
+	 * A save that core stops, by an invalid date or by a `wp_insert_post_empty_content` filter that
+	 * runs last, leaves no save mark behind: a permalink preview of that resource afterwards still
+	 * renames nothing.
+	 *
+	 * @dataProvider stopped_save_cases
+	 *
+	 * @param array<string, string> $fields Extra fields the save sends.
+	 * @param bool                  $veto   Whether a last `wp_insert_post_empty_content` filter stops it.
+	 * @param string                $code   The error code core returns.
+	 */
+	public function test_stopped_save_leaves_no_mark( array $fields, bool $veto, string $code ): void {
+		[ $trashed, $legacy ] = $this->legacy_resource_and_trashed_holder();
+
+		if ( $veto ) {
+			add_filter( 'wp_insert_post_empty_content', '__return_true', PHP_INT_MAX );
+		}
+
+		$saved = wp_update_post(
+			array_merge(
+				array(
+					'ID'         => $legacy,
+					'post_title' => 'Retitled',
+				),
+				$fields
+			),
+			true
+		);
+		remove_filter( 'wp_insert_post_empty_content', '__return_true', PHP_INT_MAX );
+		$this->assertWPError( $saved );
+		$this->assertSame( $code, $saved->get_error_code() );
+
+		get_sample_permalink( $legacy );
+
+		$this->assertSame( 'case-study', $this->stored_post_slug( $trashed ) );
+		$this->assertFalse( metadata_exists( 'post', $trashed, '_wp_desired_post_slug' ) );
+		$this->assertSame( 'case%2dstudy', $this->stored_post_slug( $legacy ) );
+	}
+
+	/**
+	 * A resource save nested inside another, started by a filter between the mark and the outer
+	 * save's `wp_unique_post_slug()` call, leaves the outer save's mark in place: the outer save
+	 * still renames the trashed resource and takes the decoded slug.
+	 */
+	public function test_nested_save_keeps_the_outer_mark(): void {
+		[ $trashed, $legacy ] = $this->legacy_resource_and_trashed_holder();
+
+		$nested_id = 0;
+		$nest      = null;
+		$nest      = function ( $post_parent, $post_id ) use ( $legacy, &$nest, &$nested_id ) {
+			if ( $legacy === (int) $post_id ) {
+				remove_filter( 'wp_insert_post_parent', $nest, 20 );
+				$nested_id = $this->resource( 'publish', 'nested-save' );
+			}
+
+			return $post_parent;
+		};
+		add_filter( 'wp_insert_post_parent', $nest, 20, 2 );
+
+		wp_update_post(
+			array(
+				'ID'         => $legacy,
+				'post_title' => 'Retitled',
+			)
+		);
+
+		$this->assertGreaterThan( 0, $nested_id, 'The nested save did not run.' );
+		$this->assertSame( 'nested-save', $this->stored_post_slug( $nested_id ) );
+		$this->assertSame( 'case-study', $this->stored_post_slug( $legacy ) );
+		$this->assertSame( 'case-study__trashed', $this->stored_post_slug( $trashed ) );
+	}
+
+	/**
 	 * A resource stored with such an escape before this rule existed is decoded the next time it
 	 * is saved, even by a save that does not touch the slug.
 	 */
@@ -588,6 +674,29 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 
 		$this->assertSame( 'duplicate_term_slug', $response->get_data()['code'] );
 		$this->assertSame( 500, $response->get_status() );
+	}
+
+	/**
+	 * A trashed resource that holds the bare slug `case-study`, and a published legacy resource
+	 * stored as `case%2dstudy`, with no `_wp_desired_post_slug` left on the trashed one.
+	 *
+	 * @return array{0: int, 1: int} The trashed resource's ID, then the legacy one's.
+	 */
+	private function legacy_resource_and_trashed_holder(): array {
+		$trashed = $this->resource( 'publish', 'case-study' );
+		wp_trash_post( $trashed );
+		wp_update_post(
+			array(
+				'ID'        => $trashed,
+				'post_name' => 'case-study',
+			)
+		);
+		$this->assertSame( 'case-study', $this->stored_post_slug( $trashed ), 'The trashed resource does not hold the slug.' );
+		$legacy = $this->with_legacy_post_slug( 'case%2dstudy', fn(): int => $this->resource( 'publish', 'placeholder' ) );
+		$this->assertSame( 'case%2dstudy', $this->stored_post_slug( $legacy ), 'The legacy slug was not stored.' );
+		delete_post_meta( $trashed, '_wp_desired_post_slug' );
+
+		return array( $trashed, $legacy );
 	}
 
 	/**
