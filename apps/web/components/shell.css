@@ -21,7 +21,6 @@ body {
 	font-family: var(--rh-font-sans);
 	font-size: var(--rh-text-base);
 	line-height: var(--rh-leading-body);
-	-webkit-font-smoothing: antialiased;
 }
 
 a {
@@ -70,7 +69,9 @@ video {
 .rh-shell {
 	display: flex;
 	flex-direction: column;
+	/* 100dvh tracks mobile browser chrome; 100vh is the fallback for older engines. */
 	min-height: 100vh;
+	min-height: 100dvh;
 }
 
 /* One gutter for every landmark: 16px at phone width, never a horizontal scroll. */

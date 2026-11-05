@@ -23,10 +23,28 @@ export interface ResourceCardProps {
   image?: ResourceCardImage;
   /** The heading level the title takes, so a card fits under the page's own headings. */
   headingLevel?: "h2" | "h3";
+  /**
+   * Load the image eagerly and at high fetch priority, for the cards a listing
+   * shows in its first row, where the LCP element usually is. Defaults to false
+   * (lazy). Next 16 deprecates `priority` on `next/image` and advises against
+   * `preload` when several images could be the LCP element depending on the
+   * viewport, as a row of cards is, so this sets `loading` and `fetchPriority`.
+   */
+  priority?: boolean;
 }
 
-/** Cards sit in a grid of ~17rem columns: one at phone width, two on tablets, then a bounded width. */
-const IMAGE_SIZES = "(max-width: 40rem) 100vw, (max-width: 64rem) 50vw, 24rem";
+/**
+ * The rendered width of a card in `.rh-card-grid` (card.css) inside
+ * `.rh-shell__inner` (shell.css): columns of at least 17rem with 1.5rem gaps,
+ * in a box at most 72rem wide with a 1rem gutter each side, so the content is
+ * 100vw - 2rem wide, capped at 70rem.
+ * - Two columns fit from 2 × 17 + 1.5 + 2 = 37.5rem; each is about 50vw.
+ * - Three fit from 3 × 17 + 3 + 2 = 56rem; each is about 33vw.
+ * - Four never fit in 70rem, so from 74rem (72rem + gutters) a column stops
+ *   growing at (70 - 3) / 3 ≈ 22.3rem, about 357px.
+ * Change these with the grid's minimum, gap or the shell's width.
+ */
+const IMAGE_SIZES = "(min-width: 74rem) 22.5rem, (min-width: 56rem) 33vw, (min-width: 37.5rem) 50vw, 100vw";
 
 const DATE_FORMAT = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" });
 
@@ -45,6 +63,7 @@ export function ResourceCard({
   date,
   image,
   headingLevel: Heading = "h2",
+  priority = false,
 }: ResourceCardProps) {
   return (
     <article className="rh-card">
@@ -56,6 +75,8 @@ export function ResourceCard({
             width={image.width}
             height={image.height}
             sizes={IMAGE_SIZES}
+            loading={priority ? "eager" : "lazy"}
+            fetchPriority={priority ? "high" : "auto"}
           />
         </div>
       )}
@@ -71,7 +92,8 @@ export function ResourceCard({
         </Heading>
         {summary && <p className="rh-card__summary">{summary}</p>}
         {topicLabels.length > 0 && (
-          <ul className="rh-card__topics" aria-label="Topics">
+          // role="list" because Safari drops list semantics under `list-style: none`.
+          <ul className="rh-card__topics" aria-label="Topics" role="list">
             {topicLabels.map((label) => (
               <li className="rh-card__topic" key={label}>
                 {label}

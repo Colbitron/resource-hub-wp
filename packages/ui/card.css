@@ -18,6 +18,16 @@
  * The title's link is the card's only interactive element. Its ::after covers
  * the whole card, so the card is clickable without nesting anything in the
  * link, and the focus ring is drawn around the card through the same box.
+ *
+ * The trade-off of that stretched link (ADR 0045): the overlay sits above the
+ * summary and the topics, so their text cannot be selected with the mouse; a
+ * drag starts on the link. Accepted, because the card is a link to the page
+ * that holds the same text. The alternative, if selection is ever wanted, is
+ * to lift the summary above the overlay (`position: relative; z-index: 1`):
+ * its text becomes selectable, but a click on it no longer navigates.
+ *
+ * In a .rh-card-grid every card in a row is as tall as the tallest: each grid
+ * item stretches to the row, and is itself a one-cell grid the card fills.
  */
 
 .rh-card-grid {
@@ -31,6 +41,7 @@
 }
 
 .rh-card-grid > * {
+	display: grid;
 	min-width: 0;
 }
 
