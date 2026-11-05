@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 
+import { buildId } from "./identity.mts";
 import { isTaxonomy, MockError, type MockState } from "./state.mts";
 import type { CreateResourceInput, HealthResponse, RenameTermInput, ResourceStatus } from "./types.mts";
 import type { MockResponse } from "./rest.mts";
@@ -18,6 +19,9 @@ const JSON_HEADERS = { "Content-Type": "application/json; charset=UTF-8", "Cache
 
 /** This directory, absolute, without a trailing separator: the mock's identity in `/__mock/health`. */
 export const MOCK_DIR = fileURLToPath(new URL(".", import.meta.url)).replace(/[\\/]$/, "");
+
+/** The mock's code and fixtures as this process started with them (`identity.mts`). */
+const BUILD = buildId(MOCK_DIR);
 
 function json(status: number, body: unknown): MockResponse {
   return { status, headers: { ...JSON_HEADERS }, body };
@@ -83,7 +87,7 @@ export function handleControl(state: MockState, method: string, url: URL, body: 
   const path = url.pathname.replace(/^\/__mock/, "").replace(/\/+$/, "");
   try {
     if (method === "GET" && path === "/health") {
-      const health: HealthResponse = { ok: true, dir: MOCK_DIR, pid: process.pid, origin };
+      const health: HealthResponse = { ok: true, dir: MOCK_DIR, build: BUILD, pid: process.pid, origin };
       return json(200, health);
     }
     if (method === "GET" && path === "/state") return json(200, state.summary(origin));

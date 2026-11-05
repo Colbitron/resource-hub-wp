@@ -5,6 +5,7 @@ import { expect, test } from "@playwright/test";
 
 import { mockCms } from "./mock-cms/client.mts";
 import { mockCmsOrigin } from "./mock-cms/config.mts";
+import { buildId } from "./mock-cms/identity.mts";
 
 /**
  * Smoke checks on the harness itself: the mock CMS is up and the app under
@@ -18,9 +19,11 @@ test.beforeEach(async () => {
   await cms.reset();
 });
 
-test("the mock answering is this checkout's, not one reused from elsewhere", async () => {
+test("the mock answering is this checkout's current code, not one reused from elsewhere or from before a change", async () => {
   const health = await cms.health();
-  expect(health.dir).toBe(join(dirname(test.info().file), "mock-cms"));
+  const dir = join(dirname(test.info().file), "mock-cms");
+  expect(health.dir).toBe(dir);
+  expect(health.build, "the mock was started from older code: stop it and run again").toBe(buildId(dir));
   expect(health.origin).toBe(mockCmsOrigin());
 });
 

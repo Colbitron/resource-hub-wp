@@ -89,12 +89,15 @@ export interface RequestCounts {
 
 /**
  * `GET /__mock/health`: which mock answered. `dir` is the absolute path of the
- * `mock-cms/` directory the process runs from and `pid` its process ID, so a
- * mock reused from another checkout or an earlier run can be recognised.
+ * `mock-cms/` directory the process runs from, `build` a SHA-256 of that
+ * directory's files as the process read them at start (`identity.mts`), and
+ * `pid` its process ID, so a mock reused from another checkout, or from this
+ * one before its code changed, can be recognised.
  */
 export interface HealthResponse {
   ok: true;
   dir: string;
+  build: string;
   pid: number;
   origin: string;
 }

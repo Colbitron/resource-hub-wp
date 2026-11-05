@@ -6,7 +6,8 @@ import { join, resolve } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { mockCms, type MockCmsClient } from "../e2e/mock-cms/client.mts";
-import { slugify } from "../e2e/mock-cms/sanitize.mts";
+import { buildId } from "../e2e/mock-cms/identity.mts";
+import { slugify, slugifyForQuery } from "../e2e/mock-cms/sanitize.mts";
 import { startMockCms, type MockCms } from "../e2e/mock-cms/server.mts";
 import { parsePaginationHeaders } from "../lib/wp/schemas/pagination";
 import { resolveResponseSchemaStrict } from "../lib/wp/schemas/resolve";
@@ -72,6 +73,17 @@ beforeEach(async () => {
   await cms.reset();
 });
 
+/**
+ * `cms.related()`, with every 200 checked against
+ * `related-response.schema.json`, so each related body the self-check sees
+ * is a contract body.
+ */
+async function related(id: number, count?: number | string) {
+  const response = await cms.related(id, count);
+  if (response.status === 200) expectContract("related-response", response.body);
+  return response;
+}
+
 /** The featured image entries of a list, parsed strictly: a usable image or nothing, never a silent `null`. */
 function featuredMedia(resources: unknown[]) {
   return resources.flatMap((resource) => {
@@ -98,6 +110,8 @@ describe("slugify, the mock's sanitize_title()", () => {
     ["100% sure, a%20b", "100-sure-a%20b"],
     ["日本", "%e6%97%a5%e6%9c%ac"],
     ["---", ""],
+    // Letters outside remove_accents()'s table are encoded, not decomposed.
+    ["Ḁ ẛ ǰ", "%e1%b8%81-%e1%ba%9b-%c7%b0"],
   ])("%j becomes %j", (title, slug) => {
     expect(slugify(title)).toBe(slug);
   });
@@ -106,6 +120,339 @@ describe("slugify, the mock's sanitize_title()", () => {
     expect(slugify("a".repeat(250))).toHaveLength(200);
     // Each 日 is nine characters encoded: 22 fit in 200.
     expect(slugify("日".repeat(30))).toBe("%e6%97%a5".repeat(22));
+  });
+});
+
+describe("slugifyForQuery, the mock's sanitize_title_for_query()", () => {
+  // Expected values are what WordPress 7.1.4's sanitize_title_for_query() returns.
+  it.each([
+    ["a/b", "ab"],
+    ["Café", "caf%c3%a9"],
+    ["editor’s", "editor%e2%80%99s"],
+    ["Keyboard-First Filters", "keyboard-first-filters"],
+    ["v1.2", "v1-2"],
+  ])("%j becomes %j", (title, slug) => {
+    expect(slugifyForQuery(title)).toBe(slug);
+  });
+});
+
+/**
+ * Core's answers to bad query parameters, captured with curl from WordPress
+ * core 7.1.4 (an anonymous GET to the wp-env site, with the plugin's
+ * `resource` post type and taxonomies) on 2026-11-05, and pasted unchanged.
+ * They pin the two stages: `page` and `per_page` alone when either fails;
+ * otherwise every other failure in the query string's order, `status` among
+ * them; an array item's failure under its parameter's name; and the term
+ * filters' `oneOf` wording.
+ */
+const CORE_PARAM_ERRORS: [string, unknown][] = [
+  [
+    "/wp-json/wp/v2/resources?per_page=0&page=0&include=1,x&order=up&orderby=zz",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): page, per_page",
+      data: {
+        status: 400,
+        params: { page: "page must be greater than or equal to 1", per_page: "per_page must be between 1 (inclusive) and 100 (inclusive)" },
+        details: {
+          page: { code: "rest_out_of_bounds", message: "page must be greater than or equal to 1", data: null },
+          per_page: { code: "rest_out_of_bounds", message: "per_page must be between 1 (inclusive) and 100 (inclusive)", data: null },
+        },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resources?page=0&status=draft",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): page",
+      data: {
+        status: 400,
+        params: { page: "page must be greater than or equal to 1" },
+        details: { page: { code: "rest_out_of_bounds", message: "page must be greater than or equal to 1", data: null } },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resources?status=draft&order=up",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): status, order",
+      data: {
+        status: 400,
+        params: { status: "Status is forbidden.", order: "order is not one of asc and desc." },
+        details: {
+          status: { code: "rest_forbidden_status", message: "Status is forbidden.", data: { status: 401 } },
+          order: { code: "rest_not_in_enum", message: "order is not one of asc and desc.", data: null },
+        },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resources?order=up&status=draft",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): order, status",
+      data: {
+        status: 400,
+        params: { order: "order is not one of asc and desc.", status: "Status is forbidden." },
+        details: {
+          order: { code: "rest_not_in_enum", message: "order is not one of asc and desc.", data: null },
+          status: { code: "rest_forbidden_status", message: "Status is forbidden.", data: { status: 401 } },
+        },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resources?status=draft,nonsense",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): status",
+      data: {
+        status: 400,
+        params: { status: "Status is forbidden." },
+        details: { status: { code: "rest_forbidden_status", message: "Status is forbidden.", data: { status: 401 } } },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resources?status=nonsense",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): status",
+      data: {
+        status: 400,
+        params: { status: "Status is forbidden." },
+        details: { status: { code: "rest_forbidden_status", message: "Status is forbidden.", data: { status: 401 } } },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resources?include=1,x",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): include",
+      data: {
+        status: 400,
+        params: { include: "include[1] is not of type integer." },
+        details: { include: { code: "rest_invalid_type", message: "include[1] is not of type integer.", data: { param: "include[1]" } } },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resources?include[]=1&include[]=x",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): include",
+      data: {
+        status: 400,
+        params: { include: "include[1] is not of type integer." },
+        details: { include: { code: "rest_invalid_type", message: "include[1] is not of type integer.", data: { param: "include[1]" } } },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resources?resource_topic=1,x",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): resource_topic",
+      data: {
+        status: 400,
+        params: { resource_topic: "resource_topic is not a valid Term ID List. Reason: resource_topic[1] is not of type integer." },
+        details: {
+          resource_topic: {
+            code: "rest_no_matching_schema",
+            message: "resource_topic is not a valid Term ID List. Reason: resource_topic[1] is not of type integer.",
+            data: { position: 0 },
+          },
+        },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resources?resource_flag[]=1&resource_flag[]=y",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): resource_flag",
+      data: {
+        status: 400,
+        params: { resource_flag: "resource_flag is not a valid Term ID List and Term ID Taxonomy Query." },
+        details: {
+          resource_flag: {
+            code: "rest_no_matching_schema",
+            message: "resource_flag is not a valid Term ID List and Term ID Taxonomy Query.",
+            data: null,
+          },
+        },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resources?resource_type=",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): resource_type",
+      data: {
+        status: 400,
+        params: { resource_type: "resource_type matches Term ID List and Term ID Taxonomy Query, but should match only one." },
+        details: {
+          resource_type: {
+            code: "rest_one_of_multiple_matches",
+            message: "resource_type matches Term ID List and Term ID Taxonomy Query, but should match only one.",
+            data: { positions: [0, 1] },
+          },
+        },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resources?orderby=zz&order=up",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): orderby, order",
+      data: {
+        status: 400,
+        params: {
+          orderby: "orderby is not one of author, date, id, include, modified, parent, relevance, slug, include_slugs, and title.",
+          order: "order is not one of asc and desc.",
+        },
+        details: {
+          orderby: {
+            code: "rest_not_in_enum",
+            message: "orderby is not one of author, date, id, include, modified, parent, relevance, slug, include_slugs, and title.",
+            data: null,
+          },
+          order: { code: "rest_not_in_enum", message: "order is not one of asc and desc.", data: null },
+        },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resources?resource_topic=x&include=y&order=up",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): resource_topic, include, order",
+      data: {
+        status: 400,
+        params: {
+          resource_topic: "resource_topic is not a valid Term ID List. Reason: resource_topic[0] is not of type integer.",
+          include: "include[0] is not of type integer.",
+          order: "order is not one of asc and desc.",
+        },
+        details: {
+          resource_topic: {
+            code: "rest_no_matching_schema",
+            message: "resource_topic is not a valid Term ID List. Reason: resource_topic[0] is not of type integer.",
+            data: { position: 0 },
+          },
+          include: { code: "rest_invalid_type", message: "include[0] is not of type integer.", data: { param: "include[0]" } },
+          order: { code: "rest_not_in_enum", message: "order is not one of asc and desc.", data: null },
+        },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resources?order[]=asc",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): order",
+      data: {
+        status: 400,
+        params: { order: "order is not of type string." },
+        details: { order: { code: "rest_invalid_type", message: "order is not of type string.", data: { param: "order" } } },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resources?orderby=relevance",
+    { code: "rest_no_search_term_defined", message: "You need to define a search term to order by relevance.", data: { status: 400 } },
+  ],
+  [
+    "/wp-json/wp/v2/resource_topic?per_page=0&orderby=zz",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): per_page",
+      data: {
+        status: 400,
+        params: { per_page: "per_page must be between 1 (inclusive) and 100 (inclusive)" },
+        details: {
+          per_page: { code: "rest_out_of_bounds", message: "per_page must be between 1 (inclusive) and 100 (inclusive)", data: null },
+        },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resource_topic?orderby=zz&order=up&include=1,x&hide_empty=maybe",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): orderby, order, include, hide_empty",
+      data: {
+        status: 400,
+        params: {
+          orderby: "orderby is not one of id, include, name, slug, include_slugs, term_group, description, and count.",
+          order: "order is not one of asc and desc.",
+          include: "include[1] is not of type integer.",
+          hide_empty: "hide_empty is not of type boolean.",
+        },
+        details: {
+          orderby: {
+            code: "rest_not_in_enum",
+            message: "orderby is not one of id, include, name, slug, include_slugs, term_group, description, and count.",
+            data: null,
+          },
+          order: { code: "rest_not_in_enum", message: "order is not one of asc and desc.", data: null },
+          include: { code: "rest_invalid_type", message: "include[1] is not of type integer.", data: { param: "include[1]" } },
+          hide_empty: { code: "rest_invalid_type", message: "hide_empty is not of type boolean.", data: { param: "hide_empty" } },
+        },
+      },
+    },
+  ],
+  [
+    "/wp-json/wp/v2/resource_topic?hide_empty=maybe&include[]=y",
+    {
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): hide_empty, include",
+      data: {
+        status: 400,
+        params: { hide_empty: "hide_empty is not of type boolean.", include: "include[0] is not of type integer." },
+        details: {
+          hide_empty: { code: "rest_invalid_type", message: "hide_empty is not of type boolean.", data: { param: "hide_empty" } },
+          include: { code: "rest_invalid_type", message: "include[0] is not of type integer.", data: { param: "include[0]" } },
+        },
+      },
+    },
+  ],
+];
+
+describe("query parameter errors, as core 7.1.4 sends them", () => {
+  it.each(CORE_PARAM_ERRORS)("%s", async (path, body) => {
+    const response = await cms.get(path);
+    expect(response.status).toBe(400);
+    expect(response.headers.get("cache-control")).toBe(NO_CACHE);
+    wpErrorSchema.parse(response.body);
+    expect(response.body).toEqual(body);
+  });
+
+  it("accepts what core 7.1.4 accepts", async () => {
+    // Each was a 200 from core: a status that cleans to publish, an empty list, and the enums' other values.
+    for (const path of [
+      "/wp-json/wp/v2/resources?status=PUBLISH",
+      "/wp-json/wp/v2/resources?status=publish/",
+      "/wp-json/wp/v2/resources?status=",
+      "/wp-json/wp/v2/resources?include=",
+      "/wp-json/wp/v2/resources?resource_topic=,",
+      "/wp-json/wp/v2/resources?orderby=author&order=asc",
+      "/wp-json/wp/v2/resources?orderby=parent",
+      "/wp-json/wp/v2/resources?orderby=include_slugs",
+      "/wp-json/wp/v2/resource_topic?orderby=term_group",
+      "/wp-json/wp/v2/resource_topic?orderby=description",
+      "/wp-json/wp/v2/resource_topic?orderby=include_slugs",
+      "/wp-json/wp/v2/resource_topic?include=",
+    ]) {
+      expect((await cms.get(path)).status, path).toBe(200);
+    }
+    const all = await cms.get<unknown[]>("/wp-json/wp/v2/resources?include=&per_page=100");
+    expect(all.body).toHaveLength(14);
   });
 });
 
@@ -218,48 +565,37 @@ describe("GET /wp/v2/resources", () => {
     expect(wpErrorSchema.parse(response.body)).toMatchObject({ code: "rest_orderby_include_missing_include", data: { status: 400 } });
   });
 
-  it("puts core's per-parameter codes in data.details", async () => {
-    const response = await cms.get("/wp-json/wp/v2/resources?per_page=0&page=0&include=1,x&order=up");
-    expect(response.status).toBe(400);
-    expect(response.body).toMatchObject({
-      code: "rest_invalid_param",
-      message: "Invalid parameter(s): page, per_page, include[1], order",
-      data: {
-        status: 400,
-        params: {
-          page: "page must be greater than or equal to 1",
-          per_page: "per_page must be between 1 (inclusive) and 100 (inclusive)",
-          "include[1]": "include[1] is not of type integer.",
-          order: "order is not one of asc and desc.",
-        },
-        details: {
-          page: { code: "rest_out_of_bounds", data: null },
-          per_page: { code: "rest_out_of_bounds", data: null },
-          "include[1]": { code: "rest_invalid_type", data: { param: "include[1]" } },
-          order: { code: "rest_not_in_enum", data: null },
-        },
-      },
-    });
+  it("cleans the slug filter as core does: the query context for posts, the save context for terms", async () => {
+    // What core 7.1.4 returned for each slug filter, from the same seed slug.
+    for (const [slug, matches] of [
+      ["alt-text-at-sc/ale", true],
+      ["alt.text.at.scale", true],
+      ["%C3%85lt-text-at-scale", false],
+      ["alt-text-at-scale%E2%80%99", false],
+      ["alt-text-at-scale%E2%80%94", false],
+    ] as const) {
+      const response = await cms.get<{ slug: string }[]>(`/wp-json/wp/v2/resources?slug=${slug}`);
+      expect(response.body.map((r) => r.slug), slug).toEqual(matches ? ["alt-text-at-scale"] : []);
+    }
+    const terms = await cms.get<{ slug: string }[]>("/wp-json/wp/v2/resource_topic?slug=Accessibility%E2%80%99,performance/");
+    expect(terms.body.map((t) => t.slug)).toEqual(["accessibility", "performance"]);
   });
 
-  it("refuses an anonymous non-publish status as core's sanitizer does, after validation", async () => {
-    const draft = await cms.get("/wp-json/wp/v2/resources?status=draft");
-    expect(draft.status).toBe(400);
-    expect(draft.body).toMatchObject({
-      code: "rest_invalid_param",
-      data: {
-        status: 400,
-        params: { status: "Status is forbidden." },
-        details: { status: { code: "rest_forbidden_status", message: "Status is forbidden.", data: { status: 401 } } },
-      },
-    });
+  it("orders by include_slugs as core does: the list for posts whatever the order, the order applied for terms", async () => {
+    // Core 7.1.4's order for each.
+    const resources = await cms.get<{ slug: string }[]>(
+      "/wp-json/wp/v2/resources?slug=editorial-review-without-the-bottleneck,alt-text-at-scale,a-field-guide-to-revalidation&orderby=include_slugs&order=desc",
+    );
+    expect(resources.body.map((r) => r.slug)).toEqual([
+      "editorial-review-without-the-bottleneck",
+      "alt-text-at-scale",
+      "a-field-guide-to-revalidation",
+    ]);
+    const terms = await cms.get<{ slug: string }[]>("/wp-json/wp/v2/resource_topic?slug=performance,accessibility&orderby=include_slugs&order=desc");
+    expect(terms.body.map((t) => t.slug)).toEqual(["accessibility", "performance"]);
+  });
 
-    // Validation runs first: an unknown status, or another bad parameter, is reported instead.
-    const unknown = await cms.get("/wp-json/wp/v2/resources?status=draft,nonsense");
-    expect(unknown.body).toMatchObject({ data: { details: { status: { code: "rest_not_in_enum" } } } });
-    const both = await cms.get("/wp-json/wp/v2/resources?status=draft&per_page=0");
-    expect(Object.keys((both.body as { data: { params: object } }).data.params)).toEqual(["per_page"]);
-
+  it("answers an allowed status of publish, as core does for an anonymous reader", async () => {
     const publish = await cms.get<unknown[]>("/wp-json/wp/v2/resources?status=publish");
     expect(publish.status).toBe(200);
   });
@@ -401,11 +737,10 @@ describe("GET /resource-hub/v1/resolve", () => {
 describe("GET /resource-hub/v1/related/{id}", () => {
   it("puts published picks first, skips an unpublished one, then fills with the newest in the source's topics", async () => {
     // 33's picks are 34 (a draft), 29 (another topic) and 21 (also in topic); 20 is the newest sharing a topic.
-    const response = await cms.related(33);
+    const response = await related(33);
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe(NO_CACHE);
     expect(response.headers.get("allow")).toBe("GET");
-    expectContract("related-response", response.body);
     expect(response.body).toEqual({
       items: [
         { id: 29, source: "pick" },
@@ -415,13 +750,12 @@ describe("GET /resource-hub/v1/related/{id}", () => {
     });
 
     // A larger count fills further, newest first, with no duplicate and never the source.
-    const ten = await cms.related(33, 10);
-    expectContract("related-response", ten.body);
+    const ten = await related(33, 10);
     const items = (ten.body as { items: { id: number; source: string }[] }).items;
     expect(items.map((item) => item.id)).toEqual([29, 21, 20, 22, 25, 27, 28, 31]);
     expect(items.filter((item) => item.source === "pick").map((item) => item.id)).toEqual([29, 21]);
 
-    expect((await cms.related(24)).body).toEqual({
+    expect((await related(24)).body).toEqual({
       items: [
         { id: 26, source: "pick" },
         { id: 22, source: "topic" },
@@ -431,21 +765,20 @@ describe("GET /resource-hub/v1/related/{id}", () => {
   });
 
   it("caps picks at count, and gives a source with no topics its picks alone", async () => {
-    expect((await cms.related(33, 1)).body).toEqual({ items: [{ id: 29, source: "pick" }] });
+    expect((await related(33, 1)).body).toEqual({ items: [{ id: 29, source: "pick" }] });
 
     await cms.setTopics(33, []);
-    const alone = await cms.related(33, 10);
-    expectContract("related-response", alone.body);
+    const alone = await related(33, 10);
     expect(alone.body).toEqual({ items: [{ id: 29, source: "pick" }, { id: 21, source: "pick" }] });
 
     await cms.setPicks(33, []);
-    expect((await cms.related(33)).body).toEqual({ items: [] });
+    expect((await related(33)).body).toEqual({ items: [] });
   });
 
   it("follows the picks the control endpoint sets, sanitized as the plugin sanitizes them", async () => {
     const summary = await cms.setPicks(20, [27, 27, 20, 32]);
     expect(summary.picks).toEqual([27, 32]);
-    expect((await cms.related(20, 2)).body).toEqual({
+    expect((await related(20, 2)).body).toEqual({
       items: [
         { id: 27, source: "pick" },
         { id: 32, source: "pick" },
@@ -457,17 +790,17 @@ describe("GET /resource-hub/v1/related/{id}", () => {
 
   it("refuses a count outside 1 to 10 and an ID that is not a published resource", async () => {
     for (const count of ["0", "11", "abc", "2.5"]) {
-      const response = await cms.related(33, count);
+      const response = await related(33, count);
       expect(response.status, count).toBe(400);
       expect(response.headers.get("cache-control"), count).toBe(NO_CACHE);
       expect(wpErrorSchema.parse(response.body)).toMatchObject({ code: "rest_invalid_param", data: { status: 400 } });
     }
-    expect((await cms.related(33, "11")).body).toMatchObject({
+    expect((await related(33, "11")).body).toMatchObject({
       data: { params: { count: "count must be between 1 (inclusive) and 10 (inclusive)" }, details: { count: { code: "rest_out_of_bounds" } } },
     });
 
     for (const id of [34, 9999]) {
-      const response = await cms.related(id);
+      const response = await related(id);
       expect(response.status, String(id)).toBe(404);
       expect(response.headers.get("cache-control")).toBe(NO_CACHE);
       expect(wpErrorSchema.parse(response.body)).toMatchObject({ data: { status: 404 } });
@@ -522,6 +855,7 @@ describe("the control endpoints", () => {
     expect(await cms.health()).toEqual({
       ok: true,
       dir: resolve(__dirname, "../e2e/mock-cms"),
+      build: buildId(resolve(__dirname, "../e2e/mock-cms")),
       pid: process.pid,
       origin: server.origin,
     });

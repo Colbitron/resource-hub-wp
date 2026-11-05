@@ -1,64 +1,86 @@
 /**
- * WordPress's `sanitize_title()` in its default `save` context, which is how
- * WordPress turns a title into a slug and how the plugin's resolve route
- * cleans the slug it is given: `remove_accents()`, then
- * `sanitize_title_with_dashes()`. Written from WordPress 7.1.4's
- * `wp-includes/formatting.php`, step for step.
+ * WordPress's `sanitize_title()`, which is how WordPress turns a title into a
+ * slug, how the plugin's resolve route and the terms controller's `slug`
+ * filter clean a slug (the `save` context), and, through
+ * `sanitize_title_for_query()`, how `WP_Query` cleans the posts controller's
+ * `slug` filter (`post_name__in`, the `query` context). Written from
+ * WordPress 7.1.4's `wp-includes/formatting.php`, step for step.
  *
  * What it does not cover:
- * - `remove_accents()` here is Unicode decomposition with the combining marks
- *   dropped after a Latin letter, plus core's table entries that do not
- *   decompose (`ß`, `æ`, `ø`, `œ`, `þ`, `ł`, `đ` and the like). That
- *   matches core for the common Latin accents. It does not apply the
- *   locale-specific rules core adds for `de_*`, `da_DK`, `ca` and `sr_RS`
- *   (`ä` to `ae`, `å` to `aa`, `đ` to `dj`): the mock behaves as an
- *   `en_US` site.
+ * - `remove_accents()` is core's table as an `en_US` site has it. The
+ *   locale-specific rules core adds for `de_*`, `da_DK`, `ca`, `sr_RS` and
+ *   `bs_BA` (`ä` to `ae`, `å` to `aa`, `đ` to `dj`) are left out, and so is
+ *   its ISO-8859-1 branch, which a JavaScript string never reaches.
+ * - Lower-casing is JavaScript's `toLowerCase()`, not `mb_strtolower()`; the
+ *   two differ on a few letters outside Latin.
  * - `strip_tags()` is a regular expression for well-formed tags.
  * - No `sanitize_title` filter other than core's own runs.
  */
 
-/** `remove_accents()` entries that Unicode decomposition does not produce. */
-const LATIN_SPECIAL: Record<string, string> = {
-  ª: "a",
-  º: "o",
-  Æ: "AE",
-  æ: "ae",
-  Ð: "D",
-  ð: "d",
-  Ø: "O",
-  ø: "o",
-  Þ: "TH",
-  þ: "th",
-  ß: "s",
-  Đ: "D",
-  đ: "d",
-  Ħ: "H",
-  ħ: "h",
-  ı: "i",
-  Ĳ: "IJ",
-  ĳ: "ij",
-  ĸ: "k",
-  Ŀ: "L",
-  ŀ: "l",
-  Ł: "L",
-  ł: "l",
-  ŉ: "n",
-  Ŋ: "N",
-  ŋ: "n",
-  Œ: "OE",
-  œ: "oe",
-  Ŧ: "T",
-  ŧ: "t",
-  ſ: "s",
-};
+/**
+ * `remove_accents()`'s table on an `en_US` site, from WordPress 7.1.4,
+ * grouped by replacement: each character of the first string becomes the
+ * second. A letter not listed, such as `Ḁ` or `ǰ`, is left as it is, and
+ * `utf8_uri_encode()` then encodes it.
+ */
+const ACCENT_GROUPS: readonly (readonly [string, string])[] = [
+  ["ªàáâãäåāăąầằảẩẳẫẵấắạậặɑǎ", "a"],
+  ["ºòóôõöøōŏőơồờỏổởỗỡốớọộợǒ", "o"],
+  ["ÀÁÂÃÄÅĀĂĄẦẰẢẨẲẪẴẤẮẠẬẶǍ", "A"],
+  ["Æ", "AE"],
+  ["ÇĆĈĊČ", "C"],
+  ["ÈÉÊËĒĔĖĘĚƏ€ỀẺỂẼỄẾẸỆ", "E"],
+  ["ÌÍÎÏĨĪĬĮİỈỊǏ", "I"],
+  ["ÐĎĐ", "D"],
+  ["ÑŃŅŇŊ", "N"],
+  ["ÒÓÔÕÖØŌŎŐƠỒỜỎỔỞỖỠỐỚỌỘỢǑ", "O"],
+  ["ÙÚÛÜŨŪŬŮŰŲƯỪỦỬỮỨỤỰǕǗǓǙǛ", "U"],
+  ["ÝŶŸỲỶỸỴ", "Y"],
+  ["Þ", "TH"],
+  ["ßśŝşšſș", "s"],
+  ["æ", "ae"],
+  ["çćĉċč", "c"],
+  ["èéêëēĕėęěǝềẻểẽễếẹệ", "e"],
+  ["ìíîïĩīĭįıỉịǐ", "i"],
+  ["ðďđ", "d"],
+  ["ñńņňŉŋ", "n"],
+  ["ùúûüũūŭůűųưừủửữứụựǖǘǔǚǜ", "u"],
+  ["ýÿŷỳỷỹỵ", "y"],
+  ["þ", "th"],
+  ["ĜĞĠĢ", "G"],
+  ["ĝğġģ", "g"],
+  ["ĤĦ", "H"],
+  ["ĥħ", "h"],
+  ["Ĳ", "IJ"],
+  ["ĳ", "ij"],
+  ["Ĵ", "J"],
+  ["ĵ", "j"],
+  ["Ķ", "K"],
+  ["ķĸ", "k"],
+  ["ĹĻĽĿŁ", "L"],
+  ["ĺļľŀł", "l"],
+  ["Œ", "OE"],
+  ["œ", "oe"],
+  ["ŔŖŘ", "R"],
+  ["ŕŗř", "r"],
+  ["ŚŜŞŠȘ", "S"],
+  ["ŢŤŦȚ", "T"],
+  ["ţťŧț", "t"],
+  ["Ŵ", "W"],
+  ["ŵ", "w"],
+  ["ŹŻŽ", "Z"],
+  ["źżž", "z"],
+  ["£", ""],
+];
 
+const ACCENTS = new Map<string, string>(
+  ACCENT_GROUPS.flatMap(([chars, replacement]) => [...chars].map((char) => [char, replacement] as const)),
+);
+
+/** `remove_accents()`: NFC first, as core normalizes, then `strtr()` with the table. Every key is one character, so a character-by-character map is `strtr()`. */
 function removeAccents(text: string): string {
   if (!/[\u0080-\uffff]/.test(text)) return text;
-  return text
-    .normalize("NFD")
-    .replace(/([A-Za-z])[̀-ͯ]+/g, "$1")
-    .normalize("NFC")
-    .replace(/[\u0080-\uffff]/g, (char) => LATIN_SPECIAL[char] ?? char);
+  return [...text.normalize("NFC")].map((char) => ACCENTS.get(char) ?? char).join("");
 }
 
 /** `utf8_uri_encode( $title, 200 )`: each non-ASCII byte as lower-case `%xx`, the whole result cut at 200 characters on a character boundary. */
@@ -144,19 +166,38 @@ function replaceAll(text: string, needles: readonly string[], replacement: strin
   return needles.reduce((out, needle) => out.split(needle).join(replacement), text);
 }
 
-/** `sanitize_title( $title )`: the slug WordPress would save for this title. */
-export function slugify(title: string): string {
-  let slug = removeAccents(title);
+type Context = "save" | "query";
+
+/** `sanitize_title( $title, '', $context )`: `remove_accents()` in the `save` context only, then `sanitize_title_with_dashes()`. */
+function sanitizeTitle(title: string, context: Context): string {
+  let slug = context === "save" ? removeAccents(title) : title;
   slug = slug.replace(/<[^>]*>/g, "");
   // Keep escaped octets, drop any other percent sign.
   slug = slug.replace(/%([a-fA-F0-9]{2})/g, "---$1---").replace(/%/g, "").replace(/---([a-fA-F0-9]{2})---/g, "%$1");
   slug = utf8UriEncode(slug.toLowerCase(), 200).toLowerCase();
-  slug = replaceAll(slug, TO_DASH, "-");
-  slug = slug.replace(/\//g, "-");
-  slug = replaceAll(slug, STRIPPED, "");
-  slug = replaceAll(slug, WIDE_SPACES, "-");
-  slug = slug.replace(/%c3%97/g, "x");
+  if (context === "save") {
+    slug = replaceAll(slug, TO_DASH, "-");
+    slug = slug.replace(/\//g, "-");
+    slug = replaceAll(slug, STRIPPED, "");
+    slug = replaceAll(slug, WIDE_SPACES, "-");
+    slug = slug.replace(/%c3%97/g, "x");
+  }
   slug = slug.replace(/&.+?;/g, "").replace(/\./g, "-");
   slug = slug.replace(/[^%a-z0-9 _-]/g, "");
   return slug.replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+/** `sanitize_title( $title )`: the slug WordPress would save for this title. */
+export function slugify(title: string): string {
+  return sanitizeTitle(title, "save");
+}
+
+/**
+ * `sanitize_title_for_query( $title )`: the `query` context, which keeps
+ * accents and the characters the `save` context turns into dashes or strips,
+ * so `a/b` becomes `ab` and `Café` becomes `caf%c3%a9`. `WP_Query` cleans
+ * `post_name__in`, the posts controller's `slug` filter, with it.
+ */
+export function slugifyForQuery(title: string): string {
+  return sanitizeTitle(title, "query");
 }
