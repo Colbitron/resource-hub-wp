@@ -22,6 +22,7 @@ use ResourceHub\ContentModel\Taxonomies;
 use ResourceHub\ContentModel\UsedTypes;
 use ResourceHub\Editor\RevalidationAssets;
 use ResourceHub\Editor\SidebarAssets;
+use ResourceHub\Lockdown\Lockdown;
 use ResourceHub\Rest\ResolveRoute;
 use ResourceHub\Revalidation\Revalidation;
 
@@ -81,6 +82,7 @@ final class Plugin {
 		( new ListColumn() )->register();
 		( new TermNotice() )->register();
 		( new StatusPage( $this->file ) )->register();
+		( new Lockdown() )->register();
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			\WP_CLI::add_command( 'resource-hub seed', SeedCommand::class );
