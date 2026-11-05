@@ -2,14 +2,19 @@ import "server-only";
 
 import { canonicalSlug, isPageNumber, isSlug, isTypeSlug } from "../routes";
 import { flagListingTags, listingTags, relatedTags, resourceByIdTags, resourceFetchTags } from "../tags";
-import { CmsError, cmsGet, cmsGetOk, NO_SUCH_PAGE, readPagination, type NoSuchPage } from "./fetch";
-import { wpResourceListSchema, wpResourceSchema, type WpResource } from "./schemas/rest";
+import { CmsError, cmsGet, cmsGetList, cmsGetListOk, NO_SUCH_PAGE, readPagination, type NoSuchPage } from "./fetch";
+import { wpResourceSchema, type WpResource } from "./schemas/rest";
 import { getTermBySlug } from "./terms";
 
 /**
  * Resources from `/wp/v2/resources`, always with `_embed`, which the reader
  * schema relies on for terms and the featured image: a page of a listing,
  * one by slug, one by ID, and several by ID in a given order.
+ *
+ * Every read of the collection is parsed per item (`cmsGetList`, ADR 0049):
+ * a resource the reader schema refuses is left out with a warning, and a
+ * non-empty answer in which every resource fails throws a `CmsError`. The
+ * read by ID is one object and fails as a whole.
  */
 
 /** Resources per listing page: divides into rows of two, three and four cards. */
@@ -35,8 +40,9 @@ export interface ListResourcesOptions {
 }
 
 export interface ResourceListing {
+  /** The page's resources that passed the reader schema, newest first; a skipped one leaves the page short. */
   readonly items: WpResource[];
-  /** Resources across every page. */
+  /** Resources across every page, as the CMS counts them, skipped ones included. */
   readonly total: number;
   /** Pages at `RESOURCES_PER_PAGE`; 0 when nothing matches. */
   readonly totalPages: number;
@@ -60,6 +66,11 @@ function unique(values: readonly string[]): string[] {
  *
  * Tagged from the request, before any lookup: `listingTags({ type, topic })`,
  * plus `flagListingTags()` with a flag.
+ *
+ * A resource the reader schema refuses is skipped (and logged), so the page
+ * can hold fewer than `RESOURCES_PER_PAGE`; `total` and `totalPages` are the
+ * CMS's headers, unchanged, so the page numbers stay the CMS's. A page whose
+ * every resource fails throws.
  */
 export async function listResources(options: ListResourcesOptions): Promise<ResourceListing | NoSuchPage | null> {
   const { type, topic, flag, page } = options;
@@ -90,11 +101,11 @@ export async function listResources(options: ListResourcesOptions): Promise<Reso
   if (flagTerm !== undefined) params.set("resource_flag", String(flagTerm.id));
 
   const path = "/wp/v2/resources";
-  const result = await cmsGet({
+  const result = await cmsGetList({
     path,
     query: `_embed&${params.toString()}`,
     tags,
-    schema: wpResourceListSchema,
+    itemSchema: wpResourceSchema,
     outOfRange: [{ status: 400, code: "rest_post_invalid_page_number" }],
   });
   if (result.kind === NO_SUCH_PAGE) {
@@ -107,7 +118,7 @@ export async function listResources(options: ListResourcesOptions): Promise<Reso
   if (page > 1 && page > totalPages) {
     return NO_SUCH_PAGE;
   }
-  return { items: result.data, total, totalPages };
+  return { items: result.data.items, total, totalPages };
 }
 
 /**
@@ -128,6 +139,14 @@ export async function listResources(options: ListResourcesOptions): Promise<Reso
  * dropped (a plugin, a proxy rewriting the query) and the CMS is answering
  * a different question. A miss there would turn every resource page into a
  * 404 and hide the fault, as `getResourceById` refuses a body for another ID.
+ *
+ * The answer is a list, so it is parsed per item like a listing, and the
+ * check above runs on what passed. Core returns at most one resource here,
+ * so the per-item rule changes nothing for a healthy CMS: a matching
+ * resource that fails the schema is the whole list failing, which throws as
+ * before. It differs only when the answer already holds more than the slug
+ * asked for, where a bad stranger no longer hides a good match; with no
+ * good match the read still throws, saying that items were skipped.
  */
 export async function getResourceBySlug(slug: string): Promise<WpResource | null> {
   if (!isSlug(slug)) {
@@ -135,18 +154,22 @@ export async function getResourceBySlug(slug: string): Promise<WpResource | null
   }
   const canonical = canonicalSlug(slug);
   const path = "/wp/v2/resources";
-  const { data } = await cmsGetOk({
+  const { data } = await cmsGetListOk({
     path,
     query: `_embed&${new URLSearchParams({ slug: canonical }).toString()}`,
     tags: resourceFetchTags(canonical),
-    schema: wpResourceListSchema,
+    itemSchema: wpResourceSchema,
   });
-  if (data.length === 0) {
+  if (data.items.length === 0) {
     return null;
   }
-  const match = data.find((resource) => canonicalSlug(resource.slug) === canonical);
+  const match = data.items.find((resource) => canonicalSlug(resource.slug) === canonical);
   if (match === undefined) {
-    throw new CmsError(path, "schema", "the body lists resources, none with the slug asked for", 200);
+    const detail =
+      data.skipped === 0
+        ? "the body lists resources, none with the slug asked for"
+        : `the body lists resources, none with the slug asked for among those that pass the reader schema (${data.skipped} skipped)`;
+    throw new CmsError(path, "schema", detail, 200);
   }
   return match;
 }
@@ -202,6 +225,10 @@ export interface GetResourcesByIdsOptions {
  * parsed response and its own slug, so any of these is a bug.
  *
  * Tagged `relatedTags(hostSlug)`.
+ *
+ * Parsed per item: a resource the reader schema refuses is absent like an
+ * unpublished one, and logged. When every resource in a non-empty answer
+ * fails, it throws, and for one ID that is the one resource failing.
  */
 export async function getResourcesByIds(
   ids: readonly number[],
@@ -219,12 +246,12 @@ export async function getResourcesByIds(
   if (wanted.length === 0) {
     return [];
   }
-  const { data } = await cmsGetOk({
+  const { data } = await cmsGetListOk({
     path: "/wp/v2/resources",
     // IDs are digits, so the list needs no encoding; commas keep it readable in logs and cache keys.
     query: `_embed&include=${wanted.join(",")}&orderby=include&per_page=${wanted.length}`,
     tags,
-    schema: wpResourceListSchema,
+    itemSchema: wpResourceSchema,
   });
-  return data.filter((resource) => wanted.includes(resource.id));
+  return data.items.filter((resource) => wanted.includes(resource.id));
 }

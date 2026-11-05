@@ -4,6 +4,7 @@ import { cache } from "react";
 import { ZodError, type ZodType } from "zod";
 
 import { wpApiUrl, wpMediaOrigin } from "../env";
+import { idSchema } from "./schemas/common";
 import { parsePaginationHeaders, type Pagination } from "./schemas/pagination";
 import { wpErrorSchema } from "./schemas/wp-error";
 
@@ -27,8 +28,16 @@ import { wpErrorSchema } from "./schemas/wp-error";
  * one (http to https, a `www` host, a moved CMS) would cache the final 200
  * under the original URL and hide a `WP_API_URL` that needs changing, so it
  * fails the render with reason `redirect` instead (ADR 0049). Its message
- * names the endpoint's path under the API base and never the CMS's origin,
- * and nothing here logs.
+ * names the endpoint's path under the API base and never the CMS's origin.
+ *
+ * A collection (`cmsGetList`) is parsed one element at a time instead (ADR
+ * 0049, amended 2026-11-05): an element the item schema refuses is skipped
+ * with a `console.warn`, so one bad resource or term cannot take down every
+ * listing it appears in, and a non-empty list in which every element fails
+ * throws, because that is a systematic break, not one bad item. That warning
+ * is the only thing here that logs; it names the endpoint path, the
+ * element's position and ID and the paths of its failing fields, never a
+ * value or the CMS origin.
  */
 
 /**
@@ -91,19 +100,35 @@ export interface WpErrorMatch {
   readonly code: string;
 }
 
-export interface CmsRequest<T> {
+/** What every CMS read names, whatever its body's shape. */
+interface CmsRequestBase {
   /** The path under `WP_API_URL`, starting with `/`, such as `/wp/v2/resources`. */
   readonly path: string;
   /** The query, already encoded, without the `?`; empty for none. */
   readonly query: string;
   /** From the functions in `lib/tags.ts`, fixed before the request is sent. */
   readonly tags: readonly string[];
-  /** The reader schema for a 200 body. */
-  readonly schema: ZodType<T>;
   /** Errors that mean "nothing here": the fetcher returns `null`. */
   readonly misses?: readonly WpErrorMatch[];
   /** Errors that mean "no such page": the fetcher returns `NO_SUCH_PAGE`. */
   readonly outOfRange?: readonly WpErrorMatch[];
+}
+
+export interface CmsRequest<T> extends CmsRequestBase {
+  /** The reader schema for a 200 body, parsed as a whole. */
+  readonly schema: ZodType<T>;
+}
+
+export interface CmsListRequest<T> extends CmsRequestBase {
+  /** The reader schema for one element of a 200 body, which must be an array. */
+  readonly itemSchema: ZodType<T>;
+}
+
+/** A collection's elements that passed the item schema, in the CMS's order, and how many did not. */
+export interface CmsList<T> {
+  readonly items: T[];
+  /** Elements skipped because the item schema refused them; each was logged. */
+  readonly skipped: number;
 }
 
 export type CmsResult<T> =
@@ -204,33 +229,100 @@ function matches(error: { status: number; code: string }, list: readonly WpError
   return (list ?? []).some((match) => match.status === error.status && match.code === error.code);
 }
 
-/** A schema failure as a short list of `path: message`, without the values. */
-function describeIssues(error: ZodError): string {
+/**
+ * A schema failure as a short list of `path: message`, without the values.
+ * `prefix` goes before each issue's path: an element's index in its list.
+ */
+function describeIssues(error: ZodError, prefix: readonly PropertyKey[] = []): string {
   const issues = error.issues.slice(0, MAX_ISSUES).map((issue) => {
-    const where = issue.path.length === 0 ? "(body)" : issue.path.map(String).join(".");
+    const path = [...prefix, ...issue.path];
+    const where = path.length === 0 ? "(body)" : path.map(String).join(".");
     return `${where}: ${issue.message}`;
   });
   const more = error.issues.length > MAX_ISSUES ? `; and ${error.issues.length - MAX_ISSUES} more` : "";
   return `${issues.join("; ")}${more}`;
 }
 
+/** A path segment the reader schema names (`slug`, `wp:term`, an index), or `?` for one that could hold body text. */
+const SAFE_PATH_SEGMENT = /^[A-Za-z0-9_:]{1,40}$/;
+
 /**
- * Reads one CMS endpoint and decides what its answer means; see the module
- * comment. Throws a `CmsError` on anything the caller did not name.
+ * Where a schema failure is, as its distinct issue paths (`slug`, `title`,
+ * `_embedded.wp:term.1.0.slug`), with no messages: a refinement's message can
+ * quote part of the value (`slugProblem` names the escape it found), and a
+ * warning must never repeat what the CMS sent. A segment that is neither an
+ * index nor a plain field name is written `?`, so a key taken from the body
+ * cannot appear either.
  */
-export async function cmsGet<T>(request: CmsRequest<T>): Promise<CmsResult<T>> {
-  const { path, query, tags, schema } = request;
+function describeIssuePaths(error: ZodError): string {
+  const segment = (key: PropertyKey): string =>
+    typeof key === "number" || SAFE_PATH_SEGMENT.test(String(key)) ? String(key) : "?";
+  const where = (path: readonly PropertyKey[]): string => (path.length === 0 ? "(item)" : path.map(segment).join("."));
+  const paths = [...new Set(error.issues.map((issue) => where(issue.path)))];
+  const more = paths.length > MAX_ISSUES ? ` and ${paths.length - MAX_ISSUES} more` : "";
+  return `${paths.slice(0, MAX_ISSUES).join(", ")}${more}`;
+}
+
+/** An element's `id` when it is a WordPress ID (a positive integer), safe to name in a log. */
+function elementId(element: unknown): number | undefined {
+  const id = typeof element === "object" && element !== null ? (element as { id?: unknown }).id : undefined;
+  const parsed = idSchema.safeParse(id);
+  return parsed.success ? parsed.data : undefined;
+}
+
+/**
+ * Parses a collection one element at a time; see the module comment. Not an
+ * array is a `CmsError`; an element the item schema refuses is skipped and
+ * logged; a non-empty list with no element left is a `CmsError` naming the
+ * first element's issues, as a whole-body parse would.
+ */
+function parseList<T>(path: string, json: unknown, itemSchema: ZodType<T>, status: number): CmsList<T> {
+  if (!Array.isArray(json)) {
+    throw new CmsError(path, "schema", "the body does not match the reader schema: (body): must be an array", status);
+  }
+  const items: T[] = [];
+  let firstFailure: { index: number; error: ZodError } | undefined;
+  json.forEach((element: unknown, index) => {
+    const parsed = itemSchema.safeParse(element);
+    if (parsed.success) {
+      items.push(parsed.data);
+      return;
+    }
+    firstFailure ??= { index, error: parsed.error };
+    const id = elementId(element);
+    console.warn(
+      scrubCmsHost(
+        `CMS list ${path}: skipped item ${index}${id === undefined ? "" : ` (ID ${id})`}, which fails the reader schema at ${describeIssuePaths(parsed.error)}`,
+      ),
+    );
+  });
+  if (firstFailure !== undefined && items.length === 0) {
+    throw new CmsError(
+      path,
+      "schema",
+      `every item fails the reader schema; the first: ${describeIssues(firstFailure.error, [firstFailure.index])}`,
+      status,
+    );
+  }
+  return { items, skipped: json.length - items.length };
+}
+
+/**
+ * Reads one CMS endpoint and decides what its answer means, with `parseBody`
+ * reading a 200's JSON (and throwing a `CmsError` when it refuses it).
+ */
+async function read<T>(
+  request: CmsRequestBase,
+  parseBody: (json: unknown, status: number) => T,
+): Promise<CmsResult<T>> {
+  const { path, query, tags } = request;
   const raw = await load(path, query, tags.join("\n"));
 
   if (raw.status === 200) {
     if (raw.json === undefined) {
       throw new CmsError(path, "json", "the body is not JSON", raw.status);
     }
-    const parsed = schema.safeParse(raw.json);
-    if (!parsed.success) {
-      throw new CmsError(path, "schema", `the body does not match the reader schema: ${describeIssues(parsed.error)}`, raw.status);
-    }
-    return { kind: "ok", data: parsed.data, headers: raw.headers };
+    return { kind: "ok", data: parseBody(raw.json, raw.status), headers: raw.headers };
   }
 
   if (isRedirectStatus(raw.status)) {
@@ -253,18 +345,53 @@ export async function cmsGet<T>(request: CmsRequest<T>): Promise<CmsResult<T>> {
 }
 
 /**
- * `cmsGet` for a request that names no expected errors, so the only outcome
- * that returns is `ok`; the narrowing is here once rather than in every
- * fetcher.
+ * Reads one CMS endpoint whose 200 body is parsed as a whole, and decides
+ * what its answer means; see the module comment. Throws a `CmsError` on
+ * anything the caller did not name. For a single object: a by-ID read, the
+ * resolve route.
  */
-export async function cmsGetOk<T>(
-  request: Omit<CmsRequest<T>, "misses" | "outOfRange">,
-): Promise<{ readonly data: T; readonly headers: Headers }> {
-  const result = await cmsGet(request);
+export function cmsGet<T>(request: CmsRequest<T>): Promise<CmsResult<T>> {
+  const { path, schema } = request;
+  return read(request, (json, status) => {
+    const parsed = schema.safeParse(json);
+    if (!parsed.success) {
+      throw new CmsError(path, "schema", `the body does not match the reader schema: ${describeIssues(parsed.error)}`, status);
+    }
+    return parsed.data;
+  });
+}
+
+/**
+ * `cmsGet` for a collection: the 200 body must be an array, parsed one
+ * element at a time with `itemSchema` (`parseList`). The pagination headers
+ * are left as the CMS sent them, so a page with a skipped element still
+ * reports the CMS's totals.
+ */
+export function cmsGetList<T>(request: CmsListRequest<T>): Promise<CmsResult<CmsList<T>>> {
+  const { path, itemSchema } = request;
+  return read(request, (json, status) => parseList(path, json, itemSchema, status));
+}
+
+type OkResult<T> = { readonly data: T; readonly headers: Headers };
+
+/** The `ok` result of a request that names no expected errors; the narrowing is here once rather than in every fetcher. */
+function okOnly<T>(path: string, result: CmsResult<T>): OkResult<T> {
   if (result.kind !== "ok") {
-    throw new CmsError(request.path, "status", "an answer the request did not expect");
+    throw new CmsError(path, "status", "an answer the request did not expect");
   }
   return result;
+}
+
+/** `cmsGet` for a request that names no expected errors, so the only outcome that returns is `ok`. */
+export async function cmsGetOk<T>(request: Omit<CmsRequest<T>, "misses" | "outOfRange">): Promise<OkResult<T>> {
+  return okOnly(request.path, await cmsGet(request));
+}
+
+/** `cmsGetList` for a request that names no expected errors, so the only outcome that returns is `ok`. */
+export async function cmsGetListOk<T>(
+  request: Omit<CmsListRequest<T>, "misses" | "outOfRange">,
+): Promise<OkResult<CmsList<T>>> {
+  return okOnly(request.path, await cmsGetList(request));
 }
 
 /** The `X-WP-Total` and `X-WP-TotalPages` headers of an `ok` result, or a `CmsError` naming the bad one. */

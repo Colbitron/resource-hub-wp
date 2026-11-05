@@ -575,3 +575,184 @@ describe("resolveSlug", () => {
     expect((await cmsError(() => resolveSlug("x"))).reason).toBe("schema");
   });
 });
+
+describe("collections are parsed per item", () => {
+  type Json = Record<string, unknown>;
+  const [FIRST, SECOND] = RESOURCES as Json[];
+  /** A slug WordPress keeps when an editor types the escape, which the reader schema refuses (`slugProblem`). */
+  const ESCAPED_SLUG = "case%2dstudy";
+  const BAD_ID = 99;
+
+  /** A copy of the first fixture resource as resource `BAD_ID`, changed by `change` so the reader schema refuses it. */
+  function badResource(change: (resource: Json) => void): Json {
+    const resource = structuredClone(FIRST);
+    resource.id = BAD_ID;
+    resource.slug = "a-bad-resource";
+    change(resource);
+    return resource;
+  }
+
+  const BAD_RESOURCES: readonly { name: string; resource: Json; where: string; value?: string }[] = [
+    {
+      name: "an escaped slug",
+      resource: badResource((resource) => {
+        resource.slug = ESCAPED_SLUG;
+      }),
+      where: "slug",
+      value: ESCAPED_SLUG,
+    },
+    {
+      name: "a missing title",
+      resource: badResource((resource) => {
+        delete resource.title;
+      }),
+      where: "title",
+    },
+    {
+      name: "a bad embedded term",
+      resource: badResource((resource) => {
+        const [[topic]] = (resource._embedded as { "wp:term": Json[][] })["wp:term"];
+        topic.slug = ESCAPED_SLUG;
+      }),
+      where: "_embedded.wp:term.0.0.slug",
+      value: ESCAPED_SLUG,
+    },
+  ];
+
+  function silenceWarnings() {
+    return vi.spyOn(console, "warn").mockImplementation(() => {});
+  }
+
+  /** The one warning logged, checked never to name the CMS or repeat a bad value. */
+  function onlyWarning(warn: ReturnType<typeof silenceWarnings>, value?: string): string {
+    expect(warn).toHaveBeenCalledTimes(1);
+    const message = String(warn.mock.calls[0][0]);
+    expect(message).not.toMatch(/cms\.example/i);
+    expect(message).not.toContain("wp-json");
+    expect(message).not.toContain("%2d");
+    if (value !== undefined) expect(message).not.toContain(value);
+    return message;
+  }
+
+  describe.each(BAD_RESOURCES)("a listing with $name", ({ resource, where, value }) => {
+    it("gives the other resources in order and warns once, naming the endpoint, the item and the field", async () => {
+      const warn = silenceWarnings();
+      handler = () => paged([FIRST, resource, SECOND], 3, 1);
+      const listing = await listResources({ page: 1 });
+      expect(listing !== null && listing !== NO_SUCH_PAGE && listing.items.map((item) => item.id)).toEqual([
+        FIRST.id,
+        SECOND.id,
+      ]);
+      const message = onlyWarning(warn, value);
+      expect(message).toBe(
+        `CMS list /wp/v2/resources: skipped item 1 (ID ${BAD_ID}), which fails the reader schema at ${where}`,
+      );
+    });
+  });
+
+  it("keeps the CMS's totals, so the page numbers still match it", async () => {
+    silenceWarnings();
+    handler = (url) =>
+      url.pathname.endsWith("/resources") ? paged([FIRST, BAD_RESOURCES[0].resource, SECOND], 27, 3) : fixtureCms(url, {});
+    const listing = await listResources({ type: "ebook", page: 2 });
+    expect(listing).toMatchObject({ total: 27, totalPages: 3 });
+    expect(listing !== null && listing !== NO_SUCH_PAGE && listing.items).toHaveLength(2);
+  });
+
+  it("throws when every item of a non-empty list fails, naming the first one's issues", async () => {
+    const warn = silenceWarnings();
+    handler = () => paged(BAD_RESOURCES.map(({ resource }) => resource), 3, 1);
+    const error = await cmsError(() => listResources({ page: 1 }));
+    expect(error.reason).toBe("schema");
+    expect(error.status).toBe(200);
+    expect(error.message).toMatch(
+      /^CMS request to \/wp\/v2\/resources failed: every item fails the reader schema; the first: 0\.slug: /,
+    );
+    expect(warn).toHaveBeenCalledTimes(3);
+  });
+
+  it("throws, as before, on a body that is not a list", async () => {
+    handler = () => json({ items: RESOURCES }, 200, { "X-WP-Total": "2", "X-WP-TotalPages": "1" });
+    const error = await cmsError(() => listResources({ page: 1 }));
+    expect(error.reason).toBe("schema");
+    expect(error.message).toBe(
+      "CMS request to /wp/v2/resources failed: the body does not match the reader schema: (body): must be an array",
+    );
+  });
+
+  it("names an item without a usable ID by its position alone", async () => {
+    const warn = silenceWarnings();
+    handler = () => paged([FIRST, { ...FIRST, id: `${HOST}` }, "not an object", SECOND], 4, 1);
+    const listing = await listResources({ page: 1 });
+    expect(listing !== null && listing !== NO_SUCH_PAGE && listing.items).toHaveLength(2);
+    expect(warn.mock.calls.map(([message]) => String(message))).toEqual([
+      "CMS list /wp/v2/resources: skipped item 1, which fails the reader schema at id",
+      "CMS list /wp/v2/resources: skipped item 2, which fails the reader schema at (item)",
+    ]);
+  });
+
+  it("leaves a bad resource out of a read by IDs, and throws when it is the only one", async () => {
+    const warn = silenceWarnings();
+    handler = () => paged([BAD_RESOURCES[1].resource, FIRST], 2, 1);
+    const items = await getResourcesByIds([BAD_ID, FIRST.id as number], { hostSlug: "host" });
+    expect(items.map((item) => item.id)).toEqual([FIRST.id]);
+    onlyWarning(warn);
+
+    handler = () => paged([BAD_RESOURCES[1].resource], 1, 1);
+    expect((await cmsError(() => getResourcesByIds([BAD_ID], { hostSlug: "host" }))).reason).toBe("schema");
+  });
+
+  describe("a read by slug", () => {
+    it("finds a good match beside a bad resource, and warns", async () => {
+      const warn = silenceWarnings();
+      handler = () => paged([BAD_RESOURCES[0].resource, RESOURCE], 2, 1);
+      expect((await getResourceBySlug(RESOURCE.slug))?.id).toBe(RESOURCE.id);
+      onlyWarning(warn, ESCAPED_SLUG);
+    });
+
+    it("throws, as before, when the one resource in the answer fails", async () => {
+      silenceWarnings();
+      handler = () => paged([{ ...(RESOURCE as object), title: undefined }], 1, 1);
+      const error = await cmsError(() => getResourceBySlug(RESOURCE.slug));
+      expect(error.reason).toBe("schema");
+      expect(error.message).toContain("every item fails the reader schema; the first: 0.title:");
+    });
+
+    it("throws when nothing that passed has the slug, saying items were skipped", async () => {
+      silenceWarnings();
+      handler = () => paged([BAD_RESOURCES[1].resource, SECOND], 2, 1);
+      const error = await cmsError(() => getResourceBySlug(RESOURCE.slug));
+      expect(error.reason).toBe("schema");
+      expect(error.message).toBe(
+        "CMS request to /wp/v2/resources failed: the body lists resources, none with the slug asked for among those that pass the reader schema (1 skipped)",
+      );
+    });
+  });
+
+  describe("terms", () => {
+    const badTerm = { ...(TOPICS[0] as object), id: 77, slug: ESCAPED_SLUG };
+
+    it("leaves a bad term out of the filter bar's list, in order, with one warning", async () => {
+      const warn = silenceWarnings();
+      handler = () => paged([TOPICS[0], badTerm, ...TOPICS.slice(1)], TOPICS.length + 1, 1);
+      const terms = await listTerms("resource_topic");
+      expect(terms.map((term) => term.slug)).toEqual(TOPICS.map((term) => term.slug));
+      expect(onlyWarning(warn, ESCAPED_SLUG)).toBe(
+        "CMS list /wp/v2/resource_topic: skipped item 1 (ID 77), which fails the reader schema at slug",
+      );
+    });
+
+    it("throws when every term on a page fails", async () => {
+      silenceWarnings();
+      handler = () => paged([badTerm, { ...badTerm, id: 78, name: "" }], 2, 1);
+      expect((await cmsError(() => listTerms("resource_topic"))).reason).toBe("schema");
+    });
+
+    it("finds a term by slug beside a bad one", async () => {
+      const warn = silenceWarnings();
+      handler = (url) => paged([badTerm, ...TOPICS.filter((term) => term.slug === url.searchParams.get("slug"))], 2, 1);
+      expect((await getTermBySlug("resource_topic", "performance"))?.id).toBe(11);
+      onlyWarning(warn, ESCAPED_SLUG);
+    });
+  });
+});

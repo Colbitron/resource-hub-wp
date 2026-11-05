@@ -43,6 +43,30 @@ Every CMS fetch sets `redirect: "error"`. Followed silently, a redirect (http to
 
 `listTerms` pages through a taxonomy a hundred at a time and stops after ten pages. Past 1,000 terms something is wrong with the CMS, but throwing would fail every listing page, whose filter bar needs the list. So it returns the first 1,000 by name and logs a `console.warn` that names the taxonomy and not the CMS origin; the bar is missing terms until the CMS is fixed.
 
+## A collection is parsed one item at a time
+
+*Amended 2026-11-05:* a list answer (`/wp/v2/resources` and the three taxonomy collections) is no longer parsed as a whole. Parsed whole, one resource or term the reader schema refused made the entire answer a `CmsError`, so one bad item took down every listing it appeared in: the library, its type and topic listings, the related sections that include it, and, for a bad term, every listing whose filter bar lists that taxonomy. The case that forced this is a slug WordPress stored with an escape an editor typed, such as `case%2dstudy`, which the previous amendment makes the front end refuse; the plugin will normalise such slugs on save in its own pull request, but the front end must not depend on that, nor on every other field of every item being right.
+
+The rule, in `cmsGetList` in `apps/web/lib/wp/fetch.ts`:
+
+- The body must be an array, or the read throws a `CmsError` (reason `schema`), as before.
+- Each element is parsed with the item schema. One that fails is skipped, and a `console.warn` names the endpoint path, the element's position, its ID when it has one that is a WordPress ID, and the paths of the fields that failed (`slug`, `title`, `_embedded.wp:term.0.0.slug`). It never names the CMS origin, and it never gives the issue messages, because a refinement's message can quote part of the value (`slugProblem` names the escape it found).
+- The elements that pass keep the CMS's order.
+- `X-WP-Total` and `X-WP-TotalPages` are read as the CMS sent them, so the page numbers still match the CMS's pages.
+- If every element of a non-empty list fails, the read throws a `CmsError` (reason `schema`) naming the first element's issues. That is a systematic break, a changed field or a plugin rewriting the response, and hiding it would empty every listing without a sign; an empty list stays an empty list.
+
+It applies to `listResources`, `getResourcesByIds` and `listTerms`. The reads of one object, by ID and through the resolve route, are parsed whole and fail as before. The two reads by slug, `getResourceBySlug` and `getTermBySlug`, get an answer that is a list, so they are parsed per item too, and the slug check runs on what passed. Core returns at most one item for a slug, so for a healthy CMS this changes nothing: a matching item that fails is the whole list failing, which throws as before. It differs only when the answer holds more than the slug asked for, where a bad stranger no longer hides a good match; with no good match, `getResourceBySlug` still throws, and its message says how many items were skipped. One rule for every list answer was preferred to a stricter one for the slug reads, which would have bought nothing for the requested item.
+
+`checkTaxonomy` is not part of the per-item rule: a term of another taxonomy in a taxonomy's collection still throws, because core serves one taxonomy per endpoint and such a term means the endpoint is answering for the wrong one.
+
+What the human sees:
+
+- **A resource with a bad field disappears from every listing it was in.** The page it would have been on shows one card fewer; the counts and page numbers include it, so a listing can say 15 resources and show 14. The server log carries one warning per render that parsed it.
+- **Its own page**, for the escaped slug, is a 404: Next.js decodes the escape before the page runs, so `/resources/article/case%2dstudy/` reaches the page as the slug `case-study`, which names nothing, and the resolve route finds nothing for it either. Had `case-study` been an old slug of a resource, resolve would find that one and the redirect rules would send a 308 to it, as for any old slug ([ADR 0035](0035-type-paths-with-a-computed-no-store-308.md)). For a resource whose slug is fine but another field is bad (a missing title, a bad embedded term), its own page reads it by slug, the one item in the answer fails, and the page fails with a `CmsError`, as it did before.
+- **A bad term** disappears from the filter bar. Every resource that carries it fails the item schema through its embedded term and disappears from listings; a listing page on which all of them do throws.
+- **A related section** loses a bad resource like an unpublished one. A related read of one ID whose resource fails is a list in which every item fails, so it throws; the page that renders the section decides how to contain that.
+- A fix in the CMS does not show until the cached answer is cleared, as for any cached bad 200 (see the consequences below): the bad item stays hidden until the next event or the interval.
+
 ## Considered options
 
 - **A shorter interval (five minutes).** Repairs a failed send sooner, at twelve times the background load on a CMS with no cache in front of it. Rejected for now; the value is one constant.
@@ -52,11 +76,14 @@ Every CMS fetch sets `redirect: "error"`. Followed silently, a redirect (http to
 - **Fetching with the slug as given and redirecting in the data layer.** The data layer has no response to redirect with, and two forms of one slug would be two cache entries. Rejected.
 - **Following CMS redirects (`fetch`'s default).** Works through a misconfigured `WP_API_URL` while caching each answer under a URL that never served it. Rejected for `redirect: "error"`.
 - **Throwing past 1,000 terms.** Visible, but takes every listing page down with it. Rejected for the cap and a warning.
+- **Parsing a collection as a whole** (as before the 2026-11-05 amendment). Loud, but one bad item fails every listing it appears in. Rejected for skipping per item and failing only when every item fails.
+- **Skipping every bad item, even when none is left.** A listing would go empty without an error when a field changes for every resource. Rejected: an all-bad non-empty list throws.
+- **Repairing a bad item** (decoding an escaped slug, defaulting a missing title). The data layer would invent CMS data and could produce a URL that names another resource. Rejected: the plugin normalises slugs on save; the front end skips.
 
 ## Consequences
 
 - The Data Cache stores only 200s. A miss by slug is a 200 with an empty list and is cached under its tags; a miss by ID and a resolve miss are a 404 or 401 and are asked again on every render.
-- A 200 whose body fails the schema is cached like any other 200, so the render keeps throwing until the interval passes or an event clears its tags. ISR keeps serving the last good page meanwhile.
+- A 200 whose body fails the schema (for a list, one in which every item fails) is cached like any other 200, so the render keeps throwing until the interval passes or an event clears its tags. ISR keeps serving the last good page meanwhile.
 - Fixing the CMS does not heal such a cached bad 200 before it expires: the Data Cache does not know the CMS changed. A test revalidation from the plugin's status page clears most of them, because every event invalidates `resources` ([ADR 0046](0046-which-tags-and-paths-each-event-revalidates.md)), which the library listing, the by-ID, related, resolve and flag reads and the filter bar's term lists all carry. What it misses are the reads tagged only by their own slug or term (another resource by slug, another type's or topic's listing and term lookup); those wait for an event that names them, or for the interval.
 - Some costs are left for the page pull requests to absorb. An unknown slug costs a cached empty-list read (and a resolve request, which is not cached because its miss is a 404) per distinct URL a visitor or crawler tries; an out-of-range page number costs one uncached 400 from the CMS per request. The pages decide how to bound these (static params, the route's own caching of a `notFound()`), not the data layer.
 - A change to the interval or the timeout is a change to one constant and to this record.

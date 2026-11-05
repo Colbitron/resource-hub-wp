@@ -1,7 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 
 import { mockCms } from "./mock-cms/client.mts";
-import { mockCmsOrigin } from "./mock-cms/config.mts";
+import { E2E_REVALIDATE_SECRET, mockCmsOrigin } from "./mock-cms/config.mts";
 
 /**
  * The data layer against the mock CMS, through the fixture page at
@@ -9,6 +9,10 @@ import { mockCmsOrigin } from "./mock-cms/config.mts";
  * pages of the library and one resource by slug, rendered with ResourceCard.
  * The page renders on every request, so the request counters show the
  * Data Cache at work.
+ *
+ * The last test publishes a resource the reader schema refuses and clears
+ * the Data Cache through the revalidate route, then puts the seed back and
+ * clears it again, so no later test or run is served the changed listing.
  */
 
 const FIXTURE_PATH = "/fixtures/data-layer/";
@@ -103,4 +107,74 @@ test("a second load is served from the Data Cache, with no new request to the CM
   expect(html).toContain("14 resources on 2 pages");
   expect(html).not.toContain("Published after the cache was warm");
   expect(await restRequests()).toEqual({});
+});
+
+/** Clears every listing in the Data Cache, as any event from the CMS does (ADR 0046), with an `update` for a seed resource. */
+async function clearListings(request: APIRequestContext): Promise<void> {
+  const { origin, resources } = await cms.state();
+  const seeded = resources.find((resource) => resource.slug === SEEDED_SLUG);
+  if (seeded === undefined || seeded.type === null) throw new Error("the seed has no typed resource to send an event for");
+  const state = { slug: seeded.slug, types: [seeded.type], topics: seeded.topics };
+  const response = await request.post("/api/revalidate/", {
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${E2E_REVALIDATE_SECRET}` },
+    data: JSON.stringify({
+      version: 1,
+      events: [
+        {
+          type: "resource",
+          event: "update",
+          id: seeded.id,
+          rest_url: `${origin}/wp-json/wp/v2/resources/${seeded.id}`,
+          ...state,
+          previous: state,
+        },
+      ],
+    }),
+  });
+  expect(response.status(), await response.text()).toBe(200);
+}
+
+test("a resource the reader schema refuses leaves the listing, the other resources still render", async ({
+  page,
+  request,
+}) => {
+  // WordPress keeps an escape an editor types in a slug; the front end refuses
+  // it (slugProblem), so the list skips this one resource rather than failing.
+  const escapedSlug = "case%2dstudy";
+  const title = "A case study with an escaped slug";
+  await cms.createResource({ title, type: "article", slug: escapedSlug });
+  expect((await cms.state()).resources.find((resource) => resource.title === title)?.slug).toBe(escapedSlug);
+
+  try {
+    await clearListings(request);
+    const response = await request.get(FIXTURE_PATH);
+    expect(response.status()).toBe(200);
+    const html = await response.text();
+    expect(html).not.toContain(title);
+    expect(html).not.toContain(escapedSlug);
+
+    await page.route("**/_next/image**", (route) => route.abort());
+    await page.goto(FIXTURE_PATH);
+    // The CMS's totals are kept: it counts 15 now, newest first, so page 1
+    // holds the new resource, skipped, and the eleven before it.
+    const first = page.getByTestId("page-1");
+    await expect(first.getByTestId("page-1-totals")).toHaveText("15 resources on 2 pages");
+    await expect(first.locator(".rh-card")).toHaveCount(11);
+    await expect(first.locator(".rh-card__link").first()).toHaveAttribute(
+      "href",
+      "/resources/ebook/a-field-guide-to-revalidation/",
+    );
+    await expect(page.getByTestId("page-2").locator(".rh-card")).toHaveCount(3);
+    await expect(page.getByTestId("by-slug").locator(".rh-card__link")).toHaveAttribute(
+      "href",
+      `/resources/webinar/${SEEDED_SLUG}/`,
+    );
+
+    // Its own URL reaches the page decoded, as another slug that names nothing: a 404.
+    const own = await request.get(`/fixtures/redirect/article/${escapedSlug}/`, { maxRedirects: 0 });
+    expect(own.status()).toBe(404);
+  } finally {
+    await cms.reset();
+    await clearListings(request);
+  }
 });
