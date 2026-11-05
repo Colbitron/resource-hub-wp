@@ -128,3 +128,44 @@ Keep the dynamic page as the default, because it is the choice that meets the co
 - The built-in trailing-slash 308 stays as Next.js sends it, with no `Cache-Control`: neither `headers()` nor the proxy reaches it. That is harmless: `/path` to `/path/` is a function of the URL alone and never changes, so a browser keeping it can never be wrong, and the slashed URL then goes through the computed check. The rule "never send a permanent redirect without a cache header" is kept for every redirect whose target can change.
 - The listing pages will be ISR. Their only redirect is the canonical-form one for a mixed-case segment ([ADR 0049](0049-data-layer-fetch-policy.md)), whose target, like the slash redirect's, is a function of the URL alone; the listing pull requests decide whether to send it from the ISR page, stored but never wrong, or from a proxy matched on `/resources/:path*` with no data (0.44 ms a redirect, 0.13 ms added to every other matched request).
 - `lib/wp/cards.ts` exports `resourceType`, the one rule for which resources have a URL, shared by the card mapping and the redirect decision.
+
+## Amendment, 2026-11-05: the listings' canonical-form redirects come from `proxy.ts`, for every `/resources/**` path
+
+The listing pages (`/resources/`, `/resources/[type]/`, `/resources/topic/[topic]/`, `/resources/[type]/topic/[topic]/` and `…/page/[n]/`) are ISR ([ADR 0050](0050-listings-are-isr-that-render-on-first-request.md)). This record's measurement above settles where their redirects can come from: a `permanentRedirect()` from an ISR page is prerendered and stored with `s-maxage=3600` and no `max-age`, and a dynamic bail-out on the redirect branch alone is a runtime 500. So the listings send no redirect of their own. `apps/web/proxy.ts`, matched on `/resources/:path*`, sends every redirect that can be decided from the path alone, and the pages answer everything that needs data with `notFound()`.
+
+### What the proxy decides
+
+Two rules, in `apps/web/lib/canonical-path.ts`, both functions of the URL and nothing else, so the answer can never be wrong and never changes with the CMS's data:
+
+- An upper-case ASCII letter outside a percent escape, in any segment after `resources`, is lower-cased: `/resources/Webinar/` is `/resources/webinar/`. An escape of a character Next.js decodes in params (`%57ebinar`, `a%27b`) is decoded first, as Next.js would decode it before a page sees it: the set is `DECODED_IN_PARAMS` in `lib/routes.ts`, `encodeURIComponent`'s unescaped set, imported by the proxy so that it and `slugProblem` share one definition. None of those characters is one a URL serialiser escapes in a path, so the target is received exactly as computed and the proxy never redirects a path to itself. Every other escape is left exactly as sent, hex case included, because Next.js normalises the hex before a page sees it ([ADR 0049](0049-data-layer-fetch-policy.md)'s amendment), so a redirect between `%e6` and `%E6` would be a redirect to itself. A segment with a `%` that does not begin a well-formed escape (`%4%41`, `%zz`, a trailing `%`) is left exactly as sent, because decoding the escape after a stray `%` makes a new escape: `/resources/x/%4%41/` would go to `%4a` and then to `j`, a chain rather than one hop. No route renders such a segment, so it gets the route's 404 or Next.js's 400 with no redirect first.
+- A trailing `/page/1/` is dropped: page 1 of a listing is the listing's own path. It is dropped once, and not when another `page/1` would be left at the end (`/resources/page/1/page/1/` is no listing and stays the route's 404), so the computed form is always a fixed point: canonicalising it again changes nothing.
+
+The response is a 308 with `Cache-Control: no-store` and a path-only `Location` that keeps the query string, so it is a single hop to a URL that renders. Nothing else is decided there: an unknown type or topic, a page past the end, a page segment with no canonical form (`0`, `01`, `x`) and the resource page's wrong-type or old-slug cases all need data, and the proxy never reads the data layer, whose `fetch` is not the Data Cache's (measured above: a CMS request per matched request).
+
+### `/Resources/…` is a 404, by design
+
+The matcher `/resources/:path*` is case-sensitive, so a request for `/Resources/` or `/RESOURCES/webinar/` never reaches the proxy and gets the app's 404. That is deliberate rather than a gap to close with a wider matcher: no page has ever been served under a capitalised prefix, so there is no link or index entry to carry over, and the proxy stays scoped to the one prefix the site uses. An earlier version of `lib/canonical-path.ts` also lower-cased the `resources` segment; behind this matcher that code could never run, so it was removed. The case rule therefore covers the segments after `resources` only.
+
+### Why every `/resources/**` path, not the listings alone
+
+The matcher covers the resource page too, so the resource page's own decision in `lib/redirects.ts` meets only canonical segments: its mixed-case branch stays as a second line, reachable only by a request that did not pass through the proxy, and a stored slug never holds an escape the proxy would decode differently from Next.js (`slugProblem`). One rule for the case of every segment under `/resources/`, in one place, rather than the listings redirecting in the proxy and the resource page redirecting in its render, and no path on which the two could disagree or double up: the proxy's target is canonical by construction, so the page's check passes and no second hop follows. Next.js's own trailing-slash 308 still runs before the proxy and carries no cache header; a slashless non-canonical path takes two hops, as recorded above.
+
+### Measured cost
+
+Under `next start` against the e2e mock (ports 3400 and 4100), 300 sequential loopback `GET`s each after 20 warm-ups, mean and p95, the same build with `proxy.ts` present and then removed:
+
+| Response | Without the proxy | Through the proxy |
+|---|---|---|
+| `/resources/`, ISR 200 `HIT` | 0.42 ms, p95 0.53 ms | 0.61 ms, p95 0.77 ms |
+| `/resources/webinar/`, ISR 200 `HIT` | 0.33 ms, p95 0.42 ms | 0.47 ms, p95 0.68 ms |
+| `/resources/Webinar/`, proxy 308 | | 0.19 ms, p95 0.23 ms |
+| `/resources/page/1/`, proxy 308 | | 0.18 ms, p95 0.26 ms |
+| `/`, static 200, not matched | 0.19 ms, p95 0.23 ms | 0.20 ms, p95 0.23 ms |
+
+About 0.15 ms on every listing hit, and a redirect for a fifth of a millisecond, with no data read. An unmatched route pays nothing.
+
+### Consequences
+
+- `proxy.ts` must stay free of the data layer and of anything that varies with the CMS; `test/canonical-path.test.ts` holds the rules and checks that every path the builders in `lib/routes.ts` produce is already canonical, so a redirect's target is a fixed point.
+- `e2e/listings.spec.ts` asserts, for mixed case, `/page/1/` and both together, one 308 with `no-store` and no `x-nextjs-cache` to a URL that answers 200, and follows one in Chromium.
+- A 404 from a listing is stored by ISR like a 200, under the tags of the fetches that decided it, so a term `create` or a publish clears it; a syntactically bad page segment is a stored 404 per distinct URL, which is what any unknown URL costs.

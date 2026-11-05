@@ -1,0 +1,160 @@
+/*
+ * The listing pages: heading, filters, the count line, the empty state and
+ * pagination, built on the shared tokens (ADR 0045). The card grid itself is
+ * `.rh-card-grid` in the shared card.css, which ResourceCard imports. These
+ * classes are the front end's own, not part of the contract.
+ */
+
+.rh-listing__header {
+	margin-bottom: var(--rh-space-5);
+}
+
+.rh-listing__count {
+	margin: 0;
+	color: var(--rh-color-text-muted);
+}
+
+/* Filters: two labelled rows of square-cornered links, matching the card's topic chips. */
+
+.rh-filters {
+	display: flex;
+	flex-direction: column;
+	gap: var(--rh-space-3);
+	margin-bottom: var(--rh-space-6);
+	padding-bottom: var(--rh-space-5);
+	border-bottom: var(--rh-border-width) solid var(--rh-color-border);
+}
+
+.rh-filters__group {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: var(--rh-space-2) var(--rh-space-3);
+}
+
+.rh-filters__name {
+	min-width: 3.5rem;
+	color: var(--rh-color-text-muted);
+	font-size: var(--rh-text-sm);
+}
+
+.rh-filters__list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--rh-space-2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.rh-filters__link {
+	display: inline-block;
+	padding: var(--rh-space-1) var(--rh-space-3);
+	border: var(--rh-border-width) solid var(--rh-color-border);
+	border-radius: var(--rh-radius-sm);
+	color: var(--rh-color-text);
+	font-size: var(--rh-text-sm);
+	text-decoration: none;
+}
+
+.rh-filters__link:hover {
+	border-color: var(--rh-color-text-muted);
+	text-decoration: underline;
+}
+
+.rh-filters__link[aria-current] {
+	background: var(--rh-color-text);
+	border-color: var(--rh-color-text);
+	color: var(--rh-color-surface);
+}
+
+/* The empty state: a sentence and a way out, no illustration. */
+
+.rh-listing__empty {
+	max-width: var(--rh-measure);
+	padding: var(--rh-space-6) 0;
+}
+
+/* Pagination: previous, the page numbers, next. */
+
+.rh-pagination {
+	margin-top: var(--rh-space-7);
+	padding-top: var(--rh-space-5);
+	border-top: var(--rh-border-width) solid var(--rh-color-border);
+}
+
+.rh-pagination__list {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--rh-space-2);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.rh-pagination__link,
+.rh-pagination__gap {
+	display: inline-block;
+	/* At least the WCAG 2.5.8 target size, and square for a number. */
+	min-width: 2.5rem;
+	min-height: 2.5rem;
+	padding: var(--rh-space-2) var(--rh-space-3);
+	line-height: 1.5;
+	text-align: center;
+}
+
+.rh-pagination__link {
+	border: var(--rh-border-width) solid var(--rh-color-border);
+	border-radius: var(--rh-radius-sm);
+	color: var(--rh-color-text);
+	text-decoration: none;
+}
+
+.rh-pagination__link:hover {
+	border-color: var(--rh-color-text-muted);
+	text-decoration: underline;
+}
+
+.rh-pagination__link[aria-current="page"] {
+	background: var(--rh-color-text);
+	border-color: var(--rh-color-text);
+	color: var(--rh-color-surface);
+}
+
+.rh-pagination__gap {
+	color: var(--rh-color-text-muted);
+}
+
+.rh-pagination__step {
+	margin-right: auto;
+}
+
+.rh-pagination__step--next {
+	margin-right: 0;
+	margin-left: auto;
+}
+
+/*
+ * Forced colours (Windows High Contrast and the like) drop the background
+ * fill that marks the current filter and the current page above, so they
+ * would look like their neighbours. A thick underline and an outline in
+ * system colours mark them instead.
+ */
+
+@media (forced-colors: active) {
+	.rh-filters__link[aria-current],
+	.rh-pagination__link[aria-current="page"] {
+		outline: 2px solid CanvasText;
+		outline-offset: 2px;
+		text-decoration: underline;
+		text-decoration-thickness: 0.2em;
+		text-underline-offset: 0.2em;
+	}
+
+	/* Keep the focus ring distinct from the current-state outline. */
+	.rh-filters__link[aria-current]:focus-visible,
+	.rh-pagination__link[aria-current="page"]:focus-visible {
+		outline: var(--rh-focus-width) solid Highlight;
+	}
+}

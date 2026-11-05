@@ -21,7 +21,7 @@ pnpm web:typecheck   # next typegen && tsc --noEmit
 pnpm web:lint        # eslint
 pnpm web:build       # next build
 pnpm web:test        # vitest run (unit tests, *.test.ts)
-pnpm web:test:e2e    # playwright test (end to end, e2e/*.spec.ts; none yet)
+pnpm web:test:e2e    # playwright test (end to end, e2e/*.spec.ts, against the mock CMS in e2e/mock-cms/)
 ```
 
 ## Configuration
@@ -34,6 +34,12 @@ pnpm web:test:e2e    # playwright test (end to end, e2e/*.spec.ts; none yet)
 
 All are server-only, read and validated in `lib/env.ts` when first used, never `NEXT_PUBLIC_`. `next.config.ts` reads `WP_API_URL` and `WP_MEDIA_ORIGIN` for the `/media/` rewrite: with neither set, a Vercel build fails and a local or CI build leaves the rewrite out with a warning. Vercel builds are recognised by the `VERCEL` system variable, which is only present when the project exposes system environment variables to builds (a project setting, "Automatically expose System Environment Variables"); keep it on, or a Vercel build without a base deploys with every `/media/` image a 404. Set `WP_API_URL` for both the Production and the Preview environments, because Preview builds fail without it. They live in `.env.local` (gitignored) and in Vercel project settings, never in git.
 
+## Routes
+
+- `/resources/`, `/resources/[type]/`, `/resources/topic/[topic]/` and `/resources/[type]/topic/[topic]/`, each paginated as `…/page/[n]/`: the listings, ISR routes rendered on their first request (ADR 0050), with a filter bar, a card grid and pagination from `components/ListingPage.tsx`. A mixed-case segment or a trailing `/page/1/` is redirected to the canonical URL by `proxy.ts` with a single-hop 308 and `Cache-Control: no-store` (ADR 0035).
+- `/resources/[type]/[slug]/`: the single resource, in a later pull request.
+- `POST /api/revalidate/`: the on-demand revalidation route (ADR 0048).
+
 ## Status
 
-Scaffold only. The resources pages, data layer, revalidation route and tests are coming in later pull requests; CI already lints, typechecks and builds it.
+The listings, the data layer and the revalidation route are in; the single-resource page is next. CI lints, typechecks, builds and runs the unit and end-to-end tests.

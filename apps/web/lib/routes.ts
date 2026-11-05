@@ -48,7 +48,7 @@ const DOT_SEGMENT = /^(?:\.|%2e){1,2}$/i;
  * `next start`, requesting `a%XXb` for every byte 0x20-0x7e: an escape of one of these
  * arrives decoded, and every other escape arrives as sent with its hex upper-cased.
  */
-const DECODED_IN_PARAMS = /^[A-Za-z0-9\-_.!~*'()]$/;
+export const DECODED_IN_PARAMS = /^[A-Za-z0-9\-_.!~*'()]$/;
 
 /**
  * A percent escape, a `%` that does not start one, or a character that is not
