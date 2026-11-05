@@ -14,6 +14,7 @@ use ResourceHub\ContentModel\Taxonomies;
 use ResourceHub\Revalidation\Dispatcher;
 use ResourceHub\Revalidation\Payload;
 use ResourceHub\Revalidation\PostHog;
+use ResourceHub\Revalidation\Result;
 use ResourceHub\Revalidation\ResultStore;
 use ResourceHub\Revalidation\Sender;
 use ResourceHub\Tests\LegacySlugRows;
@@ -202,6 +203,33 @@ final class SlugEscapesPayloadTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * A resource whose only type is a legacy slug that decodes to a reserved word, `%74opic` written
+	 * past the refusal on save, is held back by the one-type check: no request goes out, because the
+	 * front end rejects `topic` as a type.
+	 */
+	public function test_resource_whose_type_decodes_to_a_reserved_word_is_held_back(): void {
+		$type = $this->with_legacy_term_slug( '%74opic', fn(): int => $this->make_term( Taxonomies::TYPE, 'placeholder-type', 'Placeholder' ) );
+		$this->assertSame( '%74opic', $this->stored_term_slug( $type ), 'The legacy type was not stored.' );
+		$post_id = $this->make_resource( 'publish', 'typed-as-topic' );
+		wp_set_object_terms( $post_id, array( $type ), Taxonomies::TYPE );
+		$this->queue->clear();
+
+		wp_update_post(
+			array(
+				'ID'         => $post_id,
+				'post_title' => 'Retitled',
+			)
+		);
+
+		$this->configure();
+		$results = ( new Dispatcher( $this->queue, new Sender(), new ResultStore(), new PostHog( '', '' ), true ) )->flush();
+
+		$this->assertCount( 1, $results );
+		$this->assertSame( Result::NO_SINGLE_TYPE, $results[0]->outcome );
+		$this->assertSame( array(), $this->revalidate_requests() );
+	}
+
+	/**
 	 * The pass on its own: every slug field decoded; a top-level slug that decodes to nothing becomes
 	 * the ID; empty and repeated list entries are dropped; clean slugs are left exactly as stored.
 	 */
@@ -246,6 +274,34 @@ final class SlugEscapesPayloadTest extends RevalidationTestCase {
 
 		$this->assertSame( 'clean', $term['slug'] );
 		$this->assertSame( 'clean', $term['previous']['slug'] );
+	}
+
+	/**
+	 * A type slug that decodes to `topic` or `page` is dropped from `types` and `previous.types`, as
+	 * one that decodes to nothing is; a topic that decodes to one is kept, since only a type segment
+	 * is reserved.
+	 */
+	public function test_decode_slugs_drops_reserved_type_slugs(): void {
+		$event = Payload::decode_slugs(
+			array(
+				'type'     => 'resource',
+				'event'    => 'update',
+				'id'       => 12,
+				'slug'     => 'example',
+				'rest_url' => 'https://cms.example/wp-json/wp/v2/resources/12',
+				'types'    => array( '%74opic' ),
+				'topics'   => array( '%2epage' ),
+				'previous' => array(
+					'slug'   => 'example',
+					'types'  => array( '%2epage', 'webinar' ),
+					'topics' => array(),
+				),
+			)
+		);
+
+		$this->assertSame( array(), $event['types'] );
+		$this->assertSame( array( 'page' ), $event['topics'] );
+		$this->assertSame( array( 'webinar' ), $event['previous']['types'] );
 	}
 
 	/**
