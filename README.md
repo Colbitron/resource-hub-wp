@@ -2,7 +2,7 @@
 
 The CMS half of a two-repository headless WordPress demo. This repository is a WordPress plugin, `resource-hub`, plus the `wp-env` environment it runs in. The other half, [`resource-hub-next`](../resource-hub-next), is a Next.js front end on Vercel that reads this site over REST and is told when to revalidate.
 
-The plugin models a filterable resources library: a `resource` post type with `resource_topic`, `resource_type`, and `resource_flag` taxonomies, REST-exposed meta (`summary`, `source_url`), one custom REST route for related items, one server-rendered Gutenberg block, and a hook that notifies the front end on every publish, update, and trash.
+The plugin models a filterable resources library: a `resource` post type with `resource_topic`, `resource_type`, and `resource_flag` taxonomies, REST-exposed meta (`summary`, `source_url`, `related_picks`), two custom REST routes (related items and old-slug resolution), one server-rendered Gutenberg block, and a hook that notifies the front end in batches whenever a public resource or one of its terms changes.
 
 ## Status
 
@@ -15,7 +15,7 @@ Scaffold complete; features in progress. Everything below the line exists and is
 | Block build toolchain (`@wordpress/scripts`) | done |
 | GitHub Actions gate | done |
 | Hosted CMS on Cloudways, PHP 8.4, HTTPS ([ADR 0005](docs/adr/0005-hosted-wordpress-on-cloudways.md)) | done |
-| Deploy job from `main` to the host | pending |
+| Deploy job from `main` to the host | done |
 | `resource` post type and taxonomies ([ADR 0007](docs/adr/0007-one-post-type-with-a-type-taxonomy.md), [ADR 0009](docs/adr/0009-featured-is-a-term-not-meta.md)) | done |
 | REST-registered meta with sanitizers and an editor panel ([ADR 0008](docs/adr/0008-meta-in-code-not-acf.md)) | done |
 | `wp resource-hub seed` sample content | done |
@@ -29,27 +29,32 @@ Scaffold complete; features in progress. Everything below the line exists and is
 flowchart LR
     subgraph wp["WordPress (this repo)"]
         editor["Editor saves a resource"]
-        cpt["resource post type<br/>resource_topic, resource_type, resource_flag<br/>meta: summary, source_url"]
-        rest["REST<br/>/wp/v2/resources<br/>/resource-hub/v1/related/{id}"]
-        block["related-resources block<br/>server-rendered"]
-        hook["Revalidation hook<br/>transition_post_status, wp_trash_post"]
+        cpt["resource post type<br/>resource_topic, resource_type, resource_flag<br/>meta: summary, source_url, related_picks"]
+        rest["REST<br/>/wp/v2/resources<br/>/resource-hub/v1/related/{id}<br/>/resource-hub/v1/resolve"]
+        block["related-resources block<br/>server-rendered marker + fallback"]
+        hook["Revalidation hook<br/>wp_after_insert_post, before_delete_post,<br/>term hooks; sent from WP-Cron"]
+        theme["Theme pages<br/>logged-in users only;<br/>404 for anonymous visitors"]
         editor --> cpt
         cpt --> rest
         cpt --> block
         cpt --> hook
+        cpt --> theme
     end
 
     subgraph next["Next.js on Vercel"]
         api["POST /api/revalidate<br/>Bearer secret"]
-        pages["/resources<br/>/resources/{slug}"]
+        pages["/resources/<br/>/resources/{type}/{slug}/"]
         api --> pages
     end
 
-    rest -->|"content read"| pages
-    hook -->|"publish | update | trash<br/>3 s timeout, result stored in post meta"| api
+    posthog["PostHog<br/>server-side result events"]
+
+    rest -->|"content read,<br/>server side only"| pages
+    hook -->|"batch of resource and term events<br/>3 s timeout, result stored in meta"| api
+    hook -->|"every result, 3 s,<br/>failures ignored"| posthog
 ```
 
-The front end reads content through the core REST API and the one custom route. WordPress pushes a small signed notification when content changes; it never renders pages for the front end and never waits on it. The block renders on the server so the editor preview and the classic front end share one template.
+The front end reads content through the core REST API and the two custom routes, always from the Next.js server, so the CMS's address never reaches a browser; it rewrites CMS links to its own domain and CMS images to its `/media/` path. WordPress pushes a small bearer-authenticated batch when content changes, from a cron request after the save, so it never renders pages for the front end and the editor never waits on it; each result is stored on the resources it covered and, when configured, sent to PostHog. The CMS's own theme pages exist only for logged-in users and previews, and answer anyone else with a 404. The block renders on the server so the editor preview and those pages share one template, and its output is a marker the front end swaps for its own component.
 
 ## Getting started
 
@@ -67,7 +72,7 @@ Log in at `http://localhost:8888/wp-admin` with `admin` / `password`.
 
 Activating the plugin makes the pretty permalinks for `/resources/` and single resources work without a visit to Settings > Permalinks: it deletes the stored rewrite rules, and WordPress regenerates them on the next request (`flush_rewrite_rules()` itself is forbidden by the VIP ruleset). If the URLs 404 after a deploy that did not reactivate the plugin, `pnpm wp rewrite flush` (or `wp rewrite flush` on the host) is the manual equivalent.
 
-The revalidation secret and front-end URL are read from `RESOURCE_HUB_FRONTEND_URL` and `RESOURCE_HUB_REVALIDATE_SECRET`. Locally, define them in a gitignored `.wp-env.override.json` under `config`; on the host they are `define()`d in `wp-config.php`. They are never committed.
+The revalidation secret and front-end URL are read from `RESOURCE_HUB_FRONTEND_URL` and `RESOURCE_HUB_REVALIDATE_SECRET`, and results logging from the optional `RESOURCE_HUB_POSTHOG_KEY` and `RESOURCE_HUB_POSTHOG_HOST` (skipped when unset). Locally, define them in a gitignored `.wp-env.override.json` under `config`; on the host they are `define()`d in `wp-config.php`. They are never committed.
 
 ## Commands
 
@@ -127,17 +132,37 @@ Each real decision has a record under [`docs/adr/`](docs/adr/). One sentence eac
 - [0008](docs/adr/0008-meta-in-code-not-acf.md) Meta is registered in code with `register_post_meta()`, not ACF, because in a headless build every field is a developer change anyway and belongs in reviewed, tested code.
 - [0009](docs/adr/0009-featured-is-a-term-not-meta.md) `featured` is a term in a code-managed `resource_flag` taxonomy, not boolean meta, because term relationships are indexed and meta-value filtering fails the slow-query sniff; `hierarchical` is what stops editors creating flags.
 - [0010](docs/adr/0010-contract-as-json-schema-in-a-shared-package.md) The contract with the front end is JSON Schema in the shared `packages/ui` package, consumed by PHPUnit here and by Zod on the front end, because prose in two `CLAUDE.md` files drifts and a schema turns drift into a failing test in whichever repository moved first.
-
-Decisions still to be made as the features land: the custom REST route versus filtering on the client, `transition_post_status` versus `save_post` for the revalidation hook, server-rendered versus React-rendered block, and the cache strategy for the related query.
+- [0011](docs/adr/0011-revalidation-fires-on-wp-after-insert-post.md) Revalidation fires from `wp_after_insert_post` and `before_delete_post`, because `wp_after_insert_post` is the one hook that runs after terms and meta are saved on every write path, and a force delete never reaches it.
+- [0012](docs/adr/0012-revalidation-is-sent-from-wp-cron.md) The request is sent from a WP-Cron single event with `spawn_cron()` and a payload built at schedule time, so the editor never waits and the result can still be recorded, even after trash renames the slug or a delete removes the post.
+- [0013](docs/adr/0013-three-second-timeout-and-no-retries.md) The request times out at 3 seconds and is never retried, so the VIP timeout sniff passes with no ignore and the editor, who sees the failure, retries by saving.
+- [0014](docs/adr/0014-one-php-request-is-one-batch.md) One PHP request sends one versioned batch of up to 25 deduplicated events, so a bulk edit is one request to the front end, not one per post.
+- [0015](docs/adr/0015-five-resource-events.md) Resource events are `publish`, `update`, `unpublish`, `trash` and `delete`, describing the public state they concern, so the front end can tell refresh from remove for every way a resource leaves or changes.
+- [0016](docs/adr/0016-previous-state-on-update.md) An `update` carries the previous slug, type and topics, because the listings and URL a resource just left also need revalidating.
+- [0017](docs/adr/0017-term-events.md) Topic and type changes send term events through the same batch, because renaming or deleting a term changes pages without saving any resource.
+- [0018](docs/adr/0018-revalidation-results-shown-in-the-editor.md) Results are stored in `_rh_last_revalidation` on every resource in the batch and shown by a post-save poll in the block editor and a hidden-by-default list column, because the send happens after the save has returned.
+- [0019](docs/adr/0019-settings-page-is-a-status-page.md) The settings page is a status page that shows which configuration source is active and has a test button that sends a real `update` event for a chosen published resource, because the first question after a failure is what is configured and whether the front end answers a real payload.
+- [0020](docs/adr/0020-related-is-picks-then-newest-in-topic.md) Related resources are editor picks first, then the newest published resources in the same topics, so editors can say what they mean and every resource is still covered.
+- [0021](docs/adr/0021-related-route-returns-ids-only.md) The related route returns IDs and a reason only, so the front end renders related items with the same core request and card it uses everywhere.
+- [0022](docs/adr/0022-related-results-in-a-salted-object-cache.md) The related route keeps its own salted object-cache entry, because core's query cache is emptied by every autosave on the site.
+- [0023](docs/adr/0023-next-data-cache-is-the-only-http-cache.md) REST responses carry `no-cache` headers so Next.js's data cache is the only HTTP cache, because it is the only one revalidation can clear.
+- [0024](docs/adr/0024-type-paths-mirrored-on-both-sites.md) Resource URLs are `/resources/[type]/[slug]/` on both sites, a resource has exactly one type, and listings filter by one type and one topic as path segments, so the URL shows the library's hierarchy, every listing can be prerendered, and the front end only strips the domain from links.
+- [0025](docs/adr/0025-redirects-are-computed-308s-with-no-store.md) The front end's permanent redirects are computed single-hop 308s sent with `Cache-Control: no-store`, because browsers cache header-less permanent redirects and loop when a type changes back.
+- [0026](docs/adr/0026-block-renders-a-marker-with-a-fallback.md) The block renders a `data-rh-block` marker around a fallback list, which the front end swaps for a server component, because HTML baked into a resource's body would go stale.
+- [0027](docs/adr/0027-block-requires-a-topic.md) The block lists the newest resources in a required topic stored as a term ID, with `count` 1 to 10 and an editable `<h2>` heading, so it has one predictable job and survives a topic rename.
+- [0028](docs/adr/0028-shared-styles-in-a-private-github-package.md) The block's styles are shared with the front end through `@colbitron/resource-hub-ui` as a private GitHub package installed via `NPM_RC`, so the fallback and the swapped component look the same from one source; it is private because a public npm package would be discoverable as a general-use package, and if the `NPM_RC` spike fails the owner decides the delivery route again.
+- [0029](docs/adr/0029-old-slugs-resolve-through-core.md) Old slugs resolve through core's `_wp_old_slug` data via a resolve route, so there is one record of slug history and the front end can redirect renamed resources.
+- [0030](docs/adr/0030-related-merging-happens-in-the-route.md) Picks and topic fill are merged in the related route, not on the front end, so the merging rules live in one PHPUnit-tested place, the picks list stays in the REST `edit` context, and the answer is cached in Redis.
+- [0031](docs/adr/0031-cms-theme-pages-are-for-logged-in-users.md) The CMS's theme pages are for logged-in users only and answer anonymous visitors with a 404, not a redirect, with `robots.txt` and `noindex` on top, because the front end is the only public site and a redirecting CMS would be a second router.
+- [0032](docs/adr/0032-revalidation-results-logged-to-posthog.md) Every revalidation result is also sent to PostHog as a server-side event when configured, because force deletes and term deletes leave nothing to store a result on and `error_log()` fails the VIP ruleset.
 
 ## Contract with the front end
 
-Both repositories change together when this changes.
+Both repositories change together when this changes. The source of truth is the JSON Schema package in [`packages/ui/schemas/`](packages/ui/schemas/) ([ADR 0010](docs/adr/0010-contract-as-json-schema-in-a-shared-package.md)), with the semantics a schema cannot express in [`packages/ui/README.md`](packages/ui/README.md). In summary:
 
-The machine-checked definition is the JSON Schema package in [`packages/ui`](packages/ui/) ([ADR 0010](docs/adr/0010-contract-as-json-schema-in-a-shared-package.md)); the summary below is being brought up to date with it.
-
-- **Read:** `GET /wp-json/wp/v2/resources?_embed&per_page=…&resource_topic=…&resource_type=…&resource_flag=…`, `GET /wp-json/wp/v2/resources/{id}`, the three taxonomy endpoints, and `GET /wp-json/resource-hub/v1/related/{id}?count=3`. Meta is `summary` and `source_url`.
-- **Revalidate:** `POST {FRONTEND_URL}/api/revalidate` with `Authorization: Bearer {secret}` and a JSON body of `type`, `event`, `id`, `slug`, `rest_url`, `topics`, and `types`. The front end answers `200` with the paths it revalidated, `400` for a malformed body, `401` for a bad bearer, or `500` on failure. The plugin stores the status and body in post meta and shows them to the editor as an admin notice.
+- **Read:** the core collection `GET /wp-json/wp/v2/resources?_embed&…` filtered by `resource_topic`, `resource_type` and `resource_flag`, single resources, and the three taxonomy endpoints. Meta is `summary` and `source_url`; `related_picks` is in the REST `edit` context only, for the editor's picker. Every read happens on the Next.js server, never in the browser. Two custom routes: `GET /wp-json/resource-hub/v1/related/{id}?count=n` returns `{ "items": [ { "id", "source": "pick" | "topic" } ] }`, already merged, and `GET /wp-json/resource-hub/v1/resolve?slug=…` maps a current or old slug to `{ "id", "type", "slug" }`. Both answer errors in core's `WP_Error` shape.
+- **Revalidate:** `POST {FRONTEND_URL}/api/revalidate` with `Authorization: Bearer {secret}` and a batch `{ "version": 1, "events": [ … ] }` of 1 to 25 events. Resource events are `publish`, `update`, `unpublish`, `trash` or `delete`, with `id`, `slug`, `rest_url`, `types` (exactly one), `topics` and `previous` (set only on `update`). Term events cover `create`, `update` and `delete` of `resource_topic` and `resource_type` terms. The front end answers `200 { "revalidated": [ … ] }`, or `400`, `401` (`unauthorized`) or `500` with `{ "error": "…" }`. The plugin stores the status and body in `_rh_last_revalidation` and shows them to the editor.
+- **URLs:** both sites serve `/resources/`, `/resources/[type]/`, `/resources/topic/[topic]/`, `/resources/[type]/topic/[topic]/` and `/resources/[type]/[slug]/`, with a trailing slash and `…/page/[n]/` pagination; `topic` and `page` are never type slugs, and WordPress refuses them. Only the front end is public: the CMS's theme pages answer anonymous visitors with a 404 and never redirect. WordPress emits absolute CMS URLs; the front end strips the domain from links and rewrites images, in `content.rendered` too, to `/media/…`, a Next.js rewrite to the CMS's uploads.
+- **Block and styles:** the related-resources block renders `<div data-rh-block="related-resources">` with `data-count`, `data-topic`, `data-topic-id` and `data-exclude` around a fallback list, which the front end swaps for its own component on its server; the class names and `tokens.css` come from `@colbitron/resource-hub-ui`.
 
 ## License
 
