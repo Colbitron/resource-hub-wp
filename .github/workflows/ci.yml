@@ -6,8 +6,12 @@
 # deactivates every plugin on the tests site, so it runs before Playwright
 # and the Playwright specs re-activate the plugin themselves.
 #
-# The deploy job runs after the gate, only on main and on manual dispatch,
-# and syncs the plugin to the Cloudways host (ADR 0005).
+# The web job builds the Next.js front end in apps/web alongside the gate.
+# It needs no secrets: the scaffold makes no CMS calls at build time.
+#
+# The deploy job runs after both, only on main and on manual dispatch, and
+# syncs the plugin, from wp-content/plugins/resource-hub-wp, to the Cloudways
+# host (ADR 0005).
 name: CI
 
 # Pull requests run the gate once. A plain `push:` trigger alongside
@@ -68,12 +72,14 @@ jobs:
 
       # wp-env picks ~/wp-env (no dot) on Linux hosts that have /snap, which the
       # GitHub runners do. Pin the location so the cache path below is exact.
+      # Playwright is a dependency of the plugin package, not the root, so its
+      # version is read from there.
       - name: Compute cache keys
         id: keys
         run: |
           {
             echo "week=$(date -u +%G-W%V)"
-            echo "playwright=$(node -p "require('@playwright/test/package.json').version")"
+            echo "playwright=$(pnpm --filter resource-hub-wp exec node -p "require('@playwright/test/package.json').version")"
             echo "wp_env_home=$RUNNER_TEMP/wp-env"
           } >> "$GITHUB_OUTPUT"
           echo "WP_ENV_HOME=$RUNNER_TEMP/wp-env" >> "$GITHUB_ENV"
@@ -94,8 +100,8 @@ jobs:
       - name: Cache Composer vendor directory
         uses: actions/cache@v6
         with:
-          path: vendor
-          key: composer-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          path: wp-content/plugins/resource-hub-wp/vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('wp-content/plugins/resource-hub-wp/composer.lock') }}
 
       - name: Install PHP dependencies
         run: pnpm composer install --no-interaction --no-progress --prefer-dist
@@ -115,7 +121,7 @@ jobs:
       # --with-deps still installs the system libraries on a cache hit; only the
       # browser download is skipped.
       - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm --filter resource-hub-wp exec playwright install --with-deps chromium
 
       - name: Run Playwright
         run: pnpm test:e2e
@@ -125,16 +131,49 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: playwright-artifacts
-          path: artifacts/
+          path: wp-content/plugins/resource-hub-wp/artifacts/
           retention-days: 7
 
       - name: wp-env logs
         if: failure()
         run: pnpm exec wp-env logs tests --watch=false
 
+  web:
+    name: Lint, typecheck, and build the front end
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint the front end
+        run: pnpm web:lint
+
+      - name: Typecheck the front end
+        run: pnpm web:typecheck
+
+      # No environment variables: nothing in the scaffold reads WP_API_URL or
+      # REVALIDATE_SECRET at build time. When a page starts fetching from the
+      # CMS during the build, this step gets a placeholder URL, never a secret.
+      - name: Build the front end
+        run: pnpm web:build
+
   deploy:
     name: Deploy to the host
-    needs: gate
+    needs: [ gate, web ]
     # Pushes only trigger on main already; the ref check keeps that true if the
     # trigger list ever widens. A manual dispatch deploys only from main or a
     # tag: a tag on an earlier commit is how a rollback is redeployed. Pushing
@@ -241,6 +280,7 @@ jobs:
           coverage: none
 
       - name: Install PHP dependencies for production
+        working-directory: wp-content/plugins/resource-hub-wp
         run: composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
 
       # The host key comes from a secret, so the first connection never trusts
@@ -273,6 +313,10 @@ jobs:
           EOF
           chmod 600 ~/.ssh/config
 
+      # The source is the plugin directory itself, so the allowlist paths and
+      # the host layout match one to one and nothing else in the workspace
+      # (apps/, packages/, the root tooling) is ever a candidate.
+      #
       # An allowlist: only what WordPress loads at runtime is sent, and
       # everything else is excluded by the final '*', so a new development-only
       # file never ships by default. A new runtime file or directory must be
@@ -291,6 +335,7 @@ jobs:
       # DEPLOY_USER does not own it, after the files are already in place.
       # --timeout ends a stalled transfer instead of waiting for the job limit.
       - name: Sync the plugin
+        working-directory: wp-content/plugins/resource-hub-wp
         run: |
           rsync --archive --compress --no-owner --no-group --chmod=D755,F644 \
             --omit-dir-times --timeout=120 \
