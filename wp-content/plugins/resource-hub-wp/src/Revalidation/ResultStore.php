@@ -19,10 +19,10 @@ use WP_Term;
  *
  * A batch gets one result, written to every object it carried, each copy noting how many other
  * changes travelled with it. The status moves from `pending`, written when the batch is scheduled,
- * to `sent` or `failed` when the cron job records the response. A final result is not written over
- * another batch's `pending`: that batch was scheduled by a later save, and its own result replaces
- * its pending. A force-deleted post or a deleted term has nowhere to hold a result; those are
- * recorded by {@see PostHog} alone.
+ * to `sent` or `failed` when the cron job records the response. A cron batch's final result is not
+ * written over another batch's `pending` ({@see ResultStore::is_pending_for_another_batch()}); every
+ * other result is written whatever is stored. A force-deleted post or a deleted term has nowhere to
+ * hold a result; those are recorded by {@see PostHog} alone.
  *
  * The REST field is read-only and in the `edit` context only, so it never appears in the public
  * responses the front end reads. Core already refuses `context=edit` to users who cannot edit the
@@ -65,18 +65,21 @@ final class ResultStore {
 			'duration_ms' => 0,
 		);
 
-		$this->write_all( $batch_id, $events, $pending );
+		$this->write_all( $batch_id, $events, $pending, false );
 	}
 
 	/**
 	 * Writes a batch's result to every object in it.
 	 *
-	 * @param string                           $batch_id The batch.
-	 * @param array<int, array<string, mixed>> $events   Its events.
-	 * @param Result                           $result   What the front end answered.
+	 * @param string                           $batch_id          The batch.
+	 * @param array<int, array<string, mixed>> $events            Its events.
+	 * @param Result                           $result            What the front end answered.
+	 * @param bool                             $wrote_own_pending True only for a batch sent through cron, which wrote its own `pending`
+	 *                                                            when it was scheduled, so another batch's `pending` is newer and is kept.
+	 *                                                            False for every other result, which is written whatever is stored.
 	 */
-	public function record( string $batch_id, array $events, Result $result ): void {
-		$this->write_all( $batch_id, $events, $result->to_array() );
+	public function record( string $batch_id, array $events, Result $result, bool $wrote_own_pending = false ): void {
+		$this->write_all( $batch_id, $events, $result->to_array(), $wrote_own_pending );
 	}
 
 	/**
@@ -165,17 +168,18 @@ final class ResultStore {
 	}
 
 	/**
-	 * Writes one record per event, skipping objects that no longer exist, and skipping a final result
-	 * for an object whose stored record is another batch's `pending` ({@see ResultStore::is_pending_for_another_batch()}).
-	 * The free-text fields, `body` and `error`, are made valid UTF-8 first, since the database refuses
+	 * Writes one record per event, skipping objects that no longer exist, and, for a batch that wrote
+	 * its own `pending`, skipping an object whose stored record is another batch's `pending`
+	 * ({@see ResultStore::is_pending_for_another_batch()}). The free-text fields, `body` and `error`, are made valid UTF-8 first, since the database refuses
 	 * a value that is not. Should a record still fail to write, it is written again without its body,
 	 * so the status never stays `pending`.
 	 *
-	 * @param string                           $batch_id The batch.
-	 * @param array<int, array<string, mixed>> $events   Its events.
-	 * @param array<string, mixed>             $result   The result fields shared by every copy.
+	 * @param string                           $batch_id          The batch.
+	 * @param array<int, array<string, mixed>> $events            Its events.
+	 * @param array<string, mixed>             $result            The result fields shared by every copy.
+	 * @param bool                             $wrote_own_pending Whether this is a cron batch's final result, written after its own `pending`.
 	 */
-	private function write_all( string $batch_id, array $events, array $result ): void {
+	private function write_all( string $batch_id, array $events, array $result, bool $wrote_own_pending ): void {
 		$others = count( $events ) - 1;
 		$time   = gmdate( 'Y-m-d\TH:i:s\Z' );
 
@@ -199,7 +203,7 @@ final class ResultStore {
 				continue;
 			}
 
-			if ( self::PENDING !== $record['status'] && self::is_pending_for_another_batch( $object[0], $object[1], $batch_id ) ) {
+			if ( $wrote_own_pending && self::is_pending_for_another_batch( $object[0], $object[1], $batch_id ) ) {
 				continue;
 			}
 
@@ -245,14 +249,17 @@ final class ResultStore {
 	/**
 	 * Whether the object's stored record is a `pending` from a batch other than this one.
 	 *
-	 * Every batch sent through cron writes its `pending` when it is scheduled, so a stored `pending`
-	 * from another batch belongs to a later save, which the editor may be polling for. Writing an
-	 * older batch's final result over it would make that save's poll read the wrong batch, and the
-	 * later batch's own result replaces its pending anyway. The cost: if that later send never
-	 * completes, this result is lost and the stored record stays `pending` until the stale-pending
-	 * display covers it (ADR 0018). The same holds for a final with no pending of its own (a
-	 * held-back event, a synchronous send, the status page's test) that lands while another batch is
-	 * pending.
+	 * Asked only for a cron batch's final result. That batch wrote its own `pending` when it was
+	 * scheduled, so a stored `pending` from another batch was written after it, by a later save the
+	 * editor may be polling for. Writing the older result over it would make that save's poll read
+	 * the wrong batch, and the later batch's own result replaces its pending anyway. A final with no
+	 * pending of its own (a held-back event, a send under WP-CLI or on an unconfigured site, the
+	 * status page's test) is never checked: the `pending` it finds may be older than it, or left by a
+	 * send that never ran, and skipping would lose a real result.
+	 *
+	 * The cost: if the later send never completes, the cron result is lost, and the record stays
+	 * `pending` until the stale-pending display covers it (ADR 0018). The read here and the write
+	 * after it are not atomic, so a `pending` written between them is still overwritten.
 	 *
 	 * @param string $meta_type `post` or `term`.
 	 * @param int    $object_id Post or term ID.

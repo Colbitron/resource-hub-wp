@@ -210,9 +210,9 @@ final class ResultStoreTest extends RevalidationTestCase {
 	}
 
 	/**
-	 * An older batch's final result is not written over a newer batch's `pending`, on a resource or a
-	 * term: the newer batch's own result replaces its pending, and a poll for the newer save must not
-	 * read the older batch.
+	 * An older cron batch's final result is not written over a newer batch's `pending`, on a resource
+	 * or a term: the newer batch's own result replaces its pending, and a poll for the newer save must
+	 * not read the older batch.
 	 */
 	public function test_older_final_over_newer_pending_is_skipped(): void {
 		list( $events, $first, , $topic ) = $this->batch();
@@ -220,7 +220,7 @@ final class ResultStoreTest extends RevalidationTestCase {
 
 		$store->mark_pending( 'batch-old', $events );
 		$store->mark_pending( 'batch-new', $events );
-		$store->record( 'batch-old', $events, new Result( Result::FAILED, Result::SERVER_ERROR, 500, '{"error":"old"}', null, 9 ) );
+		$store->record( 'batch-old', $events, new Result( Result::FAILED, Result::SERVER_ERROR, 500, '{"error":"old"}', null, 9 ), true );
 
 		$this->assertSame( ResultStore::PENDING, ResultStore::read_post( $first )['status'] );
 		$this->assertSame( 'batch-new', ResultStore::read_post( $first )['batch_id'] );
@@ -229,7 +229,7 @@ final class ResultStoreTest extends RevalidationTestCase {
 	}
 
 	/**
-	 * A final result is written over its own batch's `pending`.
+	 * A cron batch's final result is written over its own batch's `pending`.
 	 */
 	public function test_final_over_its_own_pending_is_written(): void {
 		list( $events, $first, , $topic ) = $this->batch();
@@ -237,7 +237,7 @@ final class ResultStoreTest extends RevalidationTestCase {
 
 		$store->mark_pending( 'batch-old', $events );
 		$store->mark_pending( 'batch-new', $events );
-		$store->record( 'batch-new', $events, new Result( Result::SENT, Result::OK, 200, '{"revalidated":[]}', null, 8 ) );
+		$store->record( 'batch-new', $events, new Result( Result::SENT, Result::OK, 200, '{"revalidated":[]}', null, 8 ), true );
 
 		$this->assertSame( Result::SENT, ResultStore::read_post( $first )['status'] );
 		$this->assertSame( 'batch-new', ResultStore::read_post( $first )['batch_id'] );
@@ -245,17 +245,17 @@ final class ResultStoreTest extends RevalidationTestCase {
 	}
 
 	/**
-	 * A final result is written over another batch's final result: only a `pending` is protected.
+	 * A cron batch's final result is written over another batch's final result: only a `pending` is protected.
 	 */
 	public function test_final_over_an_older_final_is_written(): void {
 		list( $events, $first ) = $this->batch();
 		$store                  = new ResultStore();
 
-		$store->record( 'batch-old', $events, new Result( Result::FAILED, Result::TIMEOUT, null, '', 'timed out', 3001 ) );
-		$store->record( 'batch-new', $events, Result::no_single_type() );
+		$store->record( 'batch-old', $events, new Result( Result::FAILED, Result::TIMEOUT, null, '', 'timed out', 3001 ), true );
+		$store->record( 'batch-new', $events, new Result( Result::FAILED, Result::SERVER_ERROR, 500, '{"error":"new"}', null, 6 ), true );
 
 		$record = ResultStore::read_post( $first );
-		$this->assertSame( Result::NO_SINGLE_TYPE, $record['outcome'] );
+		$this->assertSame( Result::SERVER_ERROR, $record['outcome'] );
 		$this->assertSame( 'batch-new', $record['batch_id'] );
 	}
 
@@ -270,12 +270,34 @@ final class ResultStoreTest extends RevalidationTestCase {
 		$store->mark_pending( 'batch-new', $events );
 		$this->assertSame( 'batch-new', ResultStore::read_post( $first )['batch_id'] );
 
-		$store->record( 'batch-new', $events, new Result( Result::SENT, Result::OK, 200, '{"revalidated":[]}', null, 8 ) );
+		$store->record( 'batch-new', $events, new Result( Result::SENT, Result::OK, 200, '{"revalidated":[]}', null, 8 ), true );
 		$store->mark_pending( 'batch-next', $events );
 
 		$record = ResultStore::read_post( $second );
 		$this->assertSame( ResultStore::PENDING, $record['status'] );
 		$this->assertSame( 'batch-next', $record['batch_id'] );
+	}
+
+	/**
+	 * A final with no `pending` of its own (a held-back event, a synchronous or unconfigured send, the
+	 * status page's test) is written over another batch's `pending`, which may be older than it or
+	 * left by a send that never ran.
+	 */
+	public function test_final_without_its_own_pending_is_written_over_another_pending(): void {
+		list( $events, $first, , $topic ) = $this->batch();
+		$store                            = new ResultStore();
+
+		$store->mark_pending( 'batch-stuck', $events );
+		$store->record( 'batch-held', array( $events[0] ), Result::no_single_type() );
+
+		$this->assertSame( Result::NO_SINGLE_TYPE, ResultStore::read_post( $first )['outcome'] );
+		$this->assertSame( 'batch-held', ResultStore::read_post( $first )['batch_id'] );
+
+		$store->record( 'batch-sync', $events, Result::not_configured() );
+
+		$this->assertSame( Result::NOT_CONFIGURED, ResultStore::read_post( $first )['outcome'] );
+		$this->assertSame( Result::NOT_CONFIGURED, ResultStore::read_term( $topic )['outcome'] );
+		$this->assertSame( 'batch-sync', ResultStore::read_term( $topic )['batch_id'] );
 	}
 
 	/**

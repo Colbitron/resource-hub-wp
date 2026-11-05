@@ -134,7 +134,7 @@ final class Dispatcher {
 	 * @param array{version: int, events: array<int, array<string, mixed>>} $payload  The body built at schedule time.
 	 */
 	public function run( string $batch_id, array $payload ): void {
-		$this->deliver( $batch_id, $payload );
+		$this->deliver( $batch_id, $payload, true );
 	}
 
 	/**
@@ -160,14 +160,17 @@ final class Dispatcher {
 	 * Sends one batch now, records the result on every object in it, and logs it. The one path every
 	 * send takes: cron, WP-CLI, an unconfigured site, and the status page's test button.
 	 *
-	 * @param string                                                        $batch_id The batch.
-	 * @param array{version: int, events: array<int, array<string, mixed>>} $payload  The body.
+	 * @param string                                                        $batch_id          The batch.
+	 * @param array{version: int, events: array<int, array<string, mixed>>} $payload           The body.
+	 * @param bool                                                          $wrote_own_pending True only from the cron callback: the batch wrote its own `pending`
+	 *                                                                                         when it was scheduled, so the store keeps another batch's
+	 *                                                                                         newer `pending` ({@see ResultStore::record()}).
 	 */
-	public function deliver( string $batch_id, array $payload ): Result {
+	public function deliver( string $batch_id, array $payload, bool $wrote_own_pending = false ): Result {
 		$events = is_array( $payload['events'] ?? null ) ? $payload['events'] : array();
 		$result = $this->sender->send( $payload );
 
-		$this->store->record( $batch_id, $events, $result );
+		$this->store->record( $batch_id, $events, $result, $wrote_own_pending );
 		$this->posthog->capture( $batch_id, $events, $result );
 
 		return $result;

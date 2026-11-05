@@ -14,7 +14,6 @@ namespace ResourceHub\Admin;
 
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\Revalidation\Config;
-use ResourceHub\Revalidation\ResultStore;
 use ResourceHub\Revalidation\Revalidation;
 use WP_Post;
 use WP_Query;
@@ -330,12 +329,13 @@ final class StatusPage {
 			return;
 		}
 
-		// The resource's own record carries the batch ID and time the send was given; the option keeps
-		// the same fields without the body, which no screen shows, plus which resource it was.
-		$record = ResultStore::read_post( $resource->ID ) ?? $result->to_array();
+		// The option keeps the result this send returned, never a re-read of the resource's meta, which
+		// another send may have written since. It drops the body, which no screen shows, and adds when
+		// the test ran and which resource it was.
+		$record = $result->to_array();
 		unset( $record['body'] );
+		$record['time']        = gmdate( 'Y-m-d\TH:i:s\Z' );
 		$record['resource_id'] = $resource->ID;
-		$record['time']      ??= gmdate( 'Y-m-d\TH:i:s\Z' );
 
 		update_option( self::LAST_TEST_OPTION, $record, false );
 

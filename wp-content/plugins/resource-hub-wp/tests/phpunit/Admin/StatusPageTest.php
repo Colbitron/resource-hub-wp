@@ -10,8 +10,10 @@ declare(strict_types=1);
 namespace ResourceHub\Tests\Admin;
 
 use ResourceHub\Admin\StatusPage;
+use ResourceHub\Revalidation\ResourceEvents;
 use ResourceHub\Revalidation\Result;
 use ResourceHub\Revalidation\ResultStore;
+use ResourceHub\Revalidation\Revalidation;
 use ResourceHub\Tests\Revalidation\RevalidationTestCase;
 use RuntimeException;
 use WPDieException;
@@ -159,8 +161,8 @@ final class StatusPageTest extends RevalidationTestCase {
 		$option = StatusPage::last_test();
 		$this->assertSame( $newer, $option['resource_id'] );
 		$this->assertSame( Result::OK, $option['outcome'] );
-		$this->assertSame( $meta['batch_id'], $option['batch_id'] );
-		$this->assertSame( $meta['time'], $option['time'] );
+		$this->assertSame( 200, $option['code'] );
+		$this->assertMatchesRegularExpression( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $option['time'] );
 		$this->assertArrayNotHasKey( 'body', $option );
 
 		wp_cache_delete( 'alloptions', 'options' );
@@ -213,6 +215,35 @@ final class StatusPageTest extends RevalidationTestCase {
 
 		$this->assertCount( 1, $this->revalidate_requests() );
 		$this->assertSame( $chosen, StatusPage::last_test()['resource_id'] );
+	}
+
+	/**
+	 * On a site whose cron never ran, the resource holds a stuck `pending` from a save. The test has no
+	 * `pending` of its own, so its result is written over that one, and "Last test" shows the result
+	 * the send returned, not the stuck `pending`.
+	 */
+	public function test_handler_records_its_own_result_over_a_stuck_pending(): void {
+		$this->configure();
+		$post_id = $this->make_resource( 'publish', 'stuck' );
+		Revalidation::instance()->store()->mark_pending( 'never-sent', array( ResourceEvents::update_event_for( get_post( $post_id ) ) ) );
+		$this->assertSame( ResultStore::PENDING, ResultStore::read_post( $post_id )['status'] );
+		$this->responder = static fn(): array => self::http_response( 401, '{"error":"unauthorized"}' );
+		$this->submit( $post_id );
+
+		$this->assertSame( 'sent', $this->handle() );
+
+		$meta = ResultStore::read_post( $post_id );
+		$this->assertSame( Result::UNAUTHORIZED, $meta['outcome'] );
+		$this->assertNotSame( 'never-sent', $meta['batch_id'] );
+
+		$option = StatusPage::last_test();
+		$this->assertSame( Result::FAILED, $option['status'] );
+		$this->assertSame( Result::UNAUTHORIZED, $option['outcome'] );
+		$this->assertSame( $post_id, $option['resource_id'] );
+
+		$html = StatusPage::html();
+		$this->assertStringContainsString( 'the secret does not match (401)', $html );
+		$this->assertStringNotContainsString( 'Revalidation is pending', $html );
 	}
 
 	/**
