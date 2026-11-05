@@ -11,5 +11,5 @@ The CMS's `resource-hub/related-resources` block renders the same thing everywhe
 
 - `data-rh-block`, `data-count`, `data-topic`, `data-topic-id`, `data-exclude` and the heading are part of the contract. `data-topic` is the topic's current slug, resolved by the CMS at render time, and names the `topic:{slug}` tag; `data-topic-id` is the term ID the component passes as `resource_topic` to `/wp/v2/resources`, since the core collection filters by ID, not slug; `data-exclude` is the ID of the post the block sits in, which the list leaves out.
 - The marker is read on the Next.js server only and never reaches the browser, so its IDs and the CMS data behind them stay server-side ([ADR 0040](0040-the-cms-url-never-reaches-the-browser.md)).
-- The component uses the shared class names and styles ([ADR 0038](0038-shared-styles-through-npm-rc.md)), so the fallback and the swap look the same.
+- The component uses the shared class names and styles ([ADR 0038](0038-shared-styles-through-npm-rc.md), superseded by [ADR 0041](0041-the-shared-package-is-a-workspace-dependency.md) for how the package is delivered), so the fallback and the swap look the same.
 - No client JavaScript: the swap happens on the server.
