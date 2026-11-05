@@ -47,6 +47,14 @@ function urlCheck(test: (url: URL) => boolean): (value: string) => boolean {
 
 const noCredentials = urlCheck((url) => url.username === "" && url.password === "");
 const noQueryOrFragment = urlCheck((url) => url.search === "" && url.hash === "");
+/**
+ * No empty path segment. `https://cms.example//wp-json` would otherwise pass
+ * the suffix check and leave a base ending in `/`, so the rewrite destination
+ * would be `https://cms.example//wp-content/uploads/…`. Rejected rather than
+ * collapsed, so the value in the settings is the value in use.
+ */
+const noEmptySegment = urlCheck((url) => !url.pathname.includes("//"));
+const NO_EMPTY_SEGMENT = "must not contain an empty path segment (//)";
 
 /** The path without trailing slashes; `/` becomes the empty string. */
 function trimmedPath(url: URL): string {
@@ -62,13 +70,15 @@ function originAndPath(value: string): string {
 /**
  * `WP_API_URL`, the CMS's `/wp-json` base, without a trailing slash. Its path
  * must end in `/wp-json` (a subdirectory install's `/blog/wp-json` is fine),
- * and it may carry no query, fragment or credentials: the data layer appends
+ * with no `//` anywhere in it, and it may carry no query, fragment or
+ * credentials: the data layer appends
  * paths and query strings to it, and a credential would be sent with every
  * request and printed in any error that names the URL.
  */
 const wpApiUrlSchema = httpUrl
   .refine(noCredentials, { error: "must not contain a user name or password" })
   .refine(noQueryOrFragment, { error: "must not have a query string or fragment" })
+  .refine(noEmptySegment, { error: NO_EMPTY_SEGMENT })
   .refine(
     urlCheck((url) => /(^|\/)wp-json$/.test(trimmedPath(url))),
     { error: "must be the REST API base, ending in /wp-json" },
@@ -78,12 +88,14 @@ const wpApiUrlSchema = httpUrl
 /**
  * `WP_MEDIA_ORIGIN`, the site base that `/wp-content/uploads/` sits under: an
  * origin, optionally with the path WordPress is installed in
- * (`https://example.com/blog`), with no query, fragment or credentials, and
- * not already ending in the uploads directory.
+ * (`https://example.com/blog`), with no query, fragment, credentials or `//`
+ * in the path, and not already ending in the uploads directory. A trailing
+ * slash is dropped.
  */
 const mediaOriginSchema = httpUrl
   .refine(noCredentials, { error: "must not contain a user name or password" })
   .refine(noQueryOrFragment, { error: "must not have a query string or fragment" })
+  .refine(noEmptySegment, { error: NO_EMPTY_SEGMENT })
   .refine(
     urlCheck((url) => !/(^|\/)wp-content(\/|$)/.test(url.pathname)),
     { error: "must be the site's base URL, without /wp-content/uploads" },

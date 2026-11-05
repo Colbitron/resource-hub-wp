@@ -46,6 +46,15 @@ describe("parseWpApiUrl", () => {
     }
   });
 
+  it("rejects an empty path segment, which would leave a base ending in /", () => {
+    for (const value of ["https://cms.example//wp-json", "https://example.com/blog//wp-json"]) {
+      expect(() => parseWpApiUrl({ WP_API_URL: value })).toThrow(
+        /^WP_API_URL must not contain an empty path segment \(\/\/\)\./,
+      );
+      expect(() => parseMediaOrigin({ WP_API_URL: value })).toThrow(EnvError);
+    }
+  });
+
   it("rejects a query string or fragment", () => {
     for (const value of [
       "https://cms.example/wp-json?rest_route=/",
@@ -106,6 +115,25 @@ describe("parseMediaOrigin", () => {
     expect(parseMediaOrigin({ WP_MEDIA_ORIGIN: "https://example.com/blog/" })).toBe(
       "https://example.com/blog",
     );
+  });
+
+  it("drops a trailing slash from WP_MEDIA_ORIGIN, so the base never ends in /", () => {
+    for (const [value, base] of [
+      ["https://media.example/", "https://media.example"],
+      ["https://example.com/blog/", "https://example.com/blog"],
+    ]) {
+      const result = parseMediaOrigin({ WP_MEDIA_ORIGIN: value });
+      expect(result).toBe(base);
+      expect(result.endsWith("/")).toBe(false);
+    }
+  });
+
+  it("rejects a WP_MEDIA_ORIGIN with an empty path segment", () => {
+    for (const value of ["https://cms.example//blog", "https://example.com/blog//"]) {
+      expect(() => parseMediaOrigin({ WP_MEDIA_ORIGIN: value })).toThrow(
+        /^WP_MEDIA_ORIGIN must not contain an empty path segment \(\/\/\)\./,
+      );
+    }
   });
 
   it("rejects a WP_MEDIA_ORIGIN that already names the uploads directory", () => {
