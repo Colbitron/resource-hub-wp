@@ -61,8 +61,9 @@ final class PostHogTest extends RevalidationTestCase {
 	}
 
 	/**
-	 * Configured, it POSTs one `revalidation_result` event with the CMS host as `distinct_id` and the
-	 * status, outcome, code, duration and a summary of every event, with a 3-second timeout.
+	 * Configured, it POSTs one anonymous `revalidation_result` event, with a namespaced `distinct_id`,
+	 * no person profile, the CMS host as `site`, and the status, outcome, code, duration and a summary
+	 * of every event, with a 3-second timeout.
 	 */
 	public function test_configured_sends_one_event(): void {
 		$result  = new Result( Result::FAILED, Result::SERVER_ERROR, 500, '{"error":"boom"}', null, 250 );
@@ -74,7 +75,7 @@ final class PostHogTest extends RevalidationTestCase {
 
 		$this->assertCount( 1, $this->requests );
 		$request = $this->requests[0];
-		$this->assertSame( 'https://eu.i.posthog.com/capture/', $request['url'] );
+		$this->assertSame( 'https://eu.i.posthog.com/i/v0/e/', $request['url'] );
 		$this->assertSame( 'POST', $request['args']['method'] );
 		$this->assertSame( 3, $request['args']['timeout'] );
 		$this->assertSame( PostHog::RESPONSE_LIMIT, $request['args']['limit_response_size'] );
@@ -83,10 +84,15 @@ final class PostHogTest extends RevalidationTestCase {
 		$body = json_decode( $request['args']['body'], true );
 		$this->assertSame( 'phc_key', $body['api_key'] );
 		$this->assertSame( PostHog::EVENT, $body['event'] );
-		$this->assertSame( wp_parse_url( home_url(), PHP_URL_HOST ), $body['distinct_id'] );
+		$site = (string) wp_parse_url( home_url(), PHP_URL_HOST );
+		$this->assertNotSame( '', $site );
+		$this->assertSame( 'resource-hub-cms:' . $site, $body['distinct_id'] );
 		$this->assertMatchesRegularExpression( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $body['timestamp'] );
 
 		$properties = $body['properties'];
+		$this->assertArrayHasKey( '$process_person_profile', $properties );
+		$this->assertFalse( $properties['$process_person_profile'] );
+		$this->assertSame( $site, $properties['site'] );
 		$this->assertSame( 'batch-2', $properties['batch_id'] );
 		$this->assertSame( Result::FAILED, $properties['status'] );
 		$this->assertSame( Result::SERVER_ERROR, $properties['outcome'] );
@@ -112,6 +118,32 @@ final class PostHogTest extends RevalidationTestCase {
 			$properties['events']
 		);
 		$this->assertArrayNotHasKey( 'body', $properties, 'The front end body is in meta, not PostHog.' );
+	}
+
+	/**
+	 * The host with and without a trailing slash.
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function host_cases(): array {
+		return array(
+			'no trailing slash' => array( 'https://eu.i.posthog.com' ),
+			'trailing slash'    => array( 'https://eu.i.posthog.com/' ),
+		);
+	}
+
+	/**
+	 * The documented single-event endpoint, with exactly one slash between the host and `i`.
+	 *
+	 * @dataProvider host_cases
+	 *
+	 * @param string $host The configured `RESOURCE_HUB_POSTHOG_HOST`.
+	 */
+	public function test_posts_to_the_single_event_endpoint( string $host ): void {
+		( new PostHog( 'phc_key', $host ) )->capture( 'batch-4', self::events(), Result::not_configured() );
+
+		$this->assertCount( 1, $this->requests );
+		$this->assertSame( 'https://eu.i.posthog.com/i/v0/e/', $this->requests[0]['url'] );
 	}
 
 	/**

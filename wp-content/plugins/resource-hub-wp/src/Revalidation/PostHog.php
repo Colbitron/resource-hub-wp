@@ -10,7 +10,7 @@ declare(strict_types=1);
 namespace ResourceHub\Revalidation;
 
 /**
- * Sends one `revalidation_result` event per batch to PostHog when both constants are set (ADR 0032).
+ * Sends one anonymous `revalidation_result` event per batch to PostHog when both constants are set (ADR 0032).
  *
  * It is the only record of a force delete's or a term delete's outcome, and the only history: meta
  * keeps the last result per object. The request has the same 3-second timeout as the send, its
@@ -31,6 +31,16 @@ final class PostHog {
 	 * Most bytes of PostHog's answer read. The answer is ignored, so it only needs to be bounded.
 	 */
 	public const RESPONSE_LIMIT = 1024;
+
+	/**
+	 * PostHog's documented single-event capture path, appended to the host.
+	 */
+	public const ENDPOINT = '/i/v0/e/';
+
+	/**
+	 * Prefix of the `distinct_id`, so the ID names the CMS and can never match a person's.
+	 */
+	public const DISTINCT_ID_PREFIX = 'resource-hub-cms:';
 
 	/**
 	 * The project API key; empty when PostHog is off.
@@ -77,20 +87,25 @@ final class PostHog {
 		}
 
 		$host = (string) wp_parse_url( home_url(), PHP_URL_HOST );
+		$site = '' !== $host ? $host : 'unknown';
+
+		// Anonymous, with no person profile: the "person" would be the server (ADR 0032).
 		$body = array(
 			'api_key'     => $this->key,
 			'event'       => self::EVENT,
-			'distinct_id' => '' !== $host ? $host : 'unknown',
+			'distinct_id' => self::DISTINCT_ID_PREFIX . $site,
 			'timestamp'   => gmdate( 'Y-m-d\TH:i:s\Z' ),
 			'properties'  => array(
-				'$lib'        => 'resource-hub',
-				'batch_id'    => $batch_id,
-				'status'      => $result->status,
-				'outcome'     => $result->outcome,
-				'code'        => $result->code,
-				'duration_ms' => $result->duration_ms,
-				'event_count' => count( $events ),
-				'events'      => array_map( array( self::class, 'summarize' ), $events ),
+				'$process_person_profile' => false,
+				'$lib'                    => 'resource-hub',
+				'site'                    => $site,
+				'batch_id'                => $batch_id,
+				'status'                  => $result->status,
+				'outcome'                 => $result->outcome,
+				'code'                    => $result->code,
+				'duration_ms'             => $result->duration_ms,
+				'event_count'             => count( $events ),
+				'events'                  => array_map( array( self::class, 'summarize' ), $events ),
 			),
 		);
 
@@ -101,7 +116,7 @@ final class PostHog {
 		}
 
 		wp_remote_post(
-			$this->host . '/capture/',
+			$this->host . self::ENDPOINT,
 			array(
 				'timeout'             => self::TIMEOUT,
 				'limit_response_size' => self::RESPONSE_LIMIT,
