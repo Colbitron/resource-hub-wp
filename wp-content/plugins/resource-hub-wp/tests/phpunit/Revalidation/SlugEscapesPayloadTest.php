@@ -230,6 +230,73 @@ final class SlugEscapesPayloadTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * A type term stored as `%74opic` past the refusal on save, renamed by a PHP call: core keeps the
+	 * slug ({@see \ResourceHub\ContentModel\ReservedTypeSlugs::keep_current_slug()}), so the
+	 * `update` names `topic` as a type. It is held back: no request goes out, the term records the
+	 * failure, and PostHog gets it. A clean resource saved in the same request still goes out.
+	 */
+	public function test_type_term_event_whose_slug_decodes_to_a_reserved_word_is_held_back(): void {
+		$type = $this->with_legacy_term_slug( '%74opic', fn(): int => $this->make_term( Taxonomies::TYPE, 'placeholder-type', 'Placeholder' ) );
+		$this->assertSame( '%74opic', $this->stored_term_slug( $type ), 'The legacy type was not stored.' );
+		$clean = $this->make_resource( 'publish', 'clean-one' );
+		$this->queue->clear();
+
+		wp_update_term( $type, Taxonomies::TYPE, array( 'name' => 'Renamed' ) );
+		$this->assertSame( '%74opic', $this->stored_term_slug( $type ), 'The rename changed the stored slug.' );
+		wp_update_post(
+			array(
+				'ID'         => $clean,
+				'post_title' => 'Retitled',
+			)
+		);
+
+		$this->configure();
+		$results = ( new Dispatcher( $this->queue, new Sender(), new ResultStore(), new PostHog( 'phc_key', 'https://eu.i.posthog.com' ), true ) )->flush();
+
+		$this->assertCount( 2, $results );
+		$this->assertSame( Result::RESERVED_TYPE, $results[0]->outcome );
+		$this->assertSame( Result::OK, $results[1]->outcome );
+
+		$record = ResultStore::read_term( $type );
+		$this->assertIsArray( $record );
+		$this->assertSame( Result::FAILED, $record['status'] );
+		$this->assertSame( Result::RESERVED_TYPE, $record['outcome'] );
+		$this->assertSame( Result::RESERVED_TYPE_MESSAGE, $record['error'] );
+		$this->assertSame( 'update', $record['event'] );
+
+		$requests = $this->revalidate_requests();
+		$this->assertCount( 1, $requests, 'Expected one batch, for the clean resource alone.' );
+		$payload = json_decode( (string) $requests[0]['args']['body'], true );
+		$this->assert_valid_request( $payload );
+		$this->assertCount( 1, $payload['events'] );
+		$this->assertSame( 'resource', $payload['events'][0]['type'] );
+
+		$posthog = array_values( array_filter( $this->requests, static fn( array $request ): bool => str_contains( $request['url'], 'posthog' ) ) );
+		$this->assertCount( 2, $posthog );
+		$this->assertSame( Result::RESERVED_TYPE, json_decode( $posthog[0]['args']['body'], true )['properties']['outcome'] );
+	}
+
+	/**
+	 * Re-slugging that legacy type to a clean slug sends the `update`, with `previous.slug` set to
+	 * the current slug, as for one that decodes to nothing: `topic` was never a servable type path.
+	 */
+	public function test_type_term_update_whose_previous_slug_decodes_to_a_reserved_word(): void {
+		$type = $this->with_legacy_term_slug( '%74opic', fn(): int => $this->make_term( Taxonomies::TYPE, 'placeholder-type', 'Placeholder' ) );
+		$this->queue->clear();
+
+		wp_update_term( $type, Taxonomies::TYPE, array( 'slug' => 'tutorial' ) );
+		$this->assertSame( 'tutorial', $this->stored_term_slug( $type ), 'The edit did not store the new slug.' );
+
+		$events = $this->sent_events( 1 );
+
+		$this->assertSame( 'term', $events[0]['type'] );
+		$this->assertSame( 'update', $events[0]['event'] );
+		$this->assertSame( 'tutorial', $events[0]['slug'] );
+		$this->assertSame( 'tutorial', $events[0]['previous']['slug'] );
+		$this->assertSame( Result::OK, ResultStore::read_term( $type )['outcome'] );
+	}
+
+	/**
 	 * The pass on its own: every slug field decoded; a top-level slug that decodes to nothing becomes
 	 * the ID; empty and repeated list entries are dropped; clean slugs are left exactly as stored.
 	 */
@@ -302,6 +369,46 @@ final class SlugEscapesPayloadTest extends RevalidationTestCase {
 		$this->assertSame( array(), $event['types'] );
 		$this->assertSame( array( 'page' ), $event['topics'] );
 		$this->assertSame( array( 'webinar' ), $event['previous']['types'] );
+	}
+
+	/**
+	 * In a `resource_type` term event, a reserved `previous.slug` becomes the current slug and a
+	 * reserved top-level slug marks the event as unsendable; a topic term keeps both, since topics
+	 * have no reserved words.
+	 */
+	public function test_decode_slugs_on_reserved_type_term_slugs(): void {
+		$term = static fn( string $taxonomy, string $slug, string $previous ): array => array(
+			'type'     => 'term',
+			'taxonomy' => $taxonomy,
+			'event'    => 'update',
+			'id'       => 45,
+			'slug'     => $slug,
+			'name'     => 'Name',
+			'previous' => array(
+				'slug' => $previous,
+				'name' => 'Name',
+			),
+		);
+
+		$renamed = Payload::decode_slugs( $term( Taxonomies::TYPE, 'tutorial', '%74opic' ) );
+		$this->assertSame( 'tutorial', $renamed['previous']['slug'] );
+		$this->assertFalse( Payload::is_reserved_type_term( $renamed ) );
+
+		$reserved = Payload::decode_slugs( $term( Taxonomies::TYPE, '%70age', 'tutorial' ) );
+		$this->assertSame( 'page', $reserved['slug'] );
+		$this->assertSame( 'tutorial', $reserved['previous']['slug'] );
+		$this->assertTrue( Payload::is_reserved_type_term( $reserved ) );
+
+		$topic = Payload::decode_slugs( $term( Taxonomies::TOPIC, '%74opic', '%70age' ) );
+		$this->assertSame( 'topic', $topic['slug'] );
+		$this->assertSame( 'page', $topic['previous']['slug'] );
+		$this->assertFalse( Payload::is_reserved_type_term( $topic ) );
+
+		$created = $term( Taxonomies::TYPE, '%74opic', '' );
+
+		$created['event']    = 'create';
+		$created['previous'] = null;
+		$this->assertTrue( Payload::is_reserved_type_term( Payload::decode_slugs( $created ) ) );
 	}
 
 	/**

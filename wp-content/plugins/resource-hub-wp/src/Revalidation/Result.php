@@ -37,6 +37,7 @@ final class Result {
 	public const TRANSPORT_ERROR = 'transport_error';
 	public const NOT_CONFIGURED  = 'not_configured';
 	public const NO_SINGLE_TYPE  = 'no_single_type';
+	public const RESERVED_TYPE   = 'reserved_type_slug';
 	public const ENCODE_ERROR    = 'encode_error';
 
 	/**
@@ -53,6 +54,7 @@ final class Result {
 		self::TRANSPORT_ERROR,
 		self::NOT_CONFIGURED,
 		self::NO_SINGLE_TYPE,
+		self::RESERVED_TYPE,
 		self::ENCODE_ERROR,
 	);
 
@@ -60,6 +62,11 @@ final class Result {
 	 * The message stored for a resource event held back because its `types` is not exactly one element.
 	 */
 	public const NO_SINGLE_TYPE_MESSAGE = 'Not sent: a resource needs exactly one type.';
+
+	/**
+	 * The message stored for a type term event held back because its slug decodes to a reserved word.
+	 */
+	public const RESERVED_TYPE_MESSAGE = 'Not sent: a type\'s slug cannot be topic or page.';
 
 	/**
 	 * The message stored for a 200 whose body is not a JSON object with a `revalidated` array.
@@ -123,6 +130,15 @@ final class Result {
 	}
 
 	/**
+	 * A result for a `resource_type` term event that was never sent because the term's slug decodes
+	 * to `topic` or `page`, which the schema refuses as a type; sending it would earn a 400 for the
+	 * whole batch.
+	 */
+	public static function reserved_type(): self {
+		return new self( self::FAILED, self::RESERVED_TYPE, null, '', self::RESERVED_TYPE_MESSAGE, 0 );
+	}
+
+	/**
 	 * A result for a payload that `wp_json_encode()` could not encode, so no request was made.
 	 */
 	public static function encode_error(): self {
@@ -168,6 +184,8 @@ final class Result {
 				return sprintf( 'Revalidation could not reach the front end: %s', $this->error ?? '' );
 			case self::NO_SINGLE_TYPE:
 				return 'Revalidation ' . lcfirst( self::NO_SINGLE_TYPE_MESSAGE );
+			case self::RESERVED_TYPE:
+				return 'Revalidation ' . lcfirst( self::RESERVED_TYPE_MESSAGE );
 			case self::ENCODE_ERROR:
 				return 'Revalidation ' . lcfirst( self::ENCODE_ERROR_MESSAGE );
 			case self::NOT_CONFIGURED:
