@@ -11,6 +11,7 @@ declare(strict_types=1);
 
 namespace ResourceHub\Revalidation;
 
+use ResourceHub\ContentModel\ReservedTypeSlugs;
 use ResourceHub\ContentModel\SlugEscapes;
 
 /**
@@ -58,6 +59,9 @@ final class Payload {
 	 * - a type or topic is dropped from its list, and lists are deduplicated, since two stored slugs
 	 *   can decode to one. A resource left with no top-level type is then held back by the
 	 *   dispatcher's one-type check, and one left with no previous type gets the current type there.
+	 * A type slug that decodes to a reserved word ({@see ReservedTypeSlugs::SLUGS}), such as a
+	 * `%74opic` written by direct SQL past the refusal on save, is dropped the same way: `topic` and
+	 * `page` name listing paths, never a type, and the schema rejects them as one.
 	 * Call this before {@see ResourceState::has_one_type()}, so that check sees the lists as sent.
 	 * Every other slug is returned exactly as stored.
 	 *
@@ -69,7 +73,7 @@ final class Payload {
 		$event['slug'] = self::decoded_slug( (string) $event['slug'], (string) $event['id'] );
 
 		if ( $is_resource ) {
-			$event['types']  = self::decoded_list( $event['types'] );
+			$event['types']  = self::decoded_types( $event['types'] );
 			$event['topics'] = self::decoded_list( $event['topics'] );
 		}
 
@@ -80,7 +84,7 @@ final class Payload {
 		$event['previous']['slug'] = self::decoded_slug( (string) $event['previous']['slug'], $event['slug'] );
 
 		if ( $is_resource ) {
-			$event['previous']['types']  = self::decoded_list( $event['previous']['types'] );
+			$event['previous']['types']  = self::decoded_types( $event['previous']['types'] );
 			$event['previous']['topics'] = self::decoded_list( $event['previous']['topics'] );
 		}
 
@@ -109,5 +113,15 @@ final class Payload {
 		$decoded = array_map( static fn( $slug ): string => SlugEscapes::decode_stored( (string) $slug ), $slugs );
 
 		return array_values( array_unique( array_filter( $decoded, static fn( string $slug ): bool => '' !== $slug ) ) );
+	}
+
+	/**
+	 * A list of stored type slugs decoded, without empty, repeated or reserved slugs.
+	 *
+	 * @param array<int, mixed> $slugs Stored slugs.
+	 * @return string[]
+	 */
+	private static function decoded_types( array $slugs ): array {
+		return array_values( array_diff( self::decoded_list( $slugs ), ReservedTypeSlugs::SLUGS ) );
 	}
 }
