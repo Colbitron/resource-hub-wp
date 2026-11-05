@@ -8,12 +8,13 @@ import { fileURLToPath } from "node:url";
 import { encodeHeaderSafe } from "next/dist/server/lib/encode-header-safe";
 import { describe, expect, it } from "vitest";
 
-import type { ListingFilter } from "../lib/routes";
 import {
   RESOURCES_TAG,
   TERMS_TAG,
   eventsToInvalidations,
+  flagListingTags,
   listingTags,
+  relatedTags,
   resolveTags,
   resourceFetchTags,
   resourceTag,
@@ -113,16 +114,44 @@ describe("tag builders", () => {
     expect(encodeHeaderSafe("resource:日")).toBe("resource:%E6%97%A5");
   });
 
-  it("stay within Next.js's 256-character tag limit for a 200-character slug", () => {
+  it("stay within Next.js's 256-character tag limit: the longest slug gives a 209-character tag", () => {
     const ascii = "a".repeat(200);
     // A WordPress-stored non-ASCII slug at the column's width: 22 characters, 198 bytes encoded.
     const encoded = `${"%e6%97%a5".repeat(22)}ab`;
     expect(encoded).toHaveLength(200);
-    for (const slug of [ascii, encoded]) {
+    // The same slug raw: 24 code points, 200 characters once encoded.
+    const raw = `${"日".repeat(22)}ab`;
+    for (const slug of [ascii, encoded, raw]) {
+      expect(resourceTag(slug), slug).toHaveLength(209);
       for (const tag of [resourceTag(slug), topicTag(slug), typeTag(slug)]) {
         expect(tag.length, tag).toBeLessThanOrEqual(256);
       }
     }
+  });
+
+  it("throw rather than build a tag Next.js would drop, for a slug within the schema's 200 code points", () => {
+    const long = "日".repeat(200);
+    // What the tag would have been: 1,809 characters, which Next.js drops with a warning.
+    expect(`resource:${encodeURIComponent(long)}`).toHaveLength(1809);
+    expect(() => resourceTag(long)).toThrow(RangeError);
+    expect(() => topicTag(long)).toThrow(RangeError);
+    expect(() => typeTag(long)).toThrow(RangeError);
+    expect(() => topicTag(`${"日".repeat(22)}abc`)).toThrow(RangeError);
+  });
+
+  it("lower-case ASCII letters, so topic:ABC and topic:abc are one tag", () => {
+    expect(topicTag("ABC")).toBe("topic:abc");
+    expect(resourceTag("Example")).toBe("resource:example");
+    expect(typeTag("Webinar")).toBe("type:webinar");
+    expect(topicTag("%E6%97%A5-ABC")).toBe("topic:%e6%97%a5-abc");
+    const upper = eventsToInvalidations([
+      resource({ event: "publish", slug: "Example", types: ["Webinar"], topics: ["ABC"] }),
+    ]);
+    const lower = eventsToInvalidations([
+      resource({ event: "publish", slug: "example", types: ["webinar"], topics: ["abc"] }),
+    ]);
+    expect(upper).toEqual(lower);
+    expect(() => typeTag("Topic")).toThrow(RangeError);
   });
 
   it("throw on a reserved type slug", () => {
@@ -472,7 +501,7 @@ describe("eventsToInvalidations", () => {
       resource({ event: "publish", slug: "%e6%97%a5%e6%9c%ac", topics: ["%e6%97%a5"] }),
     ]);
     for (const slug of ["日本", "%E6%97%A5%E6%9C%AC", "%e6%97%a5%e6%9c%ac"]) {
-      expect(tags).toContain(resourceFetchTags("webinar", slug)[0]);
+      expect(tags).toContain(resourceFetchTags(slug)[0]);
     }
     expect(tags).toContain(listingTags({ topic: "日" })[0]);
     expect(paths).toContain("/resources/webinar/%e6%97%a5%e6%9c%ac/");
@@ -493,12 +522,19 @@ describe("fetch tags (ADR 0046)", () => {
     ]);
   });
 
-  it("tag a resource fetch with its slug, the URL's type segment and terms", () => {
-    expect(resourceFetchTags("webinar", "example")).toEqual([
-      "resource:example",
-      "type:webinar",
-      "terms",
-    ]);
+  it("tag a resource fetch with its slug and terms, and no type from the URL", () => {
+    // The fetch's URL has no type in it, so every type segment shares its cache entry.
+    expect(resourceFetchTags("example")).toEqual(["resource:example", "terms"]);
+    expect(resourceFetchTags("example").some((tag) => tag.startsWith("type:"))).toBe(false);
+  });
+
+  it("tag the related section with resources, terms and its host", () => {
+    expect(relatedTags("example")).toEqual(["resources", "terms", "resource:example"]);
+    expect(() => relatedTags("")).toThrow(RangeError);
+  });
+
+  it("tag a flag-filtered list with resources and terms", () => {
+    expect(flagListingTags()).toEqual(["resources", "terms"]);
   });
 
   it("tag a term lookup with the term's own tag only", () => {
@@ -507,13 +543,36 @@ describe("fetch tags (ADR 0046)", () => {
     expect(() => termLookupTags("resource_type", "page")).toThrow(RangeError);
   });
 
-  it("tag resolve with resources and the filter bar's taxonomy lists with terms", () => {
+  it("tag resolve with resources and the filter bar's taxonomy lists with resources and terms", () => {
     expect(resolveTags()).toEqual(["resources"]);
-    expect(taxonomyListTags()).toEqual(["terms"]);
+    expect(taxonomyListTags()).toEqual(["resources", "terms"]);
   });
 });
 
-describe("the tagging rule: every page a change shows on shares a tag with its invalidations", () => {
+describe("the tagging rule, against ADR 0046's table written out by hand", () => {
+  /*
+   * Each fetch's tags are written here from the table's text, as literal
+   * strings, without lib/tags.ts. The functions are checked against them,
+   * and coverage is checked against them, so the rule is not proved with the
+   * code it checks. Every slug below is already canonical (lower case,
+   * percent-encoded), so a literal tag is the tag Next.js stores.
+   */
+  const adr = {
+    library: ["resources", "terms"],
+    type: (t: string) => [`type:${t}`, "terms"],
+    topic: (p: string) => [`topic:${p}`, "terms"],
+    typeTopic: (t: string, p: string) => [`type:${t}`, `topic:${p}`, "terms"],
+    resource: (slug: string) => [`resource:${slug}`, "terms"],
+    block: (p: string) => [`topic:${p}`, "terms"],
+    related: (host: string) => ["resources", "terms", `resource:${host}`],
+    featured: ["resources", "terms"],
+    termLookup: (taxonomy: TermEvent["taxonomy"], slug: string) => [
+      taxonomy === "resource_topic" ? `topic:${slug}` : `type:${slug}`,
+    ],
+    resolve: ["resources"],
+    filterBar: ["resources", "terms"],
+  };
+
   const states: ResourceState[] = [
     { slug: "example", types: ["webinar"], topics: ["performance"] },
     { slug: "no-topics", types: ["podcast"], topics: [] },
@@ -521,14 +580,37 @@ describe("the tagging rule: every page a change shows on shares a tag with its i
     { slug: "%e6%97%a5%e6%9c%ac", types: ["%e8%a8%98"], topics: ["%e6%97%a5", "page", "topic"] },
   ];
 
-  /** Every listing a resource in `state` appears on, as the filters a page fetches with. */
-  function listingsOf(state: ResourceState): ListingFilter[] {
+  /** A page in another topic and type whose related section picks any resource. */
+  const HOST = "elsewhere-host";
+
+  interface Fetch {
+    readonly name: string;
+    /** The tags ADR 0046's table gives this fetch, written out by hand. */
+    readonly adr: readonly string[];
+    /** The tags lib/tags.ts gives it. */
+    readonly code: readonly string[];
+  }
+
+  /** Every fetch whose result shows a resource in `state`. */
+  function fetchesShowing(state: ResourceState): Fetch[] {
     const [type] = state.types;
     return [
-      {},
-      { type },
-      ...state.topics.map((topic) => ({ topic })),
-      ...state.topics.map((topic) => ({ type, topic })),
+      { name: "library", adr: adr.library, code: listingTags() },
+      { name: `type ${type}`, adr: adr.type(type), code: listingTags({ type }) },
+      ...state.topics.flatMap((topic) => [
+        { name: `topic ${topic}`, adr: adr.topic(topic), code: listingTags({ topic }) },
+        {
+          name: `type ${type} topic ${topic}`,
+          adr: adr.typeTopic(type, topic),
+          code: listingTags({ type, topic }),
+        },
+        { name: `block for ${topic}`, adr: adr.block(topic), code: listingTags({ topic }) },
+      ]),
+      { name: `resource ${state.slug}`, adr: adr.resource(state.slug), code: resourceFetchTags(state.slug) },
+      { name: `related section on ${HOST}`, adr: adr.related(HOST), code: relatedTags(HOST) },
+      { name: "featured", adr: adr.featured, code: flagListingTags() },
+      { name: "resolve", adr: adr.resolve, code: resolveTags() },
+      { name: "filter bar term lists", adr: adr.filterBar, code: taxonomyListTags() },
     ];
   }
 
@@ -545,53 +627,60 @@ describe("the tagging rule: every page a change shows on shares a tag with its i
     ];
   }
 
+  const termEvents: TermEvent[] = [
+    term({ taxonomy: "resource_topic", event: "create" }),
+    term({ taxonomy: "resource_topic", event: "delete" }),
+    term({ taxonomy: "resource_topic", event: "update", previous: { slug: "old", name: "Old" } }),
+    term({
+      taxonomy: "resource_type",
+      event: "update",
+      slug: "online-event",
+      name: "Online event",
+      previous: { slug: "webinar", name: "Webinar" },
+    }),
+  ];
+
   function shares(fetchTags: readonly string[], invalidated: readonly string[]): boolean {
     return fetchTags.some((tag) => invalidated.includes(tag));
   }
 
-  it("holds for resource events, on every listing and the resource's own page", () => {
+  it("gives every fetch exactly the tags the ADR's table names", () => {
+    for (const state of states) {
+      for (const fetch of fetchesShowing(state)) {
+        expect(new Set(fetch.code), fetch.name).toEqual(new Set(fetch.adr));
+        expect(fetch.code, fetch.name).toHaveLength(new Set(fetch.code).size);
+      }
+    }
+    for (const event of termEvents) {
+      expect(new Set(termLookupTags(event.taxonomy, event.slug))).toEqual(
+        new Set(adr.termLookup(event.taxonomy, event.slug)),
+      );
+    }
+  });
+
+  it("holds for resource events, on every fetch that shows the resource", () => {
     for (const state of states) {
       for (const event of eventsOn(state)) {
         const { tags } = eventsToInvalidations([event]);
-        for (const filter of listingsOf(state)) {
-          expect(shares(listingTags(filter), tags), `${event.event} ${JSON.stringify(filter)}`).toBe(
-            true,
-          );
+        for (const fetch of fetchesShowing(state)) {
+          expect(shares(fetch.adr, tags), `${event.event} ${state.slug}: ${fetch.name}`).toBe(true);
         }
-        expect(shares(resourceFetchTags(state.types[0], state.slug), tags)).toBe(true);
-        expect(shares(resolveTags(), tags)).toBe(true);
       }
     }
   });
 
-  it("holds for term events, on every page that shows a term", () => {
-    const events: TermEvent[] = [
-      term({ taxonomy: "resource_topic", event: "create" }),
-      term({ taxonomy: "resource_topic", event: "delete" }),
-      term({
-        taxonomy: "resource_topic",
-        event: "update",
-        previous: { slug: "old", name: "Old" },
-      }),
-      term({
-        taxonomy: "resource_type",
-        event: "update",
-        slug: "online-event",
-        name: "Online event",
-        previous: { slug: "webinar", name: "Webinar" },
-      }),
-    ];
-    for (const event of events) {
+  it("holds for term events, on every fetch that shows a term", () => {
+    for (const event of termEvents) {
       const { tags, paths } = eventsToInvalidations([event]);
       expect(paths).toContain("/resources/");
       for (const state of states) {
-        for (const filter of listingsOf(state)) {
-          expect(shares(listingTags(filter), tags)).toBe(true);
+        for (const fetch of fetchesShowing(state)) {
+          expect(shares(fetch.adr, tags), `${event.event} ${event.slug}: ${fetch.name}`).toBe(true);
         }
-        expect(shares(resourceFetchTags(state.types[0], state.slug), tags)).toBe(true);
       }
-      expect(shares(taxonomyListTags(), tags)).toBe(true);
-      expect(shares(resolveTags(), tags)).toBe(true);
+      for (const slug of [event.slug, ...(event.previous === null ? [] : [event.previous.slug])]) {
+        expect(shares(adr.termLookup(event.taxonomy, slug), tags), slug).toBe(true);
+      }
     }
   });
 
@@ -599,13 +688,15 @@ describe("the tagging rule: every page a change shows on shares a tag with its i
     const { tags } = eventsToInvalidations([
       term({ taxonomy: "resource_topic", event: "create", slug: "new-topic", name: "New" }),
     ]);
-    expect(shares(termLookupTags("resource_topic", "new-topic"), tags)).toBe(true);
+    expect(shares(adr.termLookup("resource_topic", "new-topic"), tags)).toBe(true);
   });
 
-  it("does not let a resource event clear terms", () => {
+  it("does not let a resource event clear terms, though the filter bar's counts still refresh", () => {
     for (const state of states) {
       for (const event of eventsOn(state)) {
-        expect(eventsToInvalidations([event]).tags).not.toContain(TERMS_TAG);
+        const { tags } = eventsToInvalidations([event]);
+        expect(tags).not.toContain("terms");
+        expect(shares(adr.filterBar, tags)).toBe(true);
       }
     }
   });

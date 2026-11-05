@@ -46,9 +46,26 @@ describe("isSlug", () => {
     expect(isSlug("a".repeat(201))).toBe(false);
   });
 
-  it("counts characters, not UTF-16 units, as the schema does", () => {
-    expect(isSlug("😀".repeat(200))).toBe(true);
-    expect(isSlug("😀".repeat(201))).toBe(false);
+  it("checks the schema's 200, in code points, before the encoded length", () => {
+    // Any slug over 200 code points is also over 200 encoded, so the
+    // schema's own rule shows only in which message comes back.
+    expect(isSlug("😀".repeat(16))).toBe(true);
+    expect(slugProblem("😀".repeat(201))).toBe("must be at most 200 characters");
+    expect(slugProblem("😀".repeat(100))).toMatch(/once percent-encoded/);
+  });
+
+  it("also caps the canonical, percent-encoded form at 200 characters, as WordPress stores it", () => {
+    // 22 日 encode to 198 characters; 23 to 207, though they are 23 code points.
+    expect(isSlug("日".repeat(22) + "ab")).toBe(true);
+    expect(isSlug("日".repeat(22) + "abc")).toBe(false);
+    expect(isSlug("日".repeat(23))).toBe(false);
+    // 200 日 are within the schema's 200 code points but 1,800 characters encoded.
+    expect(isSlug("日".repeat(200))).toBe(false);
+    expect(isSlug("😀".repeat(200))).toBe(false);
+    // The already-encoded form is counted as it is.
+    expect(isSlug(`${"%e6%97%a5".repeat(22)}ab`)).toBe(true);
+    expect(isSlug(`${"%e6%97%a5".repeat(22)}abc`)).toBe(false);
+    expect(() => canonicalSlug("日".repeat(23))).toThrow(RangeError);
   });
 
   it("rejects dot segments and malformed Unicode", () => {
@@ -67,6 +84,16 @@ describe("isTypeSlug", () => {
     expect(isTypeSlug("page")).toBe(false);
     expect(isTypeSlug("")).toBe(false);
     expect(isTypeSlug("a/b")).toBe(false);
+  });
+
+  it("rejects the reserved words in any case, since the canonical form lower-cases them", () => {
+    for (const value of ["Topic", "TOPIC", "Page", "pAgE"]) {
+      expect(isTypeSlug(value), value).toBe(false);
+      expect(typeSlugProblem(value), value).toMatch(/reserved/);
+      expect(() => typeListingPath(value), value).toThrow(RangeError);
+    }
+    expect(isSlug("Topic")).toBe(true);
+    expect(topicListingPath("Topic")).toBe("/resources/topic/topic/");
   });
 });
 
@@ -253,8 +280,18 @@ describe("canonicalSlug", () => {
     expect(canonicalSlug("\u{1F600}")).toBe("%f0%9f%98%80");
   });
 
-  it("leaves ASCII letters and the characters a segment allows alone", () => {
-    expect(canonicalSlug("Example-Slug_1.0~")).toBe("Example-Slug_1.0~");
+  it("leaves the characters a segment allows alone, apart from lower-casing letters", () => {
+    expect(canonicalSlug("example-slug_1.0~!$&'()*+,;=:@")).toBe("example-slug_1.0~!$&'()*+,;=:@");
+    expect(canonicalSlug("Example-Slug_1.0~")).toBe("example-slug_1.0~");
+  });
+
+  it("lower-cases ASCII letters, as WordPress's slugs are, so ABC and abc are one form", () => {
+    for (const form of ["ABC", "Abc", "abc"]) {
+      expect(canonicalSlug(form), form).toBe("abc");
+      expect(resourcePath("Webinar", form), form).toBe("/resources/webinar/abc/");
+      expect(topicListingPath(form), form).toBe("/resources/topic/abc/");
+    }
+    expect(canonicalSlug("Caf%C3%A9-%E6%97%A5")).toBe("caf%c3%a9-%e6%97%a5");
   });
 
   it("round-trips a non-ASCII slug through a path", () => {
@@ -280,6 +317,7 @@ describe("slugProblem", () => {
     expect(slugProblem("a b")).toMatch(/slash or whitespace/);
     expect(slugProblem("\ud800")).toMatch(/well-formed/);
     expect(slugProblem("a".repeat(201))).toMatch(/200/);
+    expect(slugProblem("日".repeat(23))).toMatch(/200 characters once percent-encoded/);
     expect(slugProblem("..")).toMatch(/\.\./);
     expect(typeSlugProblem("page")).toMatch(/reserved/);
     expect(typeSlugProblem("webinar")).toBeNull();

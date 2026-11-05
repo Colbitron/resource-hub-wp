@@ -341,11 +341,25 @@ describe("readers drop unknown keys; strict mirrors reject them", () => {
 });
 
 describe("slug length", () => {
-  it("counts code points, as JSON Schema's maxLength does", () => {
+  it("counts code points for the schema's 200, as JSON Schema's maxLength does", () => {
     // Each U+1F600 is one code point and two UTF-16 code units.
-    expect(slugSchema.safeParse("\u{1F600}".repeat(200)).success).toBe(true);
-    expect(slugSchema.safeParse("\u{1F600}".repeat(201)).success).toBe(false);
+    expect(slugSchema.safeParse("\u{1F600}".repeat(16)).success).toBe(true);
+    expect(slugSchema.safeParse("\u{1F600}".repeat(201)).error?.issues[0]?.message).toBe(
+      "must be at most 200 characters",
+    );
+    expect(slugSchema.safeParse("a".repeat(200)).success).toBe(true);
     expect(slugSchema.safeParse("a".repeat(201)).success).toBe(false);
+  });
+
+  it("also caps the percent-encoded form at 200, which the JSON Schema does not", () => {
+    // Both are within the schema's 200 code points; encoded, 1,800 and 2,400 characters.
+    for (const value of ["日".repeat(200), "\u{1F600}".repeat(200)]) {
+      expect(slugSchema.safeParse(value).error?.issues[0]?.message, value).toMatch(
+        /once percent-encoded/,
+      );
+    }
+    expect(slugSchema.safeParse("日".repeat(22) + "ab").success).toBe(true);
+    expect(slugSchema.safeParse("日".repeat(23)).success).toBe(false);
   });
 });
 
@@ -365,6 +379,12 @@ describe("slug rule", () => {
     "a/b",
     "a".repeat(200),
     "a".repeat(201),
+    "日".repeat(22) + "ab",
+    "日".repeat(23),
+    "日".repeat(200),
+    "Topic",
+    "PAGE",
+    "ABC",
     ".",
     "..",
     "%2e",
@@ -382,8 +402,8 @@ describe("slug rule", () => {
     }
   });
 
-  it("rejects a lone surrogate and a dot segment, which the JSON Schema allows", () => {
-    for (const value of ["\ud800", ".", "..", "%2e"]) {
+  it("rejects a lone surrogate, a dot segment and an over-long encoded form, which the JSON Schema allows", () => {
+    for (const value of ["\ud800", ".", "..", "%2e", "日".repeat(200)]) {
       expect(slugSchema.safeParse(value).success, JSON.stringify(value)).toBe(false);
     }
   });
@@ -393,6 +413,7 @@ describe("slug rule", () => {
       expect(slugSchema.safeParse(value).error?.issues, JSON.stringify(value)).toHaveLength(1);
     }
     expect(typeSlugSchema.safeParse("topic").error?.issues).toHaveLength(1);
+    expect(typeSlugSchema.safeParse("Topic").error?.issues).toHaveLength(1);
   });
 });
 

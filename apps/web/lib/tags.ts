@@ -10,9 +10,17 @@
  * revalidate route clears what `eventsToInvalidations` returns, the tags with
  * `revalidateTag` and the paths with `revalidatePath`.
  *
+ * Tags are fixed from the request, but Next.js keys a cached fetch by its URL,
+ * method and headers, not its tags: two callers of one URL share one entry,
+ * stored under whichever caller's tags came first. So the rule relies only on
+ * tags that every caller of that URL would add, and a tag that depends on the
+ * calling page (the type segment it was reached under) is never put on a
+ * shared URL.
+ *
  * Every slug goes through `canonicalSlug` (`lib/routes.ts`), so a slug that
  * arrives raw (`日`), as WordPress stores it (`%e6%97%a5`) or upper-cased
- * (`%E6%97%A5`) gives the same tag, and that tag is the one Next.js stores.
+ * (`%E6%97%A5`, `Example`) gives the same tag, and that tag is the one
+ * Next.js stores.
  *
  * `eventsToInvalidations` covers the union of the current and the previous
  * state of every event:
@@ -31,7 +39,10 @@
  *
  * Only term events produce `terms`. Tagging every fetch `resources` instead
  * would have done the same for term events, but then every resource event
- * would clear every page too.
+ * would clear every page too. The fetches whose result can change with any
+ * resource, whichever it is, do carry `resources`: the related section, the
+ * featured list and the filter bar's term lists, whose counts WordPress
+ * updates on every publish, trash and term assignment without a term event.
  *
  * Pagination pages (`…/page/{n}/`) are never enumerated as paths: the event
  * cannot say how many there are, and every listing page's fetch carries the
@@ -67,7 +78,10 @@ import type {
 
 export type { ResourceEvent, ResourceState, RevalidationEvent, TermEvent, TermState };
 
-/** The tag every event clears: on the library listing and on resolve. */
+/**
+ * The tag every event clears: on the library listing, resolve, the related
+ * section, the featured list and the filter bar's term lists.
+ */
 export const RESOURCES_TAG = "resources";
 
 /** The tag only term events clear: on every fetch that embeds or lists terms. */
@@ -121,12 +135,38 @@ export function listingTags(filter: ListingFilter = {}): string[] {
 
 /**
  * A resource fetched by slug, a miss included: `resource:{slug}`, so a publish
- * under that slug clears a cached miss; `type:{t}` for the type segment of the
- * URL it was asked for, so a type event clears the pages under that segment
- * and they redirect or 404; and `terms`, since it embeds its terms.
+ * under that slug clears a cached miss, and `terms`, since it embeds its
+ * terms, which also carries a type rename to the pages under the old segment,
+ * so they redirect or 404. No `type:{t}` from the URL's type segment: the
+ * fetch's URL has no type in it, so `/resources/right/foo/` and
+ * `/resources/wrong/foo/` share one cache entry and its type tag would be
+ * whichever page fetched first.
  */
-export function resourceFetchTags(typeSegment: string, slug: string): string[] {
-  return [resourceTag(slug), typeTag(typeSegment), TERMS_TAG];
+export function resourceFetchTags(slug: string): string[] {
+  return [resourceTag(slug), TERMS_TAG];
+}
+
+/**
+ * The resource page's related section, both fetches: the related route
+ * (`/resource-hub/v1/related/{id}`) and the `?include={ids}&_embed` read of the
+ * items it returns. `resources`, because a pick from any topic may be
+ * published, unpublished, trashed or renamed, and the topics the route merges
+ * by may change; `terms`, since the read embeds terms; and
+ * `resource:{hostSlug}`, the page the section sits on. The host tag is extra,
+ * not relied on: two hosts with the same items share one `include=` URL and
+ * one cache entry, and `resources` already reaches both.
+ */
+export function relatedTags(hostSlug: string): string[] {
+  return [RESOURCES_TAG, TERMS_TAG, resourceTag(hostSlug)];
+}
+
+/**
+ * A list filtered by `resource_flag`, such as the featured resources:
+ * `resources`, because any resource event may add a resource to it or take
+ * one away, and `terms`, since it embeds terms. Flags send no term events.
+ */
+export function flagListingTags(): string[] {
+  return [RESOURCES_TAG, TERMS_TAG];
 }
 
 /**
@@ -146,9 +186,13 @@ export function resolveTags(): string[] {
   return [RESOURCES_TAG];
 }
 
-/** The taxonomy lists the filter bar reads: `terms`. */
+/**
+ * The taxonomy lists the filter bar reads: `terms` for names and slugs, and
+ * `resources` for each term's `count`, which WordPress updates on every
+ * publish, trash and term assignment with no term event.
+ */
 export function taxonomyListTags(): string[] {
-  return [TERMS_TAG];
+  return [RESOURCES_TAG, TERMS_TAG];
 }
 
 /** What a batch invalidates: tags for `revalidateTag`, paths for `revalidatePath`. */

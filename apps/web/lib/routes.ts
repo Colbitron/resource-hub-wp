@@ -19,11 +19,11 @@
  * Every builder, and every tag builder in `lib/tags.ts`, puts a slug through
  * `canonicalSlug` first, so a slug has one form in paths and tags whether it
  * arrives raw (`日`), as WordPress stores it (`%e6%97%a5`) or upper-cased
- * (`%E6%97%A5`). The canonical form uses lower-case hex because that is
- * WordPress's form: `sanitize_title` lower-cases the title and then
- * percent-encodes its non-ASCII bytes in lower case, so the slugs in REST
- * responses and revalidation events are already canonical and pass through
- * unchanged.
+ * (`%E6%97%A5`, `Example`). The canonical form is lower case throughout,
+ * letters and hex alike, because that is WordPress's form: `sanitize_title`
+ * lower-cases the title and then percent-encodes its non-ASCII bytes in lower
+ * case, so the slugs in REST responses and revalidation events are already
+ * canonical and pass through unchanged.
  *
  * Pure: no Next.js, `server-only` or Zod import, so pages, the revalidate
  * route and unit tests share it.
@@ -59,10 +59,27 @@ export function isReservedTypeSlug(value: string): value is ReservedTypeSlug {
 }
 
 /**
+ * The canonical form of a slug already known to be well-formed, without the
+ * checks: `canonicalSlug` is the public, validating version.
+ */
+function encodeSlug(value: string): string {
+  return value
+    .replace(ESCAPE_OR_NOT_PCHAR, (match) =>
+      match.length === 3 && match.startsWith("%") ? match : encodeURIComponent(match),
+    )
+    .toLowerCase();
+}
+
+/**
  * Why `value` is not a slug, or `null` when it is one. A slug is what the
  * shared schema's `$defs/slug` accepts (non-empty, at most 200 characters
  * counted in code points, no slash, no whitespace) that is also usable as a
- * path segment: well-formed Unicode and not a dot segment. This is the one
+ * path segment and a cache tag: well-formed Unicode, not a dot segment, and at
+ * most 200 characters in its canonical form. WordPress stores a slug in that
+ * form in a 200-character column (`post_name`, and `slug` in `wp_terms`), so a
+ * longer one cannot be a stored slug; the cap also keeps every tag under
+ * Next.js's 256-character limit, past which Next.js drops a tag with only a
+ * warning (200 raw `日` would be 1,800 characters encoded). This is the one
  * definition: `isSlug`, `isTypeSlug`, the path and tag builders and the Zod
  * schemas in `lib/wp/schemas/common.ts` all use it, so a slug the schemas
  * accept can always be put in a path and a cache tag.
@@ -83,6 +100,9 @@ export function slugProblem(value: string): string | null {
   if (DOT_SEGMENT.test(value)) {
     return "must not be . or .., which URL parsers collapse";
   }
+  if (encodeSlug(value).length > MAX_SLUG_LENGTH) {
+    return `must be at most ${MAX_SLUG_LENGTH} characters once percent-encoded, as WordPress stores it`;
+  }
   return null;
 }
 
@@ -91,11 +111,15 @@ export function isSlug(value: string): boolean {
   return slugProblem(value) === null;
 }
 
-/** Why `value` is not a `resource_type` slug, or `null` when it is one. */
+/**
+ * Why `value` is not a `resource_type` slug, or `null` when it is one. The
+ * reserved words are checked in any case (`Topic` too), because the canonical
+ * form is lower case and would turn `Topic` into the `topic` segment.
+ */
 export function typeSlugProblem(value: string): string | null {
   return (
     slugProblem(value) ??
-    (isReservedTypeSlug(value) ? RESERVED_TYPE_SLUG_MESSAGE : null)
+    (isReservedTypeSlug(value.toLowerCase()) ? RESERVED_TYPE_SLUG_MESSAGE : null)
   );
 }
 
@@ -126,11 +150,12 @@ export function parsePageSegment(segment: string): number | null {
 
 /**
  * The canonical form of a slug, as it goes into a path segment and a cache
- * tag: existing percent escapes kept with their hex in lower case, and every
- * character a path segment does not allow (`?`, `#`, a bare `%`, a backslash,
- * any non-ASCII character) percent-encoded as UTF-8, in lower case. Nothing is
- * decoded, so a slug is never double-encoded and never changes meaning, and
- * the function is idempotent. The result is printable ASCII, which Next.js's
+ * tag: existing percent escapes kept, every character a path segment does not
+ * allow (`?`, `#`, a bare `%`, a backslash, any non-ASCII character)
+ * percent-encoded as UTF-8, and then the whole result lower-cased, the hex of
+ * every escape and the ASCII letters `A`-`Z` alike, so `topic:ABC` and
+ * `topic:abc` are one tag, as WordPress's slugs are lower case. Nothing is
+ * decoded, so a slug is never double-encoded, and the function is idempotent. The result is printable ASCII, which Next.js's
  * `encodeHeaderSafe` passes through unchanged, so a tag built here is the tag
  * Next.js stores and compares.
  *
@@ -142,9 +167,7 @@ export function canonicalSlug(value: string): string {
   if (problem !== null) {
     throw new RangeError(`Not a valid slug (${problem}): ${JSON.stringify(value)}`);
   }
-  return value.replace(ESCAPE_OR_NOT_PCHAR, (match) =>
-    (match.length === 3 && match.startsWith("%") ? match : encodeURIComponent(match)).toLowerCase(),
-  );
+  return encodeSlug(value);
 }
 
 function typeSegment(type: string): string {

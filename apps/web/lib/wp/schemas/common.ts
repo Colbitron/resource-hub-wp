@@ -47,7 +47,7 @@ function ruleSchema(problem: (value: string) => string | null) {
 
 /**
  * `$defs/slug`: non-empty, at most 200 characters, no slash and no whitespace.
- * The length is counted in code points, as the schema counts it (Zod's own
+ * The 200 is counted in code points, as the schema counts it (Zod's own
  * `.max()` counts UTF-16 code units), and the pattern is the schema's with the
  * `u` flag Ajv compiles patterns with.
  *
@@ -55,8 +55,8 @@ function ruleSchema(problem: (value: string) => string | null) {
  * tag builders and the route's parameter checks share, so a slug this schema
  * accepts can always be put in a path and a cache tag.
  *
- * Stricter than the schema in two cases, both strings that could only ever name
- * the wrong page:
+ * Stricter than the schema in three cases, all strings that could only ever
+ * name the wrong page or never be revalidated:
  *
  * - A lone surrogate (`"\ud800"`), which is not well-formed Unicode. JSON lets
  *   a string escape one; it cannot be percent-encoded into a URL, and PHP's
@@ -64,6 +64,11 @@ function ruleSchema(problem: (value: string) => string | null) {
  * - A dot segment, `.` or `..`, literal or percent-encoded (`%2e`), which every
  *   URL parser collapses, so the path would change. WordPress's
  *   `sanitize_title` turns every `.` into `-`, so it never stores one.
+ * - A slug longer than 200 characters in its canonical, percent-encoded form
+ *   (`canonicalSlug`), such as 200 raw `日`, which encode to 1,800. WordPress
+ *   stores the encoded form in a 200-character column, so it cannot store
+ *   one, and its cache tags would pass Next.js's 256-character limit, past
+ *   which Next.js drops a tag with only a warning.
  */
 export const slugSchema = ruleSchema(slugProblem);
 
@@ -74,7 +79,12 @@ export const slugSchema = ruleSchema(slugProblem);
  */
 export { isReservedTypeSlug, RESERVED_TYPE_SLUG_MESSAGE, RESERVED_TYPE_SLUGS };
 
-/** `$defs/typeSlug`: a slug that is not a reserved word; the rule is `typeSlugProblem`. */
+/**
+ * `$defs/typeSlug`: a slug that is not a reserved word; the rule is
+ * `typeSlugProblem`. Stricter than the schema on one more case: `Topic` or
+ * `PAGE` is rejected like `topic` and `page`, because the canonical form is
+ * lower case and would turn it into the reserved segment.
+ */
 export const typeSlugSchema = ruleSchema(typeSlugProblem);
 
 /** `$defs/topicSlug`: any slug. Topics have no reserved words. */

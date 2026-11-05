@@ -24,17 +24,21 @@ Every event invalidates the union of what its current state and its `previous` s
 
 ## The `terms` tag
 
-A term rename changes the name shown on every page that shows the term: the library and every listing, every resource page, and the filter bar. The event names the term, not those pages. `terms` is produced by term events only and carried by every fetch that embeds or lists terms (every `_embed` list and every resource fetch), so a term event reaches all of them and a resource event reaches none it does not concern. Term events keep `resources` too, because the resolve route answers with the resource's type slug and a type rename changes it.
+A term rename changes the name shown on every page that shows the term: the library and every listing, every resource page, and the filter bar. The event names the term, not those pages. `terms` is produced by term events only and carried by every fetch that embeds or lists terms (every `_embed` list and every resource fetch), so a term event reaches all of them, and a resource event reaches none of them through `terms`. Term events keep `resources` too, because the resolve route answers with the resource's type slug and a type rename changes it.
 
 ## The canonical slug form
 
-A slug goes into a path or tag in one form: existing percent escapes kept with lower-case hex, and every character a path segment does not allow (`?`, `#`, a bare `%`, a backslash, any non-ASCII character) percent-encoded as UTF-8 in lower case. Nothing is decoded. `canonicalSlug` in `lib/routes.ts` does it, after validating, and every path and tag builder calls it, so `日`, `%E6%97%A5` and `%e6%97%a5` give one tag. Lower case because it is WordPress's own form: `sanitize_title` lower-cases a title and percent-encodes its non-ASCII bytes in lower case, so slugs from REST and from events pass through unchanged. The result is printable ASCII, which Next.js's `encodeHeaderSafe` leaves alone; a raw tag would have been encoded in upper case and never matched WordPress's slug. Every slug WordPress stores is at most 200 characters in this form, so tags stay under Next.js's 256-character limit.
+A slug goes into a path or tag in one form: existing percent escapes kept, every character a path segment does not allow (`?`, `#`, a bare `%`, a backslash, any non-ASCII character) percent-encoded as UTF-8, and the whole result lower-cased, the hex and the ASCII letters alike. Nothing is decoded. `canonicalSlug` in `lib/routes.ts` does it, after validating, and every path and tag builder calls it, so `日`, `%E6%97%A5` and `%e6%97%a5` give one tag, and so do `ABC` and `abc`. Lower case because it is WordPress's own form: `sanitize_title` lower-cases a title and percent-encodes its non-ASCII bytes in lower case, so slugs from REST and from events pass through unchanged. Because the form is lower case, the reserved type slugs are checked in any case: `Topic` is rejected as a type slug, since it would become the `topic` segment. The result is printable ASCII, which Next.js's `encodeHeaderSafe` leaves alone; a raw tag would have been encoded in upper case and never matched WordPress's slug.
 
-The slug rule itself (`slugProblem` in `lib/routes.ts`) is the one the Zod schemas use, so `eventsToInvalidations` never throws on a body the route accepted. On an event that is type-correct but schema-invalid, such as a lone surrogate, it throws a `RangeError` rather than return a partial result.
+The length cap counts this form. The shared schema caps a slug at 200 code points, but a raw slug of 200 `日` is 1,800 characters encoded, and Next.js drops a tag longer than 256 characters with only a warning, so its pages would never be revalidated. `slugProblem` therefore also rejects a slug whose canonical form is longer than 200 characters. WordPress cannot store one: `post_name` and the term `slug` column are 200 characters wide and hold the encoded form. The longest tag is then `resource:` and 200 characters, 209 in all.
+
+The slug rule itself (`slugProblem` in `lib/routes.ts`) is the one the Zod schemas use, so `eventsToInvalidations` never throws on a body the route accepted. That makes the front end's readers stricter than the JSON Schema in three documented ways (the comment on `slugSchema` in `lib/wp/schemas/common.ts`): a lone surrogate, a dot segment, and a canonical form over 200 characters, none of which WordPress can store or a path can carry. On an event that is type-correct but schema-invalid, such as a lone surrogate, it throws a `RangeError` rather than return a partial result.
 
 ## The data-layer tagging rule
 
 Tags are fixed before the request, from the URL and its parameters, never from the response, so a miss is cached under the tags that a later publish clears. A parameter the predicates reject (`isSlug`, `isTypeSlug`, `parsePageSegment`) is `notFound()`, never a throw and never a fetch.
+
+Tags are fixed from the request, but Next.js keys a cached fetch by its URL, method and headers, not by its tags, so two pages that fetch one URL share one entry, stored under the tags of whichever fetched first. The rule therefore relies only on tags that every caller of a URL would add. A tag that depends on the calling page, such as the type segment a resource page was reached under, is not put on a fetch whose URL does not contain it.
 
 | Fetch | Tags | Reason |
 |---|---|---|
@@ -42,12 +46,15 @@ Tags are fixed before the request, from the URL and its parameters, never from t
 | Type listing, every page | `type:{t}`, `terms` | Resource events in or leaving type `t`, and type events on `t`. |
 | Topic listing, every page | `topic:{p}`, `terms` | Resource events in or leaving topic `p`, and topic events on `p`. |
 | Type-plus-topic listing, every page | `type:{t}`, `topic:{p}`, `terms` | Either term's events, and resource events touching either. |
-| Resource by slug, a miss included | `resource:{slug}`, `type:{typeSegmentFromUrl}`, `terms` | A publish under the slug clears a cached miss; a type event clears the pages under that segment so they redirect or 404; it embeds terms. |
+| Resource by slug, a miss included | `resource:{slug}`, `terms` | A publish under the slug clears a cached miss; it embeds terms, so a type rename also reaches the pages under the old segment, which then redirect or 404. No type tag: the URL has no type in it (see above). |
+| Related-resources block, by topic | `topic:{p}`, `terms` | It is a topic list with `exclude` and a count, so the same events as the topic listing clear it ([ADR 0037](0037-block-marker-swapped-for-a-server-component.md)). |
+| Related section: the related route, and the `include={ids}` read of its items | `resources`, `terms`, `resource:{hostSlug}` | A pick from any topic may be published, unpublished, trashed or renamed, and the topics the route merges by may change, so any resource event may change it; the read embeds terms. `resource:{hostSlug}` names the host page but is not relied on: two hosts with the same items share one `include=` URL. |
+| Flag-filtered list (featured) | `resources`, `terms` | Any resource event may add a resource to it or take one away, and flags send no term events; it embeds terms. |
 | Term lookup by slug, a miss included | `topic:{slug}` or `type:{slug}` | A term event for the slug, a `create` included, clears it. |
 | Resolve | `resources` | Any resource event may add or move an old slug; a type event changes the type it answers with. |
-| Taxonomy lists for the filter bar | `terms` | Only term events change them. |
+| Taxonomy lists for the filter bar | `resources`, `terms` | Term events change names and slugs; WordPress updates each term's `count` on every publish, trash and term assignment, with no term event. |
 
-The coverage rule the test encodes: for a sample of resource states, every listing a resource appears on, and its own page, shares at least one tag with the invalidations of any event on that resource, as its current or its previous state; and every page that shows a term shares one with any term event.
+The coverage rule the test encodes: for a sample of resource states, every fetch whose result shows the resource (every listing it appears on, its own page, the block for each of its topics, the related section of any page, the featured list, resolve and the filter bar's term lists) shares at least one tag with the invalidations of any event on that resource, as its current or its previous state; and every fetch that shows a term shares one with any term event. The test writes each fetch's tags out by hand from this table and checks the functions in `lib/tags.ts` against them, so the rule is not proved with the code it checks.
 
 ## Considered options
 
@@ -55,9 +62,11 @@ The coverage rule the test encodes: for a sample of resource states, every listi
 - **Enumerate paginated paths.** The event cannot know the page count, and fetching it to find out would put a CMS request in the revalidate route. Rejected for tags.
 - **Upper-case hex, RFC 3986's normal form.** It matches `encodeHeaderSafe`, but every WordPress slug would need re-encoding and a slug compared against the CMS's would differ. Rejected.
 - **Tag a resource fetch from its response (its actual type and topics).** A miss has no response to tag from, and a cached miss would then outlive the publish that should clear it. Rejected.
+- **Tag a resource fetch with the URL's type segment.** It was meant to let a type event clear the pages under that segment, but the fetch is shared by every type segment the slug is reached under, so the tag is whichever page cached it first. `terms` reaches those pages instead. Rejected.
+- **Tag the related section with its picks' own tags.** The picks are known only from the related route's response, and tags never come from a response. Rejected for `resources`, at the cost of the section refetching on every resource event.
 
 ## Consequences
 
 - The data layer must call the fetch-tag functions in `lib/tags.ts` rather than build tags by hand.
-- The related block's fetches are an `_embed` list and carry `topic:{p}` and `terms`. A pick from another topic changes without clearing them, so its card refreshes with the page holding the block or at the ISR interval; record that with the block's component if it needs more.
+- Every resource event clears the related section of every resource page, the featured list and the filter bar's term lists. They are small reads, and their freshness was the point.
 - The shared package's README still lists four tags; `terms` is the front end's own and changes nothing the CMS sends.
