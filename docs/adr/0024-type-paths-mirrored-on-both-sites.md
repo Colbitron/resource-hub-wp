@@ -27,3 +27,19 @@ The same paths exist on both sites. The post type's rewrite slug is `resources/%
 - Changing the permalink structure needs a rewrite flush on the host, and activation does not run on a deploy where the plugin is already active, so the deploy job gains a `wp rewrite flush` after activating the plugin, in the same slice as the permalink change.
 - The revalidation payload carries the old type and slug on `update` ([ADR 0016](0016-previous-state-on-update.md)), so the front end can clear the path a resource left.
 - The schemas also reject `topic` and `page` wherever a type slug appears ([ADR 0010](0010-contract-as-json-schema-in-a-shared-package.md)); WordPress's refusal is the first line, the schema the check that the two sides agree.
+
+## Amendment, 2026-11-05: no slug stores an escape the router decodes
+
+Because the slug is the identity and sits in the path, its stored form must be the form a URL delivers. `sanitize_title()` keeps any well-formed percent escape an editor types, so `case%2dstudy` would be stored as typed. Next.js 16 decodes, in route params, every escape of the characters `encodeURIComponent()` leaves unescaped: `A-Z a-z 0-9 - _ . ! ~ * ' ( )`, RFC 3986's unreserved characters plus `! * ' ( )`. The page for `case%2dstudy` would receive `case-study` and could not be reached at its own URL, or would redirect to itself.
+
+So the CMS never stores one. On save, a `resource` post slug and a `resource_topic`, `resource_type` or `resource_flag` term slug has each escape of a character in that set decoded once, in either hex case. Every other escape is left encoded, for example `%e6%97%a5`, `%e2%80%99`, `%20`, `%2f`, `%25`, `%26`, `%2b`, `%2c`, `%3a`, `%3b`, `%3d` and `%40`. Core's own sanitising then runs on the result, and so does its uniqueness check, so a decoded slug that is taken gets core's `-2` suffix. Core keeps `-` and `_`, turns `.` into `-`, lower-cases letters and strips `~ ! ' ( ) *`: `case%2dstudy` is stored as `case-study`, `%41BC` as `abc`, `x%7Ey` as `xy` and `case%27study` as `casestudy`. A slug that decodes to nothing is treated as empty, so core generates it from the title or the term name.
+
+The hooks run before core checks uniqueness: `pre_wp_unique_post_slug` for posts in any status core checks, `wp_insert_post_data` for `draft`, `pending` and `auto-draft`, which core does not check, and `pre_term_slug` for terms on create and edit. Every save path, whether REST, the block editor, the classic form, Quick Edit, Bulk Edit, the term screens, WP-CLI or PHP, goes through `wp_insert_post()` or `wp_insert_term()` and `wp_update_term()`, so none is missed. A slug generated from a term name needs nothing, because core strips every percent escape from a term name on save. A slug stored with such an escape before this rule is decoded the next time its post or term is saved. A post keeps its old slug in `_wp_old_slug` as usual. A term edit is refused with core's "already in use" error if the decoded slug belongs to another term.
+
+The revalidation payload reads the stored slug, so it never carries such an escape. The exception is `previous.slug` on the save that decodes a slug stored before the rule. The front end treats a slug with such an escape as invalid everywhere and relies on the CMS never storing one.
+
+Considered options:
+
+- **Decode before core sanitises.** Rejected: decoding the raw input can create an escape. In `%%32d`, `%32` decodes to `2`, leaving `%2d`. Decoding a sanitised slug cannot, because there every `%` already starts an escape.
+- **A global `sanitize_title` filter.** Rejected: it would change every post type and taxonomy on the site.
+- **Reject such slugs with an error.** Rejected: the editor meant the decoded character, and decoding gives them the slug they meant.
