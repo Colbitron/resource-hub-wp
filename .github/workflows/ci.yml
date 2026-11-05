@@ -493,7 +493,7 @@ jobs:
             echo "current=true" >> "$GITHUB_OUTPUT"
           else
             echo "current=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::main is now at $head, not $GITHUB_SHA; the run for the newer commit deploys the front end."
+            echo "::notice::main is now at $head, not $GITHUB_SHA; skipping. The run for the newer commit deploys the front end if its gate passes."
           fi
 
       # Fire and forget: the hook answers as soon as Vercel has queued the
