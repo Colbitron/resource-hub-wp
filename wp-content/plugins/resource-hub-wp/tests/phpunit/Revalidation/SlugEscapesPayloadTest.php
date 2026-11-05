@@ -273,7 +273,13 @@ final class SlugEscapesPayloadTest extends RevalidationTestCase {
 
 		$posthog = array_values( array_filter( $this->requests, static fn( array $request ): bool => str_contains( $request['url'], 'posthog' ) ) );
 		$this->assertCount( 2, $posthog );
-		$this->assertSame( Result::RESERVED_TYPE, json_decode( $posthog[0]['args']['body'], true )['properties']['outcome'] );
+		$this->assertSame( 'https://eu.i.posthog.com' . PostHog::ENDPOINT, $posthog[0]['url'] );
+		$held_back = json_decode( $posthog[0]['args']['body'], true );
+		$site      = (string) wp_parse_url( home_url(), PHP_URL_HOST );
+		$this->assertSame( PostHog::DISTINCT_ID_PREFIX . $site, $held_back['distinct_id'], 'The held-back event is anonymous, named for the CMS.' );
+		$this->assertFalse( $held_back['properties']['$process_person_profile'] );
+		$this->assertSame( $site, $held_back['properties']['site'] );
+		$this->assertSame( Result::RESERVED_TYPE, $held_back['properties']['outcome'] );
 	}
 
 	/**
