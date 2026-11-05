@@ -1,4 +1,7 @@
 {
 	"phpVersion": "8.4",
-	"plugins": [ "./wp-content/plugins/resource-hub-wp" ]
+	"plugins": [ "./wp-content/plugins/resource-hub-wp" ],
+	"mappings": {
+		"packages/ui": "./packages/ui"
+	}
 }
