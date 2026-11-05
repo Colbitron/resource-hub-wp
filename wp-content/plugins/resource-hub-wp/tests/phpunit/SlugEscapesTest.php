@@ -25,6 +25,8 @@ use WP_UnitTestCase;
  * slug contains an escape of `A-Z a-z 0-9 - _ . ! ~ * ' ( )`.
  */
 final class SlugEscapesTest extends WP_UnitTestCase {
+	use LegacySlugRows;
+
 	/**
 	 * Logs in an editor, who can write resources and manage terms.
 	 */
@@ -108,7 +110,7 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 	 * @param string $stored Slug expected to be stored.
 	 */
 	public function test_insert_topic( string $typed, string $stored ): void {
-		$this->assertSame( $stored, $this->term_slug( $this->term( Taxonomies::TOPIC, 'Topic ' . $typed, $typed ) ) );
+		$this->assertSame( $stored, $this->stored_term_slug( $this->term( Taxonomies::TOPIC, 'Topic ' . $typed, $typed ) ) );
 	}
 
 	/**
@@ -260,7 +262,7 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 	 * is saved, even by a save that does not touch the slug.
 	 */
 	public function test_stored_resource_slug_is_decoded_on_next_save(): void {
-		$post_id = $this->with_stored_post_slug( 'case%2dstudy', fn(): int => $this->resource( 'publish', 'case-study' ) );
+		$post_id = $this->with_legacy_post_slug( 'case%2dstudy', fn(): int => $this->resource( 'publish', 'case-study' ) );
 		$this->assertSame( 'case%2dstudy', get_post( $post_id )->post_name, 'The legacy slug was not stored.' );
 
 		wp_update_post(
@@ -326,7 +328,7 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 	 * @param string $stored   Slug expected to be stored for `case%2dstudy`.
 	 */
 	public function test_taxonomies( string $taxonomy, string $stored ): void {
-		$this->assertSame( $stored, $this->term_slug( $this->term( $taxonomy, 'Case study', 'case%2dstudy' ) ) );
+		$this->assertSame( $stored, $this->stored_term_slug( $this->term( $taxonomy, 'Case study', 'case%2dstudy' ) ) );
 	}
 
 	/**
@@ -352,7 +354,7 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 		$term_id = $this->term( Taxonomies::TOPIC, 'Case%2DStudy' );
 
 		$this->assertSame( 'CaseStudy', get_term( $term_id )->name );
-		$this->assertSame( 'casestudy', $this->term_slug( $term_id ) );
+		$this->assertSame( 'casestudy', $this->stored_term_slug( $term_id ) );
 
 		wp_update_term(
 			$term_id,
@@ -363,7 +365,7 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 			)
 		);
 
-		$this->assertSame( 'othername', $this->term_slug( $term_id ) );
+		$this->assertSame( 'othername', $this->stored_term_slug( $term_id ) );
 	}
 
 	/**
@@ -371,7 +373,7 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 	 * slug from the name, as it does for a typed slug of hyphens.
 	 */
 	public function test_term_slug_decoding_to_nothing_falls_back_to_the_name(): void {
-		$this->assertSame( 'fallback', $this->term_slug( $this->term( Taxonomies::TOPIC, 'Fallback', '%2d%2d' ) ) );
+		$this->assertSame( 'fallback', $this->stored_term_slug( $this->term( Taxonomies::TOPIC, 'Fallback', '%2d%2d' ) ) );
 	}
 
 	/**
@@ -380,7 +382,7 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 	public function test_decoded_term_slug_collision_on_create_gets_a_suffix(): void {
 		$this->term( Taxonomies::TOPIC, 'Case study', 'case-study' );
 
-		$this->assertSame( 'case-study-2', $this->term_slug( $this->term( Taxonomies::TOPIC, 'Another', 'case%2dstudy' ) ) );
+		$this->assertSame( 'case-study-2', $this->stored_term_slug( $this->term( Taxonomies::TOPIC, 'Another', 'case%2dstudy' ) ) );
 	}
 
 	/**
@@ -391,14 +393,14 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 		$term_id = $this->term( Taxonomies::TOPIC, 'Before', 'before' );
 
 		$this->assertIsArray( wp_update_term( $term_id, Taxonomies::TOPIC, array( 'slug' => 'after%2dupdate' ) ) );
-		$this->assertSame( 'after-update', $this->term_slug( $term_id ) );
+		$this->assertSame( 'after-update', $this->stored_term_slug( $term_id ) );
 
 		$this->term( Taxonomies::TOPIC, 'Taken', 'taken' );
 		$result = wp_update_term( $term_id, Taxonomies::TOPIC, array( 'slug' => 'tak%65n' ) );
 
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assertSame( 'duplicate_term_slug', $result->get_error_code() );
-		$this->assertSame( 'after-update', $this->term_slug( $term_id ) );
+		$this->assertSame( 'after-update', $this->stored_term_slug( $term_id ) );
 	}
 
 	/**
@@ -406,19 +408,12 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 	 * saved, even by an edit that does not touch the slug.
 	 */
 	public function test_stored_term_slug_is_decoded_on_next_save(): void {
-		$force = static function ( array $data ): array {
-			$data['slug'] = 'case%2dstudy';
-			return $data;
-		};
-
-		add_filter( 'wp_insert_term_data', $force, 100 );
-		$term_id = $this->term( Taxonomies::TOPIC, 'Case study', 'case-study' );
-		remove_filter( 'wp_insert_term_data', $force, 100 );
-		$this->assertSame( 'case%2dstudy', $this->term_slug( $term_id ), 'The legacy slug was not stored.' );
+		$term_id = $this->with_legacy_term_slug( 'case%2dstudy', fn(): int => $this->term( Taxonomies::TOPIC, 'Case study', 'case-study' ) );
+		$this->assertSame( 'case%2dstudy', $this->stored_term_slug( $term_id ), 'The legacy slug was not stored.' );
 
 		wp_update_term( $term_id, Taxonomies::TOPIC, array( 'description' => 'Now described.' ) );
 
-		$this->assertSame( 'case-study', $this->term_slug( $term_id ) );
+		$this->assertSame( 'case-study', $this->stored_term_slug( $term_id ) );
 	}
 
 	/**
@@ -442,7 +437,42 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 
 		$this->assertSame( 200, $updated->get_status() );
 		$this->assertSame( 'xy-1', $updated->get_data()['slug'] );
-		$this->assertSame( 'xy-1', $this->term_slug( $term_id ) );
+		$this->assertSame( 'xy-1', $this->stored_term_slug( $term_id ) );
+	}
+
+	/**
+	 * A legacy term whose decoded slug another term has cannot be saved until the editor types a new
+	 * slug. Over REST, core's `duplicate_term_slug` error, which has no status and would be a 500, is
+	 * a 400; a new slug saves.
+	 */
+	public function test_rest_edit_of_a_colliding_legacy_term_is_a_400(): void {
+		$this->term( Taxonomies::TOPIC, 'Case study', 'case-study' );
+		$term_id = $this->with_legacy_term_slug( 'case%2dstudy', fn(): int => $this->term( Taxonomies::TOPIC, 'Legacy', 'legacy' ) );
+
+		$refused = $this->send( 'POST', '/wp/v2/' . Taxonomies::TOPIC . '/' . $term_id, array( 'description' => 'Only this.' ) );
+
+		$this->assertSame( 400, $refused->get_status() );
+		$this->assertSame( 'duplicate_term_slug', $refused->get_data()['code'] );
+		$this->assertSame( 400, $refused->get_data()['data']['status'] );
+		$this->assertSame( 'case%2dstudy', $this->stored_term_slug( $term_id ) );
+
+		$saved = $this->send( 'POST', '/wp/v2/' . Taxonomies::TOPIC . '/' . $term_id, array( 'slug' => 'legacy-case-study' ) );
+
+		$this->assertSame( 200, $saved->get_status() );
+		$this->assertSame( 'legacy-case-study', $this->stored_term_slug( $term_id ) );
+	}
+
+	/**
+	 * The 400 is for the plugin's taxonomies only: a duplicate slug on a category keeps core's answer.
+	 */
+	public function test_other_taxonomies_keep_cores_duplicate_slug_status(): void {
+		$this->term( 'category', 'Taken', 'taken' );
+		$term_id = $this->term( 'category', 'Mine', 'mine' );
+
+		$response = $this->send( 'POST', '/wp/v2/categories/' . $term_id, array( 'slug' => 'taken' ) );
+
+		$this->assertSame( 'duplicate_term_slug', $response->get_data()['code'] );
+		$this->assertSame( 500, $response->get_status() );
 	}
 
 	/**
@@ -466,26 +496,6 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 		);
 	}
 
-	/**
-	 * Runs a save while forcing the slug core writes, standing in for a slug stored before the rule.
-	 *
-	 * @param string   $slug The slug to store.
-	 * @param callable $save Saves and returns the post ID.
-	 */
-	private function with_stored_post_slug( string $slug, callable $save ): int {
-		$force = static function ( array $data ) use ( $slug ): array {
-			$data['post_name'] = $slug;
-			return $data;
-		};
-
-		add_filter( 'wp_insert_post_data', $force, 100 );
-
-		try {
-			return $save();
-		} finally {
-			remove_filter( 'wp_insert_post_data', $force, 100 );
-		}
-	}
 
 	/**
 	 * Creates a term with `wp_insert_term()` and returns its ID.
@@ -502,16 +512,6 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 		return (int) $result['term_id'];
 	}
 
-	/**
-	 * A term's stored slug, read past the cache.
-	 *
-	 * @param int $term_id Term ID.
-	 */
-	private function term_slug( int $term_id ): string {
-		clean_term_cache( $term_id );
-
-		return get_term( $term_id )->slug;
-	}
 
 	/**
 	 * Dispatches a REST request with body parameters.
