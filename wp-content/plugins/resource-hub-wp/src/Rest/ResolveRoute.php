@@ -51,9 +51,10 @@ final class ResolveRoute {
 	 * The longest slug accepted, in bytes as sent: the width of WordPress's `post_name` column, and the
 	 * `maxLength` of the contract's `slug`. Checked before sanitizing, so an ASCII slug, which
 	 * `sanitize_title()` never lengthens, is looked up whole or refused, never shortened. It does not stop
-	 * every cut: `sanitize_title()` percent-encodes non-ASCII characters, about three times their length in
-	 * bytes, and cuts the encoded result to 200 characters, so a shorter non-ASCII slug can still be cut,
-	 * and two that differ only past the cut look up the same slug. That is harmless: WordPress cuts a stored
+	 * every cut: `sanitize_title()` percent-encodes each non-ASCII byte as three characters (a 3-byte CJK
+	 * character becomes nine) and keeps only the whole encoded characters that fit in 200, so a CJK slug
+	 * ends at 198. A shorter non-ASCII slug can still be cut, and two that differ only past the cut look up
+	 * the same slug. That is harmless: WordPress cuts a stored
 	 * `post_name` the same way on save, so the lookup matches what is stored, and the front end redirects to
 	 * the canonical slug the route returns.
 	 */
@@ -268,9 +269,10 @@ final class ResolveRoute {
 	}
 
 	/**
-	 * The resource's one type slug, or null when it has none, more than one, or a reserved one, any of which
-	 * the response schema would reject. Reserved means what the type guards refuse: `topic`, `page`, or a
-	 * percent-encoded form that decodes to one.
+	 * The resource's one type slug, or null when it has none, more than one, or a reserved one. The response
+	 * schema rejects the first two and the literal `topic` and `page`; a percent-encoded form that decodes
+	 * to one of those is refused by the plugin's own stricter rule, the one its type guards enforce
+	 * (ADR 0024).
 	 *
 	 * @param WP_Post $post The resource.
 	 */
