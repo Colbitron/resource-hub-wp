@@ -36,9 +36,12 @@ import "./resource.css";
  * which sanitises it and rewrites its URLs, with `postId` so the marker
  * excludes this resource whatever its HTML says.
  *
- * The featured image is the page's one LCP candidate, so it is preloaded
- * (`preload`, Next.js 16's replacement for the deprecated `priority`): a
- * `<link rel="preload">` in the head and an eager, high-priority fetch. Its
+ * The featured image is the page's one LCP candidate. `preload` (Next.js
+ * 16's replacement for the deprecated `priority`) puts a `<link
+ * rel="preload">` in the head and makes the `<img>` eager, but sets no fetch
+ * priority, and Chromium fetches an image preload at Low. `fetchPriority=
+ * "high"` is set beside it: Next.js copies it onto the preload link as well
+ * as the `<img>`, so the image is requested at High from the head. Its
  * `sizes` is the content column's, the same string the body's images use.
  */
 
@@ -90,8 +93,11 @@ function resourceView(rendered: RenderedResource): ResourceView {
  * the site name), its summary as the description, or none rather than the
  * site's when it has no summary, its canonical path, and Open Graph fields
  * with the featured image's `/media/…` path when there is a trusted one. The
- * canonical is a path, which renders relative until `metadataBase` is set
- * (ADR 0050's follow-up); the CMS's absolute URLs are never used (ADR 0040).
+ * canonical and `og:url` are paths, which render relative until
+ * `metadataBase` is set (ADR 0050's follow-up); `og:image` is already
+ * absolute, because Next.js resolves social images against the deployment's
+ * URL when `metadataBase` is unset. The CMS's absolute URLs are never used
+ * (ADR 0040).
  */
 export function resourceMetadata(rendered: RenderedResource): Metadata {
   const view = resourceView(rendered);
@@ -157,6 +163,7 @@ export function ResourceArticle({ rendered }: { rendered: RenderedResource }) {
             height={view.image.height}
             sizes={IMAGE_SIZES}
             preload
+            fetchPriority="high"
           />
         </div>
       )}

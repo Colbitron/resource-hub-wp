@@ -146,6 +146,9 @@ test.describe("what the page renders", () => {
     expect(decodeURIComponent((await featured.getAttribute("src")) ?? "")).toContain("/media/2026/11/content-model.png");
     expect(await featured.evaluate((img) => (img as HTMLImageElement).loading)).not.toBe("lazy");
     await expect(page.locator('link[rel="preload"][as="image"]')).toHaveCount(1);
+    // `preload` alone leaves the image at Low priority in Chromium; both the link and the <img> ask for High.
+    await expect(page.locator('link[rel="preload"][as="image"]')).toHaveAttribute("fetchpriority", "high");
+    await expect(featured).toHaveAttribute("fetchpriority", "high");
 
     await expect(article.locator(".rh-resource__summary")).toHaveText(resource.summary);
 
@@ -210,19 +213,42 @@ test.describe("what the page renders", () => {
     await expect(featured).toHaveAttribute("width", "1024");
     await expect(featured).toHaveAttribute("height", "576");
   });
+
+  test("the featured image is requested at High priority", async ({ page }) => {
+    // The DevTools protocol reports each request's priority as the browser first assigned it.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Network.enable");
+    const priorities: { url: string; priority: string }[] = [];
+    cdp.on("Network.requestWillBeSent", (event) => {
+      if (event.type === "Image") priorities.push({ url: event.request.url, priority: event.request.initialPriority });
+    });
+    await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
+    await page.waitForLoadState("networkidle");
+    const src = await page.locator(".rh-resource__media img").evaluate((img) => (img as HTMLImageElement).currentSrc);
+    const hero = priorities.filter(({ url }) => url === src);
+    expect(hero.length, `a request for ${src} among ${JSON.stringify(priorities)}`).toBeGreaterThan(0);
+    expect(hero[0].priority).toBe("High");
+  });
 });
 
 test.describe("the CMS's address", () => {
   const NEEDLES = [mockCmsOrigin(), `${MOCK_CMS_HOST}:${mockCmsPort()}`, "wp-content", "wp-json"];
 
-  test("is nowhere in the HTML, the head included", async ({ request }) => {
-    const html = await (await expectOk(request, resourcePath(SEEDED.type, SEEDED.slug))).text();
-    expect(html).toContain("<title>");
-    expect(html).toContain("self.__next_f.push");
-    for (const needle of NEEDLES) {
-      expect(html, `the HTML must not contain ${needle}`).not.toContain(needle);
-    }
-  });
+  // ID 33 has CMS links, an upload with a `srcset` and the block marker; ID 30 a featured image, so a preload link and `og:image`.
+  for (const resource of [SEEDED, LONG_FORM]) {
+    test(`is nowhere in the HTML, the head included (ID ${resource.id})`, async ({ request }) => {
+      const html = await (await expectOk(request, resourcePath(resource.type, resource.slug))).text();
+      expect(html).toContain("<title>");
+      expect(html).toContain("self.__next_f.push");
+      if (resource === LONG_FORM) {
+        expect(html).toContain('property="og:image"');
+        expect(html).toContain('rel="preload"');
+      }
+      for (const needle of NEEDLES) {
+        expect(html, `the HTML must not contain ${needle}`).not.toContain(needle);
+      }
+    });
+  }
 
   test("is nowhere in the RSC payload a client navigation fetches", async ({ page }) => {
     // From the type listing, as a reader would arrive: the click fetches the page's RSC payload.
@@ -456,7 +482,7 @@ test.describe("accessibility and layout", () => {
     await expect(page.getByRole("main")).toBeFocused();
   });
 
-  test("at 360px nothing scrolls horizontally and the page does not shift as it loads", async ({ page }) => {
+  test("at 360px nothing scrolls horizontally, no table cell breaks a word, and the page does not shift as it loads", async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 740 });
     await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
     await page.waitForLoadState("networkidle");
@@ -465,6 +491,27 @@ test.describe("accessibility and layout", () => {
 
     const widths = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
     expect(widths.scroll).toBeLessThanOrEqual(widths.client);
+
+    // No word in a table cell is broken across lines: each word's text sits on one line box.
+    const splitWords = await page.locator(".rh-resource__body td, .rh-resource__body th").evaluateAll((cells) => {
+      const split: string[] = [];
+      for (const cell of cells) {
+        const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+          const text = node.textContent ?? "";
+          for (const match of text.matchAll(/\S+/g)) {
+            const range = document.createRange();
+            range.setStart(node, match.index);
+            range.setEnd(node, match.index + match[0].length);
+            const tops = new Set([...range.getClientRects()].filter((rect) => rect.width > 0).map((rect) => Math.round(rect.top)));
+            if (tops.size > 1) split.push(match[0]);
+          }
+        }
+      }
+      return split;
+    });
+    expect(splitWords, "table cell words broken across lines at 360px").toEqual([]);
+    await expect(page.getByRole("table")).toHaveCount(1);
 
     const cls = await page.evaluate(
       () =>

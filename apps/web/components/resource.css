@@ -8,11 +8,18 @@
  * rules style the elements the sanitiser in lib/content/render.tsx lets
  * through (ADR 0047), by element name: WordPress's block classes are kept on
  * the markup but nothing here depends on them.
+ *
+ * Long words wrap with `overflow-wrap: break-word`, not `anywhere`: both
+ * break a word that cannot fit its line, but `anywhere` also lowers an
+ * element's min-content width to one character, so a table's auto layout
+ * squeezes its cells until ordinary words break mid-word. `anywhere` is kept
+ * for the places where an unbreakable token must not widen the page: `pre`,
+ * and links and code inside table cells.
  */
 
 .rh-resource {
 	max-width: var(--rh-measure);
-	overflow-wrap: anywhere;
+	overflow-wrap: break-word;
 }
 
 .rh-resource__header {
@@ -223,6 +230,16 @@
 
 .rh-resource__body thead th {
 	border-bottom-width: 2px;
+}
+
+/*
+ * A long URL or identifier in a cell would otherwise set the column's
+ * min-content width and push the table past the column.
+ */
+.rh-resource__body td a,
+.rh-resource__body td code,
+.rh-resource__body th code {
+	overflow-wrap: anywhere;
 }
 
 .rh-resource__body figure {

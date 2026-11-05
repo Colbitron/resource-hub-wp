@@ -33,6 +33,7 @@ The library's own path, `/resources/`, has no dynamic segment, and a route with 
 ## Follow-ups for slice 3
 
 - **`metadataBase` from a server-only `SITE_URL`.** The canonical `link` renders as a relative path today: with no `metadataBase` set, Next.js 16 resolves alternates against nothing, and its fallback to the Vercel deployment's URL (`VERCEL_PROJECT_PRODUCTION_URL`, or the branch URL on a preview) applies to social images only. Set `metadataBase` in the root layout from a `SITE_URL` environment variable, read on the server and never `NEXT_PUBLIC_`, so the canonical is absolute and names the public domain on every deployment. Not implemented in this pull request.
+- **The resource page makes the relative canonical visible everywhere.** The single resource page (`/resources/[type]/[slug]/`) sets its canonical `link` and `og:url` from the same path builders, so until `metadataBase` lands every resource page, not only every listing, carries a relative canonical; `og:image` is already absolute through Next.js's deployment-URL fallback.
 
 ## Considered options
 
