@@ -179,6 +179,27 @@ export function termLookupTags(taxonomy: TermEvent["taxonomy"], slug: string): s
 }
 
 /**
+ * A resource fetched by ID (`/wp/v2/resources/{id}`), a miss included:
+ * `resources`, which every event clears, and `terms`, since it embeds terms.
+ * The URL names no slug, and the tags must be fixed before the request, so
+ * `resource:{slug}` is not available; no tag names an ID, so `resources` is
+ * the one that reaches every event on the resource, whatever its slug.
+ */
+export function resourceByIdTags(): string[] {
+  return [RESOURCES_TAG, TERMS_TAG];
+}
+
+/**
+ * A `resource_flag` term looked up by slug, such as `featured`, a miss
+ * included: `resources`. Flags send no term events, so no term tag reaches
+ * it; a flag only matters once a resource carries it, and assigning it to
+ * one sends a resource event, which clears `resources`.
+ */
+export function flagLookupTags(): string[] {
+  return [RESOURCES_TAG];
+}
+
+/**
  * The resolve route: `resources`. Every event clears it: a resource event may
  * add or move an old slug, and a type event changes the type it answers with.
  */

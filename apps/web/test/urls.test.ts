@@ -363,6 +363,19 @@ describe("mediaPath", () => {
     }
   });
 
+  it("returns null for an encoded percent sign, which a second decode would turn into a slash", () => {
+    for (const src of [
+      "https://cms.example/wp-content/uploads/%25%32%66a.jpg",
+      "https://cms.example/wp-content/uploads/2026/%252e%252e/a.jpg",
+      "https://cms.example/wp-content/uploads/a%25.jpg",
+      "/wp-content/uploads/%25%35%63a.jpg",
+    ]) {
+      expect(mediaPath(src, UPLOADS), src).toBeNull();
+    }
+    // An ordinary encoded byte is still a file name.
+    expect(mediaPath("https://cms.example/wp-content/uploads/caf%C3%A9.jpg", UPLOADS)).toBe("/media/caf%C3%A9.jpg");
+  });
+
   it("throws on an uploads base that is not http(s)", () => {
     expect(() => mediaPath("/wp-content/uploads/a.jpg", "/wp-content/uploads")).toThrow(TypeError);
   });
