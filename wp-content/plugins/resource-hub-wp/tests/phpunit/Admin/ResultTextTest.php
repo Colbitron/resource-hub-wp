@@ -97,6 +97,46 @@ final class ResultTextTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The sentences map is the one source both PHP and the block editor read: it has a sentence for
+	 * every outcome plus the keys the editor's script uses, and `sentence()` takes its words from it.
+	 */
+	public function test_sentences_are_the_one_source(): void {
+		$sentences = ResultText::sentences();
+
+		foreach ( array_merge( Result::OUTCOMES, array( ResultStore::PENDING, 'stale', 'failed', 'no_answer' ) ) as $key ) {
+			$this->assertArrayHasKey( $key, $sentences );
+			$this->assertNotSame( '', $sentences[ $key ] );
+		}
+
+		$this->assertSame( $sentences[ Result::NOT_CONFIGURED ], ResultText::sentence( self::record( array( 'outcome' => Result::NOT_CONFIGURED ) ) ) );
+		$this->assertSame( $sentences['failed'], ResultText::sentence( self::record( array( 'outcome' => 'no_answer' ) ) ), 'A non-outcome key is not an outcome.' );
+		$this->assertSame( $sentences['failed'], ResultText::sentence( self::record( array( 'outcome' => 'something_new' ) ) ) );
+	}
+
+	/**
+	 * A record that travelled with other changes says how many, after any error detail.
+	 */
+	public function test_sentence_counts_the_other_changes(): void {
+		$one = self::record(
+			array(
+				'status'  => Result::SENT,
+				'outcome' => Result::OK,
+				'others'  => 1,
+			)
+		);
+		$this->assertSame( 'The front end accepted the revalidation (200). It was sent with 1 other change.', ResultText::sentence( $one ) );
+
+		$many = self::record(
+			array(
+				'outcome' => Result::BAD_REQUEST,
+				'body'    => '{"error":"bad"}',
+				'others'  => 4,
+			)
+		);
+		$this->assertSame( 'Revalidation rejected: the front end could not read the request (400). bad It was sent with 4 other changes.', ResultText::sentence( $many ) );
+	}
+
+	/**
 	 * A 400 or 500 quotes the front end's `error` string from its JSON body, never the body itself,
 	 * and says nothing extra when the body is not that JSON.
 	 */

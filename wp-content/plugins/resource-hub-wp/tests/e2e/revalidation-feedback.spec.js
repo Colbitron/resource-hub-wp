@@ -1,7 +1,8 @@
 /**
  * Revalidation feedback for editors (ADRs 0018, 0019): publishing a resource
- * in the block editor shows the revalidation notice, and the status page's
- * "Send test revalidation" button is disabled until a resource is published.
+ * in the block editor shows the revalidation notice, a save's poll shows that
+ * save's result only, and the status page's "Send test revalidation" button is
+ * disabled until a resource is published.
  *
  * The tests site has no front-end URL or secret, so every send is recorded
  * as "not configured" straight away, with no cron involved. That is the
@@ -13,6 +14,121 @@ const { test, expect } = require( './fixtures' );
 
 const NOT_CONFIGURED =
 	'Revalidation skipped: the front-end URL or the secret is not configured.';
+const ACCEPTED = 'The front end accepted the revalidation (200).';
+const NOTICE_ID = 'resource-hub-revalidation';
+
+/**
+ * The REST route a request is for, with pretty or plain permalinks.
+ *
+ * @param {URL} url The request URL.
+ * @return {string} The route, such as `/wp/v2/resources/12`.
+ */
+function restRoute( url ) {
+	return (
+		url.searchParams.get( 'rest_route' ) ??
+		url.pathname.replace( /^.*\/wp-json/, '' )
+	);
+}
+
+/**
+ * A stored record as the hook writes it.
+ *
+ * @param {Object} fields Fields to set: status, outcome, batch_id, time and more.
+ * @return {Object} The record.
+ */
+function storedRecord( fields ) {
+	return {
+		code: null,
+		event: 'update',
+		others: 0,
+		body: '',
+		error: null,
+		duration_ms: 0,
+		...fields,
+	};
+}
+
+/**
+ * A server time, from a response's `Date` header, as the hook stamps records.
+ *
+ * @param {string} date      The `Date` header.
+ * @param {number} offsetSec Seconds to add.
+ * @return {string} An ISO 8601 UTC time without milliseconds.
+ */
+function serverStamp( date, offsetSec = 0 ) {
+	return new Date( Date.parse( date ) + offsetSec * 1000 )
+		.toISOString()
+		.replace( /\.\d{3}Z$/, 'Z' );
+}
+
+/**
+ * Stubs the resource's REST route: `onPoll` answers the editor's polls of the
+ * `rh_last_revalidation` field, and `onSave` may rewrite
+ * a save's response. Each gets the real response's `Date`.
+ *
+ * @param {import('@playwright/test').Page}      page              The page.
+ * @param {Object}                               handlers
+ * @param {(date: string) => (Object|undefined)} handlers.onPoll   Returns the record for a poll, or undefined to pass through.
+ * @param {(date: string) => (Object|undefined)} [handlers.onSave] Returns the record for a save response, or undefined.
+ */
+async function stubRecord( page, { onPoll, onSave = () => undefined } ) {
+	await page.route(
+		( url ) => /^\/wp\/v2\/resources\/\d+\/?$/.test( restRoute( url ) ),
+		async ( route ) => {
+			const request = route.request();
+			const isPoll =
+				request.method() === 'GET' &&
+				new URL( request.url() ).searchParams.get( '_fields' ) ===
+					'rh_last_revalidation';
+			const isSave = request.method() !== 'GET';
+
+			if ( ! isPoll && ! isSave ) {
+				return route.fallback();
+			}
+
+			const response = await route.fetch();
+			const json = await response.json();
+			const date = response.headers().date;
+			const stubbed = isPoll ? onPoll( date ) : onSave( date );
+
+			if ( stubbed === undefined ) {
+				return route.fulfill( { response, json } );
+			}
+
+			json.rh_last_revalidation = stubbed;
+			return route.fulfill( { response, json } );
+		}
+	);
+}
+
+/**
+ * Records every revalidation notice the editor shows, in order.
+ *
+ * @param {import('@playwright/test').Page} page The page.
+ */
+async function collectNotices( page ) {
+	await page.evaluate( ( id ) => {
+		window.rhNotices = [];
+		let last = null;
+		window.wp.data.subscribe( () => {
+			const notice = window.wp.data
+				.select( 'core/notices' )
+				.getNotices()
+				.find( ( item ) => item.id === id );
+
+			if ( notice && notice !== last ) {
+				window.rhNotices.push( {
+					status: notice.status,
+					content: notice.content,
+				} );
+			}
+
+			last = notice ?? null;
+		} );
+	}, NOTICE_ID );
+}
+
+const shownNotices = ( page ) => page.evaluate( () => window.rhNotices );
 
 test.describe( 'Revalidation feedback', () => {
 	let type;
@@ -89,6 +205,174 @@ test.describe( 'Revalidation feedback', () => {
 				.getByRole( 'region', { name: 'Editor content' } )
 				.getByText( NOT_CONFIGURED )
 		).toBeVisible();
+	} );
+
+	test( 'a poll that reads pending, then sent, shows one success notice', async ( {
+		admin,
+		page,
+	} ) => {
+		await admin.createNewPost( {
+			postType: 'resource',
+			title: `E2E pending then sent ${ Date.now() }`,
+		} );
+
+		let polls = 0;
+		let stubbing = false;
+
+		await stubRecord( page, {
+			onPoll: ( date ) => {
+				if ( ! stubbing ) {
+					return undefined;
+				}
+
+				polls++;
+
+				return polls === 1
+					? storedRecord( {
+							status: 'pending',
+							outcome: 'pending',
+							batch_id: 'stub-batch',
+							time: serverStamp( date ),
+						} )
+					: storedRecord( {
+							status: 'sent',
+							outcome: 'ok',
+							code: 200,
+							batch_id: 'stub-batch',
+							time: serverStamp( date ),
+						} );
+			},
+		} );
+		await collectNotices( page );
+
+		stubbing = true;
+		const postId = await page.evaluate( async ( typeId ) => {
+			const { dispatch, select } = window.wp.data;
+			dispatch( 'core/editor' ).editPost( {
+				status: 'publish',
+				resource_type: [ typeId ],
+			} );
+			await dispatch( 'core/editor' ).savePost();
+			return select( 'core/editor' ).getCurrentPostId();
+		}, type.id );
+		createdIds.push( postId );
+
+		await expect
+			.poll( () => shownNotices( page ), { timeout: 15000 } )
+			.toEqual( [ { status: 'success', content: ACCEPTED } ] );
+		expect( polls ).toBe( 2 );
+		await expect(
+			page.locator( '.components-snackbar' ).getByText( ACCEPTED )
+		).toBeVisible();
+	} );
+
+	test( "a second save shows its own result, never the first save's late one", async ( {
+		admin,
+		page,
+	} ) => {
+		await admin.createNewPost( {
+			postType: 'resource',
+			title: `E2E double save ${ Date.now() }`,
+		} );
+
+		// What the store would hold: the first save's batch is still pending
+		// when the second save's response is built; its late result lands
+		// after the second save, then the second save's own pending and result.
+		let phase = 0;
+		let firstPolls = 0;
+		let secondPolls = 0;
+
+		await stubRecord( page, {
+			onSave: ( date ) => {
+				phase++;
+
+				return phase === 2
+					? storedRecord( {
+							status: 'pending',
+							outcome: 'pending',
+							batch_id: 'batch-1',
+							time: serverStamp( date ),
+						} )
+					: undefined;
+			},
+			onPoll: ( date ) => {
+				if ( phase === 1 ) {
+					firstPolls++;
+
+					return storedRecord( {
+						status: 'pending',
+						outcome: 'pending',
+						batch_id: 'batch-1',
+						time: serverStamp( date ),
+					} );
+				}
+
+				if ( phase !== 2 ) {
+					return undefined;
+				}
+
+				secondPolls++;
+
+				return [
+					// The first save's late result: same batch as the response's record.
+					storedRecord( {
+						status: 'failed',
+						outcome: 'server_error',
+						code: 500,
+						batch_id: 'batch-1',
+						time: serverStamp( date ),
+					} ),
+					// An older result from a batch the response never showed.
+					storedRecord( {
+						status: 'failed',
+						outcome: 'timeout',
+						batch_id: 'batch-0',
+						time: serverStamp( date, -3600 ),
+					} ),
+					storedRecord( {
+						status: 'pending',
+						outcome: 'pending',
+						batch_id: 'batch-2',
+						time: serverStamp( date ),
+					} ),
+					storedRecord( {
+						status: 'sent',
+						outcome: 'ok',
+						code: 200,
+						batch_id: 'batch-2',
+						time: serverStamp( date ),
+					} ),
+				][ Math.min( secondPolls, 4 ) - 1 ];
+			},
+		} );
+		await collectNotices( page );
+
+		const postId = await page.evaluate( async ( typeId ) => {
+			const { dispatch, select } = window.wp.data;
+			dispatch( 'core/editor' ).editPost( {
+				status: 'publish',
+				resource_type: [ typeId ],
+			} );
+			await dispatch( 'core/editor' ).savePost();
+			return select( 'core/editor' ).getCurrentPostId();
+		}, type.id );
+		createdIds.push( postId );
+
+		// The first save's poll is running and reading pending; save again.
+		await expect.poll( () => firstPolls ).toBeGreaterThan( 0 );
+		await page.evaluate( async () => {
+			const { dispatch } = window.wp.data;
+			dispatch( 'core/editor' ).editPost( { excerpt: 'Saved again' } );
+			await dispatch( 'core/editor' ).savePost();
+		} );
+
+		await expect
+			.poll( () => shownNotices( page ), { timeout: 15000 } )
+			.toEqual( [ { status: 'success', content: ACCEPTED } ] );
+		expect( secondPolls ).toBe( 4 );
+		await expect(
+			page.getByText( 'Revalidation failed on the front end (500).' )
+		).toHaveCount( 0 );
 	} );
 
 	test( 'the status page enables the test button only when a resource is published, and the test records its result', async ( {

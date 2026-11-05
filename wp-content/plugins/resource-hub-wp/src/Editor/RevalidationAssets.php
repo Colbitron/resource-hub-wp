@@ -9,18 +9,24 @@ declare(strict_types=1);
 
 namespace ResourceHub\Editor;
 
+use ResourceHub\Admin\ResultText;
 use ResourceHub\ContentModel\PostType;
 
 /**
  * Loads `build/editor/revalidation-feedback.js` on the block editor for `resource` posts only
  * (ADR 0018). The script polls the post's `rh_last_revalidation` field after a save and puts the
- * outcome in a `core/notices` notice.
+ * outcome in a `core/notices` notice, in the sentences {@see ResultText::sentences()} hands it.
  */
 final class RevalidationAssets {
 	/**
 	 * Script handle.
 	 */
 	public const HANDLE = 'resource-hub-revalidation-feedback';
+
+	/**
+	 * The global the script reads its sentences from.
+	 */
+	public const OBJECT_NAME = 'resourceHubRevalidation';
 
 	/**
 	 * Absolute path to the plugin's main file, for `plugins_url()`.
@@ -65,6 +71,7 @@ final class RevalidationAssets {
 			true
 		);
 
+		wp_localize_script( self::HANDLE, self::OBJECT_NAME, array( 'sentences' => ResultText::sentences() ) );
 		wp_set_script_translations( self::HANDLE, 'resource-hub' );
 	}
 }

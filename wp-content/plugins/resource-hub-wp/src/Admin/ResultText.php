@@ -15,7 +15,8 @@ use ResourceHub\Revalidation\ResultStore;
 /**
  * Turns a `_rh_last_revalidation` record into the words the admin screens show: a short label for
  * the Resources list column and a full sentence for the term notice and the status page (ADR 0018).
- * The block editor's notice has the same sentences in JavaScript. Nothing here prints the response
+ * The block editor's notice reads the same sentences, handed to its script by
+ * {@see \ResourceHub\Editor\RevalidationAssets}. Nothing here prints the response
  * body: a sentence may quote the stored `error`, which is a transport message or one of the plugin's
  * own, never a body and never the secret.
  */
@@ -29,6 +30,11 @@ final class ResultText {
 	 * Display only; the record itself is never rewritten.
 	 */
 	public const STALE_PENDING_SECONDS = 300;
+
+	/**
+	 * The outcomes whose sentence is followed by the record's error message, when there is one.
+	 */
+	public const WITH_ERROR = array( Result::BAD_REQUEST, Result::SERVER_ERROR, Result::TRANSPORT_ERROR );
 
 	/**
 	 * Whether a record is a `pending` older than {@see ResultText::STALE_PENDING_SECONDS}.
@@ -111,45 +117,88 @@ final class ResultText {
 	}
 
 	/**
-	 * One plain sentence, the same wording as the block editor's notice.
+	 * The sentence for each outcome, keyed by outcome, plus `stale` for a stale pending, `failed` for
+	 * an outcome this version does not know, and `no_answer`, which only the block editor uses, for a
+	 * poll window that closed with no record for the save. `unexpected_code` holds `%d` for the HTTP
+	 * code. This is the one source of the wording: {@see ResultText::sentence()} reads it here, and the
+	 * block editor's script receives it through `wp_localize_script()` (ADR 0018). Nothing in it is
+	 * configuration, so the secret can never reach the browser this way.
+	 *
+	 * @return array<string, string>
+	 */
+	public static function sentences(): array {
+		return array(
+			'stale'                 => __( 'No answer recorded: the send may not have run.', 'resource-hub' ),
+			ResultStore::PENDING    => __( 'Revalidation is pending: no answer has arrived from the front end yet.', 'resource-hub' ),
+			Result::OK              => __( 'The front end accepted the revalidation (200).', 'resource-hub' ),
+			Result::BAD_BODY        => __( 'Revalidation failed: the front end answered 200 but not with the expected body. Check the front-end URL.', 'resource-hub' ),
+			Result::BAD_REQUEST     => __( 'Revalidation rejected: the front end could not read the request (400).', 'resource-hub' ),
+			Result::UNAUTHORIZED    => __( 'Revalidation rejected: the secret does not match (401).', 'resource-hub' ),
+			Result::SERVER_ERROR    => __( 'Revalidation failed on the front end (500).', 'resource-hub' ),
+			/* translators: %d: HTTP status code. */
+			Result::UNEXPECTED_CODE => __( 'Revalidation got an unexpected response (%d).', 'resource-hub' ),
+			Result::TIMEOUT         => __( 'Revalidation timed out: the front end did not answer within 3 seconds.', 'resource-hub' ),
+			Result::TRANSPORT_ERROR => __( 'Revalidation could not reach the front end.', 'resource-hub' ),
+			Result::NOT_CONFIGURED  => __( 'Revalidation skipped: the front-end URL or the secret is not configured.', 'resource-hub' ),
+			Result::NO_SINGLE_TYPE  => __( 'Revalidation not sent: a resource needs exactly one type.', 'resource-hub' ),
+			Result::ENCODE_ERROR    => __( 'Revalidation not sent: the events could not be encoded as JSON.', 'resource-hub' ),
+			'failed'                => __( 'Revalidation failed.', 'resource-hub' ),
+			'no_answer'             => __( 'No answer has arrived from the front end yet for this save. Reload later to check, or save again to retry.', 'resource-hub' ),
+		);
+	}
+
+	/**
+	 * One plain sentence, from {@see ResultText::sentences()}, the wording the block editor's notice
+	 * also uses: the error message after it for the outcomes in {@see ResultText::WITH_ERROR}, and how
+	 * many other changes travelled in the same request, when any did.
 	 *
 	 * @param array<string, mixed> $record The stored record.
 	 * @param int|null             $now    Unix time for the stale check; null means now.
 	 */
 	public static function sentence( array $record, ?int $now = null ): string {
+		$sentences = self::sentences();
+
 		if ( self::is_stale_pending( $record, $now ) ) {
-			return __( 'No answer recorded: the send may not have run.', 'resource-hub' );
+			return $sentences['stale'];
 		}
 
-		switch ( $record['outcome'] ?? '' ) {
-			case ResultStore::PENDING:
-				return __( 'Revalidation is pending: no answer has arrived from the front end yet.', 'resource-hub' );
-			case Result::OK:
-				return __( 'The front end accepted the revalidation (200).', 'resource-hub' );
-			case Result::BAD_BODY:
-				return __( 'Revalidation failed: the front end answered 200 but not with the expected body. Check the front-end URL.', 'resource-hub' );
-			case Result::BAD_REQUEST:
-				return self::with_error( __( 'Revalidation rejected: the front end could not read the request (400).', 'resource-hub' ), $record );
-			case Result::UNAUTHORIZED:
-				return __( 'Revalidation rejected: the secret does not match (401).', 'resource-hub' );
-			case Result::SERVER_ERROR:
-				return self::with_error( __( 'Revalidation failed on the front end (500).', 'resource-hub' ), $record );
-			case Result::UNEXPECTED_CODE:
-				/* translators: %d: HTTP status code. */
-				return sprintf( __( 'Revalidation got an unexpected response (%d).', 'resource-hub' ), (int) ( $record['code'] ?? 0 ) );
-			case Result::TIMEOUT:
-				return __( 'Revalidation timed out: the front end did not answer within 3 seconds.', 'resource-hub' );
-			case Result::TRANSPORT_ERROR:
-				return self::with_error( __( 'Revalidation could not reach the front end.', 'resource-hub' ), $record );
-			case Result::NOT_CONFIGURED:
-				return __( 'Revalidation skipped: the front-end URL or the secret is not configured.', 'resource-hub' );
-			case Result::NO_SINGLE_TYPE:
-				return __( 'Revalidation not sent: a resource needs exactly one type.', 'resource-hub' );
-			case Result::ENCODE_ERROR:
-				return __( 'Revalidation not sent: the events could not be encoded as JSON.', 'resource-hub' );
-			default:
-				return __( 'Revalidation failed.', 'resource-hub' );
+		$outcome = $record['outcome'] ?? '';
+		$outcome = is_string( $outcome ) ? $outcome : '';
+
+		if ( ResultStore::PENDING === $outcome ) {
+			return $sentences[ ResultStore::PENDING ];
 		}
+
+		$sentence = in_array( $outcome, Result::OUTCOMES, true ) && isset( $sentences[ $outcome ] ) ? $sentences[ $outcome ] : $sentences['failed'];
+
+		if ( Result::UNEXPECTED_CODE === $outcome ) {
+			$sentence = sprintf( $sentence, (int) ( $record['code'] ?? 0 ) );
+		}
+
+		if ( in_array( $outcome, self::WITH_ERROR, true ) ) {
+			$sentence = self::with_error( $sentence, $record );
+		}
+
+		return self::with_others( $sentence, $record );
+	}
+
+	/**
+	 * A sentence with "It was sent with N other changes." after it, when the record travelled with
+	 * others. The block editor's script has the same two msgids in `_n()`, since a plural rule cannot
+	 * be handed from PHP to JavaScript.
+	 *
+	 * @param string               $sentence The sentence.
+	 * @param array<string, mixed> $record   The stored record.
+	 */
+	private static function with_others( string $sentence, array $record ): string {
+		$others = (int) ( $record['others'] ?? 0 );
+
+		if ( $others < 1 ) {
+			return $sentence;
+		}
+
+		/* translators: %d: how many other changes travelled in the same request. */
+		return $sentence . ' ' . sprintf( _n( 'It was sent with %d other change.', 'It was sent with %d other changes.', $others, 'resource-hub' ), $others );
 	}
 
 	/**
