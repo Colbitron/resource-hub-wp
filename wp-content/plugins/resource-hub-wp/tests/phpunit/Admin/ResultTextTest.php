@@ -83,6 +83,7 @@ final class ResultTextTest extends WP_UnitTestCase {
 			'transport_error' => array( Result::FAILED, Result::TRANSPORT_ERROR, 'Could not reach the front end', 'Revalidation could not reach the front end. cURL error 6: Could not resolve host', 'error' ),
 			'not_configured'  => array( Result::FAILED, Result::NOT_CONFIGURED, 'Not configured', 'Revalidation skipped: the front-end URL or the secret is not configured.', 'error' ),
 			'no_single_type'  => array( Result::FAILED, Result::NO_SINGLE_TYPE, 'Not sent: needs one type', 'Revalidation not sent: a resource needs exactly one type.', 'error' ),
+			'reserved_type'   => array( Result::FAILED, Result::RESERVED_TYPE, 'Not sent: reserved type slug', 'Revalidation not sent: a type\'s slug cannot be topic or page. Give this type a different slug and save it again.', 'error' ),
 			'encode_error'    => array( Result::FAILED, Result::ENCODE_ERROR, 'Not sent: encoding error', 'Revalidation not sent: the events could not be encoded as JSON.', 'error' ),
 		);
 	}

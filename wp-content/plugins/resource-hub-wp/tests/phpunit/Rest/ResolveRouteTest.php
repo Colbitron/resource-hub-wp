@@ -12,6 +12,7 @@ namespace ResourceHub\Tests\Rest;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\Taxonomies;
 use ResourceHub\Rest\ResolveRoute;
+use ResourceHub\Tests\LegacySlugRows;
 use ResourceHub\Tests\Revalidation\SchemaValidator;
 use WP_Error;
 use WP_REST_Request;
@@ -22,6 +23,8 @@ use WP_UnitTestCase;
  * Every response is checked against `resolve-response` (200) or `wp-error` (400, 404) in `packages/ui/schemas/`.
  */
 final class ResolveRouteTest extends WP_UnitTestCase {
+	use LegacySlugRows;
+
 	/**
 	 * A type term: ID and slug.
 	 *
@@ -296,25 +299,24 @@ final class ResolveRouteTest extends WP_UnitTestCase {
 
 	/**
 	 * A resource whose one type has a reserved slug is a 404: the schema rejects `topic` and `page` as a type,
-	 * and a percent-encoded form reads as one of them in a URL. The plugin refuses such a term on insert, so
-	 * the test lifts that guard to build one.
+	 * and a percent-encoded form reads as one of them in a URL. The plugin refuses a reserved slug on insert,
+	 * `%74opic` included, because `pre_insert_term`'s `reserved_form()` decodes it before comparing, and it
+	 * decodes escapes on save (ADR 0024). So the test plants the slug in the row core writes, after every
+	 * plugin filter, as a term stored before those rules existed.
 	 *
 	 * @dataProvider reserved_type_slugs
 	 *
 	 * @param string $slug The type's slug.
 	 */
 	public function test_resource_with_a_reserved_type_slug_is_not_found( string $slug ): void {
-		remove_all_filters( 'pre_insert_term' );
-		$reserved = self::factory()->term->create(
-			array(
-				'taxonomy' => Taxonomies::TYPE,
-				'slug'     => $slug,
-			)
+		$reserved = $this->with_legacy_term_slug(
+			$slug,
+			static fn(): int => self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) )
 		);
 		$id       = $this->resource( 'reserved-typed' );
 		wp_set_object_terms( $id, $reserved, Taxonomies::TYPE );
 
-		$this->assertSame( $slug, get_term( $reserved )->slug );
+		$this->assertSame( $slug, $this->stored_term_slug( $reserved ), 'The legacy type was not stored.' );
 		$this->assert_not_found( 'reserved-typed' );
 	}
 

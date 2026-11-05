@@ -53,6 +53,11 @@ final class ResourceState {
 	 * @param array<string, mixed> $event A resource event.
 	 */
 	public static function has_one_type( array $event ): bool {
+		// A resource whose single type {@see Payload::decode_slugs()} dropped, because its stored
+		// slug decodes to nothing or to a reserved word, is held back here with the same "a resource
+		// needs exactly one type" message, which then does not say why. That case is practically
+		// unreachable: no save path stores such a type slug, so only a row written straight into the
+		// database can carry one.
 		return 1 === count( $event['types'] );
 	}
 

@@ -12,12 +12,14 @@ namespace ResourceHub;
 use ResourceHub\Admin\ListColumn;
 use ResourceHub\Admin\StatusPage;
 use ResourceHub\Admin\TermNotice;
+use ResourceHub\Cli\DecodeSlugsCommand;
 use ResourceHub\Cli\SeedCommand;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\OneType;
 use ResourceHub\ContentModel\Permalink;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\ReservedTypeSlugs;
+use ResourceHub\ContentModel\SlugEscapes;
 use ResourceHub\ContentModel\Taxonomies;
 use ResourceHub\ContentModel\UsedTypes;
 use ResourceHub\Editor\RevalidationAssets;
@@ -75,6 +77,7 @@ final class Plugin {
 		add_action( 'init', array( new Meta(), 'register' ) );
 		( new OneType() )->register();
 		( new ReservedTypeSlugs() )->register();
+		( new SlugEscapes() )->register();
 		( new Permalink() )->register();
 		( new UsedTypes() )->register();
 		add_action( 'enqueue_block_editor_assets', array( new SidebarAssets( $this->file ), 'enqueue' ) );
@@ -90,6 +93,7 @@ final class Plugin {
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			\WP_CLI::add_command( 'resource-hub seed', SeedCommand::class );
+			\WP_CLI::add_command( 'resource-hub decode-slugs', DecodeSlugsCommand::class );
 		}
 	}
 
