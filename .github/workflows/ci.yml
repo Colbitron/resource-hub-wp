@@ -180,6 +180,16 @@ jobs:
       - name: Build the front end
         run: pnpm web:build
 
+      # The fixture pages are routes only under RH_FIXTURES=1 (ADR 0045). This
+      # build runs without it, so if they reached the output anyway, the test-
+      # only pages would ship; fail before the e2e build overwrites .next.
+      - name: Check the fixture routes are not in the production build
+        run: |
+          if [ -e apps/web/.next/server/app/fixtures ]; then
+            echo "::error::The production build contains apps/web/.next/server/app/fixtures; the fixture routes must never ship."
+            exit 1
+          fi
+
       - name: Install Playwright's browser
         run: pnpm --filter resource-hub-web exec playwright install --with-deps chromium
 
@@ -187,6 +197,16 @@ jobs:
       # runs the specs against `next start`; see apps/web/playwright.config.ts.
       - name: Run the front end's end-to-end tests
         run: pnpm web:test:e2e
+
+      # Traces are kept only for failed tests (trace: retain-on-failure), in
+      # Playwright's default output directory.
+      - name: Upload the front end's Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-playwright-traces
+          path: apps/web/test-results/
+          retention-days: 7
 
   deploy:
     name: Deploy to the host
