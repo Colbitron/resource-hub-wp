@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { MAX_DEPTH, renderContent, type RenderBlock, type RenderContentOptions } from "../lib/content/render";
+import { MAX_CONTENT_LENGTH, MAX_DEPTH, renderContent, type RenderBlock, type RenderContentOptions } from "../lib/content/render";
 import type { CmsUrls } from "../lib/urls";
 
 const CMS: CmsUrls = {
@@ -677,18 +677,19 @@ describe("ids", () => {
 describe("linear time on hostile attribute values", () => {
   const SECOND = 1000;
 
-  it("splits a 1 MB comma-heavy srcset in under a second", () => {
+  it("splits a 500 KB comma-heavy srcset in under a second", () => {
+    // 500 KB keeps the body under MAX_CONTENT_LENGTH, so it reaches the pass; the old pattern took 13.5 s on 200 KB.
     // A run of commas between two non-commas and a trailing comma made the old `/,+$/` quadratic.
-    const srcset = `a${",".repeat(1_000_000)}a,`;
+    const srcset = `a${",".repeat(500_000)}a,`;
     const start = performance.now();
     const output = render(`<img src="${UPLOAD}" srcset="${srcset}" alt="">`);
     expect(performance.now() - start).toBeLessThan(SECOND);
     expect(output).toBe('<img alt="" src="/media/2026/11/photo.jpg" loading="lazy"/>');
   });
 
-  it("checks a 1 MB srcset descriptor in under a second", () => {
+  it("checks a 500 KB srcset descriptor in under a second", () => {
     // A long run of digits that is not a descriptor made the old `[0-9]*\.?[0-9]+x` quadratic.
-    const srcset = `${UPLOAD} ${"1".repeat(1_000_000)}y`;
+    const srcset = `${UPLOAD} ${"1".repeat(500_000)}y`;
     const start = performance.now();
     const output = render(`<img src="${UPLOAD}" srcset="${srcset}" alt="">`);
     expect(performance.now() - start).toBeLessThan(SECOND);
@@ -764,6 +765,22 @@ describe("deep nesting", () => {
       expect(warned + errored, String(depth)).toBe(1);
       expect(result, String(depth)).toBe("Hidden");
     }
+  });
+
+  it("renders a body of exactly MAX_CONTENT_LENGTH as markup and one a character longer as plain text", () => {
+    const body = (length: number) => {
+      const html = `<p><strong>Long</strong> ${"a".repeat(length - 30)}</p>`;
+      return html + " ".repeat(length - html.length);
+    };
+    const atCap = quietly(() => render(body(MAX_CONTENT_LENGTH)));
+    expect(body(MAX_CONTENT_LENGTH)).toHaveLength(MAX_CONTENT_LENGTH);
+    expect(atCap.warned).toBe(0);
+    expect(atCap.result.startsWith("<p><strong>Long</strong> a")).toBe(true);
+
+    const overCap = quietly(() => render(body(MAX_CONTENT_LENGTH + 1)));
+    expect(overCap.warned).toBe(1);
+    expect(overCap.result.startsWith("Long a")).toBe(true);
+    expect(overCap.result).not.toContain("<");
   });
 
   it("renders the body as plain text when the pass throws", () => {

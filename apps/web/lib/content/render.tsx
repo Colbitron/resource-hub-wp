@@ -85,6 +85,9 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   parse or the pass (`html-react-parser` recurses once per level and runs
  *   out of stack at about 2,000) also gives the plain-text rendering, so a
  *   body never makes the page fail.
+ * - Size: a body longer than `MAX_CONTENT_LENGTH` UTF-16 code units renders
+ *   as plain text without reaching the parser, which bounds the time that
+ *   markup crafted past the pre-scan can make the parser take.
  *
  * No regular expression here backtracks more than linearly on its input.
  *
@@ -151,6 +154,20 @@ export const MAX_DEPTH = 256;
  * A body between the two becomes text through the exact check.
  */
 const PRESCAN_LIMIT = 1024;
+
+/**
+ * The longest body, in UTF-16 code units (`html.length`, 512 Ki), that goes
+ * to the parser; a longer one renders as plain text (`textOnly`). The
+ * pre-scan can be fooled by end tags the parser does not read as end tags
+ * (in comments, attribute values or `<script>`), so crafted markup can still
+ * reach htmlparser2 deeply nested, and that costs about 0.6 s per megabyte
+ * at worst, measured on ASCII markup where a code unit is a byte. The cap
+ * holds one render to about 0.3 s, and a body renders once per revalidation
+ * before ISR caches it, and only editors write it. Code units rather than
+ * bytes because `length` costs nothing and is what the parser's work scales
+ * with; the longest real resource body is a few tens of kilobytes.
+ */
+export const MAX_CONTENT_LENGTH = 512 * 1024;
 
 /**
  * The prefix every `id` in a body gets. Browsers expose an element with an
@@ -1040,9 +1057,10 @@ function textOnly(html: string): string {
  * and check above applied. `cms` comes from `cmsUrls()` in `lib/env.ts`.
  *
  * Throws a `TypeError` if a configured URL is not an http(s) URL. Never
- * throws because of the HTML: a body nested deeper than `MAX_DEPTH`, or one
- * the parse or the pass fails on, renders as `textOnly(html)`, plain text
- * with no markup, and the reason is logged on the server.
+ * throws because of the HTML: a body longer than `MAX_CONTENT_LENGTH`, one
+ * nested deeper than `MAX_DEPTH`, or one the parse or the pass fails on,
+ * renders as `textOnly(html)`, plain text with no markup, and the reason is
+ * logged on the server.
  */
 export function renderContent(html: string, cms: CmsUrls, options: RenderContentOptions = {}): ReactNode {
   // Parse the configured URLs before the `try`, so a bad configuration
@@ -1066,6 +1084,10 @@ export function renderContent(html: string, cms: CmsUrls, options: RenderContent
     depth: 0,
     markers: 0,
   };
+  if (html.length > MAX_CONTENT_LENGTH) {
+    console.warn(`renderContent: the body is longer than ${MAX_CONTENT_LENGTH} characters; rendering it as text`);
+    return textOnly(html);
+  }
   if (mayNestDeeperThan(html, PRESCAN_LIMIT)) {
     console.warn(`renderContent: the body nests more than ${MAX_DEPTH} elements deep; rendering it as text`);
     return textOnly(html);
