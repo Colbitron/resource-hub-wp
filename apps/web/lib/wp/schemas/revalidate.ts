@@ -1,10 +1,9 @@
 import { z } from "zod";
 
+import { typeSlugProblem } from "../../routes";
 import {
   idSchema,
-  isReservedTypeSlug,
   pathSchema,
-  RESERVED_TYPE_SLUG_MESSAGE,
   slugSchema,
   topicListSchema,
   typeListSchema,
@@ -188,15 +187,13 @@ function buildRequestSchemas(unknownKeys: UnknownKeys) {
       if (event.taxonomy !== "resource_type") {
         return;
       }
-      if (isReservedTypeSlug(event.slug)) {
-        ctx.addIssue({ code: "custom", path: ["slug"], message: RESERVED_TYPE_SLUG_MESSAGE });
+      const problem = typeSlugProblem(event.slug);
+      if (problem !== null) {
+        ctx.addIssue({ code: "custom", path: ["slug"], message: problem });
       }
-      if (event.previous !== null && isReservedTypeSlug(event.previous.slug)) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["previous", "slug"],
-          message: RESERVED_TYPE_SLUG_MESSAGE,
-        });
+      const previousProblem = event.previous === null ? null : typeSlugProblem(event.previous.slug);
+      if (previousProblem !== null) {
+        ctx.addIssue({ code: "custom", path: ["previous", "slug"], message: previousProblem });
       }
     });
 
