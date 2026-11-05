@@ -136,7 +136,7 @@ final class GateTest extends LockdownTestCase {
 	}
 
 	/**
-	 * Core sitemaps are switched off for the request, so their renderer sends its own 404 instead of
+	 * Core sitemaps are off for an anonymous visitor, so their renderer sends its own 404 instead of
 	 * XML; for a logged-in user they stay on.
 	 */
 	public function test_sitemaps(): void {
@@ -247,6 +247,61 @@ final class GateTest extends LockdownTestCase {
 
 		$this->assertTrue( is_robots() );
 		$this->assertFalse( is_404() );
+		$this->assertArrayNotHasKey( 'error', $GLOBALS['wp']->query_vars );
+	}
+
+	/**
+	 * A parameter that is not a query var never reaches the query, so `robots.txt` with one is still
+	 * `robots.txt`; a public query var makes it a theme request, and a 404.
+	 */
+	public function test_robots_txt_with_another_parameter(): void {
+		$this->go_to( home_url( '/robots.txt?utm_source=probe' ) );
+		$this->assertTrue( is_robots() );
+		$this->assertFalse( is_404() );
+
+		$this->go_to( home_url( '/robots.txt?feed=rss2' ) );
+		$this->assertLocked( '/robots.txt?feed=rss2' );
+	}
+
+	/**
+	 * `robots` is a public query var, so anyone can add it to any URL; added to a sitemap, feed or
+	 * attachment URL, it exempts nothing.
+	 *
+	 * @dataProvider robots_bypass_urls
+	 *
+	 * @param string $path Path and query, with `{attachment}` for an attachment's ID.
+	 */
+	public function test_robots_query_var_exempts_nothing_else( string $path ): void {
+		// Registers the `sitemap` query var, as `init` does on a real request; the test case resets it.
+		wp_sitemaps_get_server();
+		$this->resource();
+		$attachment = self::factory()->attachment->create_object(
+			'pixel.png',
+			0,
+			array( 'post_mime_type' => 'image/png' )
+		);
+		$path       = str_replace( '{attachment}', (string) $attachment, $path );
+
+		$this->go_to( home_url( $path ) );
+
+		$this->assertLocked( $path );
+		$this->assertFalse( wp_sitemaps_get_server()->sitemaps_enabled(), $path );
+	}
+
+	/**
+	 * The URLs that got past the gate when `is_robots()` alone exempted a request.
+	 *
+	 * @return array<string, array{string}>
+	 */
+	public static function robots_bypass_urls(): array {
+		return array(
+			'sitemap index'    => array( '/wp-sitemap.xml?robots=1' ),
+			'resource sitemap' => array( '/wp-sitemap-posts-resource-1.xml?robots=1' ),
+			'users sitemap'    => array( '/wp-sitemap-users-1.xml?robots=1' ),
+			'plain sitemap'    => array( '/?robots=1&sitemap=index' ),
+			'plain attachment' => array( '/?attachment_id={attachment}&robots=1' ),
+			'plain feed'       => array( '/?robots=1&feed=rss2' ),
+		);
 	}
 
 	/**
@@ -284,6 +339,24 @@ final class GateTest extends LockdownTestCase {
 		$this->assertSame( 0, $query->found_posts );
 		$this->assertNull( $query->get_queried_object() );
 		$this->assertSame( $id, ( new WP_Query( $query->query ) )->posts[0]->ID, 'Core alone would have served it.' );
+	}
+
+	/**
+	 * The request is the gate's 404, and nothing would redirect it: the canonical redirect finds no
+	 * URL, and `wp_redirect()`, which would send the `Location` header, is muted
+	 * ({@see NoRedirectsTest::test_wp_redirect_sends_nothing()}).
+	 *
+	 * @param string $path Path requested, for the failure message.
+	 */
+	private function assertLocked( string $path ): void {
+		$url = home_url( $path );
+
+		$this->assertTrue( is_404(), $path );
+		$this->assertFalse( is_robots(), $path );
+		$this->assertFalse( is_feed(), $path );
+		$this->assertSame( '404', $GLOBALS['wp']->query_vars['error'], $path );
+		$this->assertNull( redirect_canonical( $url, false ), $path );
+		$this->assertSame( 10, has_filter( 'wp_redirect', '__return_false' ), $path );
 	}
 
 	/**

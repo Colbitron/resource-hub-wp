@@ -32,6 +32,30 @@ final class NoRedirectsTest extends LockdownTestCase {
 	}
 
 	/**
+	 * The `robots.txt` request the gate lets through gets the guards too, so it cannot redirect.
+	 */
+	public function test_robots_txt_registers_the_guards(): void {
+		$this->go_to( home_url( '/robots.txt' ) );
+
+		$this->assertTrue( is_robots() );
+		$this->assertGuards( true );
+	}
+
+	/**
+	 * `wp_redirect()` sends nothing for a locked request: it returns false before it would send the
+	 * `Location` header or the status. Unmuted, it would send them, which is why the logged-in side
+	 * is checked by registration in {@see self::test_logged_in_requests_register_no_guards()}.
+	 */
+	public function test_wp_redirect_sends_nothing(): void {
+		$this->go_to( get_permalink( $this->resource() ) );
+
+		// phpcs:disable WordPress.Security.SafeRedirect.wp_redirect_wp_redirect, WordPressVIPMinimum.Security.ExitAfterRedirect.NoExit -- the point is that they return without redirecting.
+		$this->assertFalse( wp_redirect( home_url( '/elsewhere/' ), 301 ) );
+		$this->assertFalse( wp_safe_redirect( home_url( '/elsewhere/' ), 301 ) );
+		// phpcs:enable
+	}
+
+	/**
 	 * A logged-in request registers nothing.
 	 */
 	public function test_logged_in_requests_register_no_guards(): void {
@@ -117,7 +141,6 @@ final class NoRedirectsTest extends LockdownTestCase {
 		$this->assertSame( $registered, has_filter( 'redirect_canonical', '__return_false' ) );
 		$this->assertSame( $registered, has_filter( 'old_slug_redirect_post_id', '__return_zero' ) );
 		$this->assertSame( $registered, has_filter( 'wp_redirect', '__return_false' ) );
-		$this->assertSame( $registered, has_filter( 'wp_sitemaps_enabled', '__return_false' ) );
 		$this->assertSame( $on ? false : 1000, has_action( 'template_redirect', 'wp_redirect_admin_locations' ) );
 	}
 }

@@ -24,8 +24,9 @@ use WP_Query;
  * `template_redirect` meet a 404 that {@see NoRedirects} tells them to leave alone. Priority 0
  * puts the decision ahead of any plugin at the default priority.
  *
- * Only two things pass: a logged-in user, so editors keep their pages and previews, and
- * `robots.txt`, which has to stay reachable to say "disallow everything". A preview nonce is
+ * Only two things pass: a logged-in user, so editors keep their pages and previews, and a request
+ * for `robots.txt` and nothing else, which has to stay reachable to say "disallow everything" (see
+ * {@see self::is_robots_txt()}). A preview nonce is
  * bound to the user it was made for and verifies only in that user's session, so an authorised
  * preview is a logged-in request; `?preview=true` on its own exempts nothing. Everything else
  * that reaches this filter is a theme page: single posts and pages, archives, the front page,
@@ -61,7 +62,14 @@ final class Gate {
 	 * @return mixed True once the request is a 404; `$preempt` unchanged when it passes.
 	 */
 	public function lock( $preempt, $query ) {
-		if ( ! $query instanceof WP_Query || $query->is_robots() || is_user_logged_in() ) {
+		if ( ! $query instanceof WP_Query || is_user_logged_in() ) {
+			return $preempt;
+		}
+
+		// Registered before the robots.txt exemption too, so no anonymous request can be redirected.
+		( new NoRedirects() )->register();
+
+		if ( $this->is_robots_txt( $query ) ) {
 			return $preempt;
 		}
 
@@ -71,12 +79,24 @@ final class Gate {
 			$GLOBALS['wp']->query_vars['error'] = '404';
 		}
 
-		( new NoRedirects() )->register();
-
-		// Core sitemaps answer their query var, not `is_404()`; switched off, they send a 404 of their own.
-		add_filter( 'wp_sitemaps_enabled', '__return_false' );
-
 		return true;
+	}
+
+	/**
+	 * Whether the request asks for `robots.txt` and nothing else.
+	 *
+	 * `is_robots()` alone is not enough: `robots` is a public query var, so anyone can add
+	 * `?robots=1` to a feed, sitemap or attachment URL, and the flag would then exempt that request.
+	 * The test is on the main query's own arguments rather than the request path, because they are
+	 * what WordPress acts on: `/robots.txt` reaches the query as `robots=1` alone, under pretty and
+	 * plain permalinks alike, and an unknown parameter such as `?utm_source=` never becomes a query
+	 * var, while any public query var added to it (`feed`, `sitemap`, `attachment_id`) does, and
+	 * makes it a theme request like any other.
+	 *
+	 * @param WP_Query $query The main query.
+	 */
+	private function is_robots_txt( WP_Query $query ): bool {
+		return $query->is_robots() && array( 'robots' ) === array_keys( (array) $query->query );
 	}
 
 	/**

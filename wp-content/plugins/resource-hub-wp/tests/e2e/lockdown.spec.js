@@ -128,13 +128,62 @@ test.describe( 'CMS lockdown', () => {
 	test( 'robots.txt is reachable and disallows everything', async ( {
 		anonymous,
 	} ) => {
-		const response = await anonymous.get( '/robots.txt' );
+		// A parameter that is not a query var never reaches WordPress's query.
+		for ( const path of [
+			'/robots.txt',
+			'/robots.txt?utm_source=probe',
+		] ) {
+			const response = await anonymous.get( path );
 
-		expect( response.status() ).toBe( 200 );
-		expect( response.headers()[ 'content-type' ] ).toContain(
-			'text/plain'
-		);
-		expect( await response.text() ).toBe( 'User-agent: *\nDisallow: /\n' );
+			expect( response.status(), path ).toBe( 200 );
+			expect( response.headers()[ 'content-type' ], path ).toContain(
+				'text/plain'
+			);
+			expect( await response.text(), path ).toBe(
+				'User-agent: *\nDisallow: /\n'
+			);
+		}
+	} );
+
+	test( 'the robots query var exempts nothing but robots.txt', async ( {
+		anonymous,
+		requestUtils,
+	} ) => {
+		const media = await requestUtils.uploadMedia( {
+			name: 'e2e-robots-pixel.png',
+			mimeType: 'image/png',
+			buffer: PIXEL,
+		} );
+
+		try {
+			const paths = [
+				'/wp-sitemap.xml?robots=1',
+				'/wp-sitemap-posts-resource-1.xml?robots=1',
+				'/wp-sitemap-users-1.xml?robots=1',
+				'/?robots=1&sitemap=index',
+				`/?attachment_id=${ media.id }&robots=1`,
+				'/?robots=1&feed=rss2',
+				'/robots.txt?feed=rss2',
+			];
+
+			for ( const path of paths ) {
+				const response = await anonymous.get( path );
+				const headers = response.headers();
+
+				expect( response.status(), path ).toBe( 404 );
+				expect( headers.location, path ).toBeUndefined();
+				expect( headers[ 'content-type' ], path ).toContain(
+					'text/html'
+				);
+				expect( headers[ 'last-modified' ], path ).toBeUndefined();
+				expect( headers.etag, path ).toBeUndefined();
+				expect( await response.text(), path ).not.toContain(
+					'/author/'
+				);
+			}
+		} finally {
+			await requestUtils.deleteMedia( media.id );
+		}
 	} );
 
 	test( 'a logged-in user sees the resource, marked noindex, with no oEmbed links', async ( {

@@ -12,9 +12,11 @@ namespace ResourceHub\Lockdown;
 /**
  * Switches off every redirect core would send from a 404, for the rest of the request.
  *
- * Registered by {@see Gate} only once a request has been made a 404, so these hooks are scoped to
- * that request and never touch a logged-in user or the login flow. Core treats a 404 as a reason
- * to look for somewhere to send the visitor; each of those paths is closed:
+ * Registered by {@see Gate} for every anonymous request that reaches it: each one it makes a 404,
+ * and the `robots.txt` request it lets through, which has no reason to redirect either. These
+ * hooks are scoped to that request and never touch a logged-in user or the login flow, which never
+ * reaches the gate. Core treats a 404 as a reason to look for somewhere to send the visitor; each
+ * of those paths is closed:
  *
  * - `redirect_canonical()` guesses a permalink for a 404 (`redirect_guess_404_permalink()`), sends
  *   `?p=`, `?page_id=` and `?attachment_id=` to their pretty URLs, and fixes trailing slashes and
