@@ -29,7 +29,7 @@ Public routes, shaped like a real WordPress running the plugin (the captured fix
 
 - `GET /wp-json/wp/v2/resources` with `_embed`, `per_page` (1 to 100, default 10), `page`, `slug`, `include` with `orderby=include`, `order`, and the `resource_topic`, `resource_type` and `resource_flag` term-ID filters. `X-WP-Total`, `X-WP-TotalPages` and `Link` headers; a page past the end is core's 400 `rest_post_invalid_page_number`.
 - `GET /wp-json/wp/v2/resources/{id}`: 404 `rest_post_invalid_id` for no such post, 401 `rest_forbidden` for a draft or trashed one, as core answers an anonymous reader.
-- `GET /wp-json/wp/v2/resource_topic`, `resource_type` and `resource_flag` with `slug`, `include`, `per_page`, `page`, `orderby`, `hide_empty`, and `/{id}`. `count` is the number of published resources with the term.
+- `GET /wp-json/wp/v2/resource_topic`, `resource_type` and `resource_flag` with `slug`, `include`, `per_page`, `page`, `orderby`, `hide_empty`, and `/{id}`. `count` is the number of published resources with the term. Unlike the resources collection, a page past the end is a 200 with `[]` and the totals headers, as core's terms controller has no page-number check.
 - `GET /wp-json/resource-hub/v1/resolve?slug=…`: `{ id, type, slug }` for a published resource by its current or an old slug, otherwise the plugin's 404 `resource_hub_not_found`.
 - `GET /wp-content/uploads/…`: the files under `mock-cms/fixtures/uploads/`, which `/media/…` on the app proxies.
 - Anything else is a 404, as the CMS's theme answers anonymous visitors (ADR 0031).

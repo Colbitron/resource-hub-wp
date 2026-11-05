@@ -177,9 +177,15 @@ describe("the taxonomy endpoints", () => {
     expect(wpTermListSchema.parse(page.body)).toHaveLength(2);
     expect(parsePaginationHeaders(page.headers)).toEqual({ total: 5, totalPages: 3 });
 
-    const past = await cms.get("/wp-json/wp/v2/resource_type?per_page=2&page=4");
-    expect(past.status).toBe(400);
-    expect(wpErrorSchema.parse(past.body).code).toBe("rest_term_invalid_page_number");
+    // Unlike the posts controller, core's terms controller has no page-number check.
+    const past = await cms.get<unknown[]>("/wp-json/wp/v2/resource_type?per_page=2&page=4");
+    expect(past.status).toBe(200);
+    expect(past.body).toEqual([]);
+    expect(parsePaginationHeaders(past.headers)).toEqual({ total: 5, totalPages: 3 });
+    const farPast = await cms.get<unknown[]>("/wp-json/wp/v2/resource_type?per_page=2&page=9");
+    expect(farPast.body).toEqual([]);
+    // Core clamps `prev` to the last page.
+    expect(farPast.headers.get("link")).toMatch(/[?&]page=3>; rel="prev"$/);
   });
 });
 

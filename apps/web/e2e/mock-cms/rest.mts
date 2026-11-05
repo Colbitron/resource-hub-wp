@@ -116,19 +116,22 @@ function oneOfParam<T extends string>(
 
 /**
  * Core's pagination: `X-WP-Total`, `X-WP-TotalPages` and a `Link` header with
- * `prev` and `next`, and a 400 for a page past the last one when there is
- * anything to page through (a page past an empty result is an empty 200).
+ * `prev` and `next`. A page past the last one differs by controller: the posts
+ * controller answers it with a 400 when there is anything to page through (a
+ * page past an empty result is an empty 200), so it passes `outOfRange`; the
+ * terms controller has no such check and answers an empty 200 with the
+ * totals, so it passes `null`.
  */
 function paginate<T>(
   items: T[],
   page: number,
   perPage: number,
   url: URL,
-  outOfRange: () => MockResponse,
+  outOfRange: (() => MockResponse) | null,
 ): { page: T[]; headers: Record<string, string> } | MockResponse {
   const total = items.length;
   const totalPages = Math.ceil(total / perPage);
-  if (page > totalPages && total > 0) return outOfRange();
+  if (outOfRange !== null && page > totalPages && total > 0) return outOfRange();
   const headers: Record<string, string> = {
     ...JSON_HEADERS,
     "Cache-Control": NO_CACHE,
@@ -141,7 +144,8 @@ function paginate<T>(
     next.searchParams.set("page", String(n));
     return next.toString();
   };
-  if (page > 1) links.push(`<${pageUrl(page - 1)}>; rel="prev"`);
+  // Core clamps `prev` to the last page, so a page past the end points back at it.
+  if (page > 1) links.push(`<${pageUrl(Math.min(page - 1, totalPages))}>; rel="prev"`);
   if (page < totalPages) links.push(`<${pageUrl(page + 1)}>; rel="next"`);
   if (links.length > 0) headers.Link = links.join(", ");
   return { page: items.slice((page - 1) * perPage, page * perPage), headers };
@@ -265,9 +269,8 @@ function termsCollection(state: MockState, taxonomy: Taxonomy, url: URL, origin:
     return sign * (typeof ka === "number" && typeof kb === "number" ? ka - kb : String(ka).localeCompare(String(kb)));
   });
 
-  const result = paginate(matches, page, perPage, url, () =>
-    wpError(400, "rest_term_invalid_page_number", "The page number requested is larger than the number of pages available."),
-  );
+  // WP_REST_Terms_Controller::get_items has no page-number check: past the end it is a 200 with `[]`.
+  const result = paginate(matches, page, perPage, url, null);
   if (isMockResponse(result)) return result;
   return { status: 200, headers: result.headers, body: result.page.map((t) => renderTerm(state, t, origin)) };
 }
