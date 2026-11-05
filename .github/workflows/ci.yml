@@ -6,8 +6,9 @@
 # deactivates every plugin on the tests site, so it runs before Playwright
 # and the Playwright specs re-activate the plugin themselves.
 #
-# The web job builds the Next.js front end in apps/web alongside the gate.
-# It needs no secrets: the scaffold makes no CMS calls at build time.
+# The web job lints, typechecks, unit-tests and builds the Next.js front end
+# in apps/web alongside the gate. It needs no secrets: it builds against a
+# placeholder CMS URL and makes no CMS calls at build time.
 #
 # The deploy job runs after both, only on main and on manual dispatch, and
 # syncs the plugin, from wp-content/plugins/resource-hub-wp, to the Cloudways
@@ -143,6 +144,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    # A placeholder, never a secret. next.config.ts builds the /media/ rewrite
+    # from WP_API_URL, so CI builds the same routes a deploy does; nothing
+    # fetches from it during the build. cms.example is a reserved name that never
+    # resolves. REVALIDATE_SECRET is read only when the revalidate route runs,
+    # so it is not set here.
+    env:
+      WP_API_URL: https://cms.example/wp-json
+
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -165,9 +174,9 @@ jobs:
       - name: Typecheck the front end
         run: pnpm web:typecheck
 
-      # No environment variables: nothing in the scaffold reads WP_API_URL or
-      # REVALIDATE_SECRET at build time. When a page starts fetching from the
-      # CMS during the build, this step gets a placeholder URL, never a secret.
+      - name: Run the front end's unit tests
+        run: pnpm web:test
+
       - name: Build the front end
         run: pnpm web:build
 
