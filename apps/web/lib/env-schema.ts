@@ -102,6 +102,38 @@ const mediaOriginSchema = httpUrl
   )
   .transform(originAndPath);
 
+/**
+ * True for a host name that always means this machine: `localhost` and its
+ * subdomains, the IPv4 loopback block and the IPv6 loopback address, the
+ * only hosts `SITE_URL` may name over plain `http:`.
+ */
+function isLoopback(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    /^127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$/.test(hostname) ||
+    hostname === "[::1]"
+  );
+}
+
+/**
+ * `SITE_URL`, the front end's public origin, which the root layout sets as
+ * `metadataBase` so the canonical `link`, `og:url` and `og:image` are
+ * absolute. `https:`, or `http:` for a loopback host (local work and the
+ * e2e run), with no query, fragment or credentials, and no path beyond `/`:
+ * every path the app builds is root-relative, so a base path would be
+ * dropped by the resolution anyway, and is refused rather than ignored. It
+ * is the origin, with no trailing slash.
+ */
+const siteUrlSchema = httpUrl
+  .refine(urlCheck((url) => url.protocol === "https:" || isLoopback(url.hostname)), {
+    error: "must use https, or http only for localhost",
+  })
+  .refine(noCredentials, { error: "must not contain a user name or password" })
+  .refine(noQueryOrFragment, { error: "must not have a query string or fragment" })
+  .refine(urlCheck((url) => url.pathname === "/"), { error: "must be an origin, with no path" })
+  .transform((value) => new URL(value).origin);
+
 /** The fewest characters `REVALIDATE_SECRET` may have. */
 export const MIN_SECRET_LENGTH = 32;
 
@@ -237,6 +269,32 @@ export function optionalMediaOrigin(env: EnvSource): string | undefined {
     return undefined;
   }
   return parseMediaOrigin(env);
+}
+
+/**
+ * The site's public origin from `SITE_URL`, e.g. `https://resources.example`,
+ * or `undefined` when it is not set, in which case the canonical and
+ * `og:url` stay relative paths. A value that is set but malformed throws an
+ * `EnvError` naming it.
+ */
+export function parseSiteUrl(env: EnvSource): string | undefined {
+  return present(env, "SITE_URL") === undefined ? undefined : parse(env, "SITE_URL", siteUrlSchema);
+}
+
+/**
+ * `parseSiteUrl` for `next.config.ts`, which every build loads: on Vercel
+ * (`VERCEL` set, as for the `/media/` rewrite in `lib/media-rewrites.ts`) an
+ * unset `SITE_URL` throws, because a deploy without it would publish a
+ * relative canonical and `og:url` on every page. Elsewhere it may be unset.
+ */
+export function buildSiteUrl(env: EnvSource): string | undefined {
+  const site = parseSiteUrl(env);
+  if (site === undefined && isSet(env, "VERCEL")) {
+    throw new EnvError(
+      "SITE_URL is not set, so the canonical link and og:url would be relative paths. Set SITE_URL to the site's public origin (https://…) in the Vercel project settings, for Production and Preview.",
+    );
+  }
+  return site;
 }
 
 /** True when the variable is set to a non-empty value. */

@@ -2,7 +2,7 @@ import { expect, test, type APIRequestContext, type APIResponse, type Page } fro
 import type { AxeResults } from "axe-core";
 
 import { mockCms } from "./mock-cms/client.mts";
-import { E2E_REVALIDATE_SECRET, MOCK_CMS_HOST, mockCmsOrigin, mockCmsPort } from "./mock-cms/config.mts";
+import { appSiteOrigin, E2E_REVALIDATE_SECRET, MOCK_CMS_HOST, mockCmsOrigin, mockCmsPort } from "./mock-cms/config.mts";
 import { RESOURCES, TERMS } from "./mock-cms/seed.mts";
 
 /**
@@ -286,6 +286,40 @@ test.describe("metadata", () => {
     const ogImage = page.locator('meta[property="og:image"]');
     expect(new URL((await ogImage.getAttribute("content")) as string, page.url()).pathname).toBe("/media/2026/11/content-model.png");
     await expect(page.locator('meta[property="og:image:width"]')).toHaveAttribute("content", "240");
+  });
+
+  test("with SITE_URL set, the canonical, og:url and og:image are absolute on the site's origin and never name the CMS", async ({ page }) => {
+    const site = appSiteOrigin();
+    const checks: [string, string][] = [
+      [resourcePath(SEEDED.type, SEEDED.slug), resourcePath(SEEDED.type, SEEDED.slug)],
+      ["/resources/", "/resources/"],
+      [`/resources/${SEEDED.type}/`, `/resources/${SEEDED.type}/`],
+    ];
+    for (const [path, expected] of checks) {
+      await page.goto(path);
+      const canonical = await page.locator('link[rel="canonical"]').getAttribute("href");
+      expect(canonical, path).toBe(`${site}${expected}`);
+      const urls = [canonical as string];
+      const ogUrl = page.locator('meta[property="og:url"]');
+      if ((await ogUrl.count()) > 0) {
+        const content = (await ogUrl.getAttribute("content")) as string;
+        expect(content, `${path} og:url`).toBe(`${site}${expected}`);
+        urls.push(content);
+      }
+      for (const image of await page.locator('meta[property="og:image"]').evaluateAll((metas) => metas.map((meta) => meta.getAttribute("content") ?? ""))) {
+        expect(image.startsWith(`${site}/media/`), `${path} og:image ${image}`).toBe(true);
+        urls.push(image);
+      }
+      for (const url of urls) {
+        expect(url, path).not.toContain(mockCmsOrigin());
+        expect(url, path).not.toContain(`:${mockCmsPort()}`);
+        expect(url, path).not.toContain("wp-json");
+      }
+    }
+    // The resource page sets og:url; this is not a check that passed by skipping it.
+    await page.goto(resourcePath(SEEDED.type, SEEDED.slug));
+    await expect(page.locator('meta[property="og:url"]')).toHaveAttribute("content", `${site}${resourcePath(SEEDED.type, SEEDED.slug)}`);
+    await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", `${site}/media/2026/11/content-model.png`);
   });
 
   test("the page and its metadata make one CMS request between them", async ({ request }) => {
