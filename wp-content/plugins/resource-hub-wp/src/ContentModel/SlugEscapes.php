@@ -75,9 +75,9 @@ final class SlugEscapes {
 		$decoded = preg_replace_callback(
 			'/%([0-9A-Fa-f]{2})/',
 			static function ( array $escape ): string {
-				$char = chr( (int) hexdec( $escape[1] ) );
+				$char = self::escaped_char( $escape[1] );
 
-				return 1 === preg_match( "/^[A-Za-z0-9\\-_.!~*'()]$/", $char ) ? $char : $escape[0];
+				return self::router_decodes( $char ) ? $char : $escape[0];
 			},
 			$slug
 		);
@@ -87,6 +87,62 @@ final class SlugEscapes {
 		}
 
 		return sanitize_title( $decoded );
+	}
+
+	/**
+	 * Whether a slug holds an escape of a character in `A-Z a-z 0-9 - _ . ! ~ * ' ( )`, in either
+	 * hex case: one the front end's router would decode.
+	 *
+	 * @param string $slug A slug.
+	 */
+	public static function has_router_escape( string $slug ): bool {
+		if ( false === preg_match_all( '/%([0-9A-Fa-f]{2})/', $slug, $matches ) ) {
+			return false;
+		}
+
+		foreach ( $matches[1] as $hex ) {
+			if ( self::router_decodes( self::escaped_char( $hex ) ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * A slug read from the database, in the form a save would store it now. A slug with no escape
+	 * of that set is returned exactly as stored. One with such an escape, stored before this rule
+	 * or written by a path that skips the save hooks, goes through what a save does:
+	 * `sanitize_title()`, then decode(). For readers of stored slugs that must never pass such an
+	 * escape on, such as the revalidation payload.
+	 *
+	 * @param string $slug A stored slug.
+	 * @return string The slug with no such escape; '' if nothing is left once core sanitizes it.
+	 */
+	public static function decode_stored( string $slug ): string {
+		if ( ! self::has_router_escape( $slug ) ) {
+			return $slug;
+		}
+
+		return self::decode( sanitize_title( $slug ) );
+	}
+
+	/**
+	 * The character two hex digits name.
+	 *
+	 * @param string $hex Two hex digits.
+	 */
+	private static function escaped_char( string $hex ): string {
+		return chr( (int) hexdec( $hex ) );
+	}
+
+	/**
+	 * Whether the router decodes an escape of this character: `encodeURIComponent()` leaves it unescaped.
+	 *
+	 * @param string $char One byte.
+	 */
+	private static function router_decodes( string $char ): bool {
+		return 1 === preg_match( "/^[A-Za-z0-9\\-_.!~*'()]$/", $char );
 	}
 
 	/**

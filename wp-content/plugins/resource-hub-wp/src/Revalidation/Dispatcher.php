@@ -17,9 +17,11 @@ namespace ResourceHub\Revalidation;
  * (ADRs 0012, 0014). The cron callback sends, records and logs; it never reads the post again.
  *
  * Before batching, each `publish` and `update` event is refreshed from its post, so it carries the
- * state the request left behind ({@see ResourceEvents::refresh()}). Then a resource event whose
- * top-level `types` is not exactly one element is held back: the schema requires one, so sending it
- * would fail the whole batch with a 400. It is recorded on that resource as a failure with a plain
+ * state the request left behind ({@see ResourceEvents::refresh()}), and every event has its slugs
+ * decoded ({@see Payload::decode_slugs()}), because one slug the front end refuses would fail the
+ * whole batch with a 400 (ADR 0024). Then a resource event whose top-level `types` is not exactly
+ * one element is held back: the schema requires one, so sending it would fail the whole batch with
+ * a 400 too. It is recorded on that resource as a failure with a plain
  * message, and the rest of the batch goes out. An `update` whose current state is valid but whose
  * `previous.types` is not is sent as an `update` with the current type standing in for the earlier
  * ones ({@see ResourceState::with_valid_previous_types()}), so the save that fixes a resource's type
@@ -86,7 +88,11 @@ final class Dispatcher {
 		foreach ( $events as $event ) {
 			if ( 'resource' === $event['type'] ) {
 				$event = ResourceEvents::refresh( $event );
+			}
 
+			$event = Payload::decode_slugs( $event );
+
+			if ( 'resource' === $event['type'] ) {
 				if ( ! ResourceState::has_one_type( $event ) ) {
 					$results[] = $this->hold_back( $event );
 					continue;
@@ -139,13 +145,16 @@ final class Dispatcher {
 	}
 
 	/**
-	 * Sends one event now, as a batch of one: the status page's test button (ADR 0019). A resource
+	 * Sends one event now, as a batch of one: the status page's test button (ADR 0019). Its slugs are
+	 * decoded as at `shutdown` ({@see Payload::decode_slugs()}). A resource
 	 * event without exactly one type is held back and recorded like any other, and one whose
 	 * `previous.types` alone is invalid is sent with the current type in its place, as at `shutdown`.
 	 *
 	 * @param array<string, mixed> $event The event.
 	 */
 	public function send_one( array $event ): Result {
+		$event = Payload::decode_slugs( $event );
+
 		if ( 'resource' === $event['type'] ) {
 			if ( ! ResourceState::has_one_type( $event ) ) {
 				return $this->hold_back( $event );
