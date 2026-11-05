@@ -10,9 +10,11 @@
 # in apps/web alongside the gate. It needs no secrets: it builds against a
 # placeholder CMS URL and makes no CMS calls at build time.
 #
-# The deploy job runs after both, only on main and on manual dispatch, and
+# The deploy job runs after the gate, only on main and on manual dispatch, and
 # syncs the plugin, from wp-content/plugins/resource-hub-wp, to the Cloudways
-# host (ADR 0005).
+# host (ADR 0005). The deploy-web job runs after both deploy and web, and
+# starts the front end's production deploy on Vercel through a deploy hook
+# (ADR 0051).
 name: CI
 
 # Pull requests run the gate once. A plain `push:` trigger alongside
@@ -215,8 +217,8 @@ jobs:
     name: Deploy to the host
     # The CMS deploy waits only on the CMS's own CI, so a front-end failure or
     # flake can never block a CMS deploy or a rollback. The dependency runs
-    # the other way: the front-end production deploy (slice 3, once Vercel is
-    # connected) will need both this job and the web job.
+    # the other way: the front-end production deploy, deploy-web below, needs
+    # both this job and the web job.
     needs: [ gate ]
     # Pushes only trigger on main already; the ref check keeps that true if the
     # trigger list ever widens. A manual dispatch deploys only from main or a
@@ -430,3 +432,88 @@ jobs:
           curl -fsS --max-time 20 --retry 3 --retry-delay 5 "${home%/}/wp-json/" \
             | jq -e '.namespaces | index("wp/v2")' > /dev/null
           echo "REST root answered at ${home%/}/wp-json/"
+
+  deploy-web:
+    name: Deploy the front end to Vercel
+    # The front end goes live only after the CMS it reads (the root CLAUDE.md,
+    # "Deploy order"), and only when its own lint, typecheck, tests and build
+    # have passed on this commit.
+    needs: [ deploy, web ]
+    # Main only, on a push or a manual dispatch. Unlike the CMS deploy, a tag
+    # dispatch does not deploy the front end: a deploy hook always builds the
+    # head of main, never the tagged commit, so firing it from a rollback run
+    # would ship main, not the rollback. The front end is rolled back on
+    # Vercel instead, by promoting an earlier deployment (ADR 0051).
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Its own group, so a front-end deploy never waits on, or holds up, the
+    # CMS deploy group. Never cancelled; a waiting run is replaced by a newer
+    # one, which is fine because the hook builds the head of main either way.
+    concurrency:
+      group: deploy-web-production
+      cancel-in-progress: false
+    # The job reads one commit SHA from the API and checks nothing out.
+    permissions:
+      contents: read
+
+    # An explicit bash shell runs with -o pipefail, so a failed curl fails the
+    # step even though jq reads its output.
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      # An unset secret reads as an empty string, which curl would report as a
+      # malformed URL. Only the name is printed.
+      - name: Check the deploy hook secret is set
+        env:
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          [ -n "$VERCEL_DEPLOY_HOOK_URL" ] || {
+            echo "::error::Repository secret VERCEL_DEPLOY_HOOK_URL is empty or not set."
+            exit 1
+          }
+
+      # The hook takes no commit: Vercel builds whatever main points at when it
+      # receives the request. CI runs on main one at a time, so by the time this
+      # job runs a later merge may already be on main with its own run still
+      # waiting, and firing now would ship that later commit before its gate.
+      # So the hook fires only while main still points at the commit this run
+      # tested; otherwise the later run, if green, deploys it.
+      - name: Check main has not moved on
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$head" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::main is now at $head, not $GITHUB_SHA; the run for the newer commit deploys the front end."
+          fi
+
+      # Fire and forget: the hook answers as soon as Vercel has queued the
+      # build, and the job reports the queued job's id and state without
+      # waiting on the build itself. Vercel shows the build's result, and a
+      # failed build leaves the previous production deployment serving. The
+      # URL is the credential, so it stays in the environment, is never
+      # written into the script, and is never printed; curl's own error
+      # messages name the host at most. No --retry: a POST that timed out may
+      # still have queued a build, and rerunning the job is the retry.
+      - name: Trigger the production deploy
+        if: steps.head.outputs.current == 'true'
+        env:
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          response=$(curl --fail --silent --show-error -X POST --max-time 30 "$VERCEL_DEPLOY_HOOK_URL")
+          job=$(jq -r '.job.id // empty' <<< "$response") || job=''
+          state=$(jq -r '.job.state // "unknown"' <<< "$response") || state='unknown'
+          if [ -z "$job" ]; then
+            echo "::error::The deploy hook answered without a job id."
+            exit 1
+          fi
+          echo "Vercel queued deploy job $job (state: $state) for $GITHUB_SHA."
