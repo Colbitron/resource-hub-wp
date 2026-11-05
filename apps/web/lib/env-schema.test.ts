@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildSiteUrl,
   EnvError,
   MAX_SECRET_LENGTH,
   MIN_SECRET_LENGTH,
   optionalMediaOrigin,
   parseMediaOrigin,
   parseRevalidateSecret,
+  parseSiteUrl,
   parseWpApiUrl,
   SecretError,
   secretProblem,
@@ -253,5 +255,87 @@ describe("parseRevalidateSecret", () => {
   it("names the variable when it is missing or empty", () => {
     expect(() => parseRevalidateSecret({})).toThrow(/^REVALIDATE_SECRET is not set\./);
     expect(() => parseRevalidateSecret({ REVALIDATE_SECRET: "" })).toThrow(EnvError);
+  });
+});
+
+describe("parseSiteUrl", () => {
+  it("is undefined when unset or empty", () => {
+    expect(parseSiteUrl({})).toBeUndefined();
+    expect(parseSiteUrl({ SITE_URL: "" })).toBeUndefined();
+  });
+
+  it("returns the origin, without a trailing slash", () => {
+    expect(parseSiteUrl({ SITE_URL: "https://resources.example/" })).toBe("https://resources.example");
+    expect(parseSiteUrl({ SITE_URL: "https://Resources.Example:8443" })).toBe("https://resources.example:8443");
+  });
+
+  it("takes http only for a loopback host", () => {
+    for (const value of ["http://localhost:3000", "http://app.localhost", "http://127.0.0.1:3450/", "http://[::1]:3000"]) {
+      expect(parseSiteUrl({ SITE_URL: value }), value).toBe(value.replace(/\/$/, ""));
+    }
+    for (const value of ["http://resources.example", "http://localhost.example", "http://128.0.0.1"]) {
+      expect(() => parseSiteUrl({ SITE_URL: value }), value).toThrow(/^SITE_URL must use https, or http only for localhost\./);
+    }
+  });
+
+  it("refuses a value that is not an http or https URL", () => {
+    for (const value of ["resources.example", "ftp://resources.example", "/resources/"]) {
+      expect(() => parseSiteUrl({ SITE_URL: value }), value).toThrow(/^SITE_URL must be an absolute http or https URL/);
+    }
+  });
+
+  it("refuses a path, a query, a fragment and credentials, and never prints the value", () => {
+    const cases: [string, RegExp][] = [
+      ["https://resources.example/site", /must be an origin, with no path/],
+      ["https://resources.example//", /must be an origin, with no path/],
+      ["https://resources.example/?x=1", /must not have a query string or fragment/],
+      ["https://resources.example/#top", /must not have a query string or fragment/],
+      ["https://user:secret-value@resources.example", /must not contain a user name or password/],
+    ];
+    for (const [value, message] of cases) {
+      expect(() => parseSiteUrl({ SITE_URL: value }), value).toThrow(EnvError);
+      expect(() => parseSiteUrl({ SITE_URL: value }), value).toThrow(message);
+      expect(() => parseSiteUrl({ SITE_URL: value }), value).not.toThrow(/secret-value/);
+    }
+  });
+});
+
+describe("parseSiteUrl and the CMS's origin", () => {
+  it("refuses the origin of WP_API_URL or WP_MEDIA_ORIGIN, and never prints the value", () => {
+    const cases: [Record<string, string>, string][] = [
+      [{ SITE_URL: "https://cms.example", WP_API_URL: "https://cms.example/wp-json" }, "WP_API_URL"],
+      [{ SITE_URL: "https://CMS.example:443/", WP_API_URL: "https://cms.example/blog/wp-json" }, "WP_API_URL"],
+      [{ SITE_URL: "https://media.example", WP_API_URL: "https://cms.example/wp-json", WP_MEDIA_ORIGIN: "https://media.example/site" }, "WP_MEDIA_ORIGIN"],
+    ];
+    for (const [env, name] of cases) {
+      expect(() => parseSiteUrl(env), env.SITE_URL).toThrow(EnvError);
+      expect(() => parseSiteUrl(env), env.SITE_URL).toThrow(
+        new RegExp(`^SITE_URL must be the front end's public origin, not the CMS's: it has the same origin as ${name},`),
+      );
+      expect(() => parseSiteUrl(env), env.SITE_URL).not.toThrow(/cms\.example|media\.example/i);
+      expect(() => buildSiteUrl(env), env.SITE_URL).toThrow(EnvError);
+    }
+  });
+
+  it("accepts another origin, including another port or scheme on the CMS's host", () => {
+    for (const site of ["https://resources.example", "https://cms.example:8443", "http://localhost:3000"]) {
+      expect(parseSiteUrl({ SITE_URL: site, WP_API_URL: "https://cms.example/wp-json", WP_MEDIA_ORIGIN: "http://localhost:8888" }), site).toBe(
+        site,
+      );
+    }
+    expect(parseSiteUrl({ SITE_URL: "http://localhost:3450", WP_API_URL: "http://localhost:4150/wp-json" })).toBe("http://localhost:3450");
+  });
+});
+
+describe("buildSiteUrl", () => {
+  it("may be unset outside Vercel, and fails a Vercel build without it, with a plain message", () => {
+    expect(buildSiteUrl({})).toBeUndefined();
+    expect(() => buildSiteUrl({ VERCEL: "1" })).toThrow(EnvError);
+    expect(() => buildSiteUrl({ VERCEL: "1", SITE_URL: "" })).toThrow(/^SITE_URL is not set, so the canonical link and og:url would be relative paths\./);
+    expect(buildSiteUrl({ VERCEL: "1", SITE_URL: "https://resources.example" })).toBe("https://resources.example");
+  });
+
+  it("fails any build on a malformed value", () => {
+    expect(() => buildSiteUrl({ SITE_URL: "http://resources.example" })).toThrow(EnvError);
   });
 });

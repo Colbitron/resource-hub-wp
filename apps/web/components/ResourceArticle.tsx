@@ -93,11 +93,12 @@ function resourceView(rendered: RenderedResource): ResourceView {
  * the site name), its summary as the description, or none rather than the
  * site's when it has no summary, its canonical path, and Open Graph fields
  * with the featured image's `/media/…` path when there is a trusted one. The
- * canonical and `og:url` are paths, which render relative until
- * `metadataBase` is set (ADR 0050's follow-up); `og:image` is already
- * absolute, because Next.js resolves social images against the deployment's
- * URL when `metadataBase` is unset. The CMS's absolute URLs are never used
- * (ADR 0040).
+ * canonical, `og:url` and `og:image` are paths, which the root layout's
+ * `metadataBase`, from the server-only `SITE_URL`, makes absolute on the
+ * public origin (ADR 0050's 2026-11-05 amendment); with `SITE_URL` unset, as
+ * in local work, the first two stay relative and Next.js resolves
+ * `og:image` against the deployment's URL. The CMS's absolute URLs are never
+ * used (ADR 0040).
  */
 export function resourceMetadata(rendered: RenderedResource): Metadata {
   const view = resourceView(rendered);

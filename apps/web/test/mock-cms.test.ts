@@ -953,3 +953,61 @@ describe("the control endpoints", () => {
     expect((await cms.requests()).total).toBe(0);
   });
 });
+
+describe("faults (/__mock/faults)", () => {
+  it("makes the routes under a path answer the status, with the CMS's address in the body, until cleared", async () => {
+    await cms.addFault({ path: "/wp-json/wp/v2/resources", status: 500 });
+    for (const path of ["/wp-json/wp/v2/resources?_embed", "/wp-json/wp/v2/resources/30"]) {
+      const response = await cms.get<string>(path);
+      expect(response.status, path).toBe(500);
+      expect(response.body, path).toContain(server.origin);
+    }
+    // Other routes and paths that only share a prefix answer as usual.
+    expect((await cms.get("/wp-json/wp/v2/resource_topic")).status).toBe(200);
+    expect((await cms.get("/wp-json/wp/v2/resources_x")).status).toBe(404);
+    // Faulted requests are still counted, so a spec can see the front end tried.
+    expect((await cms.requests()).byPath["/wp-json/wp/v2/resources/30"]).toBe(1);
+
+    expect(await cms.clearFaults()).toEqual([]);
+    expect((await cms.get("/wp-json/wp/v2/resources/30")).status).toBe(200);
+  });
+
+  it("applies a fault with times to that many requests, the earliest matching fault first", async () => {
+    await cms.addFault({ path: "/wp-json", status: 503, times: 1 });
+    expect(await cms.addFault({ path: "/wp-json/wp/v2/resources/30", status: 502, times: 2 })).toEqual([
+      { path: "/wp-json", status: 503, delayMs: 0, remaining: 1 },
+      { path: "/wp-json/wp/v2/resources/30", status: 502, delayMs: 0, remaining: 2 },
+    ]);
+    const statuses: number[] = [];
+    for (let i = 0; i < 4; i += 1) statuses.push((await cms.get("/wp-json/wp/v2/resources/30")).status);
+    expect(statuses).toEqual([503, 502, 502, 200]);
+    expect(await cms.faults()).toEqual([]);
+  });
+
+  it("delays a route without failing it when given only delayMs", async () => {
+    await cms.addFault({ path: "/wp-json/resource-hub/v1/resolve", delayMs: 300, times: 1 });
+    const started = Date.now();
+    const response = await cms.resolve("taxonomies-versus-meta");
+    expect(Date.now() - started).toBeGreaterThanOrEqual(280);
+    expect(response.status).toBe(200);
+  });
+
+  it("is cleared by a reset", async () => {
+    await cms.addFault({ path: "/wp-content/uploads", status: 500 });
+    await cms.reset();
+    expect(await cms.faults()).toEqual([]);
+  });
+
+  it("refuses a fault it cannot apply with a 422", async () => {
+    for (const fault of [
+      { path: "wp-json", status: 500 },
+      { path: "/__mock/reset", status: 500 },
+      { path: "/wp-json", status: 200 },
+      { path: "/wp-json", delayMs: 60_000 },
+      { path: "/wp-json", status: 500, times: 0 },
+      { path: "/wp-json" },
+    ]) {
+      await expect(cms.addFault(fault), JSON.stringify(fault)).rejects.toMatchObject({ status: 422 });
+    }
+  });
+});

@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 import {
+  appSiteOrigin,
   E2E_REVALIDATE_SECRET,
   mockCmsApiUrl,
   mockCmsOrigin,
@@ -44,7 +45,8 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
-    baseURL: `http://localhost:${WEB_PORT}`,
+    // The same origin as SITE_URL below (`appSiteOrigin`).
+    baseURL: appSiteOrigin(),
     trace: "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
@@ -70,6 +72,9 @@ export default defineConfig({
         WP_API_URL: mockCmsApiUrl(),
         // The bearer e2e/revalidate.spec.ts sends; a fixed test value, never a real secret.
         REVALIDATE_SECRET: E2E_REVALIDATE_SECRET,
+        // The public origin the root layout gives `metadataBase`, so the
+        // canonical and og:url are absolute (e2e/resource-page.spec.ts).
+        SITE_URL: appSiteOrigin(),
       },
     },
   ],

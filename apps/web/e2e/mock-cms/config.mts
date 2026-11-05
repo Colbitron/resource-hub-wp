@@ -55,3 +55,15 @@ export function mockCmsOrigin(env: Env = process.env): string {
 export function mockCmsApiUrl(env: Env = process.env): string {
   return `${mockCmsOrigin(env)}/wp-json`;
 }
+
+/**
+ * The `SITE_URL` the app under test is started with: the origin Playwright's
+ * `baseURL` names, so the canonical and `og:url` it renders are absolute URLs
+ * on the origin the specs browse, compared exactly. It is `localhost`, not
+ * the mock's `127.0.0.1`, so the guards that no page contains
+ * `127.0.0.1:` on any port (`listings.spec.ts`) keep meaning that the CMS's
+ * host is absent.
+ */
+export function appSiteOrigin(env: Env = process.env): string {
+  return `http://localhost:${webPort(env)}`;
+}

@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
 
+import { buildSiteUrl } from "./lib/env-schema";
 import { mediaRewrites } from "./lib/media-rewrites";
+
+// SITE_URL, the public origin the root layout gives `metadataBase`, is
+// checked when the config loads: a malformed value fails every build, and an
+// unset one fails a Vercel build, so no deploy publishes a relative canonical
+// (lib/env-schema.ts, ADR 0050's 2026-11-05 amendment). The layout reads it
+// again at render time through lib/env.ts.
+buildSiteUrl(process.env);
 
 // create-next-app 16 enables Cache Components by default. This project uses the
 // classic App Router caching shape that CLAUDE.md specifies (fetch with

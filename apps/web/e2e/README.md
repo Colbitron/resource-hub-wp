@@ -25,7 +25,7 @@ The mock's self-check, which proves every response passes the front end's reader
 | The app under test (`next start`) | `3310` | `RH_WEB_PORT` |
 | The mock CMS | `4010` | `RH_MOCK_CMS_PORT` |
 
-The mock binds to `127.0.0.1` and names itself `http://127.0.0.1:4010` in every URL it emits; the app is started with `WP_API_URL=http://127.0.0.1:4010/wp-json`, `RH_FIXTURES=1` (the test-only pages under `app/fixtures/`) and `REVALIDATE_SECRET` set to the fixed test value in `mock-cms/config.mts` (`E2E_REVALIDATE_SECRET`), which `e2e/revalidate.spec.ts` sends as its bearer. Both come from `mock-cms/config.mts`, which the config, the specs and the mock share. The app's build makes no CMS request; it needs `WP_API_URL` only for the `/media/` rewrite, which in a test proxies the mock's uploads.
+The mock binds to `127.0.0.1` and names itself `http://127.0.0.1:4010` in every URL it emits; the app is started with `WP_API_URL=http://127.0.0.1:4010/wp-json`, `RH_FIXTURES=1` (the test-only pages under `app/fixtures/`), `REVALIDATE_SECRET` set to the fixed test value in `mock-cms/config.mts` (`E2E_REVALIDATE_SECRET`), which `e2e/revalidate.spec.ts` sends as its bearer, and `SITE_URL=http://localhost:3310` (`appSiteOrigin`, the same origin as Playwright's `baseURL`), so the canonical and `og:url` are absolute. The site's origin is `localhost` rather than the mock's `127.0.0.1` so that a check for `127.0.0.1:` in a page still means the CMS's host. All of these come from `mock-cms/config.mts`, which the config, the specs and the mock share. The app's build makes no CMS request; it needs `WP_API_URL` only for the `/media/` rewrite, which in a test proxies the mock's uploads.
 
 ## What the mock serves
 
@@ -61,6 +61,9 @@ Under `/__mock/`, a path the front end never requests. JSON in and out; errors a
 | `POST /__mock/resources/{id}/picks` `{ picks: [] }` | Replaces the editor's picks for the related route. Duplicates and the resource itself are dropped and the list is capped at 10, as the plugin does; an unknown ID is a 422 |
 | `POST /__mock/terms/{taxonomy}/{id}` `{ slug?, name? }` | Renames a term |
 | `DELETE /__mock/terms/{taxonomy}/{id}` | Deletes it and takes it off every resource |
+| `POST /__mock/faults` `{ path, status?, delayMs?, times? }` | Makes the public routes at or under `path` (by whole segments: `/wp-json` is every REST route) answer `status` (400 to 599) with WordPress's critical-error page, which names the CMS's address, after `delayMs` (up to 30,000) when given; `delayMs` alone makes them slow but correct. `times` limits it to that many requests. The earliest matching fault wins. Faulted requests are still counted |
+| `GET /__mock/faults` | The faults in force, with the requests each has left |
+| `DELETE /__mock/faults` | Clears every fault; `/__mock/reset` does too |
 | `GET /__mock/requests` | `{ total, byPath }`: how often each public path with its query string was requested |
 | `POST /__mock/requests/reset` | Clears the counters |
 
@@ -77,7 +80,8 @@ Control requests are never counted, so the counters show what the app did. Every
 ## Specs
 
 - `listings.spec.ts`: the real listing routes under `/resources/`: what each lists, pagination, filters, the 404s, the proxy's canonical-form 308s, the reserved segments, keyboard reach and a revalidation event reaching every listing it should.
-- `resource-page.spec.ts`: the real single resource route `/resources/[type]/[slug]/`: what it renders (title, meta line, featured image, summary, body, source), that the CMS's address is nowhere in the HTML or the RSC payload, the metadata, the redirect contract on the real route (a wrong type and an old slug each one computed 308 with `no-store` then a 200, mixed case the proxy's 308, an unknown slug a 404), the Chromium round trip webinar → podcast → webinar through `/api/revalidate/`, that the page and its `generateMetadata` make one CMS request between them (the mock's counters), and the page's landmarks, headings and layout stability at 360 px.
+- `resource-page.spec.ts`: the real single resource route `/resources/[type]/[slug]/`: what it renders (title, meta line, featured image, summary, body, source), that the CMS's address is nowhere in the HTML or the RSC payload, the metadata, the redirect contract on the real route (a wrong type and an old slug each one computed 308 with `no-store` then a 200, mixed case the proxy's 308, an unknown slug a 404), the Chromium round trip webinar → podcast → webinar through `/api/revalidate/`, that the page and its `generateMetadata` make one CMS request between them (the mock's counters), the page's landmarks, headings and layout stability at 360 px, the absolute canonical, `og:url` and `og:image` from `SITE_URL`, and the body's tables (each in a labelled region that scrolls inside the column at 360 px, reached with Tab and checked with axe's `scrollable-region-focusable`) and headings (an editor's `h1` shifting every level down one).
+- `errors.spec.ts`: the site's 404 page (`app/not-found.tsx`) for an unmatched URL, in the HTML and with JavaScript off, and for `notFound()` from the resource page and each kind of listing, which Next.js 16.4.5 sends as its empty error document with the page rendered on hydration (pinned there, measured); and, through a fault, the resource page's 500 with `no-store` and no trace of the CMS when its CMS read fails. Every test clears the faults after itself.
 - `card.spec.ts`, `data-layer.spec.ts`, `revalidate.spec.ts` and `redirects.spec.ts`: the fixture pages below.
 - `harness.spec.ts`: that the mock answering is this checkout's.
 

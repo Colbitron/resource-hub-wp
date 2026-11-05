@@ -1,7 +1,8 @@
 import { expect, test, type APIRequestContext, type APIResponse, type Page } from "@playwright/test";
+import type { AxeResults } from "axe-core";
 
 import { mockCms } from "./mock-cms/client.mts";
-import { E2E_REVALIDATE_SECRET, MOCK_CMS_HOST, mockCmsOrigin, mockCmsPort } from "./mock-cms/config.mts";
+import { appSiteOrigin, E2E_REVALIDATE_SECRET, MOCK_CMS_HOST, mockCmsOrigin, mockCmsPort } from "./mock-cms/config.mts";
 import { RESOURCES, TERMS } from "./mock-cms/seed.mts";
 
 /**
@@ -287,6 +288,40 @@ test.describe("metadata", () => {
     await expect(page.locator('meta[property="og:image:width"]')).toHaveAttribute("content", "240");
   });
 
+  test("with SITE_URL set, the canonical, og:url and og:image are absolute on the site's origin and never name the CMS", async ({ page }) => {
+    const site = appSiteOrigin();
+    const checks: [string, string][] = [
+      [resourcePath(SEEDED.type, SEEDED.slug), resourcePath(SEEDED.type, SEEDED.slug)],
+      ["/resources/", "/resources/"],
+      [`/resources/${SEEDED.type}/`, `/resources/${SEEDED.type}/`],
+    ];
+    for (const [path, expected] of checks) {
+      await page.goto(path);
+      const canonical = await page.locator('link[rel="canonical"]').getAttribute("href");
+      expect(canonical, path).toBe(`${site}${expected}`);
+      const urls = [canonical as string];
+      const ogUrl = page.locator('meta[property="og:url"]');
+      if ((await ogUrl.count()) > 0) {
+        const content = (await ogUrl.getAttribute("content")) as string;
+        expect(content, `${path} og:url`).toBe(`${site}${expected}`);
+        urls.push(content);
+      }
+      for (const image of await page.locator('meta[property="og:image"]').evaluateAll((metas) => metas.map((meta) => meta.getAttribute("content") ?? ""))) {
+        expect(image.startsWith(`${site}/media/`), `${path} og:image ${image}`).toBe(true);
+        urls.push(image);
+      }
+      for (const url of urls) {
+        expect(url, path).not.toContain(mockCmsOrigin());
+        expect(url, path).not.toContain(`:${mockCmsPort()}`);
+        expect(url, path).not.toContain("wp-json");
+      }
+    }
+    // The resource page sets og:url; this is not a check that passed by skipping it.
+    await page.goto(resourcePath(SEEDED.type, SEEDED.slug));
+    await expect(page.locator('meta[property="og:url"]')).toHaveAttribute("content", `${site}${resourcePath(SEEDED.type, SEEDED.slug)}`);
+    await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", `${site}/media/2026/11/content-model.png`);
+  });
+
   test("the page and its metadata make one CMS request between them", async ({ request }) => {
     const slug = unique("one-request");
     await cms.createResource({ title: "One request", type: "article", slug });
@@ -531,5 +566,87 @@ test.describe("accessibility and layout", () => {
         }),
     );
     expect(cls, "cumulative layout shift at 360px").toBeLessThanOrEqual(0.01);
+  });
+});
+
+/** Eight columns of words too long to wrap: wider than a 360px column whatever the cells do. */
+const WIDE_TABLE =
+  '<figure class="wp-block-table"><table><caption>Release matrix</caption>' +
+  `<thead><tr>${Array.from({ length: 8 }, (_, i) => `<th>Heading${i}Supercalifragilistic</th>`).join("")}</tr></thead>` +
+  `<tbody><tr>${Array.from({ length: 8 }, (_, i) => `<td>Cell${i}Antidisestablishment</td>`).join("")}</tr></tbody>` +
+  "</table><figcaption>The figure's own caption</figcaption></figure>";
+
+/** A body with an editor's h1 and levels out of order, a wide captioned table and a small table with no caption. */
+const TABLES_AND_HEADINGS =
+  "<h1>The editor's heading</h1><p>Intro.</p><h3>A deeper heading</h3><p>More.</p><h2>A second-level heading</h2>" +
+  WIDE_TABLE +
+  "<table><tbody><tr><td>a</td><td>b</td></tr></tbody></table>";
+
+test.describe("the body's tables and headings", () => {
+  /** Publishes a resource with `TABLES_AND_HEADINGS` under a slug of this run's own, so no cached read applies. */
+  async function tablesResource(): Promise<string> {
+    const slug = unique("tables-and-headings");
+    await cms.createResource({ title: "Tables and headings", type: "article", slug, content: TABLES_AND_HEADINGS });
+    return resourcePath("article", slug);
+  }
+
+  test("an editor's h1, h3 and h2 render as h2, h4 and h3, under the page's one h1", async ({ page }) => {
+    await page.goto(await tablesResource());
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Tables and headings");
+    const body = await page.locator(".rh-resource__body").locator("h1, h2, h3, h4, h5, h6").evaluateAll((headings) =>
+      headings.map((heading) => `${heading.tagName.toLowerCase()} ${heading.textContent}`),
+    );
+    expect(body).toEqual(["h2 The editor's heading", "h4 A deeper heading", "h3 A second-level heading"]);
+  });
+
+  test("each table is in a region named by its caption, or \"Table\", that wraps the table and not its figure", async ({ page }) => {
+    await page.goto(await tablesResource());
+    const regions = page.locator(".rh-resource__body .rh-table-scroll");
+    await expect(regions).toHaveCount(2);
+    await expect(page.getByRole("region", { name: "Release matrix" })).toHaveCount(1);
+    await expect(page.getByRole("region", { name: "Table", exact: true })).toHaveCount(1);
+    // The wide table's region sits inside its figure, with the figure's caption after it.
+    await expect(page.locator("figure.wp-block-table > .rh-table-scroll + figcaption")).toHaveCount(1);
+    await expect(page.locator(".rh-table-scroll > table")).toHaveCount(2);
+  });
+
+  test("at 360px a wide table scrolls inside its region, by keyboard too, and the page does not scroll sideways", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.goto(await tablesResource());
+    const region = page.getByRole("region", { name: "Release matrix" });
+
+    const widths = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+    expect(widths.scroll, "the page scrolls sideways").toBeLessThanOrEqual(widths.client);
+    const box = await region.evaluate((element) => ({ scroll: element.scrollWidth, client: element.clientWidth }));
+    expect(box.scroll, "the wide table should overflow its region").toBeGreaterThan(box.client);
+    expect(box.client).toBeLessThanOrEqual(widths.client);
+
+    // Tab reaches the region (it is a tab stop of its own), and the arrow keys scroll it.
+    let reached = false;
+    for (let presses = 0; presses < 40 && !reached; presses += 1) {
+      await page.keyboard.press("Tab");
+      reached = await region.evaluate((element) => element === document.activeElement);
+    }
+    expect(reached, "Tab never reached the table's region").toBe(true);
+    const outline = await region.evaluate((element) => getComputedStyle(element).outlineStyle);
+    expect(outline, "the focused region shows no focus ring").not.toBe("none");
+    await page.keyboard.press("ArrowRight");
+    await expect.poll(() => region.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+  });
+
+  test("axe finds no scrollable region a keyboard cannot reach", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.goto(await tablesResource());
+    await page.addScriptTag({ path: require.resolve("axe-core/axe.min.js") });
+    const results = await page.evaluate(
+      () =>
+        (window as unknown as { axe: { run(context: Document, options: object): Promise<AxeResults> } }).axe.run(document, {
+          runOnly: { type: "rule", values: ["scrollable-region-focusable"] },
+        }),
+    );
+    expect(results.violations.map((violation) => violation.nodes.map((node) => node.html))).toEqual([]);
+    // The rule did look at the wide table's region, which is scrollable.
+    expect(results.passes.flatMap((pass) => pass.nodes.map((node) => node.html)).some((html) => html.includes("Release matrix"))).toBe(true);
   });
 });

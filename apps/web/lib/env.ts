@@ -3,6 +3,7 @@ import "server-only";
 import {
   parseMediaOrigin,
   parseRevalidateSecret,
+  parseSiteUrl,
   parseWpApiUrl,
 } from "./env-schema";
 import type { CmsUrls } from "./urls";
@@ -27,6 +28,16 @@ export function revalidateSecret(): string {
 /** The base behind `/media/…`: `WP_MEDIA_ORIGIN`, or `WP_API_URL` without `/wp-json`. */
 export function wpMediaOrigin(): string {
   return parseMediaOrigin(process.env);
+}
+
+/**
+ * The site's public origin (`SITE_URL`) as a URL, for the root layout's
+ * `metadataBase`, or `undefined` when it is not set (only outside Vercel,
+ * where `next.config.ts` refuses to build without it).
+ */
+export function siteUrl(): URL | undefined {
+  const site = parseSiteUrl(process.env);
+  return site === undefined ? undefined : new URL(site);
 }
 
 /**

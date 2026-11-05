@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 
+import { FaultError, parseFault } from "./faults.mts";
 import { buildId } from "./identity.mts";
 import { isTaxonomy, MockError, type MockState } from "./state.mts";
 import type { CreateResourceInput, HealthResponse, RenameTermInput, ResourceStatus } from "./types.mts";
@@ -100,6 +101,14 @@ export function handleControl(state: MockState, method: string, url: URL, body: 
       state.reset();
       return json(200, state.summary(origin));
     }
+    if (path === "/faults") {
+      if (method === "GET") return json(200, state.faults.list());
+      if (method === "POST") return json(201, state.faults.add(parseFault(body)));
+      if (method === "DELETE") {
+        state.faults.clear();
+        return json(200, state.faults.list());
+      }
+    }
     if (method === "POST" && path === "/resources") {
       return json(201, state.summarise(state.createResource(parseCreate(body))));
     }
@@ -158,6 +167,7 @@ export function handleControl(state: MockState, method: string, url: URL, body: 
     return error(404, `No control endpoint answers ${method} ${url.pathname}.`);
   } catch (caught) {
     if (caught instanceof MockError) return error(caught.status, caught.message);
+    if (caught instanceof FaultError) return error(422, caught.message);
     throw caught;
   }
 }
