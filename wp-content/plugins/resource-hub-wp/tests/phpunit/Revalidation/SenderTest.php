@@ -45,7 +45,7 @@ final class SenderTest extends RevalidationTestCase {
 	 * timeout, no redirects, a bounded response size. The trailing slash on the configured URL is dropped.
 	 */
 	public function test_request_shape(): void {
-		$this->configure( 'https://hub.example/', 's3cret' );
+		$this->configure( 'https://hub.example/', 's3cret-0123456789abcdefghijklmnopqrstu' );
 
 		( new Sender() )->send( self::payload() );
 
@@ -57,7 +57,7 @@ final class SenderTest extends RevalidationTestCase {
 		$this->assertSame( 3, $request['args']['timeout'] );
 		$this->assertSame( 0, $request['args']['redirection'] );
 		$this->assertSame( Sender::RESPONSE_LIMIT, $request['args']['limit_response_size'] );
-		$this->assertSame( 'Bearer s3cret', $request['args']['headers']['Authorization'] );
+		$this->assertSame( 'Bearer s3cret-0123456789abcdefghijklmnopqrstu', $request['args']['headers']['Authorization'] );
 		$this->assertSame( 'application/json', $request['args']['headers']['Content-Type'] );
 		$this->assertSame( self::payload(), json_decode( $request['args']['body'], true ) );
 	}
@@ -236,6 +236,28 @@ final class SenderTest extends RevalidationTestCase {
 			$this->assertSame( 0, $result->duration_ms );
 		}
 
+		$this->configure( 'https://hub.example', '' );
+		$this->assertNull( ( new Sender() )->send( self::payload() )->error, 'An unset secret records no cause.' );
+
+		$this->assertSame( array(), $this->requests );
+	}
+
+	/**
+	 * A secret that is set but breaks the rule is recorded as the cause, by the rule's message and
+	 * never by its value, and WP-CLI's sentence says so.
+	 */
+	public function test_invalid_secret_is_recorded_as_the_cause(): void {
+		foreach ( array( 'https://hub.example', '' ) as $url ) {
+			$this->configure( $url, 'short-legacy-secret' );
+
+			$result = ( new Sender() )->send( self::payload() );
+
+			$this->assertSame( Result::NOT_CONFIGURED, $result->outcome );
+			$this->assertSame( Result::INVALID_SECRET_MESSAGE, $result->error );
+			$this->assertStringNotContainsString( 'short-legacy-secret', (string) wp_json_encode( $result->to_array() ) );
+			$this->assertStringContainsString( Result::INVALID_SECRET_MESSAGE, $result->describe() );
+		}
+
 		$this->assertSame( array(), $this->requests );
 	}
 
@@ -291,7 +313,7 @@ final class SenderTest extends RevalidationTestCase {
 	 * The secret appears nowhere in the result.
 	 */
 	public function test_result_never_holds_the_secret(): void {
-		$this->configure( 'https://hub.example', 'do-not-leak' );
+		$this->configure( 'https://hub.example', 'do-not-leak-0123456789abcdefghijklmn' );
 		$this->responder = static fn(): array => self::http_response( 401, '{"error":"unauthorized"}' );
 
 		$result = ( new Sender() )->send( self::payload() );

@@ -110,9 +110,9 @@ abstract class RevalidationTestCase extends WP_UnitTestCase {
 	 * Sets the front-end URL and secret through the options the constants fall back to.
 	 *
 	 * @param string $url    Front-end origin. Given with a trailing slash to prove it is stripped.
-	 * @param string $secret The bearer secret.
+	 * @param string $secret The bearer secret: 32 characters or more, or {@see Config::is_configured()} is false.
 	 */
-	protected function configure( string $url = 'https://hub.example/', string $secret = 'test-secret' ): void {
+	protected function configure( string $url = 'https://hub.example/', string $secret = 'test-secret-0123456789abcdefghijklmn' ): void {
 		update_option( strtolower( Config::FRONTEND_URL ), $url );
 		update_option( strtolower( Config::REVALIDATE_SECRET ), $secret );
 	}

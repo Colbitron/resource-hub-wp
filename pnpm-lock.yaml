@@ -215,6 +215,9 @@ importers:
       '@playwright/test':
         specifier: ^1.64.1
         version: 1.64.1
+      '@wordpress/api-fetch':
+        specifier: ^8.0.0
+        version: 8.0.0
       '@wordpress/block-editor':
         specifier: ^19.0.0
         version: 19.0.0(@date-fns/tz@1.5.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.1))(react@19.3.1)(stylelint@17.16.0(supports-color@7.2.0)(typescript@5.9.3))
@@ -236,6 +239,9 @@ importers:
       '@wordpress/editor':
         specifier: ^16.0.0
         version: 16.0.0(@date-fns/tz@1.5.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(postcss@8.5.32)(react-dom@19.3.0(react@19.3.1))(react@19.3.1)(stylelint@17.16.0(supports-color@7.2.0)(typescript@5.9.3))
+      '@wordpress/element':
+        specifier: ^10.0.0
+        version: 10.0.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.1))(react@19.3.1)
       '@wordpress/hooks':
         specifier: ^5.0.0
         version: 5.0.0
@@ -245,6 +251,9 @@ importers:
       '@wordpress/i18n':
         specifier: ^7.0.0
         version: 7.0.0
+      '@wordpress/notices':
+        specifier: ^6.0.0
+        version: 6.0.0(@date-fns/tz@1.5.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(postcss@8.5.32)(react-dom@19.3.0(react@19.3.1))(react@19.3.1)(stylelint@17.16.0(supports-color@7.2.0)(typescript@5.9.3))
       '@wordpress/plugins':
         specifier: ^8.0.0
         version: 8.0.0(@date-fns/tz@1.5.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(postcss@8.5.32)(react-dom@19.3.0(react@19.3.1))(react@19.3.1)(stylelint@17.16.0(supports-color@7.2.0)(typescript@5.9.3))
@@ -254,6 +263,9 @@ importers:
       '@wordpress/server-side-render':
         specifier: ^7.0.0
         version: 7.0.0(@date-fns/tz@1.5.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(postcss@8.5.32)(react-dom@19.3.0(react@19.3.1))(react@19.3.1)(stylelint@17.16.0(supports-color@7.2.0)(typescript@5.9.3))
+      '@wordpress/url':
+        specifier: ^5.0.0
+        version: 5.0.0
 
 packages:
 

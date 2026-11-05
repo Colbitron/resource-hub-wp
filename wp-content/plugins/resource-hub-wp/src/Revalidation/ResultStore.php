@@ -19,8 +19,11 @@ use WP_Term;
  *
  * A batch gets one result, written to every object it carried, each copy noting how many other
  * changes travelled with it. The status moves from `pending`, written when the batch is scheduled,
- * to `sent` or `failed` when the cron job records the response. A force-deleted post or a deleted
- * term has nowhere to hold a result; those are recorded by {@see PostHog} alone.
+ * to `sent` or `failed` when the cron job records the response. The final result of a batch that
+ * wrote its own `pending` (sent through cron, or at once because core refused to schedule it) is not
+ * written over another batch's `pending` ({@see ResultStore::is_pending_for_another_batch()}); every
+ * other result is written whatever is stored. A force-deleted post or a deleted term has nowhere to
+ * hold a result; those are recorded by {@see PostHog} alone.
  *
  * The REST field is read-only and in the `edit` context only, so it never appears in the public
  * responses the front end reads. Core already refuses `context=edit` to users who cannot edit the
@@ -63,18 +66,22 @@ final class ResultStore {
 			'duration_ms' => 0,
 		);
 
-		$this->write_all( $batch_id, $events, $pending );
+		$this->write_all( $batch_id, $events, $pending, false );
 	}
 
 	/**
 	 * Writes a batch's result to every object in it.
 	 *
-	 * @param string                           $batch_id The batch.
-	 * @param array<int, array<string, mixed>> $events   Its events.
-	 * @param Result                           $result   What the front end answered.
+	 * @param string                           $batch_id          The batch.
+	 * @param array<int, array<string, mixed>> $events            Its events.
+	 * @param Result                           $result            What the front end answered.
+	 * @param bool                             $wrote_own_pending True only for a batch that wrote its own `pending` before it was sent: one
+	 *                                                            sent through cron, or at once because core refused to schedule it. Another
+	 *                                                            batch's `pending` is then newer and is kept.
+	 *                                                            False for every other result, which is written whatever is stored.
 	 */
-	public function record( string $batch_id, array $events, Result $result ): void {
-		$this->write_all( $batch_id, $events, $result->to_array() );
+	public function record( string $batch_id, array $events, Result $result, bool $wrote_own_pending = false ): void {
+		$this->write_all( $batch_id, $events, $result->to_array(), $wrote_own_pending );
 	}
 
 	/**
@@ -163,15 +170,18 @@ final class ResultStore {
 	}
 
 	/**
-	 * Writes one record per event, skipping objects that no longer exist. The free-text fields, `body`
-	 * and `error`, are made valid UTF-8 first, since the database refuses a value that is not. Should a
-	 * record still fail to write, it is written again without its body, so the status never stays `pending`.
+	 * Writes one record per event, skipping objects that no longer exist, and, for a batch that wrote
+	 * its own `pending`, skipping an object whose stored record is another batch's `pending`
+	 * ({@see ResultStore::is_pending_for_another_batch()}). The free-text fields, `body` and `error`, are made valid UTF-8 first, since the database refuses
+	 * a value that is not. Should a record still fail to write, it is written again without its body,
+	 * so the status never stays `pending`.
 	 *
-	 * @param string                           $batch_id The batch.
-	 * @param array<int, array<string, mixed>> $events   Its events.
-	 * @param array<string, mixed>             $result   The result fields shared by every copy.
+	 * @param string                           $batch_id          The batch.
+	 * @param array<int, array<string, mixed>> $events            Its events.
+	 * @param array<string, mixed>             $result            The result fields shared by every copy.
+	 * @param bool                             $wrote_own_pending Whether this is the final result of a batch that wrote its own `pending` first.
 	 */
-	private function write_all( string $batch_id, array $events, array $result ): void {
+	private function write_all( string $batch_id, array $events, array $result, bool $wrote_own_pending ): void {
 		$others = count( $events ) - 1;
 		$time   = gmdate( 'Y-m-d\TH:i:s\Z' );
 
@@ -192,6 +202,10 @@ final class ResultStore {
 			$object = self::target( $event );
 
 			if ( null === $object ) {
+				continue;
+			}
+
+			if ( $wrote_own_pending && self::is_pending_for_another_batch( $object[0], $object[1], $batch_id ) ) {
 				continue;
 			}
 
@@ -232,6 +246,36 @@ final class ResultStore {
 		$post = get_post( (int) $event['id'] );
 
 		return $post instanceof WP_Post && PostType::NAME === $post->post_type ? array( 'post', $post->ID ) : null;
+	}
+
+	/**
+	 * Whether the object's stored record is a `pending` from a batch other than this one.
+	 *
+	 * Asked only for the final result of a batch that wrote its own `pending` before it was sent: a
+	 * cron batch, or one sent at once because core refused to schedule it. A stored `pending` from
+	 * another batch was then written after it, by a later save the editor may be polling for. Writing
+	 * the older result over it would make that save's poll read the wrong batch, and the later batch's
+	 * own result replaces its pending anyway. A final with no pending of its own (a held-back event, a
+	 * send under WP-CLI or on an unconfigured site, the status page's test) is never checked: the
+	 * `pending` it finds may be older than it, or left by a send that never ran, and skipping would
+	 * lose a real result.
+	 *
+	 * The cost: if the later send never completes, the guarded result is lost, and the record stays
+	 * `pending` until the stale-pending display covers it (ADR 0018). The read here and the write
+	 * after it are not atomic, so a `pending` written between them is still overwritten. Only a
+	 * `pending` is protected: an older guarded result still replaces a later final, such as a
+	 * held-back save's failure.
+	 *
+	 * @param string $meta_type `post` or `term`.
+	 * @param int    $object_id Post or term ID.
+	 * @param string $batch_id  The batch whose final result is about to be written.
+	 */
+	private static function is_pending_for_another_batch( string $meta_type, int $object_id, string $batch_id ): bool {
+		$stored = 'term' === $meta_type ? self::read_term( $object_id ) : self::read_post( $object_id );
+
+		return null !== $stored
+			&& self::PENDING === ( $stored['status'] ?? null )
+			&& ( $stored['batch_id'] ?? null ) !== $batch_id;
 	}
 
 	/**

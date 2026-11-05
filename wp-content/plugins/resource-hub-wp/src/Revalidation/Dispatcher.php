@@ -70,7 +70,8 @@ final class Dispatcher {
 	 * Each batch gets a fresh ID. It travels in the cron arguments, so two batches with identical
 	 * payloads are two cron events (core drops a duplicate hook-and-arguments pair scheduled within
 	 * ten minutes of the first), and it ties the meta on each object to the PostHog event. Should core
-	 * refuse to schedule, the batch is delivered now rather than lost.
+	 * refuse to schedule, the batch is delivered now rather than lost; it has already written its own
+	 * `pending`, so its result is guarded like a cron batch's ({@see ResultStore::record()}).
 	 *
 	 * @return array<int, Result> The results decided in this request: held-back events and synchronous sends.
 	 */
@@ -109,7 +110,7 @@ final class Dispatcher {
 			$this->store->mark_pending( $batch_id, $batch );
 
 			if ( true !== wp_schedule_single_event( time(), self::CRON_HOOK, array( $batch_id, $payload ), true ) ) {
-				$results[] = $this->deliver( $batch_id, $payload );
+				$results[] = $this->deliver( $batch_id, $payload, true );
 				continue;
 			}
 
@@ -134,7 +135,7 @@ final class Dispatcher {
 	 * @param array{version: int, events: array<int, array<string, mixed>>} $payload  The body built at schedule time.
 	 */
 	public function run( string $batch_id, array $payload ): void {
-		$this->deliver( $batch_id, $payload );
+		$this->deliver( $batch_id, $payload, true );
 	}
 
 	/**
@@ -158,16 +159,21 @@ final class Dispatcher {
 
 	/**
 	 * Sends one batch now, records the result on every object in it, and logs it. The one path every
-	 * send takes: cron, WP-CLI, an unconfigured site, and the status page's test button.
+	 * send takes: cron, the fallback when core refuses to schedule, WP-CLI, an unconfigured site, and
+	 * the status page's test button.
 	 *
-	 * @param string                                                        $batch_id The batch.
-	 * @param array{version: int, events: array<int, array<string, mixed>>} $payload  The body.
+	 * @param string                                                        $batch_id          The batch.
+	 * @param array{version: int, events: array<int, array<string, mixed>>} $payload           The body.
+	 * @param bool                                                          $wrote_own_pending True only from the cron callback and from the fallback that sends at
+	 *                                                                                         once when core refuses to schedule: the batch wrote its own
+	 *                                                                                         `pending` before it was sent, so the store keeps another batch's
+	 *                                                                                         newer `pending` ({@see ResultStore::record()}).
 	 */
-	public function deliver( string $batch_id, array $payload ): Result {
+	public function deliver( string $batch_id, array $payload, bool $wrote_own_pending = false ): Result {
 		$events = is_array( $payload['events'] ?? null ) ? $payload['events'] : array();
 		$result = $this->sender->send( $payload );
 
-		$this->store->record( $batch_id, $events, $result );
+		$this->store->record( $batch_id, $events, $result, $wrote_own_pending );
 		$this->posthog->capture( $batch_id, $events, $result );
 
 		return $result;

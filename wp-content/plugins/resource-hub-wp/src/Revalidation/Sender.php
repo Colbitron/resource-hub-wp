@@ -37,7 +37,8 @@ final class Sender {
 	public const RESPONSE_LIMIT = 65536;
 
 	/**
-	 * Sends one batch and reports the outcome. When the URL or the secret is unset no request is made.
+	 * Sends one batch and reports the outcome. When the URL or the secret is unset, or the secret is
+	 * invalid, no request is made.
 	 *
 	 * Redirects are not followed: a 3xx comes back as an unexpected code, so the bearer token is only
 	 * ever sent to the configured origin.
@@ -46,7 +47,7 @@ final class Sender {
 	 */
 	public function send( array $payload ): Result {
 		if ( ! Config::is_configured() ) {
-			return Result::not_configured();
+			return Result::not_configured( Config::has_invalid_secret() );
 		}
 
 		$json = wp_json_encode( $payload );

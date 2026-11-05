@@ -39,6 +39,16 @@ final class Config {
 	public const POSTHOG_HOST = 'RESOURCE_HUB_POSTHOG_HOST';
 
 	/**
+	 * Fewest characters a secret may have. The front end refuses a shorter `REVALIDATE_SECRET` too.
+	 */
+	public const SECRET_MIN_LENGTH = 32;
+
+	/**
+	 * Most characters a secret may have: room for any generated token, and a bound on the header.
+	 */
+	public const SECRET_MAX_LENGTH = 256;
+
+	/**
 	 * The front end's origin with no trailing slash, or an empty string when it is not set.
 	 */
 	public static function frontend_url(): string {
@@ -46,18 +56,44 @@ final class Config {
 	}
 
 	/**
-	 * The revalidation secret, or an empty string when it is not set.
+	 * The revalidation secret exactly as its source holds it, or an empty string when it is not set.
+	 * Unlike the other values it is not trimmed: the front end does not trim `REVALIDATE_SECRET`, so
+	 * the value checked by {@see Config::is_valid_secret()} must be the value sent.
 	 */
 	public static function secret(): string {
 		return self::constant_or_option( self::REVALIDATE_SECRET );
 	}
 
 	/**
-	 * Whether both values a send needs are set. When this is false nothing is sent and the result
-	 * is recorded as not configured.
+	 * Whether a secret meets the rule both sides share: {@see Config::SECRET_MIN_LENGTH} to
+	 * {@see Config::SECRET_MAX_LENGTH} printable ASCII characters (0x21 to 0x7E), so no whitespace,
+	 * no control characters and nothing outside ASCII. A secret with a trailing newline or a space
+	 * could never match the bearer token the front end expects.
+	 *
+	 * @param string $secret The secret to check.
+	 */
+	public static function is_valid_secret( string $secret ): bool {
+		return 1 === preg_match( '/\A[\x21-\x7E]{' . self::SECRET_MIN_LENGTH . ',' . self::SECRET_MAX_LENGTH . '}\z/', $secret );
+	}
+
+	/**
+	 * Whether a secret is in force but breaks the rule in {@see Config::is_valid_secret()}: set, from
+	 * the constant or the option, yet not one the front end would accept. The status page warns about
+	 * it, and a send skipped for it records why.
+	 */
+	public static function has_invalid_secret(): bool {
+		$secret = self::secret();
+
+		return '' !== $secret && ! self::is_valid_secret( $secret );
+	}
+
+	/**
+	 * Whether both values a send needs are set, and the secret is valid. When this is false nothing
+	 * is sent and the result is recorded as not configured; the status page says which value is at
+	 * fault.
 	 */
 	public static function is_configured(): bool {
-		return '' !== self::frontend_url() && '' !== self::secret();
+		return '' !== self::frontend_url() && self::is_valid_secret( self::secret() );
 	}
 
 	/**
@@ -111,7 +147,8 @@ final class Config {
 	}
 
 	/**
-	 * A constant's value as a trimmed string, or an empty string when it is undefined or not a string.
+	 * A constant's value as a string, trimmed except for the secret, or an empty string when it is
+	 * undefined or not a string.
 	 *
 	 * @param string $name Constant name.
 	 */
@@ -120,20 +157,32 @@ final class Config {
 			return '';
 		}
 
-		$value = constant( $name );
-
-		return is_string( $value ) ? trim( $value ) : '';
+		return self::clean( $name, constant( $name ) );
 	}
 
 	/**
-	 * An option's value as a trimmed string, or an empty string when it is unset or not a string.
-	 * The option name is the constant's name in lower case, so there is one name to remember.
+	 * An option's value as a string, trimmed except for the secret, or an empty string when it is
+	 * unset or not a string. The option name is the constant's name in lower case, so there is one
+	 * name to remember.
 	 *
 	 * @param string $name Constant name.
 	 */
 	private static function option( string $name ): string {
-		$value = get_option( strtolower( $name ), '' );
+		return self::clean( $name, get_option( strtolower( $name ), '' ) );
+	}
 
-		return is_string( $value ) ? trim( $value ) : '';
+	/**
+	 * A raw value as a string: trimmed, except the secret, which is kept exactly as given so that a
+	 * stray space or newline is refused by {@see Config::is_valid_secret()} rather than hidden.
+	 *
+	 * @param string $name  Constant name.
+	 * @param mixed  $value The constant's or option's value.
+	 */
+	private static function clean( string $name, $value ): string {
+		if ( ! is_string( $value ) ) {
+			return '';
+		}
+
+		return self::REVALIDATE_SECRET === $name ? $value : trim( $value );
 	}
 }

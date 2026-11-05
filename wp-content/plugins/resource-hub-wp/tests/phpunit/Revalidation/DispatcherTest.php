@@ -11,6 +11,7 @@ namespace ResourceHub\Tests\Revalidation;
 
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\Taxonomies;
+use ResourceHub\Revalidation\Config;
 use ResourceHub\Revalidation\Dispatcher;
 use ResourceHub\Revalidation\PostHog;
 use ResourceHub\Revalidation\Queue;
@@ -170,7 +171,7 @@ final class DispatcherTest extends RevalidationTestCase {
 		$sent = $this->revalidate_requests();
 		$this->assertCount( 1, $sent );
 		$this->assertSame( $payload, json_decode( $sent[0]['args']['body'], true ) );
-		$this->assertSame( 'Bearer test-secret', $sent[0]['args']['headers']['Authorization'] );
+		$this->assertSame( 'Bearer test-secret-0123456789abcdefghijklmn', $sent[0]['args']['headers']['Authorization'] );
 
 		$record = ResultStore::read_post( $post_id );
 		$this->assertSame( Result::SENT, $record['status'] );
@@ -217,11 +218,89 @@ final class DispatcherTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * Flushes with core refusing to schedule, so the batch is sent at once, while `$during_send` runs
+	 * as the front end's response is produced.
+	 *
+	 * @param callable $during_send Receives the events of the request being sent.
+	 * @return array<int, Result> The flush's results.
+	 */
+	private function flush_with_schedule_refused( callable $during_send ): array {
+		$this->responder = static function ( string $url, array $args ) use ( $during_send ): array {
+			if ( str_ends_with( $url, Sender::PATH ) ) {
+				$during_send( json_decode( $args['body'], true )['events'] );
+			}
+
+			return self::http_response( 200, '{"revalidated":["/resources/"]}' );
+		};
+
+		$refuse = static fn(): \WP_Error => new \WP_Error( 'schedule_event_false', 'Refused for the test.' );
+		add_filter( 'pre_schedule_event', $refuse );
+
+		try {
+			return $this->dispatcher()->flush();
+		} finally {
+			remove_filter( 'pre_schedule_event', $refuse );
+		}
+	}
+
+	/**
+	 * The fallback that sends at once wrote its own `pending` first, so it is guarded like a cron batch:
+	 * a newer batch's `pending` written during its send survives the fallback's result (ADR 0018).
+	 */
+	public function test_schedule_failure_fallback_keeps_a_newer_pending(): void {
+		$this->configure();
+		$post_id = $this->make_resource( 'publish', 'refused-then-saved-again' );
+		self::save( $post_id, 'Sent at once' );
+
+		$fallback_id = null;
+		$results     = $this->flush_with_schedule_refused(
+			static function ( array $events ) use ( $post_id, &$fallback_id ): void {
+				$fallback_id = ResultStore::read_post( $post_id )['batch_id'];
+				( new ResultStore() )->mark_pending( 'newer-batch', $events );
+			}
+		);
+
+		$this->assertCount( 1, $results );
+		$this->assertSame( Result::OK, $results[0]->outcome );
+		$this->assertNotNull( $fallback_id, 'The fallback did not send.' );
+		$this->assertNotSame( 'newer-batch', $fallback_id );
+
+		$record = ResultStore::read_post( $post_id );
+		$this->assertSame( ResultStore::PENDING, $record['status'] );
+		$this->assertSame( 'newer-batch', $record['batch_id'] );
+	}
+
+	/**
+	 * With no newer `pending` during its send, the fallback's own result replaces its own `pending`.
+	 */
+	public function test_schedule_failure_fallback_writes_over_its_own_pending(): void {
+		$this->configure();
+		$post_id = $this->make_resource( 'publish', 'refused-once' );
+		self::save( $post_id, 'Sent at once' );
+
+		$seen    = null;
+		$results = $this->flush_with_schedule_refused(
+			static function () use ( $post_id, &$seen ): void {
+				$seen = ResultStore::read_post( $post_id );
+			}
+		);
+
+		$this->assertCount( 1, $results );
+		$this->assertSame( ResultStore::PENDING, $seen['status'], 'The fallback wrote no pending before sending.' );
+
+		$record = ResultStore::read_post( $post_id );
+		$this->assertSame( Result::SENT, $record['status'] );
+		$this->assertSame( Result::OK, $record['outcome'] );
+		$this->assertSame( $seen['batch_id'], $record['batch_id'] );
+		$this->assertSame( '{"revalidated":["/resources/"]}', $record['body'] );
+	}
+
+	/**
 	 * Through a whole flush and cron run, with a held-back event in the same request, the secret reaches
 	 * the front end's `Authorization` header and nowhere in any PostHog request, body or headers.
 	 */
 	public function test_secret_never_reaches_posthog(): void {
-		$secret = 'never-in-posthog-7f3a';
+		$secret = 'never-in-posthog-7f3a-0123456789abcdef';
 		$this->configure( 'https://hub.example/', $secret );
 		$posthog  = new PostHog( 'phc_key', 'https://eu.i.posthog.com' );
 		$fine     = $this->make_resource( 'publish', 'logged' );
@@ -346,6 +425,117 @@ final class DispatcherTest extends RevalidationTestCase {
 		$this->assertSame( Result::NOT_CONFIGURED, $record['outcome'] );
 		$this->assertSame( 1, $record['others'] );
 		$this->assertSame( Result::NOT_CONFIGURED, ResultStore::read_term( $topic )['outcome'] );
+	}
+
+	/**
+	 * Saves a resource with a new title, which queues its `update` event.
+	 *
+	 * @param int    $post_id The resource.
+	 * @param string $title   The new title.
+	 */
+	private static function save( int $post_id, string $title ): void {
+		wp_update_post(
+			array(
+				'ID'         => $post_id,
+				'post_title' => $title,
+			)
+		);
+	}
+
+	/**
+	 * The cron callback keeps a newer batch's `pending`: two saves schedule two batches, and the first
+	 * batch's result, arriving second, does not replace the second batch's `pending` (ADR 0018).
+	 */
+	public function test_cron_result_keeps_a_newer_pending(): void {
+		$this->configure();
+		$post_id    = $this->make_resource( 'publish', 'saved-twice' );
+		$dispatcher = $this->dispatcher();
+
+		self::save( $post_id, 'First save' );
+		$dispatcher->flush();
+		list( $first_id, $first_payload ) = self::scheduled()[0];
+
+		self::save( $post_id, 'Second save' );
+		$dispatcher->flush();
+		$second_id = ResultStore::read_post( $post_id )['batch_id'];
+		$this->assertNotSame( $first_id, $second_id );
+		$this->assertCount( 2, self::scheduled() );
+
+		$dispatcher->run( $first_id, $first_payload );
+
+		$record = ResultStore::read_post( $post_id );
+		$this->assertSame( ResultStore::PENDING, $record['status'] );
+		$this->assertSame( $second_id, $record['batch_id'] );
+	}
+
+	/**
+	 * A held-back event has no `pending` of its own, so its failure is written over the `pending` an
+	 * earlier save left: a save that removes the type is not hidden behind the earlier send.
+	 */
+	public function test_held_back_final_over_an_earlier_pending_is_written(): void {
+		$this->configure();
+		$post_id    = $this->make_resource( 'publish', 'loses-its-type' );
+		$dispatcher = $this->dispatcher();
+
+		self::save( $post_id, 'Valid save' );
+		$dispatcher->flush();
+		$earlier = self::scheduled()[0][0];
+		$this->assertSame( $earlier, ResultStore::read_post( $post_id )['batch_id'] );
+
+		wp_set_object_terms( $post_id, array(), Taxonomies::TYPE );
+		self::save( $post_id, 'Typeless save' );
+		$results = $dispatcher->flush();
+
+		$this->assertCount( 1, $results );
+		$this->assertSame( Result::NO_SINGLE_TYPE, $results[0]->outcome );
+
+		$record = ResultStore::read_post( $post_id );
+		$this->assertSame( Result::FAILED, $record['status'] );
+		$this->assertSame( Result::NO_SINGLE_TYPE, $record['outcome'] );
+		$this->assertNotSame( $earlier, $record['batch_id'] );
+	}
+
+	/**
+	 * A send under WP-CLI has no `pending` of its own, so its result is written over another batch's
+	 * `pending`, here one left by a cron send that never ran.
+	 */
+	public function test_synchronous_final_over_another_pending_is_written(): void {
+		$this->configure();
+		$post_id = $this->make_resource( 'publish', 'stuck-then-cli' );
+
+		self::save( $post_id, 'Scheduled, never run' );
+		$this->dispatcher()->flush();
+		$this->assertSame( ResultStore::PENDING, ResultStore::read_post( $post_id )['status'] );
+
+		self::save( $post_id, 'From the CLI' );
+		$this->responder = static fn(): array => self::http_response( 401, '{"error":"unauthorized"}' );
+		$this->dispatcher( true )->flush();
+
+		$record = ResultStore::read_post( $post_id );
+		$this->assertSame( Result::FAILED, $record['status'] );
+		$this->assertSame( Result::UNAUTHORIZED, $record['outcome'] );
+	}
+
+	/**
+	 * On a site that is no longer configured, the `not_configured` result is written over the
+	 * `pending` a send scheduled while it was configured left behind.
+	 */
+	public function test_not_configured_final_over_another_pending_is_written(): void {
+		$this->configure();
+		$post_id = $this->make_resource( 'publish', 'stuck-then-unconfigured' );
+
+		self::save( $post_id, 'Scheduled, never run' );
+		$this->dispatcher()->flush();
+		$this->assertSame( ResultStore::PENDING, ResultStore::read_post( $post_id )['status'] );
+
+		delete_option( strtolower( Config::FRONTEND_URL ) );
+		delete_option( strtolower( Config::REVALIDATE_SECRET ) );
+		self::save( $post_id, 'Nobody listens' );
+		$this->dispatcher()->flush();
+
+		$record = ResultStore::read_post( $post_id );
+		$this->assertSame( Result::FAILED, $record['status'] );
+		$this->assertSame( Result::NOT_CONFIGURED, $record['outcome'] );
 	}
 
 	/**
