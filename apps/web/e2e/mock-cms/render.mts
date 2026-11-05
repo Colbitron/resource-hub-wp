@@ -158,9 +158,16 @@ const TAXONOMY_ORDER: Taxonomy[] = ["resource_topic", "resource_type", "resource
  * A resource as `/wp/v2/resources` returns it. With `embed`, `_embedded`
  * carries the featured image (left out when there is none) and `wp:term`, one
  * array per taxonomy in registration order (left out when every one is
- * empty), as core's `_embed` does.
+ * empty), as core's `_embed` does. `embed` is what `rest_parse_embed_param()`
+ * returns: `false` for none, `true` for every embeddable link, or a list of
+ * link relations, when only those are embedded (`WP_REST_Server::embed_links`).
  */
-export function renderResource(state: MockState, resource: ResourceRecord, origin: string, embed: boolean): Json {
+export function renderResource(
+  state: MockState,
+  resource: ResourceRecord,
+  origin: string,
+  embed: boolean | readonly string[],
+): Json {
   const link = permalink(state, resource, origin);
   const rest = `${origin}/wp-json/wp/v2/resources/${resource.id}`;
   const media = resource.mediaId === null ? undefined : state.mediaItem(resource.mediaId);
@@ -218,10 +225,11 @@ export function renderResource(state: MockState, resource: ResourceRecord, origi
     },
   };
 
-  if (embed) {
+  if (embed !== false) {
+    const wants = (rel: string) => embed === true || embed.includes(rel);
     const embedded: Json = {};
-    if (media) embedded["wp:featuredmedia"] = [renderMedia(media, resource, state, origin)];
-    if (termsByTaxonomy.some((terms) => terms.length > 0)) {
+    if (media && wants("wp:featuredmedia")) embedded["wp:featuredmedia"] = [renderMedia(media, resource, state, origin)];
+    if (wants("wp:term") && termsByTaxonomy.some((terms) => terms.length > 0)) {
       embedded["wp:term"] = termsByTaxonomy.map((terms) => terms.map((term) => renderEmbeddedTerm(term, origin)));
     }
     if (Object.keys(embedded).length > 0) body._embedded = embedded;

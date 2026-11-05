@@ -119,6 +119,111 @@ describe("GET /wp/v2/resources", () => {
     expect(response.body[0]).not.toHaveProperty("_embedded");
   });
 
+  it("reads _embed as rest_parse_embed_param does: 0 embeds everything, false and other words are relations", async () => {
+    type Embedded = { _embedded?: Record<string, unknown> }[];
+    const keys = async (embed: string) => {
+      const response = await cms.get<Embedded>(`/wp-json/wp/v2/resources?include=20&${embed}`);
+      return Object.keys(response.body[0]._embedded ?? {});
+    };
+    expect(await keys("_embed")).toEqual(["wp:featuredmedia", "wp:term"]);
+    expect(await keys("_embed=0")).toEqual(["wp:featuredmedia", "wp:term"]);
+    expect(await keys("_embed=1")).toEqual(["wp:featuredmedia", "wp:term"]);
+    expect(await keys("_embed=true")).toEqual(["wp:featuredmedia", "wp:term"]);
+    expect(await keys("_embed=false")).toEqual([]);
+    expect(await keys("_embed=wp:term")).toEqual(["wp:term"]);
+    expect(await keys("_embed[]=wp:featuredmedia")).toEqual(["wp:featuredmedia"]);
+  });
+
+  it("takes PHP-style arrays as well as comma lists, and sanitizes slugs before matching", async () => {
+    const included = await cms.get<{ id: number }[]>("/wp-json/wp/v2/resources?include[]=27&include[]=20&orderby=include");
+    expect(included.body.map((r) => r.id)).toEqual([27, 20]);
+
+    const slugs = await cms.get<{ slug: string }[]>(
+      "/wp-json/wp/v2/resources?slug[]=cache-tags-explained&slug[]=Keyboard-First%20Filters&orderby=slug&order=asc",
+    );
+    expect(slugs.body.map((r) => r.slug)).toEqual(["cache-tags-explained", "keyboard-first-filters"]);
+
+    const terms = await cms.get<{ id: number }[]>("/wp-json/wp/v2/resource_type?slug=ebook,%20webinar&orderby=id");
+    expect(terms.body.map((t) => t.id)).toEqual([4, 5]);
+  });
+
+  it("answers orderby=include without include with core's 400", async () => {
+    const response = await cms.get("/wp-json/wp/v2/resources?orderby=include");
+    expect(response.status).toBe(400);
+    expect(wpErrorSchema.parse(response.body)).toMatchObject({ code: "rest_orderby_include_missing_include", data: { status: 400 } });
+  });
+
+  it("puts core's per-parameter codes in data.details", async () => {
+    const response = await cms.get("/wp-json/wp/v2/resources?per_page=0&page=0&include=1,x&order=up");
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      code: "rest_invalid_param",
+      message: "Invalid parameter(s): page, per_page, include[1], order",
+      data: {
+        status: 400,
+        params: {
+          page: "page must be greater than or equal to 1",
+          per_page: "per_page must be between 1 (inclusive) and 100 (inclusive)",
+          "include[1]": "include[1] is not of type integer.",
+          order: "order is not one of asc and desc.",
+        },
+        details: {
+          page: { code: "rest_out_of_bounds", data: null },
+          per_page: { code: "rest_out_of_bounds", data: null },
+          "include[1]": { code: "rest_invalid_type", data: { param: "include[1]" } },
+          order: { code: "rest_not_in_enum", data: null },
+        },
+      },
+    });
+  });
+
+  it("refuses an anonymous non-publish status as core's sanitizer does, after validation", async () => {
+    const draft = await cms.get("/wp-json/wp/v2/resources?status=draft");
+    expect(draft.status).toBe(400);
+    expect(draft.body).toMatchObject({
+      code: "rest_invalid_param",
+      data: {
+        status: 400,
+        params: { status: "Status is forbidden." },
+        details: { status: { code: "rest_forbidden_status", message: "Status is forbidden.", data: { status: 401 } } },
+      },
+    });
+
+    // Validation runs first: an unknown status, or another bad parameter, is reported instead.
+    const unknown = await cms.get("/wp-json/wp/v2/resources?status=draft,nonsense");
+    expect(unknown.body).toMatchObject({ data: { details: { status: { code: "rest_not_in_enum" } } } });
+    const both = await cms.get("/wp-json/wp/v2/resources?status=draft&per_page=0");
+    expect(Object.keys((both.body as { data: { params: object } }).data.params)).toEqual(["per_page"]);
+
+    const publish = await cms.get<unknown[]>("/wp-json/wp/v2/resources?status=publish");
+    expect(publish.status).toBe(200);
+  });
+
+  it("sends no-cache and Allow on errors from the covered routes, as the plugin and core do", async () => {
+    for (const path of [
+      "/wp-json/wp/v2/resources?per_page=0",
+      "/wp-json/wp/v2/resources?_embed&page=3",
+      "/wp-json/wp/v2/resource_topic?per_page=0",
+      "/wp-json/resource-hub/v1/resolve?slug=no-such-slug",
+    ]) {
+      const response = await cms.get(path);
+      expect(response.status, path).toBeGreaterThanOrEqual(400);
+      expect(response.headers.get("cache-control"), path).toBe(NO_CACHE);
+      expect(response.headers.get("allow"), path).toBe("GET");
+    }
+    // An item whose permission check fails has no allowed method, so no Allow header.
+    for (const path of ["/wp-json/wp/v2/resources/9999", "/wp-json/wp/v2/resource_topic/9999"]) {
+      const response = await cms.get(path);
+      expect(response.status, path).toBe(404);
+      expect(response.headers.get("cache-control"), path).toBe(NO_CACHE);
+      expect(response.headers.get("allow"), path).toBeNull();
+    }
+    // An unmatched route is outside the filter and has no matched route.
+    const noRoute = await cms.get("/wp-json/wp/v2/posts");
+    expect(noRoute.headers.get("cache-control")).toBeNull();
+    expect(noRoute.headers.get("allow")).toBeNull();
+  });
+
   it("builds every absolute URL on its own origin", async () => {
     const response = await cms.get<unknown[]>("/wp-json/wp/v2/resources?_embed&per_page=100");
     const text = JSON.stringify(response.body);
@@ -133,6 +238,7 @@ describe("GET /wp/v2/resources/{id}", () => {
     const response = await cms.get("/wp-json/wp/v2/resources/33?_embed");
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe(NO_CACHE);
+    expect(response.headers.get("allow")).toBe("GET");
     const parsed = wpResourceSchema.parse(response.body);
     expect(parsed.slug).toBe("revalidation-from-the-editors-chair");
     expect(parsed.content.rendered).toContain('data-rh-block="related-resources"');
@@ -148,7 +254,13 @@ describe("GET /wp/v2/resources/{id}", () => {
     await cms.setStatus(21, "draft");
     const draft = await cms.get("/wp-json/wp/v2/resources/21");
     expect(draft.status).toBe(401);
-    expect(wpErrorSchema.parse(draft.body).code).toBe("rest_forbidden");
+    expect(draft.headers.get("cache-control")).toBe(NO_CACHE);
+    expect(draft.headers.get("allow")).toBeNull();
+    expect(wpErrorSchema.parse(draft.body)).toMatchObject({
+      code: "rest_forbidden",
+      message: "Sorry, you are not allowed to do that.",
+      data: { status: 401 },
+    });
   });
 });
 
@@ -216,6 +328,7 @@ describe("GET /resource-hub/v1/resolve", () => {
 
     const empty = await cms.resolve("---");
     expect(empty.status).toBe(400);
+    expect(empty.headers.get("cache-control")).toBe(NO_CACHE);
     expect(wpErrorSchema.parse(empty.body).code).toBe("rest_invalid_param");
   });
 });
