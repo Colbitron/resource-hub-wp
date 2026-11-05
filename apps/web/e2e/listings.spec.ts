@@ -313,6 +313,28 @@ test.describe("non-canonical URLs", () => {
     await expectCanonicalRedirect(request, "/resources/Webinar/?utm=x", "/resources/webinar/?utm=x");
   });
 
+  test("an escape of ! * ' ( ) gets one 308 to the decoded path, which the proxy then leaves alone", async ({ request }) => {
+    // Next.js decodes these in params (DECODED_IN_PARAMS), so the page would see
+    // the decoded path either way; the proxy sends it there in one hop, and the
+    // target, sent and parsed back as written, is not redirected again.
+    for (const [from, to] of [
+      ["/resources/topic/it%27s/", "/resources/topic/it's/"],
+      ["/resources/topic/now%21/", "/resources/topic/now!/"],
+      ["/resources/topic/%28draft%29/", "/resources/topic/(draft)/"],
+      ["/resources/webinar/topic/a%2ab/page/2/", "/resources/webinar/topic/a*b/page/2/"],
+      ["/resources/Topic/It%27S/page/1/", "/resources/topic/it's/"],
+    ]) {
+      const first = await get(request, from);
+      expect(first.status(), `${from} should redirect`).toBe(308);
+      expect(cacheDirectives(first)).toContain("no-store");
+      expect(new URL(first.headers().location as string, "http://localhost/").pathname, from).toBe(to);
+      // No such topic in the seed: the route's 404, not a second redirect.
+      const second = await get(request, to);
+      expect(second.status(), `${to} should be the route's answer`).toBe(404);
+      expect(second.headers().location, to).toBeUndefined();
+    }
+  });
+
   test("a browser following the redirect lands on the canonical page once", async ({ page }) => {
     const hops: number[] = [];
     page.on("response", (response) => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { canonicalResourcesPath, isResourcesPath } from "../lib/canonical-path";
-import { canonicalSlug, listingPath, resourcePath } from "../lib/routes";
+import { canonicalSlug, listingPath, resourcePath, slugProblem } from "../lib/routes";
 
 describe("isResourcesPath", () => {
   it("is /resources and anything under it, in any case", () => {
@@ -60,11 +60,38 @@ describe("canonicalResourcesPath", () => {
     expect(canonicalResourcesPath("/resources/topic/%2F/")).toBeNull();
   });
 
-  it("decodes an escape of an unreserved character, as Next.js would, and then lower-cases it", () => {
+  it("decodes an escape of an unreserved character, as Next.js does in params, and then lower-cases it", () => {
     expect(canonicalResourcesPath("/resources/%57ebinar/")).toBe("/resources/webinar/");
     expect(canonicalResourcesPath("/resources/%77ebinar/")).toBe("/resources/webinar/");
     expect(canonicalResourcesPath("/resources/case%2Dstudy/")).toBe("/resources/case-study/");
     expect(canonicalResourcesPath("/resources/a%7Eb/")).toBe("/resources/a~b/");
+  });
+
+  it("decodes ! * ' ( ) as well, the rest of the set Next.js decodes in params", () => {
+    expect(canonicalResourcesPath("/resources/topic/it%27s/")).toBe("/resources/topic/it's/");
+    expect(canonicalResourcesPath("/resources/topic/now%21/")).toBe("/resources/topic/now!/");
+    expect(canonicalResourcesPath("/resources/topic/%28draft%29/")).toBe("/resources/topic/(draft)/");
+    expect(canonicalResourcesPath("/resources/webinar/topic/a%2ab/page/2/")).toBe("/resources/webinar/topic/a*b/page/2/");
+    expect(canonicalResourcesPath("/resources/webinar/topic/a%2Ab/page/2/")).toBe("/resources/webinar/topic/a*b/page/2/");
+    expect(canonicalResourcesPath("/resources/%27%21%28%29%2a/page/1/")).toBe("/resources/'!()*/");
+    expect(canonicalResourcesPath("/resources/Topic/It%27S/")).toBe("/resources/topic/it's/");
+  });
+
+  it("decodes exactly the escapes slugProblem refuses, for every printable ASCII byte", () => {
+    for (let byte = 0x20; byte <= 0x7e; byte += 1) {
+      for (const hex of [byte.toString(16).toUpperCase(), byte.toString(16).toLowerCase()]) {
+        const escaped = `a%${hex.padStart(2, "0")}b`;
+        const decoded = canonicalResourcesPath(`/resources/topic/${escaped}/`) !== null;
+        // An escape the proxy decodes is one a stored slug may never hold, and only those.
+        expect(decoded, escaped).toBe(slugProblem(escaped) !== null);
+      }
+    }
+  });
+
+  it("leaves an escaped dot segment as sent, so it never produces one", () => {
+    expect(canonicalResourcesPath("/resources/%2e/")).toBeNull();
+    expect(canonicalResourcesPath("/resources/%2E%2e/")).toBeNull();
+    expect(canonicalResourcesPath("/resources/a%2Eb/")).toBe("/resources/a.b/");
   });
 
   it("does not decode an escape twice", () => {
@@ -79,6 +106,12 @@ describe("canonicalResourcesPath", () => {
     expect(canonicalResourcesPath("/resources/webinar/topic/accessibility/page/1/")).toBe(
       "/resources/webinar/topic/accessibility/",
     );
+  });
+
+  it("drops one trailing /page/1/ only when no second one would follow, so it is never two hops", () => {
+    expect(canonicalResourcesPath("/resources/page/1/page/1/")).toBeNull();
+    expect(canonicalResourcesPath("/resources/Page/1/page/1/")).toBe("/resources/page/1/page/1/");
+    expect(canonicalResourcesPath("/resources/topic/page/page/1/")).toBe("/resources/topic/page/");
   });
 
   it("applies both rules in one step", () => {
@@ -109,6 +142,41 @@ describe("canonicalResourcesPath", () => {
       const canonical = canonicalResourcesPath(path);
       expect(canonical, path).not.toBeNull();
       expect(canonicalResourcesPath(canonical as string), path).toBeNull();
+    }
+  });
+
+  it("is a fixed point and never a redirect to itself, for every escaped byte in every position", () => {
+    const templates = [
+      (x: string) => `/resources/${x}/`,
+      (x: string) => `/resources/${x}/page/1/`,
+      (x: string) => `/resources/topic/${x}/`,
+      (x: string) => `/resources/webinar/topic/${x}/page/1/`,
+      (x: string) => `/resources/webinar/${x}/`,
+      (x: string) => `/Resources/${x}/Page/%31/`,
+      (x: string) => `/resources/page/1/${x}/page/1/`,
+      (x: string) => `/resources/${x}`,
+    ];
+    const pieces = ["", "A", "page", "1", "%2e", "%2E%2e", "%2541", "%E6%97%a5"];
+    for (let byte = 0x20; byte <= 0x7e; byte += 1) {
+      for (const hex of [byte.toString(16).toUpperCase(), byte.toString(16).toLowerCase()]) {
+        pieces.push(`%${hex}`, `x%${hex}Y`);
+      }
+    }
+    for (const template of templates) {
+      for (const piece of pieces) {
+        // As the proxy receives it: a URL parser has already removed dot segments.
+        const path = new URL(template(piece), "http://localhost").pathname;
+        const canonical = canonicalResourcesPath(path);
+        if (canonical === null) {
+          continue;
+        }
+        // Not to itself, as sent and as a URL parser reads the Location back.
+        expect(canonical, path).not.toBe(path);
+        const received = new URL(canonical, "http://localhost").pathname;
+        expect(received, path).toBe(canonical);
+        // And one hop: the canonical form is canonical.
+        expect(canonicalResourcesPath(canonical), `${path} -> ${canonical}`).toBeNull();
+      }
     }
   });
 
