@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   RESERVED_TYPE_SLUGS,
+  canonicalSlug,
   isPageNumber,
   isReservedTypeSlug,
   isSlug,
@@ -10,8 +11,10 @@ import {
   listingPath,
   parsePageSegment,
   resourcePath,
+  slugProblem,
   topicListingPath,
   typeListingPath,
+  typeSlugProblem,
   typeTopicListingPath,
 } from "../lib/routes";
 
@@ -210,10 +213,75 @@ describe("segment encoding", () => {
   });
 
   it("escapes characters a path segment does not allow", () => {
-    expect(resourcePath("webinar", "a?b#c")).toBe("/resources/webinar/a%3Fb%23c/");
+    expect(resourcePath("webinar", "a?b#c")).toBe("/resources/webinar/a%3fb%23c/");
     expect(resourcePath("webinar", "100%")).toBe("/resources/webinar/100%25/");
     expect(resourcePath("webinar", "%zz")).toBe("/resources/webinar/%25zz/");
-    expect(resourcePath("webinar", "a\\b")).toBe("/resources/webinar/a%5Cb/");
-    expect(topicListingPath("日本")).toBe("/resources/topic/%E6%97%A5%E6%9C%AC/");
+    expect(resourcePath("webinar", "a\\b")).toBe("/resources/webinar/a%5cb/");
+    expect(topicListingPath("日本")).toBe("/resources/topic/%e6%97%a5%e6%9c%ac/");
+  });
+});
+
+describe("canonicalSlug", () => {
+  const forms = ["日本", "%E6%97%A5%E6%9C%AC", "%e6%97%a5%e6%9c%ac", "日%E6%9c%Ac"];
+
+  it("gives raw, upper-case and lower-case input one form, WordPress's lower-case hex", () => {
+    for (const form of forms) {
+      expect(canonicalSlug(form), form).toBe("%e6%97%a5%e6%9c%ac");
+    }
+  });
+
+  it("makes every builder give identical paths for every form", () => {
+    for (const form of forms) {
+      expect(resourcePath("webinar", form)).toBe("/resources/webinar/%e6%97%a5%e6%9c%ac/");
+      expect(resourcePath(form, "example")).toBe("/resources/%e6%97%a5%e6%9c%ac/example/");
+      expect(typeListingPath(form, 2)).toBe("/resources/%e6%97%a5%e6%9c%ac/page/2/");
+      expect(topicListingPath(form)).toBe("/resources/topic/%e6%97%a5%e6%9c%ac/");
+      expect(typeTopicListingPath(form, form)).toBe(
+        "/resources/%e6%97%a5%e6%9c%ac/topic/%e6%97%a5%e6%9c%ac/",
+      );
+    }
+  });
+
+  it("is idempotent", () => {
+    for (const value of [...forms, "a?b#c", "100%", "%zz", "a\\b", "\u{1F600}", "example"]) {
+      const once = canonicalSlug(value);
+      expect(canonicalSlug(once), value).toBe(once);
+    }
+  });
+
+  it("encodes a character outside the BMP whole, in lower case", () => {
+    expect(canonicalSlug("\u{1F600}")).toBe("%f0%9f%98%80");
+  });
+
+  it("leaves ASCII letters and the characters a segment allows alone", () => {
+    expect(canonicalSlug("Example-Slug_1.0~")).toBe("Example-Slug_1.0~");
+  });
+
+  it("round-trips a non-ASCII slug through a path", () => {
+    const path = resourcePath("webinar", "日本-guide");
+    expect(path).toBe("/resources/webinar/%e6%97%a5%e6%9c%ac-guide/");
+    expect(decodeURIComponent(path)).toBe("/resources/webinar/日本-guide/");
+    expect(new URL(path, "https://front-end.example").pathname).toBe(path);
+    expect(resourcePath("webinar", decodeURIComponent("%e6%97%a5%e6%9c%ac-guide"))).toBe(path);
+  });
+
+  it("validates before normalising: a lone surrogate is a RangeError, not a URIError", () => {
+    expect(() => canonicalSlug("\ud800")).toThrow(RangeError);
+    expect(() => canonicalSlug("a\udc00")).toThrow(RangeError);
+    expect(() => canonicalSlug("")).toThrow(RangeError);
+    expect(() => canonicalSlug("%2e")).toThrow(RangeError);
+  });
+});
+
+describe("slugProblem", () => {
+  it("names what is wrong, and is null for a slug", () => {
+    expect(slugProblem("example")).toBeNull();
+    expect(slugProblem("")).toMatch(/empty/);
+    expect(slugProblem("a b")).toMatch(/slash or whitespace/);
+    expect(slugProblem("\ud800")).toMatch(/well-formed/);
+    expect(slugProblem("a".repeat(201))).toMatch(/200/);
+    expect(slugProblem("..")).toMatch(/\.\./);
+    expect(typeSlugProblem("page")).toMatch(/reserved/);
+    expect(typeSlugProblem("webinar")).toBeNull();
   });
 });

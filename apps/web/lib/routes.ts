@@ -12,11 +12,18 @@
  * - `topic` and `page` are route segments, so they are never a type slug.
  *
  * Builders throw a `RangeError` on a segment the contract does not allow
- * rather than emit a path that routes somewhere else. A slug is used as
- * WordPress stores it: WordPress percent-encodes non-ASCII slugs itself
- * (`%e6%97%a5`), so existing `%XX` escapes are kept as they are and only
- * characters that are not legal in a path segment (`?`, `#`, a bare `%`, raw
- * non-ASCII, a backslash) are escaped. A slug is never double-encoded.
+ * rather than emit a path that routes somewhere else. Callers check untrusted
+ * input with `isSlug`, `isTypeSlug` and `parsePageSegment` first: a page turns
+ * a bad parameter into `notFound()`, never a throw.
+ *
+ * Every builder, and every tag builder in `lib/tags.ts`, puts a slug through
+ * `canonicalSlug` first, so a slug has one form in paths and tags whether it
+ * arrives raw (`日`), as WordPress stores it (`%e6%97%a5`) or upper-cased
+ * (`%E6%97%A5`). The canonical form uses lower-case hex because that is
+ * WordPress's form: `sanitize_title` lower-cases the title and then
+ * percent-encodes its non-ASCII bytes in lower case, so the slugs in REST
+ * responses and revalidation events are already canonical and pass through
+ * unchanged.
  *
  * Pure: no Next.js, `server-only` or Zod import, so pages, the revalidate
  * route and unit tests share it.
@@ -35,8 +42,12 @@ const LIBRARY = "/resources/";
 /** `.` and `..`, literal or percent-encoded: URL parsers collapse them, so the path would change. */
 const DOT_SEGMENT = /^(?:\.|%2e){1,2}$/i;
 
-/** Anything that is not a `pchar` (RFC 3986), or a `%` that does not start an escape. */
-const NOT_PCHAR = /%(?![0-9A-Fa-f]{2})|[^A-Za-z0-9\-._~!$&'()*+,;=:@%]/gu;
+/**
+ * A percent escape, a `%` that does not start one, or a character that is not
+ * a `pchar` (RFC 3986). With the `u` flag a character outside the Basic
+ * Multilingual Plane is one match, so its surrogate pair is encoded whole.
+ */
+const ESCAPE_OR_NOT_PCHAR = /%[0-9A-Fa-f]{2}|%|[^A-Za-z0-9\-._~!$&'()*+,;=:@%]/gu;
 
 /** The message for a reserved type slug, shared with the Zod schemas. */
 export const RESERVED_TYPE_SLUG_MESSAGE =
@@ -113,22 +124,43 @@ export function parsePageSegment(segment: string): number | null {
   return Number.isSafeInteger(page) && page >= 2 ? page : null;
 }
 
-function encodeSegment(value: string): string {
-  return value.replace(NOT_PCHAR, (character) => encodeURIComponent(character));
+/**
+ * The canonical form of a slug, as it goes into a path segment and a cache
+ * tag: existing percent escapes kept with their hex in lower case, and every
+ * character a path segment does not allow (`?`, `#`, a bare `%`, a backslash,
+ * any non-ASCII character) percent-encoded as UTF-8, in lower case. Nothing is
+ * decoded, so a slug is never double-encoded and never changes meaning, and
+ * the function is idempotent. The result is printable ASCII, which Next.js's
+ * `encodeHeaderSafe` passes through unchanged, so a tag built here is the tag
+ * Next.js stores and compares.
+ *
+ * Validates before normalising: throws a `RangeError` when `value` is not a
+ * slug (`slugProblem`), so a lone surrogate never reaches `encodeURIComponent`.
+ */
+export function canonicalSlug(value: string): string {
+  const problem = slugProblem(value);
+  if (problem !== null) {
+    throw new RangeError(`Not a valid slug (${problem}): ${JSON.stringify(value)}`);
+  }
+  return value.replace(ESCAPE_OR_NOT_PCHAR, (match) =>
+    (match.length === 3 && match.startsWith("%") ? match : encodeURIComponent(match)).toLowerCase(),
+  );
 }
 
 function typeSegment(type: string): string {
-  if (!isTypeSlug(type)) {
-    throw new RangeError(`Not a valid resource type slug: ${JSON.stringify(type)}`);
+  const problem = typeSlugProblem(type);
+  if (problem !== null) {
+    throw new RangeError(`Not a valid resource type slug (${problem}): ${JSON.stringify(type)}`);
   }
-  return encodeSegment(type);
+  return canonicalSlug(type);
 }
 
 function slugSegment(kind: string, value: string): string {
-  if (!isSlug(value)) {
-    throw new RangeError(`Not a valid ${kind} slug: ${JSON.stringify(value)}`);
+  const problem = slugProblem(value);
+  if (problem !== null) {
+    throw new RangeError(`Not a valid ${kind} slug (${problem}): ${JSON.stringify(value)}`);
   }
-  return encodeSegment(value);
+  return canonicalSlug(value);
 }
 
 function pageSuffix(page: number): string {

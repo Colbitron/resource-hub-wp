@@ -1,11 +1,18 @@
 /**
- * Cache tags, and what a revalidation batch invalidates (root `CLAUDE.md`,
- * "Revalidation request" and "Public URLs"; ADRs 0014 to 0017 and 0043).
+ * Cache tags, which tags each data-layer fetch carries, and what a
+ * revalidation batch invalidates (root `CLAUDE.md`, "Revalidation request" and
+ * "Public URLs"; ADRs 0014 to 0017, 0043 and 0046).
  *
- * The tags are `resources`, `resource:{slug}`, `topic:{slug}` and
- * `type:{slug}`. Every fetch in the data layer carries the ones that describe
- * what it reads, and the revalidate route clears them with `revalidateTag`
- * and the paths below with `revalidatePath`.
+ * The tags are `resources`, `terms`, `resource:{slug}`, `topic:{slug}` and
+ * `type:{slug}`. Every fetch in the data layer carries the ones the functions
+ * under "Fetch tags" below give it, fixed before the request from the URL and
+ * its parameters, never from the response, so a miss is tagged too. The
+ * revalidate route clears what `eventsToInvalidations` returns, the tags with
+ * `revalidateTag` and the paths with `revalidatePath`.
+ *
+ * Every slug goes through `canonicalSlug` (`lib/routes.ts`), so a slug that
+ * arrives raw (`日`), as WordPress stores it (`%e6%97%a5`) or upper-cased
+ * (`%E6%97%A5`) gives the same tag, and that tag is the one Next.js stores.
  *
  * `eventsToInvalidations` covers the union of the current and the previous
  * state of every event:
@@ -14,11 +21,17 @@
  *   `resources`, `resource:{slug}`, `type:{t}` and `topic:{t}`, and the paths
  *   `/resources/`, the resource's page, its type listing, each topic listing
  *   and each type plus topic listing.
- * - A term event: `resources` and `topic:{slug}` or `type:{slug}`, for the
- *   current and the previous slug, and the term's own listing path for each.
- *   The type plus topic listings that name the term, and for a type the
- *   resource pages under it, cannot be named from the event; their fetches
- *   carry the term's tag, which covers them.
+ * - A term event: `resources`, `terms`, and `topic:{slug}` or `type:{slug}`
+ *   for the current and the previous slug; the paths `/resources/` and the
+ *   term's own listing for each slug. `terms` is on every fetch that embeds
+ *   terms, so a rename reaches every page that shows the term's name: the
+ *   library, the other listings, the resource pages and the filter bar, none of
+ *   which the event can name. `resources` stays because the resolve route
+ *   answers with the resource's type slug, which a type rename changes.
+ *
+ * Only term events produce `terms`. Tagging every fetch `resources` instead
+ * would have done the same for term events, but then every resource event
+ * would clear every page too.
  *
  * Pagination pages (`…/page/{n}/`) are never enumerated as paths: the event
  * cannot say how many there are, and every listing page's fetch carries the
@@ -34,6 +47,16 @@
  * (`lib/wp/schemas/revalidate.ts`), imported as types only.
  */
 
+import {
+  canonicalSlug,
+  libraryPath,
+  resourcePath,
+  topicListingPath,
+  typeListingPath,
+  typeSlugProblem,
+  typeTopicListingPath,
+  type ListingFilter,
+} from "./routes";
 import type {
   ResourceEvent,
   ResourceState,
@@ -41,43 +64,92 @@ import type {
   TermEvent,
   TermState,
 } from "./wp/schemas/revalidate";
-import {
-  isSlug,
-  isTypeSlug,
-  libraryPath,
-  resourcePath,
-  topicListingPath,
-  typeListingPath,
-  typeTopicListingPath,
-} from "./routes";
-
-/** The tag on every fetch that lists or shows resources. */
-export const RESOURCES_TAG = "resources";
-
-function checked(kind: string, slug: string, valid: (value: string) => boolean): string {
-  if (!valid(slug)) {
-    throw new RangeError(`Not a valid ${kind} slug for a cache tag: ${JSON.stringify(slug)}`);
-  }
-  return slug;
-}
-
-/** `resource:{slug}`, on the fetches for one resource. */
-export function resourceTag(slug: string): string {
-  return `resource:${checked("resource", slug, isSlug)}`;
-}
-
-/** `topic:{slug}`, on the fetches for listings and blocks of one topic. */
-export function topicTag(slug: string): string {
-  return `topic:${checked("topic", slug, isSlug)}`;
-}
-
-/** `type:{slug}`, on the fetches for listings of one type. */
-export function typeTag(slug: string): string {
-  return `type:${checked("type", slug, isTypeSlug)}`;
-}
-
 
 export type { ResourceEvent, ResourceState, RevalidationEvent, TermEvent, TermState };
+
+/** The tag every event clears: on the library listing and on resolve. */
+export const RESOURCES_TAG = "resources";
+
+/** The tag only term events clear: on every fetch that embeds or lists terms. */
+export const TERMS_TAG = "terms";
+
+/** `resource:{slug}`, on the fetches for one resource. Throws a `RangeError` on a bad slug. */
+export function resourceTag(slug: string): string {
+  return `resource:${canonicalSlug(slug)}`;
+}
+
+/** `topic:{slug}`, on the fetches for listings and blocks of one topic. Throws a `RangeError` on a bad slug. */
+export function topicTag(slug: string): string {
+  return `topic:${canonicalSlug(slug)}`;
+}
+
+/** `type:{slug}`, on the fetches for listings of one type. Throws a `RangeError` on a bad or reserved slug. */
+export function typeTag(slug: string): string {
+  const problem = typeSlugProblem(slug);
+  if (problem !== null) {
+    throw new RangeError(`Not a valid resource type slug (${problem}): ${JSON.stringify(slug)}`);
+  }
+  return `type:${canonicalSlug(slug)}`;
+}
+
+/*
+ * Fetch tags: the data-layer tagging rule (ADR 0046). Each function names the
+ * tags one kind of fetch carries. They throw a `RangeError` on a bad slug, so
+ * a page checks its parameters with `isSlug` and `isTypeSlug` first and calls
+ * `notFound()` on a bad one.
+ */
+
+/**
+ * Every page of a listing: the library (`resources`), a type (`type:{t}`), a
+ * topic (`topic:{p}`) or both (`type:{t}` and `topic:{p}`), and `terms`, since
+ * listings embed their resources' terms.
+ */
+export function listingTags(filter: ListingFilter = {}): string[] {
+  const tags: string[] = [];
+  if (filter.type === undefined && filter.topic === undefined) {
+    tags.push(RESOURCES_TAG);
+  }
+  if (filter.type !== undefined) {
+    tags.push(typeTag(filter.type));
+  }
+  if (filter.topic !== undefined) {
+    tags.push(topicTag(filter.topic));
+  }
+  tags.push(TERMS_TAG);
+  return tags;
+}
+
+/**
+ * A resource fetched by slug, a miss included: `resource:{slug}`, so a publish
+ * under that slug clears a cached miss; `type:{t}` for the type segment of the
+ * URL it was asked for, so a type event clears the pages under that segment
+ * and they redirect or 404; and `terms`, since it embeds its terms.
+ */
+export function resourceFetchTags(typeSegment: string, slug: string): string[] {
+  return [resourceTag(slug), typeTag(typeSegment), TERMS_TAG];
+}
+
+/**
+ * A `resource_topic` or `resource_type` term looked up by slug, a miss
+ * included: `topic:{slug}` or `type:{slug}`, which a term event for that slug
+ * clears, a `create` included.
+ */
+export function termLookupTags(taxonomy: TermEvent["taxonomy"], slug: string): string[] {
+  return [taxonomy === "resource_topic" ? topicTag(slug) : typeTag(slug)];
+}
+
+/**
+ * The resolve route: `resources`. Every event clears it: a resource event may
+ * add or move an old slug, and a type event changes the type it answers with.
+ */
+export function resolveTags(): string[] {
+  return [RESOURCES_TAG];
+}
+
+/** The taxonomy lists the filter bar reads: `terms`. */
+export function taxonomyListTags(): string[] {
+  return [TERMS_TAG];
+}
 
 /** What a batch invalidates: tags for `revalidateTag`, paths for `revalidatePath`. */
 export interface Invalidations {
@@ -110,6 +182,8 @@ function addTermSlug(
   tags: Set<string>,
   paths: Set<string>,
 ): void {
+  tags.add(TERMS_TAG);
+  paths.add(libraryPath());
   if (taxonomy === "resource_topic") {
     tags.add(topicTag(slug));
     paths.add(topicListingPath(slug));
@@ -121,8 +195,14 @@ function addTermSlug(
 
 /**
  * Every tag and path a batch of events invalidates, over the union of each
- * event's current and previous state. Throws a `RangeError` on a slug the
- * schema would have rejected, so call it on a body that has been validated.
+ * event's current and previous state.
+ *
+ * Never throws on a batch the route's schema accepted: the schema's slug rule
+ * is the builders' rule (`slugProblem` in `lib/routes.ts`). On an event that
+ * is type-correct but schema-invalid, such as a slug that is a lone surrogate
+ * or a type slug `page`, it throws a `RangeError`; it does not return a
+ * partial result. The route parses the body first, so that throw is a bug,
+ * not a bad request.
  */
 export function eventsToInvalidations(events: readonly RevalidationEvent[]): Invalidations {
   const tags = new Set<string>();
