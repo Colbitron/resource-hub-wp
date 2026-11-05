@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,7 +21,7 @@ import {
   listResources,
   RESOURCES_PER_PAGE,
 } from "../lib/wp/resources";
-import { getFeaturedFlagId, getTermBySlug, listTerms } from "../lib/wp/terms";
+import { getFeaturedFlagId, getTermBySlug, listTerms, MAX_TERM_PAGES } from "../lib/wp/terms";
 
 /**
  * The data layer's requests and its reading of the answers, with `fetch`
@@ -225,6 +227,58 @@ describe("the fetch wrapper", () => {
     vi.stubEnv("WP_MEDIA_ORIGIN", "https://media.example:8443");
     expect(scrubCmsHost("at https://CMS.example/x and media.example:8443/y")).toBe("at https://[cms]/x and [cms]/y");
   });
+
+  it("scrubs the hostname without the port too, for the API and the media origin", () => {
+    vi.stubEnv("WP_API_URL", "https://cms.example:8443/wp-json");
+    vi.stubEnv("WP_MEDIA_ORIGIN", "https://media.example:9443");
+    expect(scrubCmsHost("http://cms.example/x, https://CMS.EXAMPLE:8443/y, cms.example:80/z")).toBe(
+      "http://[cms]/x, https://[cms]/y, [cms]:80/z",
+    );
+    expect(scrubCmsHost("http://media.example/a and media.example:9443/b")).toBe("http://[cms]/a and [cms]/b");
+  });
+
+  it("never follows a redirect, and names it plainly", async () => {
+    handler = () => {
+      throw new TypeError("fetch failed", { cause: new Error("unexpected redirect") });
+    };
+    const error = await cmsError(() => getResourceBySlug("moved"));
+    expect(only().init.redirect).toBe("error");
+    expect(error.reason).toBe("redirect");
+    expect(error.message).toBe(
+      "CMS request to /wp/v2/resources failed: the CMS answered with a redirect; check WP_API_URL",
+    );
+  });
+
+  it("treats a 3xx that reaches the reader as a redirect, not a miss", async () => {
+    handler = () => new Response(null, { status: 301 });
+    let error = await cmsError(() => getResourceById(15));
+    expect(error.reason).toBe("redirect");
+    expect(error.status).toBe(301);
+    expect(error.message).toBe(
+      "CMS request to /wp/v2/resources/15 failed: the CMS answered with a redirect (HTTP 301); check WP_API_URL",
+    );
+    handler = () => wpError(307, "rest_post_invalid_id");
+    error = await cmsError(() => getResourceById(15));
+    expect(error.reason).toBe("redirect");
+  });
+
+  it("refuses a real redirect from Node's fetch with the same reason", async () => {
+    vi.unstubAllGlobals();
+    const server = createServer((_request, response) => {
+      response.writeHead(301, { Location: "https://cms.example/wp-json/wp/v2/resources" });
+      response.end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      vi.stubEnv("WP_API_URL", `http://127.0.0.1:${port}/wp-json`);
+      const error = await cmsError(() => getResourceBySlug("moved"));
+      expect(error.reason).toBe("redirect");
+      expect(error.message).not.toContain("127.0.0.1");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
 });
 
 describe("listResources", () => {
@@ -328,6 +382,17 @@ describe("getResourceBySlug", () => {
     expect((await getResourceBySlug(RESOURCE.slug))?.id).toBe(RESOURCE.id);
   });
 
+  it("throws when the CMS lists resources but none with the slug, and finds the match among others", async () => {
+    handler = () => paged([RESOURCE], 1, 1);
+    const error = await cmsError(() => getResourceBySlug("another-slug"));
+    expect(error.reason).toBe("schema");
+    expect(error.message).toBe(
+      "CMS request to /wp/v2/resources failed: the body lists resources, none with the slug asked for",
+    );
+    handler = () => paged(RESOURCES, 2, 1);
+    expect((await getResourceBySlug(RESOURCE.slug))?.id).toBe(RESOURCE.id);
+  });
+
   it("is null for an invalid slug, without a request", async () => {
     for (const slug of ["", "a/b", "a b", "..", "\ud800"]) {
       expect(await getResourceBySlug(slug)).toBeNull();
@@ -410,6 +475,47 @@ describe("terms", () => {
       expect(call.url.pathname).toBe("/wp-json/wp/v2/resource_topic");
       expect(call.init.next?.tags).toEqual(["resources", "terms"]);
     }
+  });
+
+  describe(`past ${MAX_TERM_PAGES} pages`, () => {
+    const TEMPLATE = TOPICS[0] as Record<string, unknown>;
+    /** A topic collection of `total` terms, served a hundred at a time. */
+    function manyTerms(total: number): Handler {
+      const totalPages = Math.ceil(total / 100);
+      return (url) => {
+        const page = Number(url.searchParams.get("page"));
+        const from = (page - 1) * 100;
+        const terms = Array.from({ length: Math.max(0, Math.min(100, total - from)) }, (_, index) => ({
+          ...TEMPLATE,
+          id: 1000 + from + index,
+          slug: `topic-${from + index}`,
+          name: `Topic ${from + index}`,
+        }));
+        return paged(terms, total, totalPages);
+      };
+    }
+
+    it("returns exactly 1,000 terms without a warning", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      handler = manyTerms(1000);
+      expect(await listTerms("resource_topic")).toHaveLength(1000);
+      expect(calls).toHaveLength(MAX_TERM_PAGES);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("returns the first 1,000 of 1,001 and warns, naming the taxonomy but not the CMS", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      handler = manyTerms(1001);
+      const terms = await listTerms("resource_topic");
+      expect(terms).toHaveLength(1000);
+      expect(terms.at(-1)?.slug).toBe("topic-999");
+      expect(calls).toHaveLength(MAX_TERM_PAGES);
+      expect(warn).toHaveBeenCalledTimes(1);
+      const message = String(warn.mock.calls[0][0]);
+      expect(message).toContain("resource_topic");
+      expect(message).toContain("1000");
+      expect(message).not.toMatch(/cms\.example|wp-json/i);
+    });
   });
 
   it("throws when a listed term is in another taxonomy", async () => {

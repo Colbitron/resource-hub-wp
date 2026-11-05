@@ -74,6 +74,18 @@ test("the HTML names neither the mock's origin nor wp-content", async ({ request
   expect(html).not.toContain("wp-json");
 });
 
+test("one fetcher called twice in a render makes one request on a cold cache", async ({ request }) => {
+  // No such resource: the mock answers core's 404, which the Data Cache never
+  // keeps, so the cache is cold on every load and only the per-render
+  // memoization (React's cache in lib/wp/fetch.ts) can make the two reads one.
+  const missingId = 999_999;
+  const response = await request.get(`${FIXTURE_PATH}?twice=${missingId}`);
+  expect(response.status()).toBe(200);
+  expect(await response.text()).toContain("miss, miss");
+  const requests = await restRequests();
+  expect(requests[`/wp-json/wp/v2/resources/${missingId}?_embed`]).toBe(1);
+});
+
 test("a second load is served from the Data Cache, with no new request to the CMS", async ({ request }) => {
   // Warm the cache. Next.js may finish writing an entry after the response
   // that fetched it has gone, so load twice before counting.

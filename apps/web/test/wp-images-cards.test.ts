@@ -82,6 +82,17 @@ describe("featuredImage", () => {
     expect(imageOf(media({ source_url: "https://cms.example:8443/wp-content/uploads/a.jpg" }))).toBeNull();
   });
 
+  it("compares hosts as the URL parser normalises them", () => {
+    // An upper-case host is the same host.
+    expect(imageOf(media({ source_url: "https://CMS.Example/wp-content/uploads/a.jpg" }))?.src).toBe("/media/a.jpg");
+    // A trailing dot is another origin to the parser, so it is refused rather than guessed at.
+    expect(imageOf(media({ source_url: "https://cms.example./wp-content/uploads/a.jpg" }))).toBeNull();
+    // Lookalikes: a hyphen for the dot, a prefix, and a Cyrillic "ѕ" that the parser turns into punycode.
+    for (const host of ["cms-example", "evilcms.example", "xcms.example", "cmѕ.example", "cms.example.evil.example"]) {
+      expect(imageOf(media({ source_url: `https://${host}/wp-content/uploads/a.jpg` })), host).toBeNull();
+    }
+  });
+
   it("refuses a URL with a user name or password", () => {
     expect(imageOf(media({ source_url: "https://user:secret@cms.example/wp-content/uploads/a.jpg" }))).toBeNull();
     expect(imageOf(media({ source_url: "https://user@cms.example/wp-content/uploads/a.jpg" }))).toBeNull();
@@ -112,6 +123,19 @@ describe("featuredImage", () => {
     expect(imageOf(media({}, { height: undefined }))).toBeNull();
     // An SVG: WordPress could not measure it, so media_details is empty.
     expect(imageOf(media({ source_url: `${UPLOADS}/2026/11/diagram.svg`, media_details: {} }))).toBeNull();
+  });
+
+  it("refuses a dimension that is not a whole number of pixels", () => {
+    // The reader schema refuses these, so the media entry parses as null: no image.
+    for (const bad of [1600.5, "1600", 0, -900, null]) {
+      expect(imageOf(media({}, { width: bad })), String(bad)).toBeNull();
+      expect(imageOf(media({}, { height: bad })), String(bad)).toBeNull();
+    }
+    // A bad size makes the whole entry unreadable the same way, not just that size.
+    for (const bad of [900.5, "900", 0]) {
+      const sizes = { large: { source_url: `${UPLOADS}/2026/11/photo-1024x576.jpg`, width: bad, height: 576 } };
+      expect(imageOf(media({}, { sizes })), String(bad)).toBeNull();
+    }
   });
 
   it(`refuses a dimension over ${MAX_IMAGE_DIMENSION}`, () => {
@@ -145,6 +169,21 @@ describe("featuredImage", () => {
       alt: "A photo",
     });
     expect(CARD_SOURCE_MIN_WIDTH).toBe(800);
+  });
+
+  it("accepts a size within a pixel of the original's shape, and skips one two pixels off", () => {
+    // 1600×900 scaled to 1024 wide is exactly 576 high.
+    for (const [height, used] of [
+      [575, true],
+      [577, true],
+      [574, false],
+      [578, false],
+    ] as const) {
+      const sizes = { large: { source_url: `${UPLOADS}/2026/11/photo-1024x${height}.jpg`, width: 1024, height } };
+      expect(imageOf(media({}, { sizes }))?.src, String(height)).toBe(
+        used ? `/media/2026/11/photo-1024x${height}.jpg` : "/media/2026/11/photo.jpg",
+      );
+    }
   });
 
   it("checks every size it would use by the same rules, and skips one that fails", () => {
@@ -205,7 +244,14 @@ describe("toCard", () => {
   });
 
   it("gives an untitled resource a title, so its link has a name", () => {
-    expect(toCard(resource({ title: { rendered: "" } }))?.title).toBe(UNTITLED);
+    for (const rendered of ["", "   ", "<em> </em>", "\u200B", "&#8203;\u200C \u200D&#xFEFF;", "<b>\u200B</b>"]) {
+      expect(toCard(resource({ title: { rendered } }))?.title, JSON.stringify(rendered)).toBe(UNTITLED);
+    }
+    expect(toCard(resource({ title: { rendered: "\u200BA title" } }))?.title).toBe("\u200BA title");
+  });
+
+  it("decodes escaped markup to inert text, for React to escape again", () => {
+    expect(plainText("&lt;img src=x onerror=alert(1)&gt;")).toBe("<img src=x onerror=alert(1)>");
   });
 
   it("is null without exactly one type", () => {

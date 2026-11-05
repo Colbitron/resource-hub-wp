@@ -21,8 +21,12 @@ import { wpErrorSchema } from "./schemas/wp-error";
  * - `no-such-page`: a WordPress error the caller named as a page number past
  *   the end (core's 400 `rest_post_invalid_page_number`).
  *
- * Anything else throws a `CmsError`: any other status, a timeout, a network
- * failure, a body that is not JSON, or a body the schema refuses. Its message
+ * Anything else throws a `CmsError`: any other status, a redirect, a
+ * timeout, a network failure, a body that is not JSON, or a body the schema
+ * refuses. Redirects are never followed (`redirect: "error"`): a followed
+ * one (http to https, a `www` host, a moved CMS) would cache the final 200
+ * under the original URL and hide a `WP_API_URL` that needs changing, so it
+ * fails the render with reason `redirect` instead (ADR 0049). Its message
  * names the endpoint's path under the API base and never the CMS's origin,
  * and nothing here logs.
  */
@@ -52,7 +56,7 @@ export const CMS_REVALIDATE_SECONDS = 3600;
 export const CMS_TIMEOUT_MS = 10_000;
 
 /** Why a CMS request failed. */
-export type CmsErrorReason = "timeout" | "network" | "status" | "json" | "schema";
+export type CmsErrorReason = "timeout" | "network" | "redirect" | "status" | "json" | "schema";
 
 /**
  * A CMS request that failed in a way the page cannot treat as "not found".
@@ -66,7 +70,7 @@ export class CmsError extends Error {
   /** The path under the API base, without the query. */
   readonly endpoint: string;
   readonly reason: CmsErrorReason;
-  /** The HTTP status, for `status`, `json` and `schema`. */
+  /** The HTTP status, for `status`, `json` and `schema`, and for a `redirect` that reached the reader. */
   readonly status: number | undefined;
 
   constructor(endpoint: string, reason: CmsErrorReason, detail: string, status?: number) {
@@ -136,14 +140,33 @@ function isTimeout(error: unknown): boolean {
 }
 
 /**
+ * True for the rejection `fetch` gives under `redirect: "error"`: Node's
+ * fetch (undici) rejects with a `TypeError` whose `cause` is an `Error` with
+ * the fixed message `unexpected redirect`. Any other failure stays a
+ * `network` error.
+ */
+function isRedirectRefusal(error: unknown): boolean {
+  const cause = (error as { cause?: { message?: unknown } } | null)?.cause;
+  return cause?.message === "unexpected redirect";
+}
+
+/** A 3xx that reached the reader: one `fetch` did not refuse, such as a 304 or a 3xx without a `Location`. */
+function isRedirectStatus(status: number): boolean {
+  return status >= 300 && status <= 399;
+}
+
+/**
  * `GET {WP_API_URL}{path}?{query}`, once per render pass for the same
  * arguments. Next.js memoizes identical fetches within a render by itself,
  * but not a fetch that carries a `signal`, so React's `cache` does it here
  * instead: a page and its `generateMetadata` asking for the same resource
- * make one request on a cold cache, not two. Outside a render (a test, a
- * route handler) `cache` memoizes nothing. The arguments are strings, so
- * `cache` compares them by value; `tagsKey` is the tags joined by newlines,
- * which no tag contains.
+ * make one request on a cold cache, not two. For a 200, Next.js's lock on
+ * each Data Cache key would also make two concurrent cold reads one request;
+ * an answer it does not cache (a 404 or 401 miss by ID, a resolve miss) has
+ * only this memoization, and `e2e/data-layer.spec.ts` checks it there.
+ * Outside a render (a test, a route handler) `cache` memoizes nothing. The
+ * arguments are strings, so `cache` compares them by value; `tagsKey` is the
+ * tags joined by newlines, which no tag contains.
  */
 const load = cache(async (path: string, query: string, tagsKey: string): Promise<RawResponse> => {
   const url = `${wpApiUrl()}${path}${query === "" ? "" : `?${query}`}`;
@@ -154,12 +177,16 @@ const load = cache(async (path: string, query: string, tagsKey: string): Promise
       cache: "force-cache",
       next: { revalidate: CMS_REVALIDATE_SECONDS, tags: tagsKey.split("\n") },
       headers: { Accept: "application/json" },
+      redirect: "error",
       signal: AbortSignal.timeout(CMS_TIMEOUT_MS),
     });
     text = await response.text();
   } catch (error) {
     if (isTimeout(error)) {
       throw new CmsError(path, "timeout", `no complete answer within ${CMS_TIMEOUT_MS} ms`);
+    }
+    if (isRedirectRefusal(error)) {
+      throw new CmsError(path, "redirect", "the CMS answered with a redirect; check WP_API_URL");
     }
     const code = errorCode(error);
     throw new CmsError(path, "network", code === undefined ? "network error" : `network error ${code}`);
@@ -204,6 +231,10 @@ export async function cmsGet<T>(request: CmsRequest<T>): Promise<CmsResult<T>> {
       throw new CmsError(path, "schema", `the body does not match the reader schema: ${describeIssues(parsed.error)}`, raw.status);
     }
     return { kind: "ok", data: parsed.data, headers: raw.headers };
+  }
+
+  if (isRedirectStatus(raw.status)) {
+    throw new CmsError(path, "redirect", `the CMS answered with a redirect (HTTP ${raw.status}); check WP_API_URL`, raw.status);
   }
 
   const wpError = wpErrorSchema.safeParse(raw.json);
@@ -251,23 +282,28 @@ function escapeRegExp(value: string): string {
 }
 
 /**
- * `message` with every mention of a configured CMS host (with its port when
- * it has one) replaced by `[cms]`, in any case. A backstop: the messages
- * built above are not meant to contain one, and a missing or malformed
- * environment variable leaves the message as it is, since then there is no
- * host to leak.
+ * `message` with every mention of a configured CMS host replaced by `[cms]`,
+ * in any case: for `WP_API_URL` and the media origin, the host with its port
+ * when it has one, and the bare hostname as well, so a CMS on `:8443` is
+ * scrubbed from `http://cms.example/x` too. The longer form goes first, so
+ * `cms.example:8443` becomes `[cms]`, not `[cms]:8443`. A backstop: the
+ * messages built above are not meant to contain one, and a missing or
+ * malformed environment variable leaves the message as it is, since then
+ * there is no host to leak.
  */
 export function scrubCmsHost(message: string): string {
-  const hosts: string[] = [];
+  const hosts = new Set<string>();
   for (const read of [wpApiUrl, wpMediaOrigin]) {
     try {
-      hosts.push(new URL(read()).host);
+      const url = new URL(read());
+      hosts.add(url.host);
+      hosts.add(url.hostname);
     } catch {
       // Not configured: nothing to scrub for it.
     }
   }
   let scrubbed = message;
-  for (const host of hosts) {
+  for (const host of [...hosts].filter((host) => host !== "").sort((a, b) => b.length - a.length)) {
     scrubbed = scrubbed.replace(new RegExp(escapeRegExp(host), "gi"), "[cms]");
   }
   return scrubbed;

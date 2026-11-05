@@ -20,8 +20,11 @@ import type { WpResource } from "./schemas/rest";
  *    a CMS image: an http(s) URL with no user name or password, not `http:`
  *    when the CMS is `https:`, whose origin (scheme, host and port) is the
  *    CMS's or the media origin's from `lib/env.ts`, and whose path lies under
- *    the uploads directory as `mediaPath` decides (which also refuses `..`
- *    and encoded slashes). The result is `mediaPath`'s `/media/…`, without a
+ *    the uploads directory as `mediaPath` decides (which also refuses `..`,
+ *    encoded slashes and `%25`). Origins compare as the URL parser
+ *    normalises them, case-folded and in punycode: `CMS.Example` is the CMS
+ *    and a lookalike is not, while `cms.example.` (trailing dot) is another
+ *    origin and refused. The result is `mediaPath`'s `/media/…`, without a
  *    query or a hash.
  * 4. A size is used in place of the original only when it passes rule 3, has
  *    valid dimensions, is the original's shape (WordPress crops some sizes,

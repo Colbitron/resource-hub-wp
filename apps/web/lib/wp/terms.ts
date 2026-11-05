@@ -17,8 +17,12 @@ export const FEATURED_FLAG_SLUG = "featured";
 /** Core's largest `per_page`. */
 const TERMS_PER_PAGE = 100;
 
-/** A backstop on the filter bar's pages: past this many terms, something is wrong with the CMS. */
-const MAX_TERM_PAGES = 10;
+/**
+ * A backstop on the filter bar's pages. Past `MAX_TERM_PAGES * TERMS_PER_PAGE`
+ * (1,000) terms something is wrong with the CMS, but the listing pages still
+ * render: `listTerms` returns the first 1,000 and warns.
+ */
+export const MAX_TERM_PAGES = 10;
 
 /** Throws when a term in a taxonomy's list claims another taxonomy. */
 function checkTaxonomy(path: string, taxonomy: WpTaxonomy, terms: readonly WpTerm[]): void {
@@ -31,6 +35,11 @@ function checkTaxonomy(path: string, taxonomy: WpTaxonomy, terms: readonly WpTer
  * Every term of `taxonomy`, ordered by name, with its `count` of published
  * resources, empty ones included: the filter bar decides what to show.
  * Pages through the collection 100 at a time. Tagged `taxonomyListTags()`.
+ *
+ * At most `MAX_TERM_PAGES` pages are read. When the CMS has more, the first
+ * 1,000 terms by name come back and a `console.warn` names the taxonomy
+ * (never the CMS origin): a filter bar missing terms is better than every
+ * listing page failing, which is what throwing here would do.
  */
 export async function listTerms(taxonomy: WpTaxonomy): Promise<WpTerm[]> {
   const path = `/wp/v2/${taxonomy}`;
@@ -50,7 +59,10 @@ export async function listTerms(taxonomy: WpTaxonomy): Promise<WpTerm[]> {
       return terms;
     }
     if (page >= MAX_TERM_PAGES) {
-      throw new CmsError(path, "schema", `more than ${MAX_TERM_PAGES * TERMS_PER_PAGE} terms`, 200);
+      console.warn(
+        `listTerms: ${taxonomy} has more than ${MAX_TERM_PAGES * TERMS_PER_PAGE} terms; using the first ${MAX_TERM_PAGES * TERMS_PER_PAGE} by name`,
+      );
+      return terms;
     }
   }
 }

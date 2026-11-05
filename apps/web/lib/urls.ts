@@ -202,7 +202,7 @@ function uploadsPath(src: string, base: ConfiguredBase, uploadsBase: string, kee
     return null;
   }
   const rest = url.pathname.slice(prefix.length);
-  if (rest === "" || rest.startsWith("/") || /%2f|%5c/i.test(rest)) {
+  if (rest === "" || rest.startsWith("/") || /%2f|%5c|%25/i.test(rest)) {
     return null;
   }
   return `/media/${rest}${keepQuery ? url.search : ""}${url.hash}`;
@@ -219,7 +219,10 @@ function uploadsPath(src: string, base: ConfiguredBase, uploadsBase: string, kee
  * The parser resolves `..` and `%2e%2e` before the check, so a path that
  * climbs out of the uploads directory is `null`, and so is one with an
  * encoded slash or backslash, which a web server might decode into a new
- * segment. Throws a `TypeError` if `uploadsBase` is not an http(s) URL.
+ * segment, or with an encoded `%` (`%25`), which anything that decodes
+ * twice would turn into one (`%25%32%66` is `%2f`, then `/`). WordPress
+ * never writes `%25` in an upload's URL, since it sanitises file names.
+ * Throws a `TypeError` if `uploadsBase` is not an http(s) URL.
  */
 export function mediaPath(src: string, uploadsBase: string): string | null {
   return uploadsPath(src, configuredBase(uploadsBase, "uploads URL"), uploadsBase, false);

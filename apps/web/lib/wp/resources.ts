@@ -121,19 +121,34 @@ export async function listResources(options: ListResourcesOptions): Promise<Reso
  * Tagged `resourceFetchTags(slug)`, a miss included: a miss is a 200 with an
  * empty list, which the Data Cache keeps, so a publish under the slug must
  * clear it.
+ *
+ * An answer that lists resources but none with this slug throws a
+ * `CmsError` (reason `schema`) rather than being a miss: core's `slug`
+ * filter only returns exact matches, so other resources mean the filter was
+ * dropped (a plugin, a proxy rewriting the query) and the CMS is answering
+ * a different question. A miss there would turn every resource page into a
+ * 404 and hide the fault, as `getResourceById` refuses a body for another ID.
  */
 export async function getResourceBySlug(slug: string): Promise<WpResource | null> {
   if (!isSlug(slug)) {
     return null;
   }
   const canonical = canonicalSlug(slug);
+  const path = "/wp/v2/resources";
   const { data } = await cmsGetOk({
-    path: "/wp/v2/resources",
+    path,
     query: `_embed&${new URLSearchParams({ slug: canonical }).toString()}`,
     tags: resourceFetchTags(canonical),
     schema: wpResourceListSchema,
   });
-  return data.find((resource) => canonicalSlug(resource.slug) === canonical) ?? null;
+  if (data.length === 0) {
+    return null;
+  }
+  const match = data.find((resource) => canonicalSlug(resource.slug) === canonical);
+  if (match === undefined) {
+    throw new CmsError(path, "schema", "the body lists resources, none with the slug asked for", 200);
+  }
+  return match;
 }
 
 /**
