@@ -121,7 +121,7 @@ describe("stripCmsOrigin", () => {
 });
 
 describe("stripCmsOrigin on a trailing-dot host", () => {
-  it("strips the CMS written with one trailing dot, absolute or scheme-relative", () => {
+  it("strips the CMS written with a trailing dot, absolute or scheme-relative", () => {
     expect(stripCmsOrigin("https://cms.example./x/", CMS)).toBe("/x/");
     expect(stripCmsOrigin("//cms.example./x", CMS)).toBe("/x");
     expect(stripCmsOrigin("HTTPS://CMS.EXAMPLE.:443/x/", CMS)).toBe("/x/");
@@ -131,8 +131,9 @@ describe("stripCmsOrigin on a trailing-dot host", () => {
     expect(stripCmsOrigin("https://cms.example/x/", ["https://cms.example."])).toBe("/x/");
   });
 
-  it("drops one dot only, and still refuses lookalikes", () => {
-    expect(stripCmsOrigin("https://cms.example../x/", CMS)).toBe("https://cms.example../x/");
+  it("drops every trailing dot, and still refuses lookalikes", () => {
+    expect(stripCmsOrigin("https://cms.example../x/", CMS)).toBe("/x/");
+    expect(stripCmsOrigin("https://cms.example.../x/", CMS)).toBe("/x/");
     expect(stripCmsOrigin("https://evilcms.example./x/", CMS)).toBe("https://evilcms.example./x/");
     expect(stripCmsOrigin("https://cms.example.evil./x/", CMS)).toBe(
       "https://cms.example.evil./x/",
@@ -269,7 +270,7 @@ describe("mediaPath", () => {
     expect(
       mediaPath("https://cms.example/wp-content/uploads/a.jpg", "https://cms.example./wp-content/uploads"),
     ).toBe("/media/a.jpg");
-    expect(mediaPath("https://cms.example../wp-content/uploads/a.jpg", UPLOADS)).toBeNull();
+    expect(mediaPath("https://cms.example../wp-content/uploads/a.jpg", UPLOADS)).toBe("/media/a.jpg");
   });
 
   it("accepts an uploads base with a trailing slash and a subdirectory install", () => {

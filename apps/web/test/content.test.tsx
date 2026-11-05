@@ -74,11 +74,79 @@ describe("links", () => {
     );
   });
 
-  it("drops a link's href when the rewrite would still name a CMS host", () => {
-    expect(render('<a href="https://cms.example:8443/resources/">x</a>')).toBe("<a>x</a>");
+  it("unwraps a CMS link whose rewrite would still name a CMS host, and strips credentials from one that maps", () => {
+    expect(render('<p><a href="https://cms.example:8443/resources/">x</a></p>')).toBe("<p>x</p>");
     expect(render('<a href="https://user:pw@cms.example/resources/">x</a>')).toBe(
       '<a href="/resources/">x</a>',
     );
+  });
+
+  it("strips a CMS host written with several trailing dots", () => {
+    expect(render('<a href="https://cms.example../resources/x/">x</a>')).toBe('<a href="/resources/x/">x</a>');
+    expect(render('<a href="HTTPS://CMS.EXAMPLE.../resources/">x</a>')).toBe('<a href="/resources/">x</a>');
+    expect(render('<p><img src="https://cms.example../wp-content/uploads/a.jpg" alt=""></p>')).toBe("<p></p>");
+  });
+
+  it("unwraps a CMS link that is not a front-end route or an upload, keeping its text", () => {
+    for (const path of [
+      "/wp-json/wp/v2/resources/15",
+      "/wp-admin/",
+      "/wp-login.php",
+      "/xmlrpc.php",
+      "/feed/",
+      "/wp-content/plugins/example/readme.txt",
+      "/wp-content/uploads/",
+      "/?post_type=resource&p=12",
+      "/?p=12",
+      "/resources/../wp-admin/",
+      "/resource/",
+    ]) {
+      const output = render(`<p><a class="x" href="https://cms.example${path.replaceAll("&", "&amp;")}" target="_blank">Text</a></p>`);
+      expect(output, path).toBe("<p>Text</p>");
+    }
+  });
+
+  it("keeps a CMS link to a front-end route or an upload", () => {
+    for (const [href, expected] of [
+      ["https://cms.example/", "/"],
+      ["https://cms.example/#top", "/#top"],
+      ["https://cms.example/resources", "/resources"],
+      ["https://cms.example/resources/webinar/x/?a=1#b", "/resources/webinar/x/?a=1#b"],
+      ["https://cms.example/wp-content/uploads/a.pdf", "/media/a.pdf"],
+    ] as const) {
+      expect(render(`<a href="${href}">x</a>`), href).toBe(`<a href="${expected}">x</a>`);
+    }
+  });
+
+  it("shows the rewritten target as the text of a link whose text is its URL, as WordPress autolinks", () => {
+    expect(render('<a href="https://cms.example/resources/x/">https://cms.example/resources/x/</a>')).toBe(
+      '<a href="/resources/x/">/resources/x/</a>',
+    );
+    expect(render('<a href="/wp-content/uploads/a.pdf"> /wp-content/uploads/a.pdf </a>')).toBe(
+      '<a href="/media/a.pdf">/media/a.pdf</a>',
+    );
+    expect(render('<p><a href="https://cms.example/wp-admin/">https://cms.example/wp-admin/</a></p>')).toBe(
+      "<p>/wp-admin/</p>",
+    );
+    expect(render('<a href="https://example.com/a">https://example.com/a</a>')).toBe(
+      '<a href="https://example.com/a">https://example.com/a</a>',
+    );
+    expect(render('<a href="https://example.com/"><strong>https://example.com/</strong></a>')).toBe(
+      '<a href="https://example.com/"><strong>https://example.com/</strong></a>',
+    );
+  });
+
+  it("replaces link text that names the CMS, or removes the words that do when there is no target to show", () => {
+    expect(render('<a href="https://example.com/">Mirror of cms.example</a>')).toBe(
+      '<a href="https://example.com/">https://example.com/</a>',
+    );
+    expect(render('<a href="javascript:void(0)">Visit CMS.EXAMPLE now</a>')).toBe("<a>Visit now</a>");
+    expect(render('<p><a href="https://cms.example:8443/x/">https://cms.example:8443/x/</a></p>')).toBe("<p></p>");
+  });
+
+  it("leaves text and code the editor typed as written, even when it names the CMS", () => {
+    const html = "<p>Log in at https://cms.example/wp-admin/ to edit.</p><pre><code>curl https://cms.example/wp-json/</code></pre>";
+    expect(render(html)).toBe(html);
   });
 
   it("strips a subdirectory install's base and a separate media host", () => {
@@ -465,8 +533,9 @@ describe("the CMS origin never reaches the output", () => {
     expect(output).not.toMatch(/cms\.example/i);
     expect(output).not.toContain("wp-content");
     expect(output).toContain('href="/resources/ebook/a-field-guide-to-revalidation/"');
-    // A REST link is a CMS link like any other: made relative (a 404 here), never left absolute.
-    expect(output).toContain('href="/wp-json/wp/v2/resources/15"');
+    // A REST link leads nowhere on the front end, so it is unwrapped to its text.
+    expect(output).not.toContain("wp-json");
+    expect(output).toContain("and REST.");
     expect(output).toContain('href="/media/2026/11/photo.jpg"');
     expect(output).toContain('data-nimg="1"');
     expect(output).toContain('srcSet="/media/2026/11/plain.png 1x"');
@@ -630,5 +699,45 @@ describe("deep nesting", () => {
   it("still throws a TypeError for a bad configuration rather than rendering text", () => {
     expect(() => renderContent("<p>x</p>", { cmsOrigins: ["ftp://cms.example"], uploadsBase: CMS.uploadsBase })).toThrow(TypeError);
     expect(() => renderContent("<p>x</p>", { cmsOrigins: CMS.cmsOrigins, uploadsBase: "not a url" })).toThrow(TypeError);
+  });
+});
+
+describe("titles and alt text", () => {
+  it("drops a title that names the CMS and keeps any other", () => {
+    expect(render('<p title="Copied from https://cms.example/x/">x</p>')).toBe("<p>x</p>");
+    expect(render('<p title="On CMS.example">x</p>')).toBe("<p>x</p>");
+    expect(render('<abbr title="Content management system">CMS</abbr>')).toBe(
+      '<abbr title="Content management system">CMS</abbr>',
+    );
+  });
+
+  it("removes the words of an alt that name the CMS and leaves any other alt as written", () => {
+    expect(render(`<img src="${UPLOAD}" alt="Screenshot of https://cms.example/wp-admin/ settings">`)).toBe(
+      '<img alt="Screenshot of settings" src="/media/2026/11/photo.jpg" loading="lazy"/>',
+    );
+    expect(render('<img src="https://images.example/a.jpg" alt="From cms.example">')).toBe(
+      '<img alt="From" src="https://images.example/a.jpg" loading="lazy" referrerPolicy="no-referrer"/>',
+    );
+    expect(render(`<img src="${UPLOAD}" alt="Two  spaces">`)).toBe(
+      '<img alt="Two  spaces" src="/media/2026/11/photo.jpg" loading="lazy"/>',
+    );
+  });
+
+  it("uses an iframe's title as link text only when it is not its URL and does not name the CMS", () => {
+    expect(render('<iframe src="https://www.youtube.com/embed/x" title="https://cms.example/talk/"></iframe>')).toBe(
+      '<a href="https://www.youtube.com/embed/x" rel="noopener noreferrer">https://www.youtube.com/embed/x</a>',
+    );
+    expect(render('<iframe src="https://www.youtube.com/embed/x" title=" https://www.youtube.com/embed/x "></iframe>')).toBe(
+      '<a href="https://www.youtube.com/embed/x" rel="noopener noreferrer">https://www.youtube.com/embed/x</a>',
+    );
+    expect(render('<iframe src="https://cms.example/resources/webinar/x/embed/" title="A talk"></iframe>')).toBe(
+      '<a href="/resources/webinar/x/embed/" rel="noopener noreferrer">A talk</a>',
+    );
+  });
+
+  it("turns an unresolved CMS embed that is not a route into its rewritten path as text", () => {
+    expect(render('<div class="wp-block-embed__wrapper">https://cms.example/wp-admin/</div>')).toBe(
+      '<div class="wp-block-embed__wrapper">/wp-admin/</div>',
+    );
   });
 });

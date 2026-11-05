@@ -22,8 +22,9 @@
  * stripped, tabs and newlines inside are removed, a backslash counts as a
  * slash, and `//host/…` is a URL on `host`. The host is compared after the
  * URL parser has normalised it (lowercase, punycode, default port dropped)
- * and after one trailing dot is dropped from each side, so
- * `HTTPS://CMS.EXAMPLE:443/` and `https://cms.example./` are the CMS and
+ * and after every trailing dot is dropped from each side, so
+ * `HTTPS://CMS.EXAMPLE:443/`, `https://cms.example./` and
+ * `https://cms.example../` are the CMS and
  * `cms.example.evil`, `evilcms.example` and `cms.example@evil.example` are
  * not. `http` and `https` on the CMS host both count as the CMS, since either
  * would show its address. A URL that does not name the CMS is returned
@@ -94,9 +95,9 @@ function parseHostUrl(cleaned: string): URL | null {
   return parse(cleaned, RESOLVE_BASE);
 }
 
-/** A URL's host as the CMS check compares it: one trailing dot dropped, the port kept when not the default. */
+/** A URL's host as the CMS check compares it: every trailing dot dropped, the port kept when not the default. */
 function hostKey(url: URL): string {
-  const hostname = url.hostname.endsWith(".") ? url.hostname.slice(0, -1) : url.hostname;
+  const hostname = withoutTrailing(url.hostname, ".");
   return url.port === "" ? hostname : `${hostname}:${url.port}`;
 }
 

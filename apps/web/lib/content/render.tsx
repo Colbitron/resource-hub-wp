@@ -33,7 +33,11 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *
  * - Links: `href` is rewritten with `rewriteHref`, so links to uploads become
  *   `/media/…`, links on the CMS become root-relative and other links stay.
- *   A link with `target="_blank"` gets `rel="noopener noreferrer"`.
+ *   A CMS link stays a link only when its rewrite is a front-end route or
+ *   `/media/…`; any other (`/wp-admin/`, `/wp-json/…`, `/?p=12`) is
+ *   unwrapped to its text. A link whose text is its URL, or names the CMS,
+ *   shows the rewritten target instead. A link with `target="_blank"` gets
+ *   `rel="noopener noreferrer"`.
  * - Images: a CMS image, one whose origin equals the uploads directory's and
  *   whose path lies under it, with no user name or password, becomes
  *   `/media/…`; with a width and a height it renders through `next/image`,
@@ -44,6 +48,11 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   `https:`, another port, a path outside uploads, credentials in the URL)
  *   is dropped: it cannot be served through `/media/` and showing it would
  *   show the CMS's address.
+ * - The CMS host: it never appears in markup this pass generates or in an
+ *   attribute it rewrites. A `title` that names the CMS is dropped, and the
+ *   words of an `alt` that name it are removed. Text the editor typed is
+ *   left as written, in `<code>` and elsewhere, because rewriting it would
+ *   corrupt code samples and prose about the CMS.
  * - Sanitising: only the elements in `ALLOWED_ELEMENTS` are rendered, with
  *   the attributes in `GLOBAL_ATTRIBUTES` and the per-element lists below,
  *   each value checked. `style` and every `on*` attribute are dropped
@@ -184,6 +193,7 @@ const LINK_SCHEMES = new Set(["http:", "https:", "mailto:", "tel:"]);
 
 /** The base relative links resolve against for the scheme check; its host is never the CMS. */
 const LINK_BASE = "https://front-end.invalid/";
+const LINK_ORIGIN = new URL(LINK_BASE).origin;
 
 const CLASS_TOKEN = /^[A-Za-z0-9_-]+$/;
 const ID_VALUE = /^[A-Za-z][A-Za-z0-9_.:-]*$/;
@@ -228,6 +238,8 @@ interface Context {
   readonly uploadsOrigin: string;
   /** Every configured base: an image or link on one of them is the CMS's. */
   readonly cmsBases: readonly CmsBase[];
+  /** Each base as text names it, `cms.example` or `example.com/blog`, lower-cased, for `mentionsCms`. */
+  readonly cmsNames: readonly string[];
   readonly renderBlock: RenderBlock;
   readonly options: HTMLReactParserOptions;
   /** How many elements deep the pass is; checked against `MAX_DEPTH` in `children`. */
@@ -236,9 +248,9 @@ interface Context {
 
 const UPLOADS_DIRECTORY = "/wp-content/uploads";
 
-/** `hostname` as the CMS check compares it: one trailing dot dropped. The parser has lower-cased it. */
+/** `hostname` as the CMS check compares it: every trailing dot dropped (`cms.example..`). The parser has lower-cased it. */
 function hostnameKey(url: URL): string {
-  return url.hostname.endsWith(".") ? url.hostname.slice(0, -1) : url.hostname;
+  return withoutTrailing(url.hostname, ".");
 }
 
 /** `configured`, an entry of `cmsOrigins` or the uploads base, as a `CmsBase`; the uploads directory itself is not part of the prefix. */
@@ -282,20 +294,82 @@ function namesCms(url: URL, context: Context): boolean {
   );
 }
 
+/** True when `text` contains the CMS's name, its host or host and install path, in any case. */
+function mentionsCms(text: string, context: Context): boolean {
+  const lower = text.toLowerCase();
+  return context.cmsNames.some((name) => lower.includes(name));
+}
+
+/** `text` without the words, split at whitespace, that name the CMS; unchanged when none does. */
+function withoutCmsMentions(text: string, context: Context): string {
+  if (!mentionsCms(text, context)) {
+    return text;
+  }
+  return text
+    .split(/\s+/)
+    .filter((word) => word !== "" && !mentionsCms(word, context))
+    .join(" ");
+}
+
 /**
- * The `href` to render for `value`, or `undefined` to drop it: the scheme
- * must be one of `LINK_SCHEMES` after browser parsing, and the rewritten
- * link must not still name a CMS host (a port the configuration does not
- * list, say), because the CMS's address never reaches the browser.
+ * True for a rewrite the front end serves: root-relative, and `/` without a
+ * query, `/resources` and everything under it, or `/media/…`. WordPress's
+ * other paths (`/wp-admin/`, `/wp-login.php`, `/wp-json/…`, `/xmlrpc.php`,
+ * `/feed/`, `/wp-content/…` outside uploads, `/?p=12`) are 404s here.
  */
-function safeHref(value: string, context: Context): string | undefined {
+function isFrontEndPath(url: URL): boolean {
+  if (url.origin !== LINK_ORIGIN) {
+    return false;
+  }
+  const path = url.pathname;
+  return (
+    (path === "/" && url.search === "") ||
+    path === "/resources" ||
+    path.startsWith("/resources/") ||
+    path.startsWith("/media/")
+  );
+}
+
+/**
+ * What a URL attribute (`href`, `cite`, an embed's `src`) becomes:
+ *
+ * - `keep`: rendered as `href`, which is `value` rewritten by `rewriteHref`.
+ * - `unwrap`: a CMS URL whose rewrite is not a front-end route
+ *   (`isFrontEndPath`), so there is nothing to link to; a link keeps its
+ *   text and loses the element. `text` is the rewrite, for a link whose own
+ *   text must be replaced, or `""` when the rewrite still names the CMS (a
+ *   port the configuration does not list).
+ * - `drop`: a URL that does not parse or whose scheme is not one of
+ *   `LINK_SCHEMES`, judged after browser parsing.
+ */
+type LinkTarget =
+  | { readonly kind: "keep"; readonly href: string }
+  | { readonly kind: "unwrap"; readonly text: string }
+  | { readonly kind: "drop" };
+
+const DROP: LinkTarget = { kind: "drop" };
+
+function linkTarget(value: string, context: Context): LinkTarget {
   const url = parseUrl(value, LINK_BASE);
   if (url === null || !LINK_SCHEMES.has(url.protocol)) {
-    return undefined;
+    return DROP;
   }
-  const rewritten = rewriteHref(value, context.cms);
-  const after = parseUrl(rewritten, LINK_BASE);
-  return after === null || namesCms(after, context) ? undefined : rewritten;
+  const href = rewriteHref(value, context.cms);
+  const after = parseUrl(href, LINK_BASE);
+  if (after === null) {
+    return DROP;
+  }
+  const isCmsLink = namesCms(url, context) || namesCms(after, context);
+  if (!isCmsLink || isFrontEndPath(after)) {
+    return { kind: "keep", href };
+  }
+  return { kind: "unwrap", text: mentionsCms(href, context) ? "" : href };
+}
+
+/** The `href` to render for `value` where nothing but a link will do (`cite`, embeds): `linkTarget`'s `keep`, or `undefined`. */
+function safeHref(value: string, context: Context): string | undefined {
+  const target = linkTarget(value, context);
+  return target.kind === "keep" ? target.href : undefined;
 }
 
 type ImageSource =
@@ -369,10 +443,11 @@ function hasClass(attributes: Attributes, name: string): boolean {
 
 /**
  * The attributes any allowed element keeps: `class` (tokens of letters,
- * digits, `-` and `_`), `id` (with `ID_PREFIX`), `title`, `lang` and `dir`.
- * Never `style`, and never an `on*` attribute, which are not read at all.
+ * digits, `-` and `_`), `id` (with `ID_PREFIX`), `title` (unless it names
+ * the CMS), `lang` and `dir`. Never `style`, and never an `on*` attribute,
+ * which are not read at all.
  */
-function globalProps(attributes: Attributes): Props {
+function globalProps(attributes: Attributes, context: Context): Props {
   const props: Props = {};
   const classes = tokens(attributes.get("class"), (token) => CLASS_TOKEN.test(token));
   if (classes.length > 0) {
@@ -383,7 +458,7 @@ function globalProps(attributes: Attributes): Props {
     props.id = `${ID_PREFIX}${id}`;
   }
   const title = attributes.get("title");
-  if (title !== undefined && title !== "") {
+  if (title !== undefined && title !== "" && !mentionsCms(title, context)) {
     props.title = title;
   }
   const lang = matching(attributes.get("lang"), LANG_VALUE);
@@ -407,13 +482,43 @@ function prefixFragment(href: string): string {
   return value.startsWith("#") && ID_VALUE.test(name) ? `#${ID_PREFIX}${name}` : href;
 }
 
-/** `<a>`: `href` through `safeHref` and `prefixFragment`, `target` only as `_blank`, `rel` from known tokens, plus `noopener noreferrer` for `_blank`. */
-function linkProps(attributes: Attributes, context: Context): Props {
-  const props = globalProps(attributes);
+/**
+ * The text a link shows instead of its own, or `null` to keep its own. A
+ * link whose text, trimmed, is its `href` as written, or names the CMS
+ * (WordPress turns a pasted URL into `<a href="u">u</a>`), shows its
+ * rewritten target; when there is none to show (the `href` was dropped, or
+ * its rewrite still names the CMS), it shows its own text without the words
+ * that name the CMS.
+ */
+function linkText(node: Element, href: string | undefined, target: LinkTarget | undefined, context: Context): string | null {
+  if (href === undefined) {
+    return null;
+  }
+  const text = textOf(node).trim();
+  if (text !== href.trim() && !mentionsCms(text, context)) {
+    return null;
+  }
+  const shown = target?.kind === "keep" ? target.href : target?.kind === "unwrap" ? target.text : "";
+  const replacement = shown !== "" && !mentionsCms(shown, context) ? shown : withoutCmsMentions(text, context);
+  return replacement === text ? null : replacement;
+}
+
+/**
+ * `<a>`. Its `href` goes through `linkTarget`: kept, with `prefixFragment`;
+ * unwrapped, so only its content renders; or dropped from an `<a>` that
+ * stays. `target` only as `_blank`, `rel` from known tokens, plus
+ * `noopener noreferrer` for `_blank`. Its text may be replaced (`linkText`).
+ */
+function link(node: Element, attributes: Attributes, context: Context): ReactElement {
   const href = attributes.get("href");
-  const safe = href === undefined ? undefined : safeHref(href, context);
-  if (safe !== undefined) {
-    props.href = prefixFragment(safe);
+  const target = href === undefined ? undefined : linkTarget(href, context);
+  const content = linkText(node, href, target, context) ?? children(node, context);
+  if (target?.kind === "unwrap") {
+    return createElement(Fragment, null, content);
+  }
+  const props = globalProps(attributes, context);
+  if (target?.kind === "keep") {
+    props.href = prefixFragment(target.href);
   }
   const rel = new Set(tokens(attributes.get("rel"), (token) => REL_TOKENS.has(token.toLowerCase())).map((token) => token.toLowerCase()));
   if (attributes.get("target") === "_blank") {
@@ -424,15 +529,13 @@ function linkProps(attributes: Attributes, context: Context): Props {
   if (rel.size > 0) {
     props.rel = [...rel].join(" ");
   }
-  return props;
+  return createElement("a", props, content);
 }
 
 /** The attributes an allowed element renders with, by name. */
 function elementProps(name: string, attributes: Attributes, context: Context): Props {
-  const props = globalProps(attributes);
+  const props = globalProps(attributes, context);
   switch (name) {
-    case "a":
-      return linkProps(attributes, context);
     case "td":
     case "th": {
       const colSpan = matching(attributes.get("colspan"), SPAN);
@@ -508,8 +611,8 @@ function image(attributes: Attributes, context: Context): ReactElement {
   if (source === null) {
     return EMPTY;
   }
-  const props = globalProps(attributes);
-  props.alt = attributes.get("alt") ?? "";
+  const props = globalProps(attributes, context);
+  props.alt = withoutCmsMentions(attributes.get("alt") ?? "", context);
   const width = matching(attributes.get("width"), DIMENSION);
   const height = matching(attributes.get("height"), DIMENSION);
   if (source.kind === "external") {
@@ -536,15 +639,20 @@ function image(attributes: Attributes, context: Context): ReactElement {
   return createElement("img", { ...props, src: source.path, loading: "lazy" });
 }
 
-/** An `<iframe>`, `<video>` or `<audio>` as a link to its `src`, titled by its `title` when it has one. */
+/**
+ * An `<iframe>`, `<video>` or `<audio>` as a link to its `src`, by the rule
+ * for links: its `title` is the link's text unless it is empty, is the
+ * `src` itself or names the CMS, when the rewritten `src` is.
+ */
 function mediaLink(attributes: Attributes, context: Context): ReactElement {
   const src = attributes.get("src");
   const href = src === undefined ? undefined : safeHref(src, context);
-  if (href === undefined) {
+  if (src === undefined || href === undefined) {
     return EMPTY;
   }
-  const title = attributes.get("title")?.trim();
-  return linkTo(href, title === undefined || title === "" ? undefined : title);
+  const title = attributes.get("title")?.trim() ?? "";
+  const useTitle = title !== "" && title !== src.trim() && !mentionsCms(title, context);
+  return linkTo(href, useTitle ? title : undefined);
 }
 
 /**
@@ -563,8 +671,9 @@ function embedWrapper(node: Element, attributes: Attributes, context: Context): 
   if (!/^https?:\/\//i.test(value)) {
     return null;
   }
-  const href = safeHref(value, context);
-  return createElement("div", globalProps(attributes), href === undefined ? null : linkTo(href));
+  const target = linkTarget(value, context);
+  const shown = target.kind === "keep" ? linkTo(target.href) : target.kind === "unwrap" ? target.text : null;
+  return createElement("div", globalProps(attributes, context), shown);
 }
 
 /** The marker's attributes, validated; `null` when any is missing or out of range. */
@@ -602,7 +711,7 @@ function markerProps(node: Element, attributes: Attributes): RelatedBlockProps |
  * and never rendered, so the marker stays on the server.
  */
 function marker(node: Element, attributes: Attributes, context: Context): ReactElement {
-  const fallback = createElement("div", globalProps(attributes), children(node, context));
+  const fallback = createElement("div", globalProps(attributes, context), children(node, context));
   const props = markerProps(node, attributes);
   return props === null ? fallback : createElement(Fragment, null, context.renderBlock(props, fallback));
 }
@@ -633,6 +742,9 @@ function replaceNode(node: DOMNode, context: Context): ReactElement | undefined 
   }
   if (DROPPED_WITH_CONTENT.has(name)) {
     return EMPTY;
+  }
+  if (name === "a") {
+    return link(node, attributes, context);
   }
   if (!ALLOWED_ELEMENTS.has(name)) {
     return createElement(Fragment, null, children(node, context));
@@ -826,10 +938,12 @@ export function renderContent(html: string, cms: CmsUrls, options: RenderContent
   // throws its TypeError instead of quietly turning every body into text.
   stripCmsOrigin("", cms.cmsOrigins);
   mediaPath("", cms.uploadsBase);
+  const cmsBases = [...cms.cmsOrigins, cms.uploadsBase].map(cmsBase);
   const context: Context = {
     cms,
     uploadsOrigin: new URL(cms.uploadsBase).origin,
-    cmsBases: [...cms.cmsOrigins, cms.uploadsBase].map(cmsBase),
+    cmsBases,
+    cmsNames: cmsBases.map((base) => `${base.hostname}${base.prefix}`.toLowerCase()),
     renderBlock: options.renderBlock ?? defaultRenderBlock,
     options: {
       // Lower-case names and first-occurrence-wins for duplicates, as a

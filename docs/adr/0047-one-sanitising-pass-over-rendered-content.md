@@ -36,7 +36,17 @@ An image is a CMS image only when its URL, read relative to the uploads director
 
 ## External images are kept, CMS-host images that are not uploads are dropped
 
-An image on a host that is not the CMS's stays a plain lazy `<img>` by its `src` alone, with `referrerpolicy="no-referrer"`: it says nothing about the CMS, editors do embed the odd third-party image, and dropping it would make the demo look broken for no gain. An image that names a CMS host but is not a CMS image (`http:` where the CMS is `https:`, another port, a path outside the uploads directory, credentials in the URL) is dropped: it cannot be served through `/media/`, and rendering it would put the CMS's address in the page. The same rule drops a link's `href` when the rewrite would still name a CMS host.
+An image on a host that is not the CMS's stays a plain lazy `<img>` by its `src` alone, with `referrerpolicy="no-referrer"`: it says nothing about the CMS, editors do embed the odd third-party image, and dropping it would make the demo look broken for no gain. `no-referrer` removes only the `Referer` header: the reader's IP address, user agent and any cookies for that host still reach a host the editor chose, so an external image is a tracking pixel the editor can place. The stricter option is an allow-list of image hosts whose default is empty (an image on an unlisted host is dropped) together with a Content-Security-Policy `img-src` that says the same to the browser; that choice is the project owner's and is pending. An image that names a CMS host but is not a CMS image (`http:` where the CMS is `https:`, another port, a path outside the uploads directory, credentials in the URL) is dropped: it cannot be served through `/media/`, and rendering it would put the CMS's address in the page.
+
+## CMS links that lead nowhere on the front end are unwrapped
+
+A link on the CMS stays a link only when its rewrite is a route the front end serves: `/` without a query, `/resources` and everything under it, or an upload's `/media/…`. Any other CMS link (`/wp-json/…`, `/wp-admin/`, `/wp-login.php`, `/xmlrpc.php`, `/feed/`, `/wp-content/…` outside uploads, `/?post_type=…&p=…`, or one whose rewrite still names the CMS because of a port the configuration does not list) is unwrapped: the `<a>` goes and its text stays. Made relative, these would be 404s on the front end, and left absolute they would show the CMS's address; neither is a useful link. This is the default chosen while the project owner was away on 2026-11-05 and is pending their review. Relative links the editor wrote are left as written, since they never named the CMS.
+
+## Where the CMS host can still appear
+
+The CMS host never appears in markup the pass generates or in an attribute it rewrites. A link whose text, trimmed, is its own `href` (WordPress turns a pasted URL into `<a href="u">u</a>`) or names the CMS shows the rewritten target instead; when there is none to show, its words that name the CMS are removed. A `title` that names the CMS is dropped, the words of an `alt` that name it are removed, and an iframe's `title` becomes link text by the same rule as a link's text. "Names the CMS" means containing a configured host, or host and install path, in any case. Hosts compare with every trailing dot removed, so `cms.example..` is the CMS.
+
+Editor-typed text is left as written, in a paragraph or in `<code>`: rewriting it would corrupt code samples and prose that discuss the CMS, and an editor who types the address has chosen to publish it.
 
 ## Embeds become links
 
@@ -51,13 +61,15 @@ WordPress renders an embed block as an `<iframe>`, or leaves the raw URL as text
 - **A sanitising library before the parse.** Rejected above: a second pass to configure, and the rewrites still needed.
 - **Trusting kses.** Rejected: `unfiltered_html` makes it no guard for the roles that write resources.
 - **Treating `http:` CMS images as CMS images, as `rewriteHref` does for links.** The rewrite would serve them over https anyway. Rejected: the review that set the acceptance criteria asked for origin equality, and the cost is one missing image on content that still has a pre-https URL, which the editor can fix.
-- **Dropping external images.** Rejected: they leak nothing and editors use them.
+- **Dropping external images.** Not chosen for now: editors use them and `no-referrer` keeps the page's URL from the other host, though not the reader's IP address or user agent (see above). An allow-list with an empty default plus a CSP `img-src` is the stricter option, pending the project owner's choice.
+- **Making every CMS link relative, whatever its path.** Rejected for paths the front end does not serve: a relative `/wp-admin/` is a 404, and an absolute one shows the CMS.
+- **Rewriting the CMS host in text and `<code>`.** Rejected: it would corrupt code samples, and the text is the editor's.
 - **Keeping `style`.** Rejected: WordPress's blocks put layout in classes, and inline styles are a channel for CSS injection with no content that needs it.
 - **Rendering embeds as iframes from an allow-list of providers.** Rejected for now: third-party frames load scripts the page does not control, and a link is enough for a demo.
 
 ## Consequences
 
 - A new kind of element in resource bodies is a change to the allow-list here, with a test; the default for anything unknown is to unwrap it, so content survives and attributes do not.
-- The output never contains the CMS's host, and the fixture test asserts it.
+- The CMS host never appears in markup the pass generates or in rewritten attributes; editor-typed text is left as written. The fixture test asserts the first half on a body whose text does not name the CMS.
 - `cmsUrls()` in `lib/env.ts` gives the pass the site base, the media origin and the uploads directory from the environment.
 - `parseSrcset` is exported from `lib/urls.ts` so each candidate can be judged on its own. It and every pattern in the pass run in linear time: trailing runs are trimmed with a loop (`withoutTrailing`), because `/,+$/` on a long comma run followed by anything else is quadratic (200 KB took 13.5 s), and the `srcset` descriptor pattern has no two quantifiers that can share digits. The tests hold a megabyte of each to under a second.
