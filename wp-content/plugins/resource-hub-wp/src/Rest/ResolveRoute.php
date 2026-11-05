@@ -54,9 +54,8 @@ final class ResolveRoute {
 	 * every cut: `sanitize_title()` percent-encodes each non-ASCII byte as three characters (a 3-byte CJK
 	 * character becomes nine) and keeps only the whole encoded characters that fit in 200, so a CJK slug
 	 * ends at 198. A shorter non-ASCII slug can still be cut, and two that differ only past the cut look up
-	 * the same slug. That is harmless: WordPress cuts a stored
-	 * `post_name` the same way on save, so the lookup matches what is stored, and the front end redirects to
-	 * the canonical slug the route returns.
+	 * the same slug. That is harmless: WordPress cuts a stored `post_name` the same way on save, so the
+	 * lookup matches what is stored, and the front end redirects to the canonical slug the route returns.
 	 */
 	public const MAX_SLUG_LENGTH = 200;
 
@@ -271,8 +270,8 @@ final class ResolveRoute {
 	/**
 	 * The resource's one type slug, or null when it has none, more than one, or a reserved one. The response
 	 * schema rejects the first two and the literal `topic` and `page`; a percent-encoded form that decodes
-	 * to one of those is refused by the plugin's own stricter rule, the one its type guards enforce
-	 * (ADR 0024).
+	 * to one of those is refused by the plugin's own stricter rule, `ReservedTypeSlugs::reserved_form()`,
+	 * which its type guards enforce.
 	 *
 	 * @param WP_Post $post The resource.
 	 */
