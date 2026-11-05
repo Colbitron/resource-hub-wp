@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 
-import { slugSchema } from "../lib/wp/schemas/common";
+import { isSlug, isTypeSlug } from "../lib/routes";
+import { slugSchema, typeSlugSchema } from "../lib/wp/schemas/common";
 import { parsePaginationHeaders } from "../lib/wp/schemas/pagination";
 import { resolveResponseSchema, resolveResponseSchemaStrict } from "../lib/wp/schemas/resolve";
 import {
@@ -340,11 +341,79 @@ describe("readers drop unknown keys; strict mirrors reject them", () => {
 });
 
 describe("slug length", () => {
-  it("counts code points, as JSON Schema's maxLength does", () => {
+  it("counts code points for the schema's 200, as JSON Schema's maxLength does", () => {
     // Each U+1F600 is one code point and two UTF-16 code units.
-    expect(slugSchema.safeParse("\u{1F600}".repeat(200)).success).toBe(true);
-    expect(slugSchema.safeParse("\u{1F600}".repeat(201)).success).toBe(false);
+    expect(slugSchema.safeParse("\u{1F600}".repeat(16)).success).toBe(true);
+    expect(slugSchema.safeParse("\u{1F600}".repeat(201)).error?.issues[0]?.message).toBe(
+      "must be at most 200 characters",
+    );
+    expect(slugSchema.safeParse("a".repeat(200)).success).toBe(true);
     expect(slugSchema.safeParse("a".repeat(201)).success).toBe(false);
+  });
+
+  it("also caps the percent-encoded form at 200, which the JSON Schema does not", () => {
+    // Both are within the schema's 200 code points; encoded, 1,800 and 2,400 characters.
+    for (const value of ["日".repeat(200), "\u{1F600}".repeat(200)]) {
+      expect(slugSchema.safeParse(value).error?.issues[0]?.message, value).toMatch(
+        /once percent-encoded/,
+      );
+    }
+    expect(slugSchema.safeParse("日".repeat(22) + "ab").success).toBe(true);
+    expect(slugSchema.safeParse("日".repeat(23)).success).toBe(false);
+  });
+});
+
+describe("slug rule", () => {
+  const samples = [
+    "example",
+    "%e6%97%a5",
+    "%E6%97%A5",
+    "日本",
+    "\u{1F600}",
+    "topic",
+    "page",
+    "a?b#c",
+    "100%",
+    "",
+    "a b",
+    "a/b",
+    "a".repeat(200),
+    "a".repeat(201),
+    "日".repeat(22) + "ab",
+    "日".repeat(23),
+    "日".repeat(200),
+    "Topic",
+    "PAGE",
+    "ABC",
+    ".",
+    "..",
+    "%2e",
+    "%2E%2e",
+    "\ud800",
+    "a\udc00b",
+  ];
+
+  it("is the route predicates' rule, so the schema and the builders never disagree", () => {
+    for (const value of samples) {
+      expect(slugSchema.safeParse(value).success, JSON.stringify(value)).toBe(isSlug(value));
+      expect(typeSlugSchema.safeParse(value).success, JSON.stringify(value)).toBe(
+        isTypeSlug(value),
+      );
+    }
+  });
+
+  it("rejects a lone surrogate, a dot segment and an over-long encoded form, which the JSON Schema allows", () => {
+    for (const value of ["\ud800", ".", "..", "%2e", "日".repeat(200)]) {
+      expect(slugSchema.safeParse(value).success, JSON.stringify(value)).toBe(false);
+    }
+  });
+
+  it("reports one issue for each bad slug", () => {
+    for (const value of ["", "a b", "a".repeat(201), "\ud800", "."]) {
+      expect(slugSchema.safeParse(value).error?.issues, JSON.stringify(value)).toHaveLength(1);
+    }
+    expect(typeSlugSchema.safeParse("topic").error?.issues).toHaveLength(1);
+    expect(typeSlugSchema.safeParse("Topic").error?.issues).toHaveLength(1);
   });
 });
 
