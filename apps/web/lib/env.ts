@@ -5,6 +5,7 @@ import {
   parseRevalidateSecret,
   parseWpApiUrl,
 } from "./env-schema";
+import type { CmsUrls } from "./urls";
 
 /**
  * Server-only access to the front end's environment (ADR 0040). Each getter
@@ -26,4 +27,21 @@ export function revalidateSecret(): string {
 /** The base behind `/media/…`: `WP_MEDIA_ORIGIN`, or `WP_API_URL` without `/wp-json`. */
 export function wpMediaOrigin(): string {
   return parseMediaOrigin(process.env);
+}
+
+/**
+ * What the HTML pass and the link rewrites need to know about the CMS
+ * (`lib/urls.ts`, `lib/content/render.tsx`): the site's base URLs, whose
+ * origin is stripped from links, and the uploads directory, whose files
+ * become `/media/…`. The site base is `WP_API_URL` without `/wp-json`; the
+ * media origin is listed too when it differs, so links to a separate media
+ * host lose that host as well.
+ */
+export function cmsUrls(): CmsUrls {
+  const site = wpApiUrl().replace(/\/wp-json$/, "");
+  const media = wpMediaOrigin();
+  return {
+    cmsOrigins: site === media ? [site] : [site, media],
+    uploadsBase: `${media}/wp-content/uploads`,
+  };
 }

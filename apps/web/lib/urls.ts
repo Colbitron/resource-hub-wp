@@ -231,7 +231,8 @@ export function rewriteHref(href: string, { cmsOrigins, uploadsBase }: CmsUrls):
   return media ?? stripWithBases(href, bases);
 }
 
-interface SrcsetCandidate {
+/** One candidate of a `srcset`: its URL and its descriptors (`2x`, `768w`), normalised to single spaces. */
+export interface SrcsetCandidate {
   url: string;
   descriptors: string;
 }
@@ -241,9 +242,11 @@ const isSrcsetSpace = (character: string): boolean => /^[ \t\n\f\r]$/.test(chara
 /**
  * Splits a `srcset` into candidates as the HTML standard does: a URL is a
  * run of non-space characters (it may contain commas), trailing commas end
- * it, and its descriptors run to the next comma outside parentheses.
+ * it, and its descriptors run to the next comma outside parentheses. The
+ * HTML pass uses it to check each candidate on its own before rebuilding
+ * the attribute; `rewriteSrcset` is the rewrite-only form.
  */
-function parseSrcset(srcset: string): SrcsetCandidate[] {
+export function parseSrcset(srcset: string): SrcsetCandidate[] {
   const candidates: SrcsetCandidate[] = [];
   let position = 0;
   while (position < srcset.length) {
