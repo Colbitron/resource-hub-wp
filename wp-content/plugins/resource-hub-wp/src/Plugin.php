@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace ResourceHub;
 
+use ResourceHub\Admin\ListColumn;
+use ResourceHub\Admin\TermNotice;
 use ResourceHub\Cli\SeedCommand;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\OneType;
@@ -17,6 +19,7 @@ use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\ReservedTypeSlugs;
 use ResourceHub\ContentModel\Taxonomies;
 use ResourceHub\ContentModel\UsedTypes;
+use ResourceHub\Editor\RevalidationAssets;
 use ResourceHub\Editor\SidebarAssets;
 use ResourceHub\Rest\ResolveRoute;
 use ResourceHub\Revalidation\Revalidation;
@@ -71,8 +74,11 @@ final class Plugin {
 		( new Permalink() )->register();
 		( new UsedTypes() )->register();
 		add_action( 'enqueue_block_editor_assets', array( new SidebarAssets( $this->file ), 'enqueue' ) );
+		add_action( 'enqueue_block_editor_assets', array( new RevalidationAssets( $this->file ), 'enqueue' ) );
 		( new Revalidation() )->register();
 		add_action( 'rest_api_init', array( new ResolveRoute(), 'register' ) );
+		( new ListColumn() )->register();
+		( new TermNotice() )->register();
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			\WP_CLI::add_command( 'resource-hub seed', SeedCommand::class );

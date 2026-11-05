@@ -2,9 +2,10 @@
  * Extends the `@wordpress/scripts` webpack config with one non-block entry.
  *
  * `wp-scripts build --webpack-src-dir=blocks` discovers block entries from
- * `block.json` files under `blocks/`. The editor sidebar panel is a plugin,
- * not a block, so it is added here as `editor/resource-details`, which lands
- * at `build/editor/resource-details.js` with its `.asset.php` beside it.
+ * `block.json` files under `blocks/`. The editor sidebar panel and the
+ * revalidation feedback are plugins, not blocks, so they are added here as
+ * `editor/resource-details` and `editor/revalidation-feedback`, each landing
+ * under `build/editor/` with its `.asset.php` beside it.
  */
 const { resolve } = require( 'path' );
 const defaultConfig = require( '@wordpress/scripts/config/webpack.config' );
@@ -21,6 +22,10 @@ const config = {
 		'editor/resource-details': resolve(
 			__dirname,
 			'editor/resource-details/index.js'
+		),
+		'editor/revalidation-feedback': resolve(
+			__dirname,
+			'editor/revalidation-feedback/index.js'
 		),
 	} ),
 };

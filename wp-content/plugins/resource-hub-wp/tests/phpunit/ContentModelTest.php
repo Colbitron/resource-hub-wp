@@ -19,6 +19,15 @@ use WP_UnitTestCase;
  */
 final class ContentModelTest extends WP_UnitTestCase {
 	/**
+	 * Makes sure the `featured` flag exists, as the plugin's `init` did at bootstrap. The core test
+	 * suite deletes every term between test classes, so a class that runs earlier removes it.
+	 */
+	public function set_up(): void {
+		parent::set_up();
+		( new Taxonomies() )->ensure_featured_flag();
+	}
+
+	/**
 	 * The post type is public, REST-exposed under `resources`, and supports what the editor needs.
 	 */
 	public function test_post_type_is_registered_for_rest(): void {
