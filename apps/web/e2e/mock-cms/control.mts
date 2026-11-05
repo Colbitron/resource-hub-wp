@@ -104,11 +104,16 @@ export function handleControl(state: MockState, method: string, url: URL, body: 
       return json(201, state.summarise(state.createResource(parseCreate(body))));
     }
 
-    let match = /^\/resources\/(\d+)\/(slug|type|topics|status|picks)$/.exec(path);
+    let match = /^\/resources\/(\d+)\/(title|slug|type|topics|status|picks)$/.exec(path);
     if (match && method === "POST") {
       const id = Number(match[1]);
       if (!isRecord(body)) throw new MockError(422, "The body must be a JSON object.");
       switch (match[2]) {
+        case "title": {
+          const title = optionalString(body, "title");
+          if (title === undefined) throw new MockError(422, "title is needed.");
+          return json(200, state.summarise(state.setTitle(id, title)));
+        }
         case "slug": {
           const slug = optionalString(body, "slug");
           if (slug === undefined) throw new MockError(422, "slug is needed.");

@@ -224,8 +224,20 @@ export class MockState {
     return resource;
   }
 
+  /**
+   * Moves `modified` strictly forward. `siteTime()` has one-second resolution, so two
+   * changes inside the same second would otherwise leave it unchanged; a test that a
+   * change bumps `modified` must see it move every time.
+   */
   private touch(resource: ResourceRecord): void {
-    resource.modified = siteTime();
+    const now = siteTime();
+    if (now > resource.modified) {
+      resource.modified = now;
+      return;
+    }
+    const next = new Date(`${resource.modified}Z`);
+    next.setUTCSeconds(next.getUTCSeconds() + 1);
+    resource.modified = siteTime(next);
   }
 
   private assertSlugFree(slug: string, except?: number): void {
@@ -242,6 +254,15 @@ export class MockState {
     if (slug === resource.slug) return resource;
     resource.previousSlugs = [...resource.previousSlugs.filter((old) => old !== slug), resource.slug];
     resource.slug = slug;
+    this.touch(resource);
+    return resource;
+  }
+
+  /** Changes the title, as an editor's save does; the slug stays, as WordPress keeps it. */
+  setTitle(id: number, title: string): ResourceRecord {
+    const resource = this.requireResource(id);
+    if (title.trim() === "") throw new MockError(422, "The title must not be empty.");
+    resource.title = title;
     this.touch(resource);
     return resource;
   }

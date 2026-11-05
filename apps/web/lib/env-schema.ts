@@ -102,8 +102,66 @@ const mediaOriginSchema = httpUrl
   )
   .transform(originAndPath);
 
-/** `REVALIDATE_SECRET`, compared byte for byte, so it is never trimmed. */
-const secretSchema = z.string().min(1, { error: "must not be empty" });
+/** The fewest characters `REVALIDATE_SECRET` may have. */
+export const MIN_SECRET_LENGTH = 32;
+
+/**
+ * The most characters `REVALIDATE_SECRET` may have: the CMS's cap
+ * (`Config::SECRET_MAX_LENGTH`), so a secret one side accepts the other does
+ * too.
+ */
+export const MAX_SECRET_LENGTH = 256;
+
+/** Printable ASCII without the space (0x21 to 0x7E): every character a bearer token can carry. */
+const BEARER_SAFE = /^[\x21-\x7E]*$/;
+
+/**
+ * What can be wrong with a `REVALIDATE_SECRET` that is set:
+ * `"bad-characters"` when it has a character outside printable ASCII or any
+ * whitespace (a trailing newline or a space pasted with it), which the
+ * bearer token the CMS sends can never carry, so no request could ever
+ * match it; `"too-short"` when it has fewer than `MIN_SECRET_LENGTH`
+ * characters; `"too-long"` when it has more than `MAX_SECRET_LENGTH`, which
+ * the CMS refuses, so the two sides could never share it.
+ */
+export type SecretProblem = "bad-characters" | "too-short" | "too-long";
+
+/**
+ * What is wrong with a `REVALIDATE_SECRET` value, or `null` when nothing is.
+ * The characters are checked first, so the length is counted in ASCII
+ * characters, which are bytes. The CMS's settings page holds its copy of the
+ * secret to the same rule.
+ */
+export function secretProblem(value: string): SecretProblem | null {
+  if (!BEARER_SAFE.test(value)) {
+    return "bad-characters";
+  }
+  if (value.length < MIN_SECRET_LENGTH) {
+    return "too-short";
+  }
+  if (value.length > MAX_SECRET_LENGTH) {
+    return "too-long";
+  }
+  return null;
+}
+
+const SECRET_PROBLEM_MESSAGES: Record<SecretProblem, string> = {
+  "bad-characters":
+    "must be printable ASCII with no whitespace, because a bearer token cannot carry anything else",
+  "too-short": `must be at least ${MIN_SECRET_LENGTH} characters long`,
+  "too-long": `must be at most ${MAX_SECRET_LENGTH} characters long, the most the CMS accepts`,
+};
+
+/** A `REVALIDATE_SECRET` that is set but breaks the rule; `problem` says which part. */
+export class SecretError extends EnvError {
+  override name = "SecretError";
+  readonly problem: SecretProblem;
+
+  constructor(problem: SecretProblem) {
+    super(`REVALIDATE_SECRET ${SECRET_PROBLEM_MESSAGES[problem]}. ${WHERE}`);
+    this.problem = problem;
+  }
+}
 
 /** An unset variable and an empty one (`NAME=` copied from .env.example) are the same. */
 function present(env: EnvSource, name: string): string | undefined {
@@ -129,9 +187,24 @@ export function parseWpApiUrl(env: EnvSource): string {
   return parse(env, "WP_API_URL", wpApiUrlSchema);
 }
 
-/** The bearer secret the CMS sends to `POST /api/revalidate`. */
+/**
+ * The bearer secret the CMS sends to `POST /api/revalidate`: 32 to 256
+ * printable ASCII characters with no whitespace (root `CLAUDE.md`,
+ * "Configuration, front end"). Compared byte for byte, so it is never
+ * trimmed: a value with a space or newline in it is refused, not repaired.
+ * Throws `EnvError` when it is missing and `SecretError` when it breaks the
+ * rule; neither message includes the value.
+ */
 export function parseRevalidateSecret(env: EnvSource): string {
-  return parse(env, "REVALIDATE_SECRET", secretSchema);
+  const value = present(env, "REVALIDATE_SECRET");
+  if (value === undefined) {
+    throw new EnvError(`REVALIDATE_SECRET is not set. ${WHERE}`);
+  }
+  const problem = secretProblem(value);
+  if (problem !== null) {
+    throw new SecretError(problem);
+  }
+  return value;
 }
 
 /**

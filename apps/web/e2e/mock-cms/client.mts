@@ -79,6 +79,11 @@ export class MockCmsClient {
     return this.control<ResourceSummary>("POST", "/__mock/resources", input);
   }
 
+  /** Changes a resource's title and nothing else, as an editor's save does. */
+  setTitle(id: number, title: string): Promise<ResourceSummary> {
+    return this.control<ResourceSummary>("POST", `/__mock/resources/${id}/title`, { title });
+  }
+
   /** Changes a resource's slug; the old one is kept for the resolve route. */
   renameSlug(id: number, slug: string): Promise<ResourceSummary> {
     return this.control<ResourceSummary>("POST", `/__mock/resources/${id}/slug`, { slug });

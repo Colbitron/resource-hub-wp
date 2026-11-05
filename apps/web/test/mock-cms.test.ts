@@ -915,7 +915,23 @@ describe("the control endpoints", () => {
     expect(after.resource_topic).toEqual([9]);
   });
 
+  it("changes a resource's title and nothing else, with modified bumped", async () => {
+    const before = wpResourceSchema.parse((await cms.get("/wp-json/wp/v2/resources/21?_embed")).body);
+    const summary = await cms.setTitle(21, "Alt text & scale");
+    expect(summary).toMatchObject({ id: 21, slug: "alt-text-at-scale", title: "Alt text & scale" });
+    const after = wpResourceSchema.parse((await cms.get("/wp-json/wp/v2/resources/21?_embed")).body);
+    expect(after.title.rendered).toBe("Alt text &#038; scale");
+    expect(after.slug).toBe(before.slug);
+    expect(after.modified > before.modified).toBe(true);
+
+    // A second change inside the same second still moves modified forward.
+    await cms.setTitle(21, "Alt text at scale, again");
+    const again = wpResourceSchema.parse((await cms.get("/wp-json/wp/v2/resources/21?_embed")).body);
+    expect(again.modified > after.modified).toBe(true);
+  });
+
   it("refuses bad input with a 4xx the client throws", async () => {
+    await expect(cms.setTitle(21, "   ")).rejects.toMatchObject({ status: 422 });
     await expect(cms.setType(20, "no-such-type")).rejects.toMatchObject({ status: 422 });
     await expect(cms.renameSlug(20, "alt-text-at-scale")).rejects.toMatchObject({ status: 409 });
     await expect(cms.renameSlug(9999, "whatever")).rejects.toMatchObject({ status: 404 });

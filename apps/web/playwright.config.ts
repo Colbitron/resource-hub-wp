@@ -1,6 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
-import { mockCmsApiUrl, mockCmsOrigin, mockCmsPort, webPort } from "./e2e/mock-cms/config.mts";
+import {
+  E2E_REVALIDATE_SECRET,
+  mockCmsApiUrl,
+  mockCmsOrigin,
+  mockCmsPort,
+  webPort,
+} from "./e2e/mock-cms/config.mts";
 
 // End-to-end specs for the front end live in e2e/ as *.spec.ts. They run
 // against a production build (`next build && next start`) so what they check
@@ -58,6 +64,8 @@ export default defineConfig({
       env: {
         RH_FIXTURES: "1",
         WP_API_URL: mockCmsApiUrl(),
+        // The bearer e2e/revalidate.spec.ts sends; a fixed test value, never a real secret.
+        REVALIDATE_SECRET: E2E_REVALIDATE_SECRET,
       },
     },
   ],

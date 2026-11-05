@@ -25,7 +25,7 @@ The mock's self-check, which proves every response passes the front end's reader
 | The app under test (`next start`) | `3310` | `RH_WEB_PORT` |
 | The mock CMS | `4010` | `RH_MOCK_CMS_PORT` |
 
-The mock binds to `127.0.0.1` and names itself `http://127.0.0.1:4010` in every URL it emits; the app is started with `WP_API_URL=http://127.0.0.1:4010/wp-json` and `RH_FIXTURES=1` (the test-only pages under `app/fixtures/`). Both come from `mock-cms/config.mts`, which the config, the specs and the mock share. The app's build makes no CMS request; it needs `WP_API_URL` only for the `/media/` rewrite, which in a test proxies the mock's uploads.
+The mock binds to `127.0.0.1` and names itself `http://127.0.0.1:4010` in every URL it emits; the app is started with `WP_API_URL=http://127.0.0.1:4010/wp-json`, `RH_FIXTURES=1` (the test-only pages under `app/fixtures/`) and `REVALIDATE_SECRET` set to the fixed test value in `mock-cms/config.mts` (`E2E_REVALIDATE_SECRET`), which `e2e/revalidate.spec.ts` sends as its bearer. Both come from `mock-cms/config.mts`, which the config, the specs and the mock share. The app's build makes no CMS request; it needs `WP_API_URL` only for the `/media/` rewrite, which in a test proxies the mock's uploads.
 
 ## What the mock serves
 
@@ -53,6 +53,7 @@ Under `/__mock/`, a path the front end never requests. JSON in and out; errors a
 | `GET /__mock/state` | Every resource (term slugs, status, previous slugs, picks), term and media item |
 | `POST /__mock/reset` | Back to the seed, counters cleared |
 | `POST /__mock/resources` `{ title, type, slug?, topics?, featured?, summary?, sourceUrl?, content?, mediaId? }` | Publishes a new resource |
+| `POST /__mock/resources/{id}/title` `{ title }` | Changes the title and nothing else, as an editor's save does |
 | `POST /__mock/resources/{id}/slug` `{ slug }` | Renames the slug; the old one resolves |
 | `POST /__mock/resources/{id}/type` `{ type }` | Changes the type |
 | `POST /__mock/resources/{id}/topics` `{ topics: [] }` | Replaces the topics |
@@ -62,6 +63,8 @@ Under `/__mock/`, a path the front end never requests. JSON in and out; errors a
 | `DELETE /__mock/terms/{taxonomy}/{id}` | Deletes it and takes it off every resource |
 | `GET /__mock/requests` | `{ total, byPath }`: how often each public path with its query string was requested |
 | `POST /__mock/requests/reset` | Clears the counters |
+
+Every change to a resource moves its `modified` strictly forward, by a second past the old value when the clock has not moved on since the last change, so a spec can check that a change bumped it.
 
 Control requests are never counted, so the counters show what the app did. Every spec should `reset()` in `beforeEach`, because the mock is one process shared by every test and specs that change the data must not assume another file's state.
 
@@ -73,3 +76,4 @@ Test-only routes under `app/fixtures/`, built only with `RH_FIXTURES=1`:
 
 - `/fixtures/cards/`: `ResourceCard` with fixed props (`card.spec.ts`).
 - `/fixtures/data-layer/`: the data layer against the mock, two pages of the library and one resource by slug, rendered on every request so the counters show the Data Cache (`data-layer.spec.ts`). With `?twice={id}` it also reads that resource by ID twice in one render, so the counters show the per-render memoization.
+- `/fixtures/revalidate/`: one tagged, cached fetch of a seeded resource, rendered on every request, so the counters show the Data Cache keeping it and a `POST /api/revalidate/` for it making the next load fetch again (`revalidate.spec.ts`).

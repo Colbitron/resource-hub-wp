@@ -215,6 +215,34 @@ describe("revalidate request", () => {
     expect(revalidateRequestSchema.safeParse(body).success).toBe(true);
   });
 
+  it("rejects a reserved word as a resource_type term's slug in any case or percent-encoded, as isTypeSlug does", () => {
+    const term = (slug: string, previousSlug = "webinar") => ({
+      version: 1,
+      events: [
+        {
+          type: "term",
+          taxonomy: "resource_type",
+          event: "update",
+          id: 5,
+          slug,
+          name: "Webinar",
+          previous: { slug: previousSlug, name: "Webinar" },
+        },
+      ],
+    });
+    for (const slug of ["topic", "Topic", "PAGE", "%74opic", "%54OPIC", "pag%65"]) {
+      const current = revalidateRequestSchema.safeParse(term(slug));
+      expect(current.success, slug).toBe(false);
+      expect(current.error?.issues[0]?.path).toEqual(["events", 0, "slug"]);
+      const previous = revalidateRequestSchema.safeParse(term("webinar", slug));
+      expect(previous.success, slug).toBe(false);
+      expect(previous.error?.issues[0]?.path).toEqual(["events", 0, "previous", "slug"]);
+    }
+    // Decoded once only: `%2574opic` decodes to `%74opic`, which is not a reserved word.
+    expect(revalidateRequestSchema.safeParse(term("%2574opic")).success).toBe(true);
+    expect(revalidateRequestSchema.safeParse(term("topics")).success).toBe(true);
+  });
+
   it("rejects an upper-case scheme in rest_url, as the schema's pattern does", () => {
     const result = revalidateRequestSchema.safeParse(
       withRestUrl("HTTPS://cms.example/wp-json/wp/v2/resources/1"),

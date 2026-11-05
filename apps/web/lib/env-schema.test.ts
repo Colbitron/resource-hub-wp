@@ -2,10 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   EnvError,
+  MAX_SECRET_LENGTH,
+  MIN_SECRET_LENGTH,
   optionalMediaOrigin,
   parseMediaOrigin,
   parseRevalidateSecret,
   parseWpApiUrl,
+  SecretError,
+  secretProblem,
 } from "./env-schema";
 
 describe("parseWpApiUrl", () => {
@@ -166,8 +170,84 @@ describe("optionalMediaOrigin", () => {
 });
 
 describe("parseRevalidateSecret", () => {
-  it("returns the secret unchanged", () => {
-    expect(parseRevalidateSecret({ REVALIDATE_SECRET: " s3cret " })).toBe(" s3cret ");
+  const GOOD = "0123456789abcdefghijklmnopqrstuv"; // 32 characters
+
+  it("returns a secret of 32 printable ASCII characters unchanged", () => {
+    expect(GOOD).toHaveLength(MIN_SECRET_LENGTH);
+    expect(parseRevalidateSecret({ REVALIDATE_SECRET: GOOD })).toBe(GOOD);
+    const everyCharacter = Array.from({ length: 0x7e - 0x21 + 1 }, (_, i) => String.fromCharCode(0x21 + i)).join("");
+    expect(parseRevalidateSecret({ REVALIDATE_SECRET: everyCharacter })).toBe(everyCharacter);
+  });
+
+  it("refuses a secret shorter than 32 characters, without echoing it", () => {
+    for (const value of ["#!", "~".repeat(31)]) {
+      const thrown = (() => {
+        try {
+          parseRevalidateSecret({ REVALIDATE_SECRET: value });
+        } catch (caught) {
+          return caught;
+        }
+        return undefined;
+      })();
+      expect(thrown).toBeInstanceOf(SecretError);
+      expect(thrown).toBeInstanceOf(EnvError);
+      expect((thrown as SecretError).problem).toBe("too-short");
+      expect((thrown as Error).message).toMatch(/^REVALIDATE_SECRET must be at least 32 characters long\./);
+      expect((thrown as Error).message).not.toContain(value);
+    }
+  });
+
+  it("accepts a secret of exactly 256 characters, the CMS's cap", () => {
+    const value = "~".repeat(256);
+    expect(MAX_SECRET_LENGTH).toBe(256);
+    expect(parseRevalidateSecret({ REVALIDATE_SECRET: value })).toBe(value);
+  });
+
+  it("refuses a secret of 257 characters, without echoing it", () => {
+    const value = `${GOOD}${"~".repeat(257 - GOOD.length)}`;
+    expect(value).toHaveLength(257);
+    let thrown: unknown;
+    try {
+      parseRevalidateSecret({ REVALIDATE_SECRET: value });
+    } catch (caught) {
+      thrown = caught;
+    }
+    expect(thrown).toBeInstanceOf(SecretError);
+    expect((thrown as SecretError).problem).toBe("too-long");
+    expect((thrown as Error).message).toMatch(
+      /^REVALIDATE_SECRET must be at most 256 characters long, the most the CMS accepts\./,
+    );
+    expect((thrown as Error).message).not.toContain(GOOD);
+  });
+
+  it.each([
+    ["a trailing newline", `${GOOD}\n`],
+    ["a trailing carriage return and newline", `${GOOD}\r\n`],
+    ["a leading space", ` ${GOOD}`],
+    ["a space inside", `${GOOD.slice(0, 16)} ${GOOD.slice(16)}`],
+    ["a tab", `${GOOD}\t`],
+    ["a non-ASCII letter", `${GOOD}é`],
+    ["a non-breaking space", `${GOOD}\u00a0`],
+    ["a control character", `${GOOD}\u0000`],
+    ["DEL", `${GOOD}\u007f`],
+    ["whitespace only", " ".repeat(40)],
+  ])("refuses a secret with %s, without echoing it", (_name, value) => {
+    expect(() => parseRevalidateSecret({ REVALIDATE_SECRET: value })).toThrow(
+      /^REVALIDATE_SECRET must be printable ASCII with no whitespace, because a bearer token cannot carry anything else\./,
+    );
+    try {
+      parseRevalidateSecret({ REVALIDATE_SECRET: value });
+    } catch (caught) {
+      expect((caught as SecretError).problem).toBe("bad-characters");
+      expect((caught as Error).message).not.toContain(GOOD);
+    }
+  });
+
+  it("reports the characters before the length", () => {
+    expect(secretProblem("short\n")).toBe("bad-characters");
+    expect(secretProblem("short")).toBe("too-short");
+    expect(secretProblem(`${"~".repeat(300)}\n`)).toBe("bad-characters");
+    expect(secretProblem(GOOD)).toBeNull();
   });
 
   it("names the variable when it is missing or empty", () => {
