@@ -60,8 +60,8 @@ final class OneTypeAdminTest extends WP_Ajax_UnitTestCase {
 	}
 
 	/**
-	 * Quick Edit that would publish a draft with no type ends with the message and saves nothing:
-	 * the status, and the title sent with it, stay as stored. The status is judged as core is about
+	 * Quick Edit that would publish a draft with no type ends with the message and writes neither the
+	 * post row nor its terms: the status, and the title sent with it, stay as stored. The status is judged as core is about
 	 * to write it, so the publish button's field counts as much as the status menu.
 	 *
 	 * @dataProvider publishing_fields
@@ -102,7 +102,7 @@ final class OneTypeAdminTest extends WP_Ajax_UnitTestCase {
 	}
 
 	/**
-	 * A resource with more than one type, which only WP-CLI or PHP can make, is not published
+	 * A resource with more than one type, which only the unguarded paths can make, is not published
 	 * through Quick Edit either.
 	 */
 	public function test_quick_edit_does_not_publish_a_draft_with_two_types(): void {
@@ -129,7 +129,7 @@ final class OneTypeAdminTest extends WP_Ajax_UnitTestCase {
 	}
 
 	/**
-	 * A resource already published with no type (possible only through WP-CLI or PHP) keeps its
+	 * A resource already published with no type (possible only through the unguarded paths) keeps its
 	 * status through Quick Edit: the edit saves, it is neither unpublished nor given a type, so it
 	 * is no worse than before, and the editor gives it a type.
 	 */

@@ -35,14 +35,19 @@ use WP_Term;
  * removed here before core reads it. Both can change the status, so while either handler runs,
  * a move into `publish` or `future` is refused for a resource that does not have exactly one
  * stored type, judged on the status core is about to write (`wp_insert_post_data`):
- * - Quick Edit is ended before the post or its terms are written, and answers with the message,
- *   which the list shows in the row;
+ * - Quick Edit is ended before the post row and terms are written (core's `edit_post()` has
+ *   already written `_edit_last` and any `meta[]` sent), and answers with the message, which the
+ *   list shows in the row;
  * - Bulk Edit keeps that resource's status, date and slug as stored, saves the rest, and the list
  *   names the resources it did not publish.
  * A resource already published or scheduled keeps its status through either handler, with or
  * without a type: neither handler publishes it, unpublishes it or gives it a type, so an edit
- * there leaves it no worse. Such a resource can arise only through the unchecked paths below.
- * Saves through PHP calls to `wp_insert_post()` and the like, the seeder and WP-CLI are not checked.
+ * there leaves it no worse. Such a resource can arise only through the unguarded paths below.
+ * Guarded: REST saves, Quick Edit, Bulk Edit, and type deletion from the Types screen and REST
+ * (UsedTypes). Not guarded: the classic `post.php` form submission, XML-RPC, WP-CLI, and PHP calls
+ * to `wp_insert_post()` and the like, the seeder among them. The revalidation hook never sends an
+ * event whose top-level `types` isn't exactly one element, so the front end never receives an
+ * invalid state from any of the unguarded paths.
  */
 final class OneType {
 	/**
@@ -185,7 +190,7 @@ final class OneType {
 		}
 
 		$this->handler = 'bulk-edit';
-		$this->guarded = array_map( 'absint', (array) wp_unslash( $_REQUEST['post'] ) );
+		$this->guarded = array_filter( array_map( 'absint', (array) wp_unslash( $_REQUEST['post'] ) ) );
 		$this->refused = array();
 		add_filter( 'wp_insert_post_data', array( $this, 'keep_status' ), 99, 2 );
 		add_action( 'bulk_edit_posts', array( $this, 'end_bulk_edit' ) );

@@ -116,8 +116,8 @@ final class Taxonomies {
 				'hierarchical'       => true,
 				'public'             => true,
 				'show_admin_column'  => true,
-				// Quick Edit and Bulk Edit save outside REST, where OneType does not look, and Bulk Edit
-				// adds terms to the ones a resource has, so the type is changed in the editor only.
+				// Quick Edit and Bulk Edit save outside REST, where OneType guards only the status, and
+				// Bulk Edit adds terms to the ones a resource has, so the type is changed in the editor only.
 				'show_in_quick_edit' => false,
 				'show_in_rest'       => true,
 				'rest_base'          => self::TYPE,

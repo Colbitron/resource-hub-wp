@@ -88,7 +88,7 @@ final class ContentModelTest extends WP_UnitTestCase {
 
 	/**
 	 * Quick Edit and Bulk Edit on the Resources list do not offer the type: they save outside REST,
-	 * where the one-type rule is checked, and Bulk Edit adds terms rather than replacing them.
+	 * where OneType guards only the status, and Bulk Edit adds terms rather than replacing them.
 	 */
 	public function test_type_is_not_in_quick_edit(): void {
 		$this->assertFalse( get_taxonomy( Taxonomies::TYPE )->show_in_quick_edit );
