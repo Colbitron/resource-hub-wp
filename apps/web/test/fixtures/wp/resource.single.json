@@ -1,0 +1,376 @@
+{
+  "id": 15,
+  "date": "2026-11-05T09:31:32",
+  "date_gmt": "2026-11-05T09:31:32",
+  "guid": {
+    "rendered": "https://cms.example/?post_type=resource&p=15"
+  },
+  "modified": "2026-11-05T09:31:32",
+  "modified_gmt": "2026-11-05T09:31:32",
+  "slug": "a-field-guide-to-revalidation",
+  "status": "publish",
+  "type": "resource",
+  "link": "https://cms.example/resources/ebook/a-field-guide-to-revalidation/",
+  "title": {
+    "rendered": "A field guide to revalidation"
+  },
+  "content": {
+    "rendered": "\n\n<p class=\"wp-block-paragraph\">A field guide to revalidation is sample content created by the Resource Hub seeder. Everything in it is invented so the library has something to list, filter, and relate while the real content is written.</p>\n\n\n\n\n\n<p class=\"wp-block-paragraph\">Replace this body with the resource itself, or leave it as a short landing page and point the source URL at where the resource actually lives.</p>\n\n",
+    "protected": false
+  },
+  "excerpt": {
+    "rendered": "<p>On-demand, time-based, and tag-based revalidation compared, with the failure modes of each written down.</p>\n",
+    "protected": false
+  },
+  "featured_media": 16,
+  "template": "",
+  "meta": {
+    "summary": "On-demand, time-based, and tag-based revalidation compared, with the failure modes of each written down.",
+    "source_url": "https://example.com/downloads/a-field-guide-to-revalidation",
+    "footnotes": ""
+  },
+  "resource_topic": [
+    9,
+    11
+  ],
+  "resource_type": [
+    4
+  ],
+  "resource_flag": [
+    2
+  ],
+  "class_list": [
+    "post-15",
+    "resource",
+    "type-resource",
+    "status-publish",
+    "has-post-thumbnail",
+    "hentry",
+    "resource_topic-headless-delivery",
+    "resource_topic-performance",
+    "resource_type-ebook"
+  ],
+  "_links": {
+    "self": [
+      {
+        "href": "https://cms.example/wp-json/wp/v2/resources/15",
+        "targetHints": {
+          "allow": [
+            "GET"
+          ]
+        }
+      }
+    ],
+    "collection": [
+      {
+        "href": "https://cms.example/wp-json/wp/v2/resources"
+      }
+    ],
+    "about": [
+      {
+        "href": "https://cms.example/wp-json/wp/v2/types/resource"
+      }
+    ],
+    "version-history": [
+      {
+        "count": 0,
+        "href": "https://cms.example/wp-json/wp/v2/resources/15/revisions"
+      }
+    ],
+    "wp:featuredmedia": [
+      {
+        "embeddable": true,
+        "href": "https://cms.example/wp-json/wp/v2/media/16"
+      }
+    ],
+    "wp:attachment": [
+      {
+        "href": "https://cms.example/wp-json/wp/v2/media?parent=15"
+      }
+    ],
+    "wp:term": [
+      {
+        "taxonomy": "resource_topic",
+        "embeddable": true,
+        "href": "https://cms.example/wp-json/wp/v2/resource_topic?post=15"
+      },
+      {
+        "taxonomy": "resource_type",
+        "embeddable": true,
+        "href": "https://cms.example/wp-json/wp/v2/resource_type?post=15"
+      },
+      {
+        "taxonomy": "resource_flag",
+        "embeddable": true,
+        "href": "https://cms.example/wp-json/wp/v2/resource_flag?post=15"
+      }
+    ],
+    "curies": [
+      {
+        "name": "wp",
+        "href": "https://api.w.org/{rel}",
+        "templated": true
+      }
+    ]
+  },
+  "_embedded": {
+    "wp:featuredmedia": [
+      {
+        "id": 16,
+        "date": "2026-11-05T09:31:42",
+        "slug": "wordpress-logo",
+        "type": "attachment",
+        "link": "https://cms.example/resources/ebook/a-field-guide-to-revalidation/wordpress-logo/",
+        "title": {
+          "rendered": "WordPress logo"
+        },
+        "author": 0,
+        "featured_media": 0,
+        "caption": {
+          "rendered": ""
+        },
+        "alt_text": "The WordPress logo",
+        "media_type": "image",
+        "mime_type": "image/png",
+        "media_details": {
+          "width": 80,
+          "height": 80,
+          "file": "2026/11/w-logo-blue.png",
+          "filesize": 3113,
+          "sizes": {},
+          "image_meta": {
+            "aperture": "0",
+            "credit": "",
+            "camera": "",
+            "caption": "",
+            "created_timestamp": "0",
+            "copyright": "",
+            "focal_length": "0",
+            "iso": "0",
+            "shutter_speed": "0",
+            "title": "",
+            "orientation": "0",
+            "keywords": [],
+            "alt": ""
+          }
+        },
+        "source_url": "https://cms.example/wp-content/uploads/2026/11/w-logo-blue.png",
+        "_links": {
+          "self": [
+            {
+              "href": "https://cms.example/wp-json/wp/v2/media/16",
+              "targetHints": {
+                "allow": [
+                  "GET"
+                ]
+              }
+            }
+          ],
+          "collection": [
+            {
+              "href": "https://cms.example/wp-json/wp/v2/media"
+            }
+          ],
+          "about": [
+            {
+              "href": "https://cms.example/wp-json/wp/v2/types/attachment"
+            }
+          ],
+          "replies": [
+            {
+              "embeddable": true,
+              "href": "https://cms.example/wp-json/wp/v2/comments?post=16"
+            }
+          ],
+          "wp:attached-to": [
+            {
+              "embeddable": true,
+              "post_type": "resource",
+              "id": 15,
+              "href": "https://cms.example/wp-json/wp/v2/resources/15"
+            }
+          ],
+          "curies": [
+            {
+              "name": "wp",
+              "href": "https://api.w.org/{rel}",
+              "templated": true
+            }
+          ]
+        }
+      }
+    ],
+    "wp:term": [
+      [
+        {
+          "id": 9,
+          "link": "https://cms.example/resource-topic/headless-delivery/",
+          "name": "Headless delivery",
+          "slug": "headless-delivery",
+          "taxonomy": "resource_topic",
+          "_links": {
+            "self": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/resource_topic/9",
+                "targetHints": {
+                  "allow": [
+                    "GET"
+                  ]
+                }
+              }
+            ],
+            "collection": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/resource_topic"
+              }
+            ],
+            "about": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/taxonomies/resource_topic"
+              }
+            ],
+            "wp:post_type": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/resources?resource_topic=9"
+              }
+            ],
+            "curies": [
+              {
+                "name": "wp",
+                "href": "https://api.w.org/{rel}",
+                "templated": true
+              }
+            ]
+          }
+        },
+        {
+          "id": 11,
+          "link": "https://cms.example/resource-topic/performance/",
+          "name": "Performance",
+          "slug": "performance",
+          "taxonomy": "resource_topic",
+          "_links": {
+            "self": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/resource_topic/11",
+                "targetHints": {
+                  "allow": [
+                    "GET"
+                  ]
+                }
+              }
+            ],
+            "collection": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/resource_topic"
+              }
+            ],
+            "about": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/taxonomies/resource_topic"
+              }
+            ],
+            "wp:post_type": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/resources?resource_topic=11"
+              }
+            ],
+            "curies": [
+              {
+                "name": "wp",
+                "href": "https://api.w.org/{rel}",
+                "templated": true
+              }
+            ]
+          }
+        }
+      ],
+      [
+        {
+          "id": 4,
+          "link": "https://cms.example/resource-type/ebook/",
+          "name": "Ebook",
+          "slug": "ebook",
+          "taxonomy": "resource_type",
+          "_links": {
+            "self": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/resource_type/4",
+                "targetHints": {
+                  "allow": [
+                    "GET"
+                  ]
+                }
+              }
+            ],
+            "collection": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/resource_type"
+              }
+            ],
+            "about": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/taxonomies/resource_type"
+              }
+            ],
+            "wp:post_type": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/resources?resource_type=4"
+              }
+            ],
+            "curies": [
+              {
+                "name": "wp",
+                "href": "https://api.w.org/{rel}",
+                "templated": true
+              }
+            ]
+          }
+        }
+      ],
+      [
+        {
+          "id": 2,
+          "link": "https://cms.example/?taxonomy=resource_flag&term=featured",
+          "name": "Featured",
+          "slug": "featured",
+          "taxonomy": "resource_flag",
+          "_links": {
+            "self": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/resource_flag/2",
+                "targetHints": {
+                  "allow": [
+                    "GET"
+                  ]
+                }
+              }
+            ],
+            "collection": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/resource_flag"
+              }
+            ],
+            "about": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/taxonomies/resource_flag"
+              }
+            ],
+            "wp:post_type": [
+              {
+                "href": "https://cms.example/wp-json/wp/v2/resources?resource_flag=2"
+              }
+            ],
+            "curies": [
+              {
+                "name": "wp",
+                "href": "https://api.w.org/{rel}",
+                "templated": true
+              }
+            ]
+          }
+        }
+      ]
+    ]
+  }
+}

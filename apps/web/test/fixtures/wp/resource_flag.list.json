@@ -1,0 +1,47 @@
+[
+  {
+    "id": 2,
+    "count": 4,
+    "description": "Shown first in listings and eligible for the featured section of the front end.",
+    "link": "https://cms.example/?taxonomy=resource_flag&term=featured",
+    "name": "Featured",
+    "slug": "featured",
+    "taxonomy": "resource_flag",
+    "parent": 0,
+    "meta": [],
+    "_links": {
+      "self": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resource_flag/2",
+          "targetHints": {
+            "allow": [
+              "GET"
+            ]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resource_flag"
+        }
+      ],
+      "about": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/taxonomies/resource_flag"
+        }
+      ],
+      "wp:post_type": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resources?resource_flag=2"
+        }
+      ],
+      "curies": [
+        {
+          "name": "wp",
+          "href": "https://api.w.org/{rel}",
+          "templated": true
+        }
+      ]
+    }
+  }
+]
