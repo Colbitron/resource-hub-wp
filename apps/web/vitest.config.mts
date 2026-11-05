@@ -11,6 +11,8 @@ export default defineConfig({
     // module. Nothing else about the modules changes.
     alias: {
       "server-only": fileURLToPath(new URL("./test/stubs/server-only.ts", import.meta.url)),
+      // tsconfig's `@/*`, so app code (the route handler) loads here as it does in Next.js.
+      "@": fileURLToPath(new URL(".", import.meta.url)),
     },
   },
   test: {
