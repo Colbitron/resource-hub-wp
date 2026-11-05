@@ -1,6 +1,7 @@
 <?php
 /**
- * Enqueues the "Resource details" sidebar panel in the block editor.
+ * Enqueues the "Resource details" sidebar panel, and the Types panel's radio buttons bundled
+ * with it, in the block editor.
  *
  * @package ResourceHub
  */
