@@ -12,9 +12,9 @@ import { getTermBySlug } from "./terms";
  * one by slug, one by ID, and several by ID in a given order.
  *
  * Every read of the collection is parsed per item (`cmsGetList`, ADR 0049):
- * a resource the reader schema refuses is left out with a warning, and a
- * non-empty answer in which every resource fails throws a `CmsError`. The
- * read by ID is one object and fails as a whole.
+ * a resource the reader schema refuses is left out with a warning, and an
+ * answer of four or more resources in which more than half fail throws a
+ * `CmsError`. The read by ID is one object and fails as a whole.
  */
 
 /** Resources per listing page: divides into rows of two, three and four cards. */
@@ -46,6 +46,8 @@ export interface ResourceListing {
   readonly total: number;
   /** Pages at `RESOURCES_PER_PAGE`; 0 when nothing matches. */
   readonly totalPages: number;
+  /** Resources on this page the reader schema refused, each logged; no page shows it yet. */
+  readonly skipped: number;
 }
 
 /** Each element once, in first-seen order. */
@@ -68,9 +70,13 @@ function unique(values: readonly string[]): string[] {
  * plus `flagListingTags()` with a flag.
  *
  * A resource the reader schema refuses is skipped (and logged), so the page
- * can hold fewer than `RESOURCES_PER_PAGE`; `total` and `totalPages` are the
- * CMS's headers, unchanged, so the page numbers stay the CMS's. A page whose
- * every resource fails throws.
+ * can hold fewer than `RESOURCES_PER_PAGE`, and `skipped` counts them;
+ * `total` and `totalPages` are the CMS's headers, unchanged, so the page
+ * numbers stay the CMS's. A page of four or more resources on which more
+ * than half fail throws. A shorter page whose every resource fails, such as
+ * a last page holding one bad resource, is an empty page within the CMS's
+ * page count, not `NO_SUCH_PAGE`: the pagination the CMS reports still
+ * links to it.
  */
 export async function listResources(options: ListResourcesOptions): Promise<ResourceListing | NoSuchPage | null> {
   const { type, topic, flag, page } = options;
@@ -118,7 +124,7 @@ export async function listResources(options: ListResourcesOptions): Promise<Reso
   if (page > 1 && page > totalPages) {
     return NO_SUCH_PAGE;
   }
-  return { items: result.data.items, total, totalPages };
+  return { items: result.data.items, total, totalPages, skipped: result.data.skipped };
 }
 
 /**
@@ -142,11 +148,12 @@ export async function listResources(options: ListResourcesOptions): Promise<Reso
  *
  * The answer is a list, so it is parsed per item like a listing, and the
  * check above runs on what passed. Core returns at most one resource here,
- * so the per-item rule changes nothing for a healthy CMS: a matching
- * resource that fails the schema is the whole list failing, which throws as
- * before. It differs only when the answer already holds more than the slug
- * asked for, where a bad stranger no longer hides a good match; with no
- * good match the read still throws, saying that items were skipped.
+ * and an answer in which every resource failed throws whatever its size: a
+ * matching resource that fails the schema must fail the page, which ISR
+ * then keeps serving from its last good render, rather than become a miss,
+ * which would replace it with a 404. A bad stranger beside a good match is
+ * skipped; with no good match the read throws, saying that items were
+ * skipped.
  */
 export async function getResourceBySlug(slug: string): Promise<WpResource | null> {
   if (!isSlug(slug)) {
@@ -161,6 +168,9 @@ export async function getResourceBySlug(slug: string): Promise<WpResource | null
     itemSchema: wpResourceSchema,
   });
   if (data.items.length === 0) {
+    if (data.skipped > 0) {
+      throw new CmsError(path, "schema", `every resource in the answer fails the reader schema; the first: ${data.firstSkipped}`, 200);
+    }
     return null;
   }
   const match = data.items.find((resource) => canonicalSlug(resource.slug) === canonical);
@@ -227,8 +237,10 @@ export interface GetResourcesByIdsOptions {
  * Tagged `relatedTags(hostSlug)`.
  *
  * Parsed per item: a resource the reader schema refuses is absent like an
- * unpublished one, and logged. When every resource in a non-empty answer
- * fails, it throws, and for one ID that is the one resource failing.
+ * unpublished one, and logged. For fewer than four IDs that holds even when
+ * every resource fails, which gives an empty list. For four or more, more
+ * than half failing throws a `CmsError`, a systematic fault the page that
+ * renders the section must contain (ADR 0049).
  */
 export async function getResourcesByIds(
   ids: readonly number[],

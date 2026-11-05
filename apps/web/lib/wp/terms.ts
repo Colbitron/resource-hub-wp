@@ -11,8 +11,8 @@ import { wpTermSchema, type WpTaxonomy, type WpTerm } from "./schemas/rest";
  * filter takes), and the `featured` flag's ID.
  *
  * Both reads of a collection are parsed per item (`cmsGetList`, ADR 0049): a
- * term the reader schema refuses is left out with a warning, and a non-empty
- * answer in which every term fails throws a `CmsError`.
+ * term the reader schema refuses is left out with a warning, and an answer
+ * of four or more terms in which more than half fail throws a `CmsError`.
  */
 
 /** The `resource_flag` term that marks a featured resource (ADR 0009). */
@@ -51,7 +51,9 @@ function checkTaxonomy(path: string, taxonomy: WpTaxonomy, terms: readonly WpTer
  * listing page failing, which is what throwing here would do.
  *
  * A term the reader schema refuses is skipped and logged, so the bar lacks
- * it; a page of the collection on which every term fails throws.
+ * it. A page of the collection of four or more terms on which more than half
+ * fail throws; a shorter page only skips, so a last page holding one bad
+ * term leaves the bar one term short instead of failing every listing.
  */
 export async function listTerms(taxonomy: WpTaxonomy): Promise<WpTerm[]> {
   const path = `/wp/v2/${taxonomy}`;
@@ -91,8 +93,9 @@ export async function listTerms(taxonomy: WpTaxonomy): Promise<WpTerm[]> {
  * flags send no term events (ADR 0046).
  *
  * Parsed per item, like `getResourceBySlug`: core returns at most one term
- * here, so a matching term that fails the schema is the whole answer
- * failing and throws, while a bad term beside a good match is skipped.
+ * here, and an answer in which every term failed throws whatever its size,
+ * so a matching term that fails the schema fails the listing rather than
+ * making it a 404; a bad term beside a good match is skipped.
  */
 export async function getTermBySlug(taxonomy: WpTaxonomy, slug: string): Promise<WpTerm | null> {
   const valid = taxonomy === "resource_type" ? isTypeSlug(slug) : isSlug(slug);
@@ -109,6 +112,9 @@ export async function getTermBySlug(taxonomy: WpTaxonomy, slug: string): Promise
     itemSchema: wpTermSchema,
   });
   checkTaxonomy(path, taxonomy, result.data.items);
+  if (result.data.items.length === 0 && result.data.skipped > 0) {
+    throw new CmsError(path, "schema", `every term in the answer fails the reader schema; the first: ${result.data.firstSkipped}`, 200);
+  }
   return result.data.items.find((term) => canonicalSlug(term.slug) === canonical) ?? null;
 }
 

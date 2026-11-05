@@ -33,11 +33,16 @@ import { wpErrorSchema } from "./schemas/wp-error";
  * A collection (`cmsGetList`) is parsed one element at a time instead (ADR
  * 0049, amended 2026-11-05): an element the item schema refuses is skipped
  * with a `console.warn`, so one bad resource or term cannot take down every
- * listing it appears in, and a non-empty list in which every element fails
- * throws, because that is a systematic break, not one bad item. That warning
- * is the only thing here that logs; it names the endpoint path, the
- * element's position and ID and the paths of its failing fields, never a
- * value or the CMS origin.
+ * listing it appears in. A list of `LIST_FAILURE_MIN_ITEMS` (4) or more
+ * elements in which more than half fail throws, because that is a
+ * systematic break, not a few bad items; a shorter list, or one in which
+ * half or fewer fail, only skips. Each skipped element gets a warning naming
+ * the endpoint path, its position and ID and the paths of its failing
+ * fields, and each list with any skipped gets one summary warning,
+ * `CMS list {path}: skipped {n} of {total}`, for log-based alerting to
+ * match. Those warnings are the only thing here that logs, and never name a
+ * value or the CMS origin. A list is parsed, and warned about, once per
+ * render however many times it is read (`parsedLists`).
  */
 
 /**
@@ -69,10 +74,28 @@ export type CmsErrorReason = "timeout" | "network" | "redirect" | "status" | "js
 
 /**
  * A CMS request that failed in a way the page cannot treat as "not found".
- * The message names the endpoint path under `WP_API_URL` (`/wp/v2/resources`)
- * and never the CMS origin: any text that came from the CMS or the network
- * layer is left out or scrubbed of the CMS host, and the underlying error is
- * not kept as `cause`, because Node's network errors print the address.
+ * The message is `CMS request to {endpoint} failed: {detail}`, where
+ * `endpoint` is the path under `WP_API_URL` (`/wp/v2/resources`, never the
+ * query or the CMS origin) and `detail` is one of:
+ *
+ * - fixed text written here or by a fetcher, with numbers the front end
+ *   chose or counted: the timeout in milliseconds, an HTTP status, an item
+ *   count, a list position;
+ * - a Node network error code (`ECONNREFUSED`), never the error's message;
+ * - a WordPress error `code` shaped like `[a-z0-9_]{1,64}`, never its message;
+ * - a WordPress post ID from a list element, when it is a positive integer;
+ * - for a list (`cmsGetList`), the paths of the failing fields of one
+ *   element (`slug`, `_embedded.wp:term.0.0.slug`), with any segment that
+ *   is not an index or a plain field name written `?`, and no issue message;
+ * - for a single object (`cmsGet`) and the pagination headers, up to five
+ *   reader-schema issues as `path: message`. These paths are not filtered,
+ *   so a key from the body can appear in one, and a refinement's message can
+ *   quote part of the value: `slugProblem` names the escape it found
+ *   (`(%2d)`).
+ *
+ * The whole message is then scrubbed of each configured CMS host
+ * (`scrubCmsHost`), and the underlying error is not kept as `cause`, because
+ * Node's network errors print the address.
  */
 export class CmsError extends Error {
   override name = "CmsError";
@@ -129,6 +152,12 @@ export interface CmsList<T> {
   readonly items: T[];
   /** Elements skipped because the item schema refused them; each was logged. */
   readonly skipped: number;
+  /**
+   * The first skipped element and its failing field paths, as its warning
+   * names them (`item 0 (ID 12) at slug`), for a fetcher's own `CmsError`;
+   * `undefined` when nothing was skipped.
+   */
+  readonly firstSkipped: string | undefined;
 }
 
 export type CmsResult<T> =
@@ -152,6 +181,15 @@ const WP_ERROR_CODE = /^[a-z0-9_]{1,64}$/;
 
 /** At most this many schema issues are named in a message. */
 const MAX_ISSUES = 5;
+
+/**
+ * A list of at least this many elements throws when more than half of them
+ * fail the item schema; a shorter one only skips its bad elements (ADR 0049).
+ * Below four, "more than half" is one bad item in a list of one, or two in
+ * two or three: the last page of a listing holding one bad resource, or a
+ * final page of terms holding one bad term, which must not fail the render.
+ */
+export const LIST_FAILURE_MIN_ITEMS = 4;
 
 function errorCode(error: unknown): string | undefined {
   const cause = (error as { cause?: { code?: unknown } } | null)?.cause;
@@ -230,12 +268,13 @@ function matches(error: { status: number; code: string }, list: readonly WpError
 }
 
 /**
- * A schema failure as a short list of `path: message`, without the values.
- * `prefix` goes before each issue's path: an element's index in its list.
+ * A schema failure as a short list of `path: message`, for a single object.
+ * A refinement's message can quote part of the value (see `CmsError`); a
+ * list uses `describeIssuePaths` instead.
  */
-function describeIssues(error: ZodError, prefix: readonly PropertyKey[] = []): string {
+function describeIssues(error: ZodError): string {
   const issues = error.issues.slice(0, MAX_ISSUES).map((issue) => {
-    const path = [...prefix, ...issue.path];
+    const path = issue.path;
     const where = path.length === 0 ? "(body)" : path.map(String).join(".");
     return `${where}: ${issue.message}`;
   });
@@ -270,51 +309,96 @@ function elementId(element: unknown): number | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
+/** An element's position in its list, with its ID when it has a usable one: `item 3 (ID 99)`. */
+function describeElement(index: number, id: number | undefined): string {
+  return `item ${index}${id === undefined ? "" : ` (ID ${id})`}`;
+}
+
 /**
  * Parses a collection one element at a time; see the module comment. Not an
- * array is a `CmsError`; an element the item schema refuses is skipped and
- * logged; a non-empty list with no element left is a `CmsError` naming the
- * first element's issues, as a whole-body parse would.
+ * array is a `CmsError`. An element the item schema refuses is skipped and
+ * logged, and a list with any skipped gets one summary line after them. A
+ * list of `LIST_FAILURE_MIN_ITEMS` or more in which more than half fail is a
+ * `CmsError` naming the first failing element's field paths, as the warnings
+ * do, with no summary line, since nothing was returned.
  */
 function parseList<T>(path: string, json: unknown, itemSchema: ZodType<T>, status: number): CmsList<T> {
   if (!Array.isArray(json)) {
     throw new CmsError(path, "schema", "the body does not match the reader schema: (body): must be an array", status);
   }
   const items: T[] = [];
-  let firstFailure: { index: number; error: ZodError } | undefined;
+  let firstFailure: { element: string; where: string } | undefined;
   json.forEach((element: unknown, index) => {
     const parsed = itemSchema.safeParse(element);
     if (parsed.success) {
       items.push(parsed.data);
       return;
     }
-    firstFailure ??= { index, error: parsed.error };
-    const id = elementId(element);
-    console.warn(
-      scrubCmsHost(
-        `CMS list ${path}: skipped item ${index}${id === undefined ? "" : ` (ID ${id})`}, which fails the reader schema at ${describeIssuePaths(parsed.error)}`,
-      ),
-    );
+    const failure = { element: describeElement(index, elementId(element)), where: describeIssuePaths(parsed.error) };
+    firstFailure ??= failure;
+    console.warn(scrubCmsHost(`CMS list ${path}: skipped ${failure.element}, which fails the reader schema at ${failure.where}`));
   });
-  if (firstFailure !== undefined && items.length === 0) {
+  const skipped = json.length - items.length;
+  if (firstFailure !== undefined && json.length >= LIST_FAILURE_MIN_ITEMS && skipped * 2 > json.length) {
     throw new CmsError(
       path,
       "schema",
-      `every item fails the reader schema; the first: ${describeIssues(firstFailure.error, [firstFailure.index])}`,
+      `${skipped} of ${json.length} items fail the reader schema; the first: ${firstFailure.element} at ${firstFailure.where}`,
       status,
     );
   }
-  return { items, skipped: json.length - items.length };
+  if (skipped > 0) {
+    console.warn(scrubCmsHost(`CMS list ${path}: skipped ${skipped} of ${json.length}`));
+  }
+  return { items, skipped, firstSkipped: firstFailure && `${firstFailure.element} at ${firstFailure.where}` };
+}
+
+/** What parsing one list answer came to: the list, or the `CmsError` it threw. */
+type ParseOutcome = { readonly list: CmsList<unknown> } | { readonly error: unknown };
+
+/**
+ * The lists parsed in this render, by the response they came from and the
+ * item schema: `load` returns the same response object for the same request
+ * within a render, so a page and its `generateMetadata` reading the same
+ * list parse it, and warn about its bad elements, once. Held in React's
+ * `cache`, the scope `load` uses; outside a render it is a new map on every
+ * call and memoizes nothing.
+ */
+const parsedLists = cache((): WeakMap<RawResponse, Map<ZodType<unknown>, ParseOutcome>> => new WeakMap());
+
+/**
+ * `parseList` once per response and item schema per render; a throw is kept
+ * and thrown again. Every reader in the render gets the same parsed list, so
+ * none may change it.
+ */
+function parseListOnce<T>(path: string, raw: RawResponse, itemSchema: ZodType<T>): CmsList<T> {
+  const byResponse = parsedLists();
+  let bySchema = byResponse.get(raw);
+  if (bySchema === undefined) {
+    bySchema = new Map();
+    byResponse.set(raw, bySchema);
+  }
+  let outcome = bySchema.get(itemSchema);
+  if (outcome === undefined) {
+    try {
+      outcome = { list: parseList(path, raw.json, itemSchema, raw.status) };
+    } catch (error) {
+      outcome = { error };
+    }
+    bySchema.set(itemSchema, outcome);
+  }
+  if ("error" in outcome) {
+    throw outcome.error;
+  }
+  return outcome.list as CmsList<T>;
 }
 
 /**
  * Reads one CMS endpoint and decides what its answer means, with `parseBody`
- * reading a 200's JSON (and throwing a `CmsError` when it refuses it).
+ * reading a 200 whose body is JSON (and throwing a `CmsError` when it
+ * refuses it).
  */
-async function read<T>(
-  request: CmsRequestBase,
-  parseBody: (json: unknown, status: number) => T,
-): Promise<CmsResult<T>> {
+async function read<T>(request: CmsRequestBase, parseBody: (raw: RawResponse) => T): Promise<CmsResult<T>> {
   const { path, query, tags } = request;
   const raw = await load(path, query, tags.join("\n"));
 
@@ -322,7 +406,7 @@ async function read<T>(
     if (raw.json === undefined) {
       throw new CmsError(path, "json", "the body is not JSON", raw.status);
     }
-    return { kind: "ok", data: parseBody(raw.json, raw.status), headers: raw.headers };
+    return { kind: "ok", data: parseBody(raw), headers: raw.headers };
   }
 
   if (isRedirectStatus(raw.status)) {
@@ -352,10 +436,10 @@ async function read<T>(
  */
 export function cmsGet<T>(request: CmsRequest<T>): Promise<CmsResult<T>> {
   const { path, schema } = request;
-  return read(request, (json, status) => {
-    const parsed = schema.safeParse(json);
+  return read(request, (raw) => {
+    const parsed = schema.safeParse(raw.json);
     if (!parsed.success) {
-      throw new CmsError(path, "schema", `the body does not match the reader schema: ${describeIssues(parsed.error)}`, status);
+      throw new CmsError(path, "schema", `the body does not match the reader schema: ${describeIssues(parsed.error)}`, raw.status);
     }
     return parsed.data;
   });
@@ -363,13 +447,14 @@ export function cmsGet<T>(request: CmsRequest<T>): Promise<CmsResult<T>> {
 
 /**
  * `cmsGet` for a collection: the 200 body must be an array, parsed one
- * element at a time with `itemSchema` (`parseList`). The pagination headers
- * are left as the CMS sent them, so a page with a skipped element still
- * reports the CMS's totals.
+ * element at a time with `itemSchema` (`parseList`), once per render. The
+ * pagination headers are left as the CMS sent them, so a page with a skipped
+ * element still reports the CMS's totals. `itemSchema` should be a module
+ * constant: the per-render memo is keyed by it.
  */
 export function cmsGetList<T>(request: CmsListRequest<T>): Promise<CmsResult<CmsList<T>>> {
   const { path, itemSchema } = request;
-  return read(request, (json, status) => parseList(path, json, itemSchema, status));
+  return read(request, (raw) => parseListOnce(path, raw, itemSchema));
 }
 
 type OkResult<T> = { readonly data: T; readonly headers: Headers };
