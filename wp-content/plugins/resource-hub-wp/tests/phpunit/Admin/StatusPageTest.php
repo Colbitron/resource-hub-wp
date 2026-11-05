@@ -448,6 +448,54 @@ final class StatusPageTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * A fallback option stored with the legacy `autoload = 'yes'` is switched off on any save, even
+	 * one that leaves the value unchanged: the same URL saved again, the same secret saved again, and
+	 * an empty secret field, which keeps the stored secret. Core skips `update_option_{$option}` for
+	 * an unchanged value, so the flag is set before its check.
+	 */
+	public function test_legacy_autoloaded_option_is_switched_off_by_an_unchanged_save(): void {
+		$this->page->register_settings();
+
+		$cases = array(
+			'same URL'     => array( StatusPage::URL_OPTION, 'https://hub.example', 'https://hub.example' ),
+			'same secret'  => array( StatusPage::SECRET_OPTION, 'kept-secret', 'kept-secret' ),
+			'empty secret' => array( StatusPage::SECRET_OPTION, 'kept-secret', '' ),
+		);
+
+		foreach ( $cases as $name => list( $option, $stored, $submitted ) ) {
+			$this->force_legacy_autoload( $option, $stored );
+			$this->assertArrayHasKey( $option, wp_load_alloptions(), "$name: the setup must start autoloaded." );
+
+			update_option( $option, $submitted );
+
+			wp_cache_delete( 'alloptions', 'options' );
+			$this->assertArrayNotHasKey( $option, wp_load_alloptions(), "$name: the option must no longer be autoloaded." );
+			$this->assertSame( $stored, get_option( $option ), "$name: the stored value must be kept." );
+		}
+	}
+
+	/**
+	 * Stores an option with `autoload = 'yes'`, the value WordPress used before 6.6, and clears the
+	 * option caches so the next read sees the row as it is.
+	 *
+	 * @param string $option The option.
+	 * @param string $value  Its value.
+	 */
+	private function force_legacy_autoload( string $option, string $value ): void {
+		global $wpdb;
+
+		delete_option( $option );
+		add_option( $option, $value, '', true );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- The test needs a row core no longer writes; the caches are cleared below.
+		$wpdb->update( $wpdb->options, array( 'autoload' => 'yes' ), array( 'option_name' => $option ) );
+
+		wp_cache_delete( 'alloptions', 'options' );
+		wp_cache_delete( 'notoptions', 'options' );
+		wp_cache_delete( $option, 'options' );
+	}
+
+	/**
 	 * Cases for test_sanitize_frontend_url().
 	 *
 	 * @return array<string, array{0: string, 1: string, 2: bool}>

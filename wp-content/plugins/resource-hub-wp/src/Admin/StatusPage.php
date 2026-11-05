@@ -107,8 +107,8 @@ final class StatusPage {
 		add_action( 'admin_notices', array( $this, 'test_notice' ) );
 		add_filter( 'removable_query_args', array( $this, 'removable_query_args' ) );
 		add_filter( 'wp_default_autoload_value', array( $this, 'default_autoload' ), 10, 2 );
-		add_action( 'update_option_' . self::URL_OPTION, array( $this, 'keep_off_autoload' ), 10, 3 );
-		add_action( 'update_option_' . self::SECRET_OPTION, array( $this, 'keep_off_autoload' ), 10, 3 );
+		add_filter( 'pre_update_option_' . self::URL_OPTION, array( $this, 'keep_off_autoload' ), 10, 3 );
+		add_filter( 'pre_update_option_' . self::SECRET_OPTION, array( $this, 'keep_off_autoload' ), 10, 3 );
 	}
 
 	/**
@@ -128,16 +128,22 @@ final class StatusPage {
 	/**
 	 * Turns autoload off for a fallback option that already existed with it on, for example one
 	 * stored before this plugin set it. `update_option()` with no autoload argument keeps the stored
-	 * flag, so the flag is set after the save; core skips the write when it is already off. Hooked to
-	 * `update_option_{$option}` for both options.
+	 * flag, so the flag is set here, on every save. This filter runs after the sanitizer and before
+	 * core's check for an unchanged value, so it also runs when the value is the same, as when the
+	 * secret field is left empty to keep the stored secret; `update_option_{$option}` would not.
+	 * Core skips the flag's write when it is already off. Hooked to `pre_update_option_{$option}` for
+	 * both options; the value passes through unchanged.
 	 *
+	 * @param mixed  $value     The new value, already sanitized.
 	 * @param mixed  $old_value The previous value.
-	 * @param mixed  $value     The new value.
 	 * @param string $option    The option.
+	 * @return mixed The new value, unchanged.
 	 */
-	public function keep_off_autoload( $old_value, $value, $option ): void {
-		unset( $old_value, $value );
+	public function keep_off_autoload( $value, $old_value, $option ) {
+		unset( $old_value );
 		wp_set_option_autoload_values( array( (string) $option => false ) );
+
+		return $value;
 	}
 
 	/**
