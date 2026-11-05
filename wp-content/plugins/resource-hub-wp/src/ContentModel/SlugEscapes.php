@@ -60,19 +60,19 @@ final class SlugEscapes {
 	public const TAXONOMIES = array( Taxonomies::TOPIC, Taxonomies::TYPE, Taxonomies::FLAG );
 
 	/**
-	 * The ID of the resource `wp_insert_post()` is saving, 0 for a new one, from its empty-content
-	 * check until post_data(); null outside a save. Only a save renames a trashed post.
+	 * The IDs of the resources `wp_insert_post()` is saving, 0 for a new one, innermost save last:
+	 * each pushed by mark_save() and popped by post_data(), so a save nested inside another leaves
+	 * the outer one's mark in place. Empty outside a save. Only a save renames a trashed post.
 	 *
-	 * @var int|null
+	 * @var int[]
 	 */
-	private ?int $saving = null;
+	private array $saving = array();
 
 	/**
 	 * Hooks the decoding.
 	 */
 	public function register(): void {
-		// Last, so the flag is set only when no other filter calls the content empty and stops the save.
-		add_filter( 'wp_insert_post_empty_content', array( $this, 'mark_save' ), PHP_INT_MAX, 2 );
+		add_filter( 'wp_insert_post_parent', array( $this, 'mark_save' ), 10, 4 );
 		add_filter( 'pre_wp_unique_post_slug', array( $this, 'unique_post_slug' ), 10, 6 );
 		add_filter( 'wp_insert_post_data', array( $this, 'post_data' ), 10, 2 );
 		// After core's own `sanitize_title`, hooked to `pre_term_slug` at 10.
@@ -194,20 +194,35 @@ final class SlugEscapes {
 
 	/**
 	 * Marks the start of a `wp_insert_post()` save of a resource that will go ahead, so that
-	 * unique_post_slug() renames a trashed post only within it. Hooked to
-	 * `wp_insert_post_empty_content`, which only `wp_insert_post()` applies, before its
-	 * `wp_unique_post_slug()` call; post_data() clears the mark. A save stopped between the two,
-	 * by an invalid date, leaves it set for that post ID until the next save reaches post_data().
+	 * unique_post_slug() renames a trashed post only within it. Hooked to `wp_insert_post_parent`,
+	 * which only `wp_insert_post()` applies. In core 7.1.4 it comes after every early return of the
+	 * save (empty content, an invalid date), before its `wp_unique_post_slug()` call, and with no
+	 * return between it and `wp_insert_post_data`, where post_data() pops the mark; so no stopped
+	 * save leaves a mark behind. Both hooks are given the same `$postarr`, so the mark is pushed and
+	 * popped for the same saves. A save nested inside, started by a filter between the two hooks,
+	 * pushes and pops its own mark.
 	 *
-	 * @param mixed                $maybe_empty Whether the post counts as empty, which stops the save.
-	 * @param array<string, mixed> $postarr     Post data, defaults filled in.
-	 * @return mixed The value as given.
+	 * @param mixed                $post_parent Post parent ID, returned as given.
+	 * @param mixed                $post_id     Post ID, 0 for a new post.
+	 * @param array<string, mixed> $new_postarr Parsed post data. Unused.
+	 * @param array<string, mixed> $postarr     Sanitized post data as given, defaults filled in.
+	 * @return mixed The parent as given.
 	 */
-	public function mark_save( $maybe_empty, $postarr ) {
-		$is_resource  = is_array( $postarr ) && PostType::NAME === ( $postarr['post_type'] ?? '' );
-		$this->saving = $is_resource && ! $maybe_empty ? (int) ( $postarr['ID'] ?? 0 ) : null;
+	public function mark_save( $post_parent, $post_id, $new_postarr, $postarr ) {
+		if ( self::is_resource_save( $postarr ) ) {
+			$this->saving[] = (int) $post_id;
+		}
 
-		return $maybe_empty;
+		return $post_parent;
+	}
+
+	/**
+	 * Whether the post data `wp_insert_post()` gives its filters as `$postarr` is a resource's.
+	 *
+	 * @param mixed $postarr Sanitized post data as given.
+	 */
+	private static function is_resource_save( $postarr ): bool {
+		return is_array( $postarr ) && PostType::NAME === ( $postarr['post_type'] ?? '' );
 	}
 
 	/**
@@ -247,7 +262,7 @@ final class SlugEscapes {
 			return '';
 		}
 
-		$in_save = (int) $post_id === $this->saving;
+		$in_save = array() !== $this->saving && end( $this->saving ) === (int) $post_id;
 
 		// Core's own filter, applied as `wp_insert_post()` applies it, so a site that turns the rename off for typed slugs turns it off here too.
 		if ( $in_save && 'trash' !== $post_status && apply_filters( 'add_trashed_suffix_to_trashed_posts', true, $decoded, (int) $post_id ) ) { // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- core's hook, not ours.
@@ -260,14 +275,17 @@ final class SlugEscapes {
 	/**
 	 * Decodes a resource's slug that reaches the row with such an escape: one saved as `draft`,
 	 * `pending` or `auto-draft`, for which core checks no uniqueness, or one an earlier
-	 * `pre_wp_unique_post_slug` filter answered for. Hooked to `wp_insert_post_data`.
+	 * `pre_wp_unique_post_slug` filter answered for. Hooked to `wp_insert_post_data`, where it also
+	 * pops the mark mark_save() pushed for this save.
 	 *
 	 * @param array<string, mixed> $data    Slashed post data about to be written.
 	 * @param array<string, mixed> $postarr Sanitized post data as given.
 	 * @return array<string, mixed>
 	 */
 	public function post_data( $data, $postarr ) {
-		$this->saving = null;
+		if ( self::is_resource_save( $postarr ) ) {
+			array_pop( $this->saving );
+		}
 
 		if ( ! isset( $data['post_type'], $data['post_name'] ) || PostType::NAME !== $data['post_type'] ) {
 			return $data;
