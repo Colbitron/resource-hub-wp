@@ -141,7 +141,76 @@ describe("links", () => {
       '<a href="https://example.com/">https://example.com/</a>',
     );
     expect(render('<a href="javascript:void(0)">Visit CMS.EXAMPLE now</a>')).toBe("<a>Visit now</a>");
-    expect(render('<p><a href="https://cms.example:8443/x/">https://cms.example:8443/x/</a></p>')).toBe("<p></p>");
+  });
+
+  it("keeps a link's own content when removing the words that name the CMS would leave nothing", () => {
+    expect(render('<a href="javascript:void(0)">cms.example</a>')).toBe("<a>cms.example</a>");
+    // The link itself names the CMS, so it is unwrapped; the text the editor typed stays.
+    expect(render('<p><a href="mailto:editor@cms.example">editor@cms.example</a></p>')).toBe("<p>editor@cms.example</p>");
+    expect(render('<p><a href="https://cms.example:8443/x/">https://cms.example:8443/x/</a></p>')).toBe(
+      "<p>https://cms.example:8443/x/</p>",
+    );
+    const apex: CmsUrls = { cmsOrigins: ["https://example.com"], uploadsBase: "https://example.com/wp-content/uploads" };
+    expect(render('<p>Write to <a href="mailto:info@example.com">info@example.com</a>.</p>', undefined, apex)).toBe(
+      "<p>Write to info@example.com.</p>",
+    );
+    expect(render('<p><a href="mailto:info@example.org">info@example.org</a></p>', undefined, apex)).toBe(
+      '<p><a href="mailto:info@example.org">info@example.org</a></p>',
+    );
+  });
+
+  it("drops the query of an href that names the CMS in it, and unwraps one that names it in its path or hash", () => {
+    expect(render('<a href="/resources/?u=https://cms.example/wp-admin/#top">x</a>')).toBe('<a href="/resources/#top">x</a>');
+    expect(render('<a href="https://cms.example/resources/?u=https://CMS.EXAMPLE/wp-admin/">x</a>')).toBe(
+      '<a href="/resources/">x</a>',
+    );
+    expect(render('<a href="https://example.com/share?url=https%3A%2F%2Fcms.example%2Fresources%2F">x</a>')).toBe(
+      '<a href="https://example.com/share">x</a>',
+    );
+    expect(render('<a href="https://example.com/share?url=//cms.example/resources/">x</a>')).toBe(
+      '<a href="https://example.com/share">x</a>',
+    );
+    expect(render('<a href="https://example.com/?a=1#?u=cms.example">x</a>')).toBe("x");
+    expect(render('<p><a href="/resources/cms.example/">x</a><a href="#cms.example">y</a></p>')).toBe("<p>xy</p>");
+    expect(render('<blockquote cite="https://example.com/?from=cms.example">q</blockquote>')).toBe(
+      '<blockquote cite="https://example.com/">q</blockquote>',
+    );
+    expect(render('<iframe src="https://example.com/embed#cms.example" title="T"></iframe>')).toBe("");
+  });
+
+  it("names the CMS only as a whole host, so cms.example.org and evilcms.example are other hosts", () => {
+    for (const href of [
+      "https://cms.example.org/a",
+      "https://cms.examples/a",
+      "https://cms.example-2.test/a",
+      "https://evilcms.example/a",
+      "https://my-cms.example/a",
+      "/resources/?u=cms.example.org",
+    ]) {
+      expect(render(`<a href="${href}">x</a>`), href).toBe(`<a href="${href}">x</a>`);
+    }
+    expect(render('<p title="On cms.example.org">x</p>')).toBe('<p title="On cms.example.org">x</p>');
+    for (const title of ["cms.example", "www.cms.example", "cms.example.", "cms.example:8443", "(cms.example)", "CMS.Example/x"]) {
+      expect(render(`<p title="${title}">x</p>`), title).toBe("<p>x</p>");
+    }
+  });
+
+  it("drops an id, a datetime, a class token or any other attribute value that names the CMS", () => {
+    expect(render('<p id="cms.example" class="a cms-example b">x</p>')).toBe('<p class="a cms-example b">x</p>');
+    expect(render('<time datetime="cms.example">t</time>')).toBe("<time>t</time>");
+    expect(render(`<img src="${UPLOAD}" srcset="${UPLOAD} 1x" sizes="(max-width: 1px) cms.example" alt="">`)).toBe(
+      '<img alt="" srcSet="/media/2026/11/photo.jpg 1x" src="/media/2026/11/photo.jpg" loading="lazy"/>',
+    );
+    const local: CmsUrls = { cmsOrigins: ["http://localhost:8888"], uploadsBase: "http://localhost:8888/wp-content/uploads" };
+    expect(render('<p class="a localhost b" lang="en">x</p>', undefined, local)).toBe('<p class="a b" lang="en">x</p>');
+  });
+
+  it("drops an image whose own URL names the CMS, and such srcset candidates", () => {
+    expect(render('<p><img src="https://cms.example/wp-content/uploads/cms.example/a.png" alt=""></p>')).toBe("<p></p>");
+    expect(render('<p><img src="https://images.example/a.png?from=cms.example" alt=""></p>')).toBe("<p></p>");
+    expect(render(`<img src="${UPLOAD}" srcset="https://cms.example/wp-content/uploads/cms.example/b.png 2x" alt="">`)).toBe(
+      '<img alt="" src="/media/2026/11/photo.jpg" loading="lazy"/>',
+    );
   });
 
   it("leaves text and code the editor typed as written, even when it names the CMS", () => {
@@ -830,6 +899,19 @@ describe("deep nesting", () => {
     const { result, errored } = quietly(() => render(`<p>Before</p>${MARKER}`, { renderBlock }));
     expect(errored).toBe(1);
     expect(result).toBe("Before More on Headless delivery Example");
+  });
+
+  it("takes the CMS out of the plain text: origins removed, then any word that still names it", () => {
+    const body =
+      '<p>See <a href="https://cms.example/resources/x/">https://cms.example/resources/x/</a> or //CMS.EXAMPLE:8443/y/.</p>' +
+      "<p>Mail editor@cms.example, not cms.example.org or evilcms.example.</p>";
+    const { result } = quietly(() => render(nested(MAX_DEPTH + 1, "<div>", "</div>", body)));
+    expect(result).toBe("See /resources/x/ or /y/. Mail not cms.example.org or evilcms.example.");
+    const subdirectory: CmsUrls = { cmsOrigins: ["https://example.com/blog"], uploadsBase: "https://media.example/wp-content/uploads" };
+    const text = quietly(() =>
+      render(nested(MAX_DEPTH + 1, "<div>", "</div>", "https://example.com/blog/resources/ https://example.com/shop/ https://media.example/a.png"), undefined, subdirectory),
+    );
+    expect(text.result).toBe("/resources/ https://example.com/shop/ /a.png");
   });
 
   it("leaves script and style content, comments and tags out of the plain text, and decodes common entities", () => {

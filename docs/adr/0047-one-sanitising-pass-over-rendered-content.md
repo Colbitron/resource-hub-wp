@@ -48,9 +48,14 @@ A link on the CMS stays a link only when its rewrite is a route the front end se
 
 ## Where the CMS host can still appear
 
-The CMS host never appears in markup the pass generates or in an attribute it rewrites. A link whose text, trimmed, is its own `href` (WordPress turns a pasted URL into `<a href="u">u</a>`) or names the CMS shows the rewritten target instead; when there is none to show, its words that name the CMS are removed. A `title` that names the CMS is dropped, the words of an `alt` that name it are removed, and an iframe's `title` becomes link text by the same rule as a link's text. "Names the CMS" means containing a configured host, or host and install path, in any case. Hosts compare with every trailing dot removed, so `cms.example..` is the CMS.
+No attribute the pass renders names the CMS. "Names the CMS" means containing a configured host, or host and install path, in any case, as a whole host: not preceded by a letter, digit or `-` (unless they end a percent escape, as in `%2Fcms.example`), and not followed by one or by `.` and one, so `cms.example.org`, `cms.example-2` and `evilcms.example` are other hosts and `www.cms.example`, `editor@cms.example`, `cms.example:8443` and `cms.example.` name it. Hosts in URLs compare with every trailing dot removed, so `cms.example..` is the CMS.
 
-Editor-typed text is left as written, in a paragraph or in `<code>`: rewriting it would corrupt code samples and prose that discuss the CMS, and an editor who types the address has chosen to publish it.
+- An `href` (or `cite`, or an embed's `src`) that still names the CMS after the rewrite loses its query when the query is what names it (`/resources/?u=https://cms.example/wp-admin/` becomes `/resources/`), and is unwrapped like a CMS link with no route when its path or hash does. That includes `mailto:editor@cms.example`, and on a CMS at an apex domain `mailto:info@example.com`: the link goes and the address stays as text. The query, not the whole link, goes first because the query is usually a tracking or share parameter around a link that still works without it.
+- A `title`, `id` (checked before its `c-` prefix), `datetime` or `class` token that names the CMS is dropped, the words of an `alt` that name it are removed, an image whose own URL names it is dropped, and so is a `srcset` candidate that does. Every other attribute value goes through one last check before its element is created and is dropped if it names the CMS, so the rule holds for values no case above foresaw (`sizes`, say).
+- A link whose text, trimmed, is its own `href` (WordPress turns a pasted URL into `<a href="u">u</a>`) or names the CMS shows the rewritten target instead; when there is none to show, its words that name the CMS are removed, and when that would leave nothing, its own content stays, as the editor typed it, rather than an empty link. An iframe's `title` becomes link text by the same rule as a link's text.
+- The plain-text fallback cannot tell a link's text from prose, so it takes the CMS out of all of it: each CMS origin (a name right after `//`, with its scheme and port) is removed, so an autolink reads as its rewritten path, and then each word that still names the CMS is removed.
+
+Editor-typed text is otherwise left as written, in a paragraph, in `<code>` or as the content of an unwrapped link: rewriting it would corrupt code samples and prose that discuss the CMS, and an editor who types the address has chosen to publish it.
 
 ## Embeds become links
 
@@ -79,6 +84,6 @@ A `<pre>` whose only child is text loses the newline right after its start tag, 
 ## Consequences
 
 - A new kind of element in resource bodies is a change to the allow-list here, with a test; the default for anything unknown is to unwrap it, so content survives and attributes do not.
-- The CMS host never appears in markup the pass generates or in rewritten attributes; editor-typed text is left as written. The fixture test asserts the first half on a body whose text does not name the CMS.
+- No attribute the pass renders names the CMS, and neither does the plain-text fallback; editor-typed text in the markup rendering is left as written. The fixture test asserts the first half on a body whose text does not name the CMS.
 - `cmsUrls()` in `lib/env.ts` gives the pass the site base, the media origin and the uploads directory from the environment.
 - `parseSrcset` is exported from `lib/urls.ts` so each candidate can be judged on its own. It and every pattern in the pass run in linear time: trailing runs are trimmed with a loop (`withoutTrailing`), because `/,+$/` on a long comma run followed by anything else is quadratic (200 KB took 13.5 s), and the `srcset` descriptor pattern has no two quantifiers that can share digits. The tests hold 500 KB of each, just under the size cap so it reaches the pass, to under a second.

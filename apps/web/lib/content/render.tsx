@@ -50,11 +50,16 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   `https:`, another port, a path outside uploads, credentials in the URL)
  *   is dropped: it cannot be served through `/media/` and showing it would
  *   show the CMS's address.
- * - The CMS host: it never appears in markup this pass generates or in an
- *   attribute it rewrites. A `title` that names the CMS is dropped, and the
- *   words of an `alt` that name it are removed. Text the editor typed is
- *   left as written, in `<code>` and elsewhere, because rewriting it would
- *   corrupt code samples and prose about the CMS.
+ * - The CMS host: no attribute this pass renders names it (`mentionsCms`).
+ *   A link whose rewritten `href` still names it, in its query, loses the
+ *   query; in its path or hash, it is unwrapped. A `title`, `id` or
+ *   `datetime` that names it is dropped, so is a `class` token, and the
+ *   words of an `alt` that name it are removed; `checked` drops any other
+ *   value that does, as the last step before an element is created. Text
+ *   the editor typed is left as written, in `<code>` and elsewhere, because
+ *   rewriting it would corrupt code samples and prose about the CMS; only a
+ *   link's text is replaced when it is the link's URL (`linkText`). The
+ *   plain-text fallback removes CMS origins (`textOnly`).
  * - Sanitising: only the elements in `ALLOWED_ELEMENTS` are rendered, with
  *   the attributes in `GLOBAL_ATTRIBUTES` and the per-element lists below,
  *   each value checked. `style` and every `on*` attribute are dropped
@@ -326,10 +331,104 @@ function namesCms(url: URL, context: Context): boolean {
   );
 }
 
-/** True when `text` contains the CMS's name, its host or host and install path, in any case. */
+const HYPHEN = 0x2d;
+const DOT = 0x2e;
+const COLON = 0x3a;
+
+function isAsciiAlphanumeric(code: number): boolean {
+  return (code >= 0x30 && code <= 0x39) || (code >= 0x61 && code <= 0x7a) || (code >= 0x41 && code <= 0x5a);
+}
+
+/** `text` with ASCII letters lower-cased and nothing else changed, so its indices are `text`'s. The CMS's names are ASCII. */
+function asciiLower(text: string): string {
+  return text.replace(/[A-Z]+/g, (run) => run.toLowerCase());
+}
+
+function isHexDigit(code: number): boolean {
+  return (code >= 0x30 && code <= 0x39) || (code >= 0x61 && code <= 0x66) || (code >= 0x41 && code <= 0x46);
+}
+
+/** True when `text` has a percent-encoded character (`%2F`) ending just before `index`. */
+function afterPercentEscape(text: string, index: number): boolean {
+  return text.charCodeAt(index - 3) === 0x25 && isHexDigit(text.charCodeAt(index - 2)) && isHexDigit(text.charCodeAt(index - 1));
+}
+
+/**
+ * True when `name` at `start`…`end` of `text` is a whole host, not part of
+ * a longer one: not preceded by a letter, digit or `-` (`evilcms.example`,
+ * `my-cms.example`) unless they end a percent escape (`%2Fcms.example`),
+ * and not followed by one or by `.` and one (`cms.examples`,
+ * `cms.example-2`, `cms.example.org`). Any other character (`/`, `:`, `@`,
+ * `%`, `.` at the end, a space) ends it.
+ */
+function atLabelBoundary(text: string, start: number, end: number): boolean {
+  const before = text.charCodeAt(start - 1);
+  const after = text.charCodeAt(end);
+  return (
+    ((!isAsciiAlphanumeric(before) && before !== HYPHEN) || afterPercentEscape(text, start)) &&
+    !isAsciiAlphanumeric(after) &&
+    after !== HYPHEN &&
+    !(after === DOT && isAsciiAlphanumeric(text.charCodeAt(end + 1)))
+  );
+}
+
+/** Where `name` next stands as a whole host in `lower` (`asciiLower`'s result), from `from`; `-1` when nowhere. */
+function nextMention(lower: string, name: string, from: number): number {
+  for (let at = lower.indexOf(name, from); at !== -1; at = lower.indexOf(name, at + 1)) {
+    if (atLabelBoundary(lower, at, at + name.length)) {
+      return at;
+    }
+  }
+  return -1;
+}
+
+/**
+ * True when `text` names the CMS: contains one of its names, a host or host
+ * and install path, in any case, as a whole host (`atLabelBoundary`), so
+ * `cms.example.org` does not name `cms.example`.
+ */
 function mentionsCms(text: string, context: Context): boolean {
-  const lower = text.toLowerCase();
-  return context.cmsNames.some((name) => lower.includes(name));
+  const lower = asciiLower(text);
+  return context.cmsNames.some((name) => nextMention(lower, name, 0) !== -1);
+}
+
+/**
+ * `text` without its CMS origins: each place it names the CMS right after
+ * `//`, with the `//`, the `http:` or `https:` before it and the port after
+ * it, removed, so `https://cms.example/resources/x/` becomes `/resources/x/`
+ * as a rewritten link would. A mention without `//` (`editor@cms.example`)
+ * is left for `withoutCmsMentions`. One pass per name, linear in the length
+ * of `text`.
+ */
+function withoutCmsOrigins(text: string, context: Context): string {
+  let result = text;
+  for (const name of context.cmsNames) {
+    const lower = asciiLower(result);
+    const parts: string[] = [];
+    let position = 0;
+    let at = nextMention(lower, name, 0);
+    while (at !== -1) {
+      let end = at + name.length;
+      if (!lower.startsWith("//", at - 2)) {
+        at = nextMention(lower, name, end);
+        continue;
+      }
+      let start = at - 2;
+      if (lower.startsWith("https:", start - 6)) start -= 6;
+      else if (lower.startsWith("http:", start - 5)) start -= 5;
+      if (lower.charCodeAt(end) === COLON) {
+        let digits = end + 1;
+        while (digits < lower.length && lower.charCodeAt(digits) >= 0x30 && lower.charCodeAt(digits) <= 0x39) digits++;
+        if (digits > end + 1) end = digits;
+      }
+      parts.push(result.slice(position, Math.max(start, position)));
+      position = end;
+      at = nextMention(lower, name, end);
+    }
+    parts.push(result.slice(position));
+    result = parts.join("");
+  }
+  return result;
 }
 
 /** `text` without the words, split at whitespace, that name the CMS; unchanged when none does. */
@@ -365,12 +464,16 @@ function isFrontEndPath(url: URL): boolean {
 /**
  * What a URL attribute (`href`, `cite`, an embed's `src`) becomes:
  *
- * - `keep`: rendered as `href`, which is `value` rewritten by `rewriteHref`.
+ * - `keep`: rendered as `href`, which is `value` rewritten by `rewriteHref`,
+ *   without its query when the query names the CMS
+ *   (`/resources/?u=https://cms.example/wp-admin/` becomes `/resources/`).
+ *   It never names the CMS.
  * - `unwrap`: a CMS URL whose rewrite is not a front-end route
- *   (`isFrontEndPath`), so there is nothing to link to; a link keeps its
- *   text and loses the element. `text` is the rewrite, for a link whose own
- *   text must be replaced, or `""` when the rewrite still names the CMS (a
- *   port the configuration does not list).
+ *   (`isFrontEndPath`), so there is nothing to link to, or any URL whose
+ *   path or hash names the CMS after the rewrite (`mailto:editor@cms.example`,
+ *   `/resources/#cms.example`); a link keeps its text and loses the element.
+ *   `text` is the rewrite, for a link whose own text must be replaced, or
+ *   `""` when the rewrite still names the CMS.
  * - `drop`: a URL that does not parse or whose scheme is not one of
  *   `LINK_SCHEMES`, judged after browser parsing.
  */
@@ -386,16 +489,27 @@ function linkTarget(value: string, context: Context): LinkTarget {
   if (url === null || !LINK_SCHEMES.has(url.protocol)) {
     return DROP;
   }
-  const href = rewriteHref(value, context.cms);
-  const after = parseUrl(href, LINK_BASE);
+  const rewritten = rewriteHref(value, context.cms);
+  const after = parseUrl(rewritten, LINK_BASE);
   if (after === null) {
     return DROP;
   }
   const isCmsLink = namesCms(url, context) || namesCms(after, context);
-  if (!isCmsLink || isFrontEndPath(after)) {
-    return { kind: "keep", href };
+  if (isCmsLink && !isFrontEndPath(after)) {
+    return { kind: "unwrap", text: mentionsCms(rewritten, context) ? "" : rewritten };
   }
-  return { kind: "unwrap", text: mentionsCms(href, context) ? "" : href };
+  const href = mentionsCms(rewritten, context) ? withoutQuery(rewritten) : rewritten;
+  return mentionsCms(href, context) ? { kind: "unwrap", text: "" } : { kind: "keep", href };
+}
+
+/** `href` without its query, its path and hash kept: the query runs from the first `?` to the first `#` after it. */
+function withoutQuery(href: string): string {
+  const query = href.indexOf("?");
+  const hash = href.indexOf("#");
+  if (query === -1 || (hash !== -1 && hash < query)) {
+    return href;
+  }
+  return href.slice(0, query) + (hash === -1 ? "" : href.slice(hash));
 }
 
 /** The `href` to render for `value` where nothing but a link will do (`cite`, embeds): `linkTarget`'s `keep`, or `undefined`. */
@@ -441,7 +555,9 @@ function uploadSrcset(srcset: string | undefined, context: Context): string | un
     if (source === null || source.kind !== "upload" || !DESCRIPTOR.test(descriptors)) {
       continue;
     }
-    candidates.push(descriptors === "" ? source.path : `${source.path} ${descriptors}`);
+    if (!mentionsCms(source.path, context)) {
+      candidates.push(descriptors === "" ? source.path : `${source.path} ${descriptors}`);
+    }
   }
   return candidates.length === 0 ? undefined : candidates.join(", ");
 }
@@ -475,18 +591,19 @@ function hasClass(attributes: Attributes, name: string): boolean {
 
 /**
  * The attributes any allowed element keeps: `class` (tokens of letters,
- * digits, `-` and `_`), `id` (with `ID_PREFIX`), `title` (unless it names
- * the CMS), `lang` and `dir`. Never `style`, and never an `on*` attribute,
- * which are not read at all.
+ * digits, `-` and `_`), `id` (with `ID_PREFIX`), `title`, `lang` and `dir`,
+ * each without a value or token that names the CMS. Never `style`, and never
+ * an `on*` attribute, which are not read at all.
  */
 function globalProps(attributes: Attributes, context: Context): Props {
   const props: Props = {};
-  const classes = tokens(attributes.get("class"), (token) => CLASS_TOKEN.test(token));
+  const classes = tokens(attributes.get("class"), (token) => CLASS_TOKEN.test(token) && !mentionsCms(token, context));
   if (classes.length > 0) {
     props.className = classes.join(" ");
   }
+  // Checked before the prefix, which would hide a name at its start (`c-cms.example`).
   const id = matching(attributes.get("id"), ID_VALUE);
-  if (id !== undefined) {
+  if (id !== undefined && !mentionsCms(id, context)) {
     props.id = `${ID_PREFIX}${id}`;
   }
   const title = attributes.get("title");
@@ -520,7 +637,8 @@ function prefixFragment(href: string): string {
  * (WordPress turns a pasted URL into `<a href="u">u</a>`), shows its
  * rewritten target; when there is none to show (the `href` was dropped, or
  * its rewrite still names the CMS), it shows its own text without the words
- * that name the CMS.
+ * that name the CMS, and when that leaves nothing (`editor@cms.example`),
+ * its own content: the editor typed it, and an empty link would hide it.
  */
 function linkText(node: Element, href: string | undefined, target: LinkTarget | undefined, context: Context): string | null {
   if (href === undefined) {
@@ -532,7 +650,7 @@ function linkText(node: Element, href: string | undefined, target: LinkTarget | 
   }
   const shown = target?.kind === "keep" ? target.href : target?.kind === "unwrap" ? target.text : "";
   const replacement = shown !== "" && !mentionsCms(shown, context) ? shown : withoutCmsMentions(text, context);
-  return replacement === text ? null : replacement;
+  return replacement === text || replacement === "" ? null : replacement;
 }
 
 /**
@@ -565,7 +683,23 @@ function link(node: Element, attributes: Attributes, context: Context): ReactEle
   if (rel.size > 0) {
     props.rel = [...rel].join(" ");
   }
-  return createElement("a", props, content);
+  return createElement("a", checked(props, context), content);
+}
+
+/**
+ * `props` without any string value that names the CMS: the last step before
+ * an element of the body is created, so no attribute the pass renders names
+ * it. The rules above catch each known case first, with a better result (a
+ * query dropped, a word removed); this catches what they do not foresee, a
+ * `datetime` or `sizes` that names it, say.
+ */
+function checked(props: Props, context: Context): Props {
+  for (const [name, value] of Object.entries(props)) {
+    if (typeof value === "string" && mentionsCms(value, context)) {
+      delete props[name];
+    }
+  }
+  return props;
 }
 
 /** The attributes an allowed element renders with, by name. */
@@ -695,7 +829,8 @@ function linkTo(href: string, text?: string): ReactElement {
 function image(attributes: Attributes, context: Context): ReactElement {
   const src = attributes.get("src");
   const source = src === undefined ? null : classifyImage(src, context);
-  if (source === null) {
+  // An image whose own URL names the CMS (`/media/cms.example/a.png`, `?from=cms.example`) cannot render without it.
+  if (source === null || mentionsCms(source.kind === "upload" ? source.path : source.href, context)) {
     return EMPTY;
   }
   const props = globalProps(attributes, context);
@@ -705,11 +840,12 @@ function image(attributes: Attributes, context: Context): ReactElement {
   if (source.kind === "external") {
     if (width !== undefined) props.width = width;
     if (height !== undefined) props.height = height;
-    return createElement("img", { ...props, src: source.href, loading: "lazy", referrerPolicy: "no-referrer" });
+    return createElement("img", checked({ ...props, src: source.href, loading: "lazy", referrerPolicy: "no-referrer" }, context));
   }
   if (width !== undefined && height !== undefined) {
+    // `src` and `alt` were checked above; the rest is `CONTENT_SIZES` and numbers.
     return createElement(Image, {
-      ...props,
+      ...checked(props, context),
       alt: String(props.alt),
       src: source.path,
       width: Number(width),
@@ -723,7 +859,7 @@ function image(attributes: Attributes, context: Context): ReactElement {
     const sizes = matching(attributes.get("sizes"), SIZES);
     if (sizes !== undefined) props.sizes = sizes;
   }
-  return createElement("img", { ...props, src: source.path, loading: "lazy" });
+  return createElement("img", checked({ ...props, src: source.path, loading: "lazy" }, context));
 }
 
 /**
@@ -790,7 +926,7 @@ function embedWrapper(node: Element, attributes: Attributes, context: Context): 
   } else if (target.kind === "unwrap") {
     shown = target.text;
   }
-  return createElement("div", globalProps(attributes, context), shown);
+  return createElement("div", checked(globalProps(attributes, context), context), shown);
 }
 
 /**
@@ -840,7 +976,7 @@ function markerProps(node: Element, attributes: Attributes, context: Context): R
  * and never rendered, so the marker stays on the server.
  */
 function marker(node: Element, attributes: Attributes, context: Context): ReactElement {
-  const fallback = createElement("div", globalProps(attributes, context), children(node, context));
+  const fallback = createElement("div", checked(globalProps(attributes, context), context), children(node, context));
   const props = markerProps(node, attributes, context);
   if (props === null || context.markers >= MAX_MARKERS) {
     return fallback;
@@ -907,7 +1043,7 @@ function replaceNode(node: DOMNode, context: Context): ReactElement | undefined 
   if (name === "pre") {
     dropLeadingNewline(node);
   }
-  const props = elementProps(name, attributes, context);
+  const props = checked(elementProps(name, attributes, context), context);
   return VOID_ELEMENTS.has(name)
     ? createElement(name, props)
     : createElement(name, props, children(node, context));
@@ -1048,8 +1184,16 @@ function decodeBasicEntities(text: string): string {
  * decoded, and whitespace collapsed to single spaces. One pass with
  * `indexOf`, without the parser, so it is linear however deep the nesting.
  * React escapes the result like any other text.
+ *
+ * The text cannot tell a link's text from prose, so the CMS is taken out of
+ * all of it: its origins are removed (`withoutCmsOrigins`), so an autolink
+ * such as `https://cms.example/resources/x/` shows `/resources/x/` as the
+ * rendered link would, and then any word that still names it
+ * (`editor@cms.example`, `user@cms.example/x`) is removed. Unlike the
+ * markup rendering, which leaves the editor's prose as written, the plain
+ * text never names the CMS.
  */
-function textOnly(html: string): string {
+function textOnly(html: string, context: Context): string {
   const parts: string[] = [];
   let position = 0;
   while (position < html.length) {
@@ -1081,7 +1225,8 @@ function textOnly(html: string): string {
       position = start + 1;
     }
   }
-  return decodeBasicEntities(parts.join("")).replace(/\s+/g, " ").trim();
+  const text = withoutCmsOrigins(decodeBasicEntities(parts.join("")), context);
+  return withoutCmsMentions(text, context).replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -1116,16 +1261,16 @@ export function renderContent(html: string, cms: CmsUrls, options: RenderContent
   };
   if (html.length > MAX_CONTENT_LENGTH) {
     console.warn(`renderContent: the body is longer than ${MAX_CONTENT_LENGTH} characters; rendering it as text`);
-    return textOnly(html);
+    return textOnly(html, context);
   }
   try {
     if (nestsDeeperThan(html, MAX_DEPTH)) {
       console.warn(`renderContent: the body nests more than ${MAX_DEPTH} elements deep; rendering it as text`);
-      return textOnly(html);
+      return textOnly(html, context);
     }
     return parse(html, context.options);
   } catch (error) {
     console.error("renderContent: the body could not be rendered; rendering it as text", error);
-    return textOnly(html);
+    return textOnly(html, context);
   }
 }
