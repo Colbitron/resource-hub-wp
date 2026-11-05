@@ -12,6 +12,7 @@ namespace ResourceHub;
 use ResourceHub\Admin\ListColumn;
 use ResourceHub\Admin\StatusPage;
 use ResourceHub\Admin\TermNotice;
+use ResourceHub\Cli\DecodeSlugsCommand;
 use ResourceHub\Cli\SeedCommand;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\OneType;
@@ -92,6 +93,7 @@ final class Plugin {
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			\WP_CLI::add_command( 'resource-hub seed', SeedCommand::class );
+			\WP_CLI::add_command( 'resource-hub decode-slugs', DecodeSlugsCommand::class );
 		}
 	}
 
