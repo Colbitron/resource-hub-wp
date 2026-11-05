@@ -1,0 +1,227 @@
+[
+  {
+    "id": 3,
+    "count": 3,
+    "description": "",
+    "link": "https://cms.example/resource-type/article/",
+    "name": "Article",
+    "slug": "article",
+    "taxonomy": "resource_type",
+    "parent": 0,
+    "meta": [],
+    "_links": {
+      "self": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resource_type/3",
+          "targetHints": {
+            "allow": [
+              "GET"
+            ]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resource_type"
+        }
+      ],
+      "about": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/taxonomies/resource_type"
+        }
+      ],
+      "wp:post_type": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resources?resource_type=3"
+        }
+      ],
+      "curies": [
+        {
+          "name": "wp",
+          "href": "https://api.w.org/{rel}",
+          "templated": true
+        }
+      ]
+    }
+  },
+  {
+    "id": 7,
+    "count": 2,
+    "description": "",
+    "link": "https://cms.example/resource-type/case-study/",
+    "name": "Case study",
+    "slug": "case-study",
+    "taxonomy": "resource_type",
+    "parent": 0,
+    "meta": [],
+    "_links": {
+      "self": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resource_type/7",
+          "targetHints": {
+            "allow": [
+              "GET"
+            ]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resource_type"
+        }
+      ],
+      "about": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/taxonomies/resource_type"
+        }
+      ],
+      "wp:post_type": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resources?resource_type=7"
+        }
+      ],
+      "curies": [
+        {
+          "name": "wp",
+          "href": "https://api.w.org/{rel}",
+          "templated": true
+        }
+      ]
+    }
+  },
+  {
+    "id": 4,
+    "count": 3,
+    "description": "",
+    "link": "https://cms.example/resource-type/ebook/",
+    "name": "Ebook",
+    "slug": "ebook",
+    "taxonomy": "resource_type",
+    "parent": 0,
+    "meta": [],
+    "_links": {
+      "self": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resource_type/4",
+          "targetHints": {
+            "allow": [
+              "GET"
+            ]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resource_type"
+        }
+      ],
+      "about": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/taxonomies/resource_type"
+        }
+      ],
+      "wp:post_type": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resources?resource_type=4"
+        }
+      ],
+      "curies": [
+        {
+          "name": "wp",
+          "href": "https://api.w.org/{rel}",
+          "templated": true
+        }
+      ]
+    }
+  },
+  {
+    "id": 6,
+    "count": 2,
+    "description": "",
+    "link": "https://cms.example/resource-type/podcast/",
+    "name": "Podcast",
+    "slug": "podcast",
+    "taxonomy": "resource_type",
+    "parent": 0,
+    "meta": [],
+    "_links": {
+      "self": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resource_type/6",
+          "targetHints": {
+            "allow": [
+              "GET"
+            ]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resource_type"
+        }
+      ],
+      "about": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/taxonomies/resource_type"
+        }
+      ],
+      "wp:post_type": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resources?resource_type=6"
+        }
+      ],
+      "curies": [
+        {
+          "name": "wp",
+          "href": "https://api.w.org/{rel}",
+          "templated": true
+        }
+      ]
+    }
+  },
+  {
+    "id": 5,
+    "count": 2,
+    "description": "",
+    "link": "https://cms.example/resource-type/webinar/",
+    "name": "Webinar",
+    "slug": "webinar",
+    "taxonomy": "resource_type",
+    "parent": 0,
+    "meta": [],
+    "_links": {
+      "self": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resource_type/5",
+          "targetHints": {
+            "allow": [
+              "GET"
+            ]
+          }
+        }
+      ],
+      "collection": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resource_type"
+        }
+      ],
+      "about": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/taxonomies/resource_type"
+        }
+      ],
+      "wp:post_type": [
+        {
+          "href": "https://cms.example/wp-json/wp/v2/resources?resource_type=5"
+        }
+      ],
+      "curies": [
+        {
+          "name": "wp",
+          "href": "https://api.w.org/{rel}",
+          "templated": true
+        }
+      ]
+    }
+  }
+]
