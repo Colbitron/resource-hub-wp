@@ -310,7 +310,9 @@ final class GateTest extends LockdownTestCase {
 	}
 
 	/**
-	 * The 404's head links to no feed and no RSD endpoint; a logged-in user's page keeps them.
+	 * The 404's head links to no feed and no RSD endpoint; a logged-in user's page keeps its feed
+	 * links. It has no RSD link either, because XML-RPC is off for everyone (ADR 0044), which
+	 * {@see \ResourceHub\Tests\Security\XmlRpcTest} covers.
 	 */
 	public function test_the_404_head_advertises_no_feeds(): void {
 		add_theme_support( 'automatic-feed-links' );
@@ -326,7 +328,6 @@ final class GateTest extends LockdownTestCase {
 		$this->go_to( $url );
 		$head = get_echo( 'wp_head' );
 		$this->assertStringContainsString( 'application/rss+xml', $head );
-		$this->assertStringContainsString( 'EditURI', $head );
 	}
 
 	/**

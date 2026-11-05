@@ -89,6 +89,9 @@ final class XmlRpcTest extends WP_UnitTestCase {
 
 	/**
 	 * Core adds `X-Pingback` on a single post that allows pings; the plugin takes it out again.
+	 *
+	 * The request is made logged in: an anonymous request for a single post is a 404 under the
+	 * lockdown (ADR 0031), and core adds no `X-Pingback` to a 404, so the setup check would fail.
 	 */
 	public function test_pingback_header_is_removed(): void {
 		$post = self::factory()->post->create(
@@ -97,6 +100,8 @@ final class XmlRpcTest extends WP_UnitTestCase {
 				'ping_status' => 'open',
 			)
 		);
+
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
 
 		$before = array();
 		$after  = array();
