@@ -198,6 +198,28 @@ test.describe( 'CMS lockdown', () => {
 		}
 	} );
 
+	test( 'the admin and the login page still work for an anonymous visitor', async ( {
+		anonymous,
+	} ) => {
+		// The redirect guards are registered only for requests the gate sees, which these are not.
+		const admin = await anonymous.get( '/wp-admin/' );
+
+		expect( admin.status() ).toBe( 302 );
+		expect( admin.headers().location ).toContain( '/wp-login.php' );
+
+		for ( const path of [
+			'/wp-login.php',
+			'/wp-login.php?action=lostpassword',
+		] ) {
+			const response = await anonymous.get( path );
+
+			expect( response.status(), path ).toBe( 200 );
+			expect( await response.text(), path ).toContain(
+				'id="user_login"'
+			);
+		}
+	} );
+
 	test( 'a logged-in user sees the resource, marked noindex, with no oEmbed links', async ( {
 		page,
 	} ) => {
