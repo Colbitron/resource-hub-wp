@@ -31,3 +31,13 @@ A Next.js App Router app, TypeScript, deployed on Vercel, that renders a resourc
 - The shared package comes from the workspace as `"@colbitron/resource-hub-ui": "workspace:*"` in this app's `package.json` (ADR 0041).
 - End-to-end specs are `e2e/*.spec.ts`; `pnpm web:test:e2e` starts the mock CMS in `e2e/mock-cms/` (a Node server shaped like the plugin's WordPress, with control endpoints under `/__mock/` for changing its data from a spec), then builds the app with the fixture routes and runs the specs against `next start`, with `WP_API_URL` pointing at the mock and `REVALIDATE_SECRET` set to the fixed test value in `e2e/mock-cms/config.mts`. The suite runs one worker, because every spec file resets the mock in `beforeEach`. Ports 3310 (app) and 4010 (mock), overridable with `RH_WEB_PORT` and `RH_MOCK_CMS_PORT`. Front-end e2e never uses wp-env or the hosted CMS; `e2e/README.md` has the routes, the controls and the seed. Playwright's Chromium must be installed (`pnpm exec playwright install chromium` in `apps/web`).
 - Local work: run `pnpm web:dev` from the repository root (or `pnpm dev` here), with `WP_API_URL` in `.env.local` pointing at the wp-env CMS, `http://localhost:8888/wp-json` by default.
+
+## Follow-ups
+
+Open work noted in reviews, each for its own pull request:
+
+- **A scroll wrapper for tables in the HTML pass** (`lib/content/render.tsx`): wrap each body `<table>` in a focusable, labelled region that scrolls horizontally, so a table too wide for a phone scrolls instead of squeezing its cells.
+- **Demote a body's `<h1>` in the HTML pass**: a body heading at level 1 becomes an `<h2>`, so the page keeps one `<h1>`; today `resource.css` only styles it at the second level.
+- **`metadataBase` from a server-only `SITE_URL`**, so the canonical and `og:url` are absolute on every listing and resource page (ADR 0050's follow-up).
+- **A `not-found.tsx`** for the resource route and the listings, in the site's shell, in place of Next.js's default 404 page.
+- **Failure injection in the mock CMS** (a control that makes a route answer 500 or time out), so an e2e test can cover the resource route's 500 and its `error.tsx` boundary.

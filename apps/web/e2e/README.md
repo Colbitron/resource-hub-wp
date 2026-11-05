@@ -41,7 +41,7 @@ Query parameters are read as PHP and core read them: `name[]=` arrays as well as
 - `GET /wp-content/uploads/…`: the files under `mock-cms/fixtures/uploads/`, which `/media/…` on the app proxies.
 - Anything else is a 404, as the CMS's theme answers anonymous visitors (ADR 0031).
 
-The seed (`mock-cms/seed.mts`) has 14 published resources across 5 types and 5 topics, with the captured term IDs, so there is more than one page at the default `per_page`; a resource with no image, one with an SVG image with no dimensions, one whose image has a `sizes` entry; and one (`revalidation-from-the-editors-chair`, ID 33) whose body carries CMS links, an image with a `srcset` and the related-resources block marker. There is also one draft (ID 34), which no listing shows. ID 33's picks are that draft, a resource from another topic (29) and one that also shares a topic (21), and ID 24 picks 26.
+The seed (`mock-cms/seed.mts`) has 14 published resources across 5 types and 5 topics, with the captured term IDs, so there is more than one page at the default `per_page`; a resource with no image, one with an SVG image with no dimensions, one whose image has a `sizes` entry; and one (`revalidation-from-the-editors-chair`, ID 33) whose body carries CMS links, an image with a `srcset` and the related-resources block marker. One (`taxonomies-versus-meta`, ID 30) is long-form, with headings, lists, a blockquote, a code block, a table, a figure and the marker, and a 1600×900 featured image with `large` and `medium_large` sizes, for the resource page's checks and screenshots. There is also one draft (ID 34), which no listing shows. ID 33's picks are that draft, a resource from another topic (29) and one that also shares a topic (21), and ID 24 picks 26.
 
 ## Control endpoints
 
@@ -77,6 +77,7 @@ Control requests are never counted, so the counters show what the app did. Every
 ## Specs
 
 - `listings.spec.ts`: the real listing routes under `/resources/`: what each lists, pagination, filters, the 404s, the proxy's canonical-form 308s, the reserved segments, keyboard reach and a revalidation event reaching every listing it should.
+- `resource-page.spec.ts`: the real single resource route `/resources/[type]/[slug]/`: what it renders (title, meta line, featured image, summary, body, source), that the CMS's address is nowhere in the HTML or the RSC payload, the metadata, the redirect contract on the real route (a wrong type and an old slug each one computed 308 with `no-store` then a 200, mixed case the proxy's 308, an unknown slug a 404), the Chromium round trip webinar → podcast → webinar through `/api/revalidate/`, that the page and its `generateMetadata` make one CMS request between them (the mock's counters), and the page's landmarks, headings and layout stability at 360 px.
 - `card.spec.ts`, `data-layer.spec.ts`, `revalidate.spec.ts` and `redirects.spec.ts`: the fixture pages below.
 - `harness.spec.ts`: that the mock answering is this checkout's.
 
@@ -87,4 +88,4 @@ Test-only routes under `app/fixtures/`, built only with `RH_FIXTURES=1`:
 - `/fixtures/cards/`: `ResourceCard` with fixed props (`card.spec.ts`).
 - `/fixtures/data-layer/`: the data layer against the mock, two pages of the library and one resource by slug, rendered on every request so the counters show the Data Cache (`data-layer.spec.ts`). With `?twice={id}` it also reads that resource by ID twice in one render, so the counters show the per-render memoization.
 - `/fixtures/revalidate/`: one tagged, cached fetch of a seeded resource, rendered on every request, so the counters show the Data Cache keeping it and a `POST /api/revalidate/` for it making the next load fetch again (`revalidate.spec.ts`).
-- `/fixtures/redirect/[type]/[slug]/`: the resource page's redirect decision (`lib/redirects.ts`) over the data layer, rendered on every request, with its redirects kept under the fixture's own prefix so a spec can follow one to a 200 (`redirects.spec.ts`). The suite covers this fixture route only: the pull request that adds the resource page must point a spec at the real `/resources/[type]/[slug]/` route.
+- `/fixtures/redirect/[type]/[slug]/`: the resource page's redirect decision (`lib/redirects.ts`) over the data layer, rendered on every request, with its redirects kept under the fixture's own prefix so a spec can follow one to a 200 (`redirects.spec.ts`, which keeps every edge case of the decision). The real route is covered by `resource-page.spec.ts`.

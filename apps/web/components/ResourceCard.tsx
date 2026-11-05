@@ -1,6 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { formatPublishedDate } from "@/lib/dates";
+
 import "@colbitron/resource-hub-ui/card.css";
 
 /** An image for the card, already rewritten to the same-origin `/media/…` path (ADR 0040). */
@@ -46,8 +48,6 @@ export interface ResourceCardProps {
  */
 const IMAGE_SIZES = "(min-width: 74rem) 22.5rem, (min-width: 56rem) 33vw, (min-width: 37.5rem) 50vw, 100vw";
 
-const DATE_FORMAT = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" });
-
 /**
  * One resource in a listing. A server component with plain props and no data
  * fetching: the caller maps the REST payload to these. The title's link is the
@@ -83,7 +83,7 @@ export function ResourceCard({
       <div className="rh-card__body">
         <p className="rh-card__meta">
           <span className="rh-card__type">{typeLabel}</span>
-          <time dateTime={date}>{DATE_FORMAT.format(new Date(date))}</time>
+          <time dateTime={date}>{formatPublishedDate(date)}</time>
         </p>
         <Heading className="rh-card__title">
           <Link className="rh-card__link" href={href}>
