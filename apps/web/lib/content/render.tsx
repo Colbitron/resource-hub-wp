@@ -1,7 +1,6 @@
 import "server-only";
 
 import parse, {
-  domToReact,
   Element,
   Text,
   type DOMNode,
@@ -9,7 +8,7 @@ import parse, {
 } from "html-react-parser";
 import { Parser, type ParserOptions } from "htmlparser2";
 import Image from "next/image";
-import { createElement, Fragment, type ReactElement, type ReactNode } from "react";
+import { cloneElement, createElement, Fragment, type ReactElement, type ReactNode } from "react";
 
 import { canonicalSlug, isSlug } from "../routes";
 import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, type CmsUrls } from "../urls";
@@ -21,10 +20,12 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  * that show nothing of the CMS and run nothing of the editor's.
  *
  * `html-react-parser` parses the string once and calls `replace` for every
- * node, parents first, before it renders anything of its own. `replace`
+ * top-level node before it renders anything of its own; below the top level
+ * the pass maps each element's children itself (`children`). `replace`
  * returns a new element for every element node, built from an allow-list of
  * elements and attributes with each attribute value checked, or nothing. The
- * parser's own rendering is reached only by text nodes, which React escapes.
+ * parser's own rendering is reached only by top-level text nodes, and the
+ * pass renders other text as strings; React escapes both.
  * Nothing here uses `dangerouslySetInnerHTML`, so no fragment of the input
  * reaches the page as markup; that is what makes a sanitiser inside `replace`
  * sound. The output is never serialised and parsed again, so the mutation
@@ -273,6 +274,8 @@ interface Context {
   readonly postId: number | undefined;
   /** How many markers have been handed to `renderBlock`; checked against `MAX_MARKERS`. */
   markers: number;
+  /** How many `<a>` elements the pass is inside; see `insideLink`. */
+  links: number;
 }
 
 const UPLOADS_DIRECTORY = "/wp-content/uploads";
@@ -540,12 +543,12 @@ function linkText(node: Element, href: string | undefined, target: LinkTarget | 
  * An `<a>` inside another is unwrapped, as a browser would not nest them.
  */
 function link(node: Element, attributes: Attributes, context: Context): ReactElement {
-  if (insideLink(node)) {
-    return createElement(Fragment, null, children(node, context));
+  if (insideLink(context)) {
+    return createElement(Fragment, null, linkChildren(node, context));
   }
   const href = attributes.get("href");
   const target = href === undefined ? undefined : linkTarget(href, context);
-  const content = linkText(node, href, target, context) ?? children(node, context);
+  const content = linkText(node, href, target, context) ?? linkChildren(node, context);
   if (target?.kind === "unwrap") {
     return createElement(Fragment, null, content);
   }
@@ -606,12 +609,39 @@ function elementProps(name: string, attributes: Attributes, context: Context): P
 }
 
 /**
- * `node`'s children through the same pass. The tree is at most `MAX_DEPTH`
- * elements deep, as `nestsDeeperThan` checked on the same parser with the
- * same options, so this recursion is bounded too.
+ * Parents in which whitespace-only text is dropped, as `domToReact` drops it:
+ * React rejects text in them, and a browser would move it out.
+ */
+const NO_TEXT_CHILDREN = new Set(["tr", "tbody", "thead", "tfoot", "colgroup", "table", "head", "html", "frameset"]);
+
+/**
+ * `node`'s children through the same pass: text as strings, every other node
+ * through `replaceNode`, keyed by position when there are several, as
+ * `domToReact` does. Not `domToReact` itself, which first resets the
+ * prototype of every node in the subtree it is given (`normalizeDOMNodes`):
+ * called once per level, that cost the depth times the size of the body
+ * (about a second for 170,000 elements under 255 levels). `parse` has
+ * already done it for the whole tree, once, before the first `replace`. The
+ * tree is at most `MAX_DEPTH` elements deep, as `nestsDeeperThan` checked on
+ * the same parser with the same options, so this recursion is bounded.
  */
 function children(node: Element, context: Context): ReactNode {
-  return domToReact(node.children as DOMNode[], context.options);
+  const nodes = node.children;
+  const keyed = nodes.length > 1;
+  const rendered: ReactNode[] = [];
+  nodes.forEach((child, index) => {
+    if (child instanceof Text) {
+      if (child.data.trim() !== "" || !NO_TEXT_CHILDREN.has(node.name)) {
+        rendered.push(child.data);
+      }
+      return;
+    }
+    const element = replaceNode(child as DOMNode, context);
+    if (element !== undefined) {
+      rendered.push(keyed ? cloneElement(element, { key: element.key ?? index }) : element);
+    }
+  });
+  return rendered.length === 1 ? rendered[0] : rendered;
 }
 
 /**
@@ -630,14 +660,24 @@ function textOf(node: Element): string {
     .join("");
 }
 
-/** True when `node` is inside an `<a>`, where a browser would not nest another link. */
-function insideLink(node: Element): boolean {
-  for (let parent = node.parent; parent instanceof Element; parent = parent.parent) {
-    if (parent.name.toLowerCase() === "a") {
-      return true;
-    }
+/**
+ * True when the pass is inside an `<a>`, rendered or unwrapped, where a
+ * browser would not nest another link. A count the pass keeps as it descends
+ * (`linkChildren`), not a walk up the parents, which cost the depth for
+ * every link.
+ */
+function insideLink(context: Context): boolean {
+  return context.links > 0;
+}
+
+/** `children` of an `<a>`, counted as inside a link. */
+function linkChildren(node: Element, context: Context): ReactNode {
+  context.links++;
+  try {
+    return children(node, context);
+  } finally {
+    context.links--;
   }
-  return false;
 }
 
 /** A link to a URL, for embeds and media: `text` defaults to the rewritten URL. */
@@ -723,7 +763,7 @@ function mediaLink(node: Element, attributes: Attributes, context: Context): Rea
   }
   const title = attributes.get("title")?.trim() ?? "";
   const text = title !== "" && title !== source.src.trim() && !mentionsCms(title, context) ? title : source.href;
-  return insideLink(node) ? createElement(Fragment, null, text) : linkTo(source.href, text);
+  return insideLink(context) ? createElement(Fragment, null, text) : linkTo(source.href, text);
 }
 
 /**
@@ -746,7 +786,7 @@ function embedWrapper(node: Element, attributes: Attributes, context: Context): 
   const target = linkTarget(value, context);
   let shown: ReactNode = null;
   if (target.kind === "keep") {
-    shown = insideLink(node) ? target.href : linkTo(target.href);
+    shown = insideLink(context) ? target.href : linkTo(target.href);
   } else if (target.kind === "unwrap") {
     shown = target.text;
   }
@@ -1072,6 +1112,7 @@ export function renderContent(html: string, cms: CmsUrls, options: RenderContent
     },
     postId: options.postId !== undefined && Number.isSafeInteger(options.postId) && options.postId > 0 ? options.postId : undefined,
     markers: 0,
+    links: 0,
   };
   if (html.length > MAX_CONTENT_LENGTH) {
     console.warn(`renderContent: the body is longer than ${MAX_CONTENT_LENGTH} characters; rendering it as text`);
