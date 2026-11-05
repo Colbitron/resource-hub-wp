@@ -116,13 +116,15 @@ final class Sender {
 	}
 
 	/**
-	 * The first {@see Result::BODY_LIMIT} bytes of a body as valid UTF-8, never splitting a multibyte
-	 * character. Invalid bytes are replaced first, because core refuses to store a meta value that is
-	 * not valid UTF-8, and the result would stay `pending`.
+	 * The first {@see Result::BODY_LIMIT} bytes of a body, made valid UTF-8, because core refuses to
+	 * store a meta value that is not, and the result would stay `pending`. The cut is by bytes; core's
+	 * `wp_scrub_utf8()` then replaces each invalid sequence, a character split at the limit among them,
+	 * with U+FFFD, so the stored body may run a few bytes past the limit. Core polyfills the scrub where
+	 * mbstring is missing, so the plugin does not need the extension.
 	 *
 	 * @param string $body Response body.
 	 */
 	public static function cut( string $body ): string {
-		return mb_strcut( mb_scrub( $body, 'UTF-8' ), 0, Result::BODY_LIMIT, 'UTF-8' );
+		return wp_scrub_utf8( substr( $body, 0, Result::BODY_LIMIT ) );
 	}
 }

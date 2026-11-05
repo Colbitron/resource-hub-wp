@@ -207,7 +207,7 @@ final class SenderTest extends RevalidationTestCase {
 	}
 
 	/**
-	 * The stored body is cut to about 1 KB without splitting a multibyte character.
+	 * The stored body is cut to about 1 KB; a cut that falls between characters keeps them all whole.
 	 */
 	public function test_body_is_cut_to_about_one_kilobyte(): void {
 		$this->configure();
@@ -223,7 +223,25 @@ final class SenderTest extends RevalidationTestCase {
 	}
 
 	/**
-	 * A body that is not valid UTF-8 is made valid before it is cut, so it can be stored as meta.
+	 * A cut that falls inside a multibyte character leaves valid UTF-8: the character's first byte,
+	 * left alone at the limit, becomes U+FFFD, and every whole character before it is kept.
+	 */
+	public function test_cut_through_a_multibyte_character_is_made_valid(): void {
+		$this->configure();
+		$long            = 'a' . str_repeat( 'é', 1000 );
+		$this->responder = static fn(): array => self::http_response( 500, $long );
+
+		$this->assertSame( "\xc3", substr( $long, Result::BODY_LIMIT - 1, 1 ), 'The limit falls inside an é.' );
+
+		$result = ( new Sender() )->send( self::payload() );
+
+		$this->assertTrue( wp_is_valid_utf8( $result->body ) );
+		$this->assertSame( 'a' . str_repeat( 'é', 511 ) . "\u{FFFD}", $result->body );
+		$this->assertSame( Result::BODY_LIMIT + 2, strlen( $result->body ) );
+	}
+
+	/**
+	 * A body that is not valid UTF-8 is made valid as it is cut, so it can be stored as meta.
 	 */
 	public function test_invalid_utf8_body_is_made_valid(): void {
 		$this->configure();
@@ -232,7 +250,7 @@ final class SenderTest extends RevalidationTestCase {
 		$result = ( new Sender() )->send( self::payload() );
 
 		$this->assertSame( Result::SERVER_ERROR, $result->outcome );
-		$this->assertTrue( mb_check_encoding( $result->body, 'UTF-8' ) );
+		$this->assertTrue( wp_is_valid_utf8( $result->body ) );
 		$this->assertStringContainsString( ' bin ', $result->body );
 	}
 

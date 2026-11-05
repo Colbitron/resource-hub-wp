@@ -72,7 +72,7 @@ final class Result {
 	public const ENCODE_ERROR_MESSAGE = 'Not sent: the events could not be encoded as JSON.';
 
 	/**
-	 * Longest response body kept, in bytes (ADR 0018: "about 1 KB").
+	 * Bytes of a response body kept, before invalid UTF-8 in them is replaced (ADR 0018: "about 1 KB").
 	 */
 	public const BODY_LIMIT = 1024;
 
@@ -82,7 +82,7 @@ final class Result {
 	 * @param string      $status      {@see Result::SENT} or {@see Result::FAILED}.
 	 * @param string      $outcome     One of the outcome constants.
 	 * @param int|null    $code        HTTP status code, or null when no response arrived.
-	 * @param string      $body        Response body, already cut to {@see Result::BODY_LIMIT} bytes.
+	 * @param string      $body        Response body, already cut to about {@see Result::BODY_LIMIT} bytes by {@see Sender::cut()}.
 	 * @param string|null $error       Transport error message when no response arrived, else null.
 	 * @param int         $duration_ms Wall time of the request in milliseconds; 0 when none was made.
 	 */

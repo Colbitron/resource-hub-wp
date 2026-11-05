@@ -4,8 +4,7 @@
 	"type": "wordpress-plugin",
 	"license": "GPL-2.0-or-later",
 	"require": {
-		"php": ">=8.2",
-		"ext-mbstring": "*"
+		"php": ">=8.2"
 	},
 	"require-dev": {
 		"automattic/vipwpcs": "^3.0",

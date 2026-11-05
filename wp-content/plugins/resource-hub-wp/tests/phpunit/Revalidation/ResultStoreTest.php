@@ -131,7 +131,7 @@ final class ResultStoreTest extends RevalidationTestCase {
 		$this->assertSame( Result::FAILED, $record['status'] );
 		$this->assertSame( Result::SERVER_ERROR, $record['outcome'] );
 		$this->assertSame( 'batch-9', $record['batch_id'] );
-		$this->assertTrue( mb_check_encoding( $record['body'], 'UTF-8' ) );
+		$this->assertTrue( wp_is_valid_utf8( $record['body'] ) );
 	}
 
 	/**
@@ -173,7 +173,7 @@ final class ResultStoreTest extends RevalidationTestCase {
 		$record = ResultStore::read_post( $first );
 		$this->assertSame( Result::FAILED, $record['status'] );
 		$this->assertSame( 'batch-12', $record['batch_id'] );
-		$this->assertTrue( mb_check_encoding( $record['error'], 'UTF-8' ) );
+		$this->assertTrue( wp_is_valid_utf8( $record['error'] ) );
 		$this->assertStringStartsWith( 'cURL error 7: ', $record['error'] );
 
 		$refuse_bodies = static function ( $check, $object_id, $meta_key, $value ) {
@@ -190,7 +190,7 @@ final class ResultStoreTest extends RevalidationTestCase {
 		$this->assertSame( Result::FAILED, $record['status'] );
 		$this->assertSame( 'batch-13', $record['batch_id'] );
 		$this->assertSame( '', $record['body'] );
-		$this->assertTrue( mb_check_encoding( $record['error'], 'UTF-8' ) );
+		$this->assertTrue( wp_is_valid_utf8( $record['error'] ) );
 	}
 
 	/**

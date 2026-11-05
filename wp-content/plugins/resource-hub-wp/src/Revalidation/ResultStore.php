@@ -205,13 +205,14 @@ final class ResultStore {
 	}
 
 	/**
-	 * A free-text value as valid UTF-8, each invalid byte sequence replaced. A body or a transport error
-	 * message that is not valid UTF-8 would make the meta write fail.
+	 * A free-text value as valid UTF-8, each invalid byte sequence replaced with U+FFFD by core's
+	 * `wp_scrub_utf8()`. A body or a transport error message that is not valid UTF-8 would make the
+	 * meta write fail.
 	 *
 	 * @param string $text The text.
 	 */
 	private static function scrub( string $text ): string {
-		return mb_scrub( $text, 'UTF-8' );
+		return wp_scrub_utf8( $text );
 	}
 
 	/**
