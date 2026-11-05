@@ -36,7 +36,8 @@ export default defineConfig({
   // One worker, files in order: every spec shares the one mock CMS process
   // and its data, and `/__mock/reset` in one worker would undo another's
   // setup mid-test. The app's fetch cache is shared too, and no reset clears
-  // it (e2e/README.md). Parallel workers would need a mock per worker.
+  // it; it starts empty on each run (e2e/README.md). Parallel workers would
+  // need a mock per worker.
   workers: 1,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
@@ -57,7 +58,10 @@ export default defineConfig({
       env: { RH_MOCK_CMS_PORT: String(MOCK_PORT) },
     },
     {
-      command: `pnpm exec next build && pnpm exec next start --port ${WEB_PORT}`,
+      // The fetch Data Cache is deleted between the build and the start, so no
+      // entry outlives the process whose revalidated tags it would need
+      // (e2e/clear-fetch-cache.mts, e2e/README.md).
+      command: `pnpm exec next build && node e2e/clear-fetch-cache.mts && pnpm exec next start --port ${WEB_PORT}`,
       url: `http://localhost:${WEB_PORT}/`,
       reuseExistingServer,
       timeout: 180_000,

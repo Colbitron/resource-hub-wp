@@ -10,12 +10,11 @@ import { E2E_REVALIDATE_SECRET, mockCmsOrigin } from "./mock-cms/config.mts";
  * The page renders on every request, so the request counters show the
  * Data Cache at work.
  *
- * The last test publishes a resource the reader schema refuses and clears
- * the listings in the Data Cache through the revalidate route, then puts the
- * seed back and refills them. The Data Cache outlives the app process on
- * disk while a revalidated tag does not, so a listing changed in one run
- * would otherwise be served in the next; each test also starts by clearing
- * the listings, so a run stopped halfway cannot leak into this file.
+ * The app starts each run with an empty Data Cache (e2e/README.md), so the
+ * first test's listings are the seed's. The last test publishes a resource
+ * the reader schema refuses and clears the listings through the revalidate
+ * route, then puts the seed back and clears them again, so no later spec in
+ * the run is served its listing.
  */
 
 const FIXTURE_PATH = "/fixtures/data-layer/";
@@ -54,9 +53,8 @@ async function clearListings(request: APIRequestContext): Promise<void> {
   expect(response.status(), await response.text()).toBe(200);
 }
 
-test.beforeEach(async ({ request }) => {
+test.beforeEach(async () => {
   await cms.reset();
-  await clearListings(request);
 });
 
 test("renders two pages of the library and a resource by slug through ResourceCard", async ({ page }) => {
@@ -180,10 +178,5 @@ test("a resource the reader schema refuses leaves the listing, the other resourc
   } finally {
     await cms.reset();
     await clearListings(request);
-    // Refill the listings with the seed, twice because Next.js may finish
-    // writing an entry after the response, so the disk cache holds the seed.
-    for (let load = 0; load < 2; load++) {
-      expect((await request.get(FIXTURE_PATH)).status()).toBe(200);
-    }
   }
 });
