@@ -275,10 +275,35 @@ export function optionalMediaOrigin(env: EnvSource): string | undefined {
  * The site's public origin from `SITE_URL`, e.g. `https://resources.example`,
  * or `undefined` when it is not set, in which case the canonical and
  * `og:url` stay relative paths. A value that is set but malformed throws an
- * `EnvError` naming it.
+ * `EnvError` naming it, and so does one with the CMS's origin, that of
+ * `WP_API_URL` or of `WP_MEDIA_ORIGIN` when either is set: it would put the
+ * CMS's host in every page's canonical link, `og:url` and `og:image`.
  */
 export function parseSiteUrl(env: EnvSource): string | undefined {
-  return present(env, "SITE_URL") === undefined ? undefined : parse(env, "SITE_URL", siteUrlSchema);
+  if (present(env, "SITE_URL") === undefined) {
+    return undefined;
+  }
+  const site = parse(env, "SITE_URL", siteUrlSchema);
+  for (const name of ["WP_API_URL", "WP_MEDIA_ORIGIN"]) {
+    if (originOf(present(env, name)) === site) {
+      throw new EnvError(
+        `SITE_URL must be the front end's public origin, not the CMS's: it has the same origin as ${name}, so every canonical link, og:url and og:image would point at the CMS. ${WHERE}`,
+      );
+    }
+  }
+  return site;
+}
+
+/** The origin of `value`, or `undefined` when it is unset or not a URL (its own parser reports that). */
+function originOf(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  try {
+    return new URL(value).origin;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

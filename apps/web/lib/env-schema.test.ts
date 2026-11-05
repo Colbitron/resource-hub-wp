@@ -300,6 +300,33 @@ describe("parseSiteUrl", () => {
   });
 });
 
+describe("parseSiteUrl and the CMS's origin", () => {
+  it("refuses the origin of WP_API_URL or WP_MEDIA_ORIGIN, and never prints the value", () => {
+    const cases: [Record<string, string>, string][] = [
+      [{ SITE_URL: "https://cms.example", WP_API_URL: "https://cms.example/wp-json" }, "WP_API_URL"],
+      [{ SITE_URL: "https://CMS.example:443/", WP_API_URL: "https://cms.example/blog/wp-json" }, "WP_API_URL"],
+      [{ SITE_URL: "https://media.example", WP_API_URL: "https://cms.example/wp-json", WP_MEDIA_ORIGIN: "https://media.example/site" }, "WP_MEDIA_ORIGIN"],
+    ];
+    for (const [env, name] of cases) {
+      expect(() => parseSiteUrl(env), env.SITE_URL).toThrow(EnvError);
+      expect(() => parseSiteUrl(env), env.SITE_URL).toThrow(
+        new RegExp(`^SITE_URL must be the front end's public origin, not the CMS's: it has the same origin as ${name},`),
+      );
+      expect(() => parseSiteUrl(env), env.SITE_URL).not.toThrow(/cms\.example|media\.example/i);
+      expect(() => buildSiteUrl(env), env.SITE_URL).toThrow(EnvError);
+    }
+  });
+
+  it("accepts another origin, including another port or scheme on the CMS's host", () => {
+    for (const site of ["https://resources.example", "https://cms.example:8443", "http://localhost:3000"]) {
+      expect(parseSiteUrl({ SITE_URL: site, WP_API_URL: "https://cms.example/wp-json", WP_MEDIA_ORIGIN: "http://localhost:8888" }), site).toBe(
+        site,
+      );
+    }
+    expect(parseSiteUrl({ SITE_URL: "http://localhost:3450", WP_API_URL: "http://localhost:4150/wp-json" })).toBe("http://localhost:3450");
+  });
+});
+
 describe("buildSiteUrl", () => {
   it("may be unset outside Vercel, and fails a Vercel build without it, with a plain message", () => {
     expect(buildSiteUrl({})).toBeUndefined();
