@@ -87,6 +87,14 @@ final class ContentModelTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Quick Edit and Bulk Edit on the Resources list do not offer the type: they save outside REST,
+	 * where the one-type rule is checked, and Bulk Edit adds terms rather than replacing them.
+	 */
+	public function test_type_is_not_in_quick_edit(): void {
+		$this->assertFalse( get_taxonomy( Taxonomies::TYPE )->show_in_quick_edit );
+	}
+
+	/**
 	 * Every label the editor or admin shows names the taxonomy's own terms, so nothing falls back to
 	 * core's "Category" or "Tag" wording.
 	 */

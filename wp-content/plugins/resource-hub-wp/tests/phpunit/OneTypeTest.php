@@ -100,7 +100,7 @@ final class OneTypeTest extends WP_UnitTestCase {
 	 */
 	public function test_refusal_messages_are_plain(): void {
 		$missing = $this->send( 'POST', '/wp/v2/resources', array( 'status' => 'publish' ) );
-		$this->assertSame( 'A resource needs a type before it can be published. Choose one in the Types panel.', $missing->get_data()['message'] );
+		$this->assertSame( 'A resource needs a type to be published or scheduled. Choose one in the Types panel.', $missing->get_data()['message'] );
 
 		$too_many = $this->send(
 			'POST',
@@ -114,8 +114,8 @@ final class OneTypeTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * A published resource cannot lose its type, and a save that sends no terms is checked against
-	 * the stored ones.
+	 * A published resource cannot lose its type, with a message that fits a resource already
+	 * published, and a save that sends no terms is checked against the stored ones.
 	 */
 	public function test_published_resource_keeps_its_type(): void {
 		$post_id = $this->published_resource( $this->types[0] );
@@ -123,6 +123,7 @@ final class OneTypeTest extends WP_UnitTestCase {
 		$removed = $this->send( 'POST', '/wp/v2/resources/' . $post_id, array( Taxonomies::TYPE => array() ) );
 		$this->assertSame( 400, $removed->get_status() );
 		$this->assertSame( OneType::MISSING, $removed->get_data()['code'] );
+		$this->assertSame( 'A resource needs a type to be published or scheduled. Choose one in the Types panel.', $removed->get_data()['message'] );
 		$this->assertSame( array( $this->types[0] ), wp_get_object_terms( $post_id, Taxonomies::TYPE, array( 'fields' => 'ids' ) ) );
 
 		$retitled = $this->send( 'POST', '/wp/v2/resources/' . $post_id, array( 'title' => 'Retitled' ) );

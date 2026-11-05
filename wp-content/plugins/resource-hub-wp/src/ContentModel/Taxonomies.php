@@ -87,7 +87,7 @@ final class Taxonomies {
 			self::TYPE,
 			PostType::NAME,
 			array(
-				'labels'            => array(
+				'labels'             => array(
 					'name'                  => _x( 'Types', 'taxonomy general name', 'resource-hub' ),
 					'singular_name'         => _x( 'Type', 'taxonomy singular name', 'resource-hub' ),
 					'search_items'          => __( 'Search Types', 'resource-hub' ),
@@ -109,19 +109,22 @@ final class Taxonomies {
 					'item_link_description' => _x( 'A link to a type.', 'navigation link block description', 'resource-hub' ),
 					'menu_name'             => __( 'Types', 'resource-hub' ),
 				),
-				'description'       => __( 'What kind of resource it is: article, ebook, webinar, podcast, or case study.', 'resource-hub' ),
+				'description'        => __( 'What kind of resource it is: article, ebook, webinar, podcast, or case study.', 'resource-hub' ),
 				// A fixed vocabulary (ADR 0007). Hierarchical so creating a term needs `edit_terms`, which
 				// only editors and administrators hold here. A resource has exactly one type (OneType), the
 				// editor shows radio buttons, and `topic` and `page` are reserved (ReservedTypeSlugs; ADR 0024).
-				'hierarchical'      => true,
-				'public'            => true,
-				'show_admin_column' => true,
-				'show_in_rest'      => true,
-				'rest_base'         => self::TYPE,
-				'rewrite'           => array( 'slug' => 'resource-type' ),
+				'hierarchical'       => true,
+				'public'             => true,
+				'show_admin_column'  => true,
+				// Quick Edit and Bulk Edit save outside REST, where OneType does not look, and Bulk Edit
+				// adds terms to the ones a resource has, so the type is changed in the editor only.
+				'show_in_quick_edit' => false,
+				'show_in_rest'       => true,
+				'rest_base'          => self::TYPE,
+				'rewrite'            => array( 'slug' => 'resource-type' ),
 				// Editors and administrators (`manage_categories`) manage types; anyone who can write a
 				// resource can pick one.
-				'capabilities'      => array(
+				'capabilities'       => array(
 					'manage_terms' => 'manage_categories',
 					'edit_terms'   => 'manage_categories',
 					'delete_terms' => 'manage_categories',

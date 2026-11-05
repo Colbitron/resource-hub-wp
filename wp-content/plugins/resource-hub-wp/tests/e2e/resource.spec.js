@@ -168,7 +168,7 @@ test.describe( 'Resource content model', () => {
 			page
 				.getByRole( 'region', { name: 'Editor content' } )
 				.getByText(
-					'Publishing failed. A resource needs a type before it can be published. Choose one in the Types panel.'
+					'Publishing failed. A resource needs a type to be published or scheduled. Choose one in the Types panel.'
 				)
 		).toBeVisible();
 

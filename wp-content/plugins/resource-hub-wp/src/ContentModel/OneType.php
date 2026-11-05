@@ -26,8 +26,11 @@ use WP_Term;
  * The block editor saves through REST and nothing else, so the check runs on
  * `rest_pre_insert_resource`: before WordPress writes the post or its terms, with the request's
  * terms if it sends any and the stored ones if it does not. A refusal is a 400 whose message the
- * editor shows in its "Publishing failed" or "Updating failed" notice. Saves that do not go
- * through REST (PHP calls to `wp_insert_post()`, the seeder, WP-CLI, Quick Edit) are not checked.
+ * editor shows in its "Publishing failed" or "Updating failed" notice, worded to fit both a first
+ * publish and an edit of a resource already published. Quick Edit and Bulk Edit on the Resources
+ * list do not show the taxonomy (`show_in_quick_edit` is off), so they cannot change the type.
+ * Saves that do not go through REST (PHP calls to `wp_insert_post()`, the seeder, WP-CLI) are not
+ * checked.
  */
 final class OneType {
 	/**
@@ -104,7 +107,7 @@ final class OneType {
 		if ( 0 === $count && in_array( $status, self::PUBLIC_STATUSES, true ) ) {
 			return new WP_Error(
 				self::MISSING,
-				__( 'A resource needs a type before it can be published. Choose one in the Types panel.', 'resource-hub' ),
+				__( 'A resource needs a type to be published or scheduled. Choose one in the Types panel.', 'resource-hub' ),
 				array( 'status' => 400 )
 			);
 		}
