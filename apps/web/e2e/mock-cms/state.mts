@@ -246,6 +246,15 @@ export class MockState {
     return resource;
   }
 
+  /** Changes the title, as an editor's save does; the slug stays, as WordPress keeps it. */
+  setTitle(id: number, title: string): ResourceRecord {
+    const resource = this.requireResource(id);
+    if (title.trim() === "") throw new MockError(422, "The title must not be empty.");
+    resource.title = title;
+    this.touch(resource);
+    return resource;
+  }
+
   setType(id: number, typeSlug: string): ResourceRecord {
     const resource = this.requireResource(id);
     resource.typeIds = [this.requireTerm("resource_type", typeSlug).id];

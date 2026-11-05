@@ -16,6 +16,13 @@ export const DEFAULT_WEB_PORT = 3310;
 /** Port the mock CMS listens on; `RH_MOCK_CMS_PORT` overrides it. */
 export const DEFAULT_MOCK_CMS_PORT = 4010;
 
+/**
+ * The `REVALIDATE_SECRET` the app under test is started with, and the bearer
+ * `e2e/revalidate.spec.ts` sends. A fixed, obviously-not-secret value: the
+ * harness never touches a real CMS or a real secret.
+ */
+export const E2E_REVALIDATE_SECRET = "e2e-revalidate-secret-not-for-real-use";
+
 /** The address the mock binds to and puts in every URL it emits. */
 export const MOCK_CMS_HOST = "127.0.0.1";
 
