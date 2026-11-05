@@ -28,6 +28,8 @@ The 404 is decided before core's canonical and old-slug redirects run, so an ano
 - `robots.txt` itself, the uploads directory and the REST API stay reachable anonymously. The uploads are static files the web server serves without WordPress, and the front end's `/media/` rewrite reads them.
 - A crawler that obeys the `robots.txt` disallow never fetches a page, so it never sees the `noindex`; the header is for crawlers that ignore `robots.txt` and for responses reached some other way, and the 404 is what keeps the content out either way.
 - `get_permalink()` still returns the absolute CMS URL; the front end strips the domain ([ADR 0024](0024-type-paths-mirrored-on-both-sites.md)).
+- 2026-11-05: an anonymous `?wp_customize=on`, `?customize_changeset_uuid=…` or `?preview_id=…&preview_nonce=…` gets core's own `wp_die()` error page, a 500 or a 403, which core sends before `wp()` and so before the gate, with or without the plugin, and which shows no content.
+- 2026-11-05: the 404 renders the active theme's header, and Twenty Twenty-Five's navigation there lists published pages, so the slice-5 theme's 404 template must not render navigation that lists pages.
 
 ## Choices made when it was built (2026-11-05)
 
