@@ -736,13 +736,32 @@ describe("deep nesting", () => {
     expect(result).toBe("Deep &amp; down");
   });
 
-  it("drops 300 nested svgs without descending into them, so the rest still renders as markup", () => {
-    const { result, warned } = quietly(() => render(`<p>Before</p>${nested(300, "<svg>", "</svg>", "<text>x</text>")}`));
-    expect(warned).toBe(0);
-    expect(result).toBe("<p>Before</p>");
+  it("counts 256 elements of nesting, a void leaf inside them adding none", () => {
+    const leaf = "<br>Deep";
+    const inside = quietly(() => render(nested(MAX_DEPTH, "<div>", "</div>", leaf)));
+    expect(inside.warned).toBe(0);
+    expect(inside.result).toBe(nested(MAX_DEPTH, "<div>", "</div>", "<br/>Deep"));
+    const over = quietly(() => render(nested(MAX_DEPTH + 1, "<div>", "</div>", leaf)));
+    expect(over.warned).toBe(1);
+    expect(over.result).toBe("Deep");
   });
 
-  it.each([2_000, 20_000])("renders %i nested svgs as plain text, without throwing", (depth) => {
+  it("leaves every element htmlparser2 treats as void out of the depth, as the parser does", () => {
+    const voids = ["area", "base", "basefont", "br", "col", "command", "embed", "frame", "hr", "img", "input", "isindex", "keygen", "link", "meta", "param", "source", "track", "wbr"];
+    const { warned } = quietly(() => render(nested(MAX_DEPTH, "<div>", "</div>", voids.map((name) => `<${name}>`).join(""))));
+    expect(warned).toBe(0);
+  });
+
+  it("counts the elements the parser opens and closes by implication, as it does", () => {
+    // Each <p> and <li> closes the one before it; a stray </p> opens and closes an empty <p>.
+    const flat = quietly(() => render(`${"<p>x".repeat(1_000)}<ul>${"<li>x".repeat(1_000)}</ul>`));
+    expect(flat.warned).toBe(0);
+    const stray = (depth: number) => quietly(() => render(nested(depth, "<i>", "</i>", "</p>")));
+    expect(stray(MAX_DEPTH - 1).warned).toBe(0);
+    expect(stray(MAX_DEPTH).warned).toBe(1);
+  });
+
+  it.each([300, 2_000, 20_000])("renders %i nested svgs as plain text, without throwing", (depth) => {
     const { result, warned } = quietly(() => render(`<p>Before</p>${nested(depth, "<svg>", "</svg>", "<text>x</text>")}`));
     expect(warned).toBe(1);
     expect(result).toBe("Before x");
@@ -759,12 +778,33 @@ describe("deep nesting", () => {
     expect(result).toContain("<ul><li>x</li></ul>");
   });
 
-  it("catches depth the pre-scan cannot see (end tags hidden in comments) in the pass or its try", () => {
-    for (const depth of [300, 20_000]) {
-      const { result, warned, errored } = quietly(() => render(`${"<div><!--</div>-->".repeat(depth)}<p>Hidden</p>`));
-      expect(warned + errored, String(depth)).toBe(1);
-      expect(result, String(depth)).toBe("Hidden");
+  it("reads end tags hidden in comments, raw text, attribute values and CDATA as the parser does", () => {
+    for (const hidden of ["<!--</div>-->", "<script></div></script>", "<textarea></div></textarea>", '<br title="</div>">', "<![CDATA[</div>]]>"]) {
+      for (const depth of [MAX_DEPTH + 1, 20_000]) {
+        const { result, warned, errored } = quietly(() => render(`${`<div>${hidden}`.repeat(depth)}<p>Hidden</p>`));
+        expect(warned, `${hidden} x ${depth}`).toBe(1);
+        expect(errored, `${hidden} x ${depth}`).toBe(0);
+        expect(result.endsWith("Hidden"), `${hidden} x ${depth}`).toBe(true);
+      }
     }
+  });
+
+  it("renders the reviewer's worst case at the size cap as text in well under half a second", () => {
+    // Blocks of 1,000 <i> whose end tags hide in a comment, 37,000 deep, then
+    // unmatched </p> to the cap: htmlparser2 searched its stack of 37,000 for
+    // each </p>, which took 1.6 to 4 s before the depth pre-pass stopped it at
+    // MAX_DEPTH + 1. It takes about 5 ms now. 500 ms leaves two orders of
+    // magnitude for a slow CI runner and still fails the quadratic case by
+    // three times on the fastest machine measured.
+    const block = `${"<i>".repeat(1_000)}<!--${"</i>".repeat(1_000)}-->`;
+    let html = block.repeat(37);
+    html += "</p>".repeat(Math.floor((MAX_CONTENT_LENGTH - html.length) / 4));
+    expect(html.length).toBeGreaterThan(MAX_CONTENT_LENGTH - 4);
+    expect(html.length).toBeLessThanOrEqual(MAX_CONTENT_LENGTH);
+    const start = performance.now();
+    const { warned } = quietly(() => render(html));
+    expect(performance.now() - start).toBeLessThan(500);
+    expect(warned).toBe(1);
   });
 
   it("renders a body of exactly MAX_CONTENT_LENGTH as markup and one a character longer as plain text", () => {

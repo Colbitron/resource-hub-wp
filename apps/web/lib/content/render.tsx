@@ -7,6 +7,7 @@ import parse, {
   type DOMNode,
   type HTMLReactParserOptions,
 } from "html-react-parser";
+import { Parser, type ParserOptions } from "htmlparser2";
 import Image from "next/image";
 import { createElement, Fragment, type ReactElement, type ReactNode } from "react";
 
@@ -78,16 +79,15 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   text (the oEmbed was not resolved) becomes a link to that URL. Inside a
  *   link, where a browser would not nest another, each becomes its text, and
  *   an `<a>` inside an `<a>` is unwrapped.
- * - Depth: a body nested more than `MAX_DEPTH` elements deep renders as
- *   plain text (`textOnly`). `mayNestDeeperThan` keeps a body far deeper
- *   than that from the parser, which slows down quadratically with depth;
- *   the pass counts the depth exactly as it descends. Any error inside the
- *   parse or the pass (`html-react-parser` recurses once per level and runs
- *   out of stack at about 2,000) also gives the plain-text rendering, so a
- *   body never makes the page fail.
+ * - Depth: a body that nests more than `MAX_DEPTH` elements deep renders as
+ *   plain text (`textOnly`). `nestsDeeperThan` decides it before the parse
+ *   that renders, by running htmlparser2 itself over the body and stopping
+ *   it at the first element past the limit, so the parser never holds more
+ *   than `MAX_DEPTH + 1` open elements and its work per tag stays bounded.
+ *   Any error inside the parse or the pass also gives the plain-text
+ *   rendering, so a body never makes the page fail.
  * - Size: a body longer than `MAX_CONTENT_LENGTH` UTF-16 code units renders
- *   as plain text without reaching the parser, which bounds the time that
- *   markup crafted past the pre-scan can make the parser take.
+ *   as plain text without reaching the parser, a second line of defence.
  *
  * No regular expression here backtracks more than linearly on its input.
  *
@@ -137,35 +137,26 @@ export interface RenderContentOptions {
 const CONTENT_SIZES = "(max-width: 40rem) 100vw, 40rem";
 
 /**
- * How deeply a body may nest before it renders as plain text, counted
- * exactly by the pass (`children`). WordPress's own blocks nest a dozen
- * levels at most (a list in a group in a column in a cover); 256 is far
- * beyond any real body and far below the roughly 2,000 levels of `<div>` at
- * which `html-react-parser` runs out of stack.
+ * How many elements deep a body may nest before it renders as plain text:
+ * the most elements htmlparser2 holds open at once, which is the depth of
+ * the tree it builds. Void elements (`<br>`, `<img>`) never open a level, so
+ * 256 nested `<div>`s with a `<br>` inside render and 257 do not. WordPress's
+ * own blocks nest a dozen levels at most (a list in a group in a column in a
+ * cover); 256 is far beyond any real body and far below the roughly 2,000
+ * levels at which `html-react-parser`, which recurses once per level, runs
+ * out of stack.
  */
 export const MAX_DEPTH = 256;
 
 /**
- * The estimate (`mayNestDeeperThan`) past which a body is not parsed at all.
- * Higher than `MAX_DEPTH` because the estimate errs high on markup that
- * leaves elements open (an SVG's `<path/>`s, `<li>`s never closed); low
- * enough that the parser's per-tag work, which grows with the depth, stays
- * small (a megabyte of end tags under 1,000 open elements: about 0.15 s).
- * A body between the two becomes text through the exact check.
- */
-const PRESCAN_LIMIT = 1024;
-
-/**
  * The longest body, in UTF-16 code units (`html.length`, 512 Ki), that goes
- * to the parser; a longer one renders as plain text (`textOnly`). The
- * pre-scan can be fooled by end tags the parser does not read as end tags
- * (in comments, attribute values or `<script>`), so crafted markup can still
- * reach htmlparser2 deeply nested, and that costs about 0.6 s per megabyte
- * at worst, measured on ASCII markup where a code unit is a byte. The cap
- * holds one render to about 0.3 s, and a body renders once per revalidation
- * before ISR caches it, and only editors write it. Code units rather than
- * bytes because `length` costs nothing and is what the parser's work scales
- * with; the longest real resource body is a few tens of kilobytes.
+ * to the parser; a longer one renders as plain text (`textOnly`). The depth
+ * pre-pass is what bounds the parser's work per tag; this bounds the number
+ * of tags, so it is a second line of defence that holds whatever the markup.
+ * Code units rather than bytes because `length` costs nothing and is what
+ * the parser's work scales with; the longest real resource body is a few
+ * tens of kilobytes. A body renders once per revalidation before ISR caches
+ * it, and only editors write one.
  */
 export const MAX_CONTENT_LENGTH = 512 * 1024;
 
@@ -280,8 +271,6 @@ interface Context {
   readonly renderBlock: RenderBlock;
   readonly options: HTMLReactParserOptions;
   readonly postId: number | undefined;
-  /** How many elements deep the pass is; checked against `MAX_DEPTH` in `children`. */
-  depth: number;
   /** How many markers have been handed to `renderBlock`; checked against `MAX_MARKERS`. */
   markers: number;
 }
@@ -616,18 +605,13 @@ function elementProps(name: string, attributes: Attributes, context: Context): P
   }
 }
 
-/** Thrown by `children` past `MAX_DEPTH`; `renderContent` renders the body as text. */
-class TooDeep extends RangeError {}
-
-/** `node`'s children through the same pass, one level deeper; past `MAX_DEPTH` it throws `TooDeep`. */
+/**
+ * `node`'s children through the same pass. The tree is at most `MAX_DEPTH`
+ * elements deep, as `nestsDeeperThan` checked on the same parser with the
+ * same options, so this recursion is bounded too.
+ */
 function children(node: Element, context: Context): ReactNode {
-  if (context.depth >= MAX_DEPTH) {
-    throw new TooDeep(`the body nests more than ${MAX_DEPTH} elements deep`);
-  }
-  context.depth++;
-  const result = domToReact(node.children as DOMNode[], context.options);
-  context.depth--;
-  return result;
+  return domToReact(node.children as DOMNode[], context.options);
 }
 
 /**
@@ -891,16 +875,6 @@ function replaceNode(node: DOMNode, context: Context): ReactElement | undefined 
 
 const defaultRenderBlock: RenderBlock = (_props, fallback) => fallback;
 
-/**
- * The void elements as htmlparser2 knows them in HTML mode: they never open
- * a level. `image`, which it reads as `img` outside SVG, is not here, so the
- * count errs high on it.
- */
-const PARSER_VOID_ELEMENTS = new Set([
-  "area", "base", "basefont", "br", "col", "command", "embed", "frame", "hr", "img",
-  "input", "isindex", "keygen", "link", "meta", "param", "source", "track", "wbr",
-]);
-
 const GREATER_THAN = 0x3e;
 const SLASH = 0x2f;
 const EXCLAMATION_MARK = 0x21;
@@ -928,47 +902,65 @@ function tagAt(html: string, start: number): { name: string; closing: boolean } 
 }
 
 /**
- * True when `html` may nest more than `limit` elements deep, decided in one
- * pass over the string before the parser sees it. htmlparser2 slows down
- * quadratically with depth (200,000 nested `<div>`s, a megabyte, take about
- * five seconds), so a body this flags is never parsed.
- *
- * It counts open elements by name: a start tag that is not void opens one,
- * and an end tag closes one of its name when one is open. It does not keep
- * their order, so an end tag closes one element here where the parser
- * closes the matching element and everything opened inside it, and an
- * element the parser closes by implication (an open `<p>` when a `<div>`
- * starts, the last `<li>` at `</ul>`, a `<path/>` in an `<svg>`) stays
- * counted. Both only make the count higher than the parser's depth. It sees
- * every start tag the parser sees, and more (tags inside comments, attribute
- * values and `<script>`), which also only raises it. What can lower it is an
- * end tag the parser does not read as one (`<!--</div>-->`), by one each:
- * markup written that way can reach the parser deeply nested, which cost
- * about 0.6 s per megabyte at worst when measured (`<b x="</b>">` repeated),
- * and the exact check in `children` and the `try` in `renderContent` then
- * render it as text.
- *
- * Constant work per tag, so linear in the length of `html`.
+ * The options both parses use, the pre-pass here and `html-react-parser`'s:
+ * lower-case names and first-occurrence-wins for duplicates, as a browser
+ * reads attributes, so `HREF` and `href` are one attribute.
  */
-function mayNestDeeperThan(html: string, limit: number): boolean {
-  const open = new Map<string, number>();
+const PARSER_OPTIONS: ParserOptions = { lowerCaseTags: true, lowerCaseAttributeNames: true, decodeEntities: true };
+
+/** Thrown by `nestsDeeperThan`'s handler to stop the parser at the first element past the limit. */
+class TooDeep extends Error {}
+
+/** htmlparser2's `Parser`, with its own judgement of which elements are void made readable. */
+class DepthProbe extends Parser {
+  isVoid(name: string): boolean {
+    return this.isVoidElement(name);
+  }
+}
+
+/**
+ * True when htmlparser2, with `PARSER_OPTIONS`, would hold more than `limit`
+ * elements open at once while parsing `html`: the tree `html-react-parser`
+ * builds from it would be more than `limit` elements deep.
+ *
+ * It runs the parser itself, so comments, attribute values, `<script>`,
+ * `<textarea>`, CDATA, implied end tags and foreign content are read exactly
+ * as in the parse that renders; a hand-written scan cannot see end tags the
+ * way the parser does, and markup that hid them from one made the parser
+ * nest tens of thousands deep. `onopentagname` fires right after the parser
+ * pushes an element onto its stack, and `onclosetag` as it pops one, so
+ * `depth` is the stack's length; void elements, which the parser never
+ * pushes (and reports closed at once), are left out by the parser's own
+ * `isVoidElement`. The handler throws at the first element past `limit`, so
+ * the stack never holds more than `limit + 1`. That bounds the parser's work
+ * per tag (it searches the stack for every end tag and shifts it for every
+ * start tag), so the pass is linear in the length of `html`. No `onopentag`
+ * handler is given, so the parser does not collect attributes.
+ */
+function nestsDeeperThan(html: string, limit: number): boolean {
   let depth = 0;
-  for (let position = html.indexOf("<"); position !== -1; position = html.indexOf("<", position + 1)) {
-    const tag = tagAt(html, position);
-    if (tag === null || PARSER_VOID_ELEMENTS.has(tag.name)) {
-      continue;
+  const probe: DepthProbe = new DepthProbe(
+    {
+      onopentagname(name) {
+        if (!probe.isVoid(name) && ++depth > limit) {
+          throw new TooDeep();
+        }
+      },
+      onclosetag(name) {
+        if (!probe.isVoid(name)) {
+          depth--;
+        }
+      },
+    },
+    PARSER_OPTIONS,
+  );
+  try {
+    probe.end(html);
+  } catch (error) {
+    if (error instanceof TooDeep) {
+      return true;
     }
-    const count = open.get(tag.name) ?? 0;
-    if (!tag.closing) {
-      open.set(tag.name, count + 1);
-      depth++;
-      if (depth > limit) {
-        return true;
-      }
-    } else if (count > 0) {
-      open.set(tag.name, count - 1);
-      depth--;
-    }
+    throw error;
   }
   return false;
 }
@@ -1075,31 +1067,24 @@ export function renderContent(html: string, cms: CmsUrls, options: RenderContent
     cmsNames: cmsBases.map((base) => `${base.hostname}${base.prefix}`.toLowerCase()),
     renderBlock: options.renderBlock ?? defaultRenderBlock,
     options: {
-      // Lower-case names and first-occurrence-wins for duplicates, as a
-      // browser reads attributes, so `HREF` and `href` are one attribute.
-      htmlparser2: { lowerCaseTags: true, lowerCaseAttributeNames: true, decodeEntities: true },
+      htmlparser2: PARSER_OPTIONS,
       replace: (node) => replaceNode(node, context),
     },
     postId: options.postId !== undefined && Number.isSafeInteger(options.postId) && options.postId > 0 ? options.postId : undefined,
-    depth: 0,
     markers: 0,
   };
   if (html.length > MAX_CONTENT_LENGTH) {
     console.warn(`renderContent: the body is longer than ${MAX_CONTENT_LENGTH} characters; rendering it as text`);
     return textOnly(html);
   }
-  if (mayNestDeeperThan(html, PRESCAN_LIMIT)) {
-    console.warn(`renderContent: the body nests more than ${MAX_DEPTH} elements deep; rendering it as text`);
-    return textOnly(html);
-  }
   try {
+    if (nestsDeeperThan(html, MAX_DEPTH)) {
+      console.warn(`renderContent: the body nests more than ${MAX_DEPTH} elements deep; rendering it as text`);
+      return textOnly(html);
+    }
     return parse(html, context.options);
   } catch (error) {
-    if (error instanceof TooDeep) {
-      console.warn(`renderContent: ${error.message}; rendering it as text`);
-    } else {
-      console.error("renderContent: the body could not be rendered; rendering it as text", error);
-    }
+    console.error("renderContent: the body could not be rendered; rendering it as text", error);
     return textOnly(html);
   }
 }
