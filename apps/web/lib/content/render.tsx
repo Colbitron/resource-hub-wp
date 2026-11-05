@@ -10,7 +10,7 @@ import parse, {
 import Image from "next/image";
 import { createElement, Fragment, type ReactElement, type ReactNode } from "react";
 
-import { isSlug } from "../routes";
+import { canonicalSlug, isSlug } from "../routes";
 import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, type CmsUrls } from "../urls";
 
 /**
@@ -68,11 +68,16 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  * - The block marker: `<div data-rh-block="related-resources">` with its
  *   `data-*` attributes is parsed and validated and handed to `renderBlock`
  *   with the wrapper's own rendering as the fallback. The default renders
- *   the fallback; slice 4 plugs in `<RelatedResources>`. An invalid marker
- *   renders the fallback and `renderBlock` is not called.
+ *   the fallback; slice 4 plugs in `<RelatedResources>`. An invalid marker,
+ *   or one past the first `MAX_MARKERS`, renders the fallback and
+ *   `renderBlock` is not called. The post ID passed in `postId` wins over
+ *   the marker's `data-exclude`.
  * - Embeds: an `<iframe>`, `<video>` or `<audio>` becomes a link to its
- *   `src`, and an embed block whose wrapper still holds the raw URL as text
- *   (the oEmbed was not resolved) becomes a link to that URL.
+ *   `src` (a `<video>` or `<audio>` without one, to its first usable
+ *   `<source>`), and an embed block whose wrapper still holds the raw URL as
+ *   text (the oEmbed was not resolved) becomes a link to that URL. Inside a
+ *   link, where a browser would not nest another, each becomes its text, and
+ *   an `<a>` inside an `<a>` is unwrapped.
  * - Depth: a body nested more than `MAX_DEPTH` elements deep renders as
  *   plain text (`textOnly`). `mayNestDeeperThan` keeps a body far deeper
  *   than that from the parser, which slows down quadratically with depth;
@@ -94,7 +99,7 @@ export interface RelatedBlockProps {
   readonly topic: string;
   /** `data-topic-id`, the term ID for the `resource_topic` REST filter. */
   readonly topicId: number;
-  /** `data-exclude`, the ID of the post the block sits in. */
+  /** The ID of the post the block sits in: `postId` when given, else `data-exclude`. */
   readonly exclude: number;
   /** The text of the block's `<h2>`, or `null` when it has none. */
   readonly heading: string | null;
@@ -110,6 +115,13 @@ export type RenderBlock = (props: RelatedBlockProps, fallback: ReactNode) => Rea
 export interface RenderContentOptions {
   /** Defaults to rendering the fallback. */
   readonly renderBlock?: RenderBlock;
+  /**
+   * The ID of the resource whose body this is. When given, a marker's
+   * `data-exclude` is checked against it, and a marker that disagrees still
+   * renders, excluding this ID: the block is in this post, whatever its HTML
+   * says.
+   */
+  readonly postId?: number;
 }
 
 /**
@@ -150,6 +162,14 @@ const PRESCAN_LIMIT = 1024;
  * so nothing else refers to an `id`.
  */
 const ID_PREFIX = "c-";
+
+/**
+ * The most related-resources blocks one body renders. Each costs the server
+ * a related-route call and a resources fetch; a resource needs one, and
+ * five leaves room. Markers past it render their fallback, the CMS's own
+ * list of links, as an invalid marker does.
+ */
+export const MAX_MARKERS = 5;
 
 /** Elements that render, by name, after their attributes are filtered. */
 const ALLOWED_ELEMENTS = new Set([
@@ -242,8 +262,11 @@ interface Context {
   readonly cmsNames: readonly string[];
   readonly renderBlock: RenderBlock;
   readonly options: HTMLReactParserOptions;
+  readonly postId: number | undefined;
   /** How many elements deep the pass is; checked against `MAX_DEPTH` in `children`. */
   depth: number;
+  /** How many markers have been handed to `renderBlock`; checked against `MAX_MARKERS`. */
+  markers: number;
 }
 
 const UPLOADS_DIRECTORY = "/wp-content/uploads";
@@ -508,8 +531,12 @@ function linkText(node: Element, href: string | undefined, target: LinkTarget | 
  * unwrapped, so only its content renders; or dropped from an `<a>` that
  * stays. `target` only as `_blank`, `rel` from known tokens, plus
  * `noopener noreferrer` for `_blank`. Its text may be replaced (`linkText`).
+ * An `<a>` inside another is unwrapped, as a browser would not nest them.
  */
 function link(node: Element, attributes: Attributes, context: Context): ReactElement {
+  if (insideLink(node)) {
+    return createElement(Fragment, null, children(node, context));
+  }
   const href = attributes.get("href");
   const target = href === undefined ? undefined : linkTarget(href, context);
   const content = linkText(node, href, target, context) ?? children(node, context);
@@ -586,11 +613,30 @@ function children(node: Element, context: Context): ReactNode {
   return result;
 }
 
-/** The text inside `node`, as a browser's `textContent` would give it. */
+/**
+ * The text inside `node` as the pass renders it: a browser's `textContent`
+ * without the elements in `DROPPED_WITH_CONTENT`, so the heading of
+ * `<h2><script>…</script>Head</h2>` is `Head`.
+ */
 function textOf(node: Element): string {
   return node.children
-    .map((child) => (child instanceof Text ? child.data : child instanceof Element ? textOf(child) : ""))
+    .map((child) => {
+      if (child instanceof Text) {
+        return child.data;
+      }
+      return child instanceof Element && !DROPPED_WITH_CONTENT.has(child.name.toLowerCase()) ? textOf(child) : "";
+    })
     .join("");
+}
+
+/** True when `node` is inside an `<a>`, where a browser would not nest another link. */
+function insideLink(node: Element): boolean {
+  for (let parent = node.parent; parent instanceof Element; parent = parent.parent) {
+    if (parent.name.toLowerCase() === "a") {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** A link to a URL, for embeds and media: `text` defaults to the rewritten URL. */
@@ -640,25 +686,50 @@ function image(attributes: Attributes, context: Context): ReactElement {
 }
 
 /**
- * An `<iframe>`, `<video>` or `<audio>` as a link to its `src`, by the rule
- * for links: its `title` is the link's text unless it is empty, is the
- * `src` itself or names the CMS, when the rewritten `src` is.
+ * The `src` of an `<iframe>`, `<video>` or `<audio>`, or, for one without a
+ * `src`, of its first `<source>` child whose `src` makes a link; `null`
+ * when there is none.
  */
-function mediaLink(attributes: Attributes, context: Context): ReactElement {
-  const src = attributes.get("src");
-  const href = src === undefined ? undefined : safeHref(src, context);
-  if (src === undefined || href === undefined) {
+function mediaSource(node: Element, attributes: Attributes, context: Context): { src: string; href: string } | null {
+  const own = attributes.get("src");
+  const candidates =
+    own !== undefined
+      ? [own]
+      : node.children.flatMap((child) =>
+          child instanceof Element && child.name.toLowerCase() === "source" && child.attribs.src !== undefined
+            ? [child.attribs.src]
+            : [],
+        );
+  for (const src of candidates) {
+    const href = safeHref(src, context);
+    if (href !== undefined) {
+      return { src, href };
+    }
+  }
+  return null;
+}
+
+/**
+ * An `<iframe>`, `<video>` or `<audio>` as a link to its source, by the
+ * rule for links: its `title` is the link's text unless it is empty, is the
+ * `src` itself or names the CMS, when the rewritten `src` is. Inside a link
+ * it is that text alone.
+ */
+function mediaLink(node: Element, attributes: Attributes, context: Context): ReactElement {
+  const source = mediaSource(node, attributes, context);
+  if (source === null) {
     return EMPTY;
   }
   const title = attributes.get("title")?.trim() ?? "";
-  const useTitle = title !== "" && title !== src.trim() && !mentionsCms(title, context);
-  return linkTo(href, useTitle ? title : undefined);
+  const text = title !== "" && title !== source.src.trim() && !mentionsCms(title, context) ? title : source.href;
+  return insideLink(node) ? createElement(Fragment, null, text) : linkTo(source.href, text);
 }
 
 /**
  * An embed block's wrapper (`<div class="wp-block-embed__wrapper">`) whose
  * only content is the embed's URL as text, which is what WordPress leaves
- * when no oEmbed provider answered: the URL becomes a link. Any other
+ * when no oEmbed provider answered: the URL becomes a link (its text inside
+ * a link, its rewritten path when it is a CMS URL with no route). Any other
  * wrapper renders as a `div`, and an `<iframe>` inside it becomes a link
  * through `mediaLink`.
  */
@@ -672,12 +743,29 @@ function embedWrapper(node: Element, attributes: Attributes, context: Context): 
     return null;
   }
   const target = linkTarget(value, context);
-  const shown = target.kind === "keep" ? linkTo(target.href) : target.kind === "unwrap" ? target.text : null;
+  let shown: ReactNode = null;
+  if (target.kind === "keep") {
+    shown = insideLink(node) ? target.href : linkTo(target.href);
+  } else if (target.kind === "unwrap") {
+    shown = target.text;
+  }
   return createElement("div", globalProps(attributes, context), shown);
 }
 
-/** The marker's attributes, validated; `null` when any is missing or out of range. */
-function markerProps(node: Element, attributes: Attributes): RelatedBlockProps | null {
+/**
+ * True for a `data-topic` the routes and tags accept as it is: a slug
+ * (`isSlug`) already in the form `canonicalSlug` gives, which is the form
+ * WordPress writes, so `topic:{slug}` names the tag the data layer sets.
+ */
+function isTopicSlug(value: string): boolean {
+  return isSlug(value) && canonicalSlug(value) === value;
+}
+
+/**
+ * The marker's attributes, validated; `null` when any is missing or out of
+ * range. `exclude` is `context.postId` when it is given.
+ */
+function markerProps(node: Element, attributes: Attributes, context: Context): RelatedBlockProps | null {
   const count = matching(attributes.get("data-count"), POSITIVE_INTEGER);
   const topic = attributes.get("data-topic");
   const topicId = matching(attributes.get("data-topic-id"), POSITIVE_INTEGER);
@@ -686,7 +774,7 @@ function markerProps(node: Element, attributes: Attributes): RelatedBlockProps |
     return null;
   }
   const countValue = Number(count);
-  if (countValue < 1 || countValue > 10 || !isSlug(topic)) {
+  if (countValue < 1 || countValue > 10 || !isTopicSlug(topic)) {
     return null;
   }
   const topicIdValue = Number(topicId);
@@ -700,7 +788,7 @@ function markerProps(node: Element, attributes: Attributes): RelatedBlockProps |
     count: countValue,
     topic,
     topicId: topicIdValue,
-    exclude: excludeValue,
+    exclude: context.postId ?? excludeValue,
     heading: heading === "" ? null : heading,
   };
 }
@@ -712,8 +800,28 @@ function markerProps(node: Element, attributes: Attributes): RelatedBlockProps |
  */
 function marker(node: Element, attributes: Attributes, context: Context): ReactElement {
   const fallback = createElement("div", globalProps(attributes, context), children(node, context));
-  const props = markerProps(node, attributes);
-  return props === null ? fallback : createElement(Fragment, null, context.renderBlock(props, fallback));
+  const props = markerProps(node, attributes, context);
+  if (props === null || context.markers >= MAX_MARKERS) {
+    return fallback;
+  }
+  context.markers++;
+  return createElement(Fragment, null, context.renderBlock(props, fallback));
+}
+
+/**
+ * Drops the newline right after `<pre>` when the `<pre>` holds a single text
+ * node. A browser has already dropped that newline from the CMS's HTML, and
+ * React, rendering a `<pre>` whose only child is a string that starts with a
+ * newline, writes an extra one for the browser to drop, so without this the
+ * page shows a blank first line. With more children React writes the text
+ * as it is and the browser drops the newline itself. The tree is this
+ * call's own, so the text node is edited in place.
+ */
+function dropLeadingNewline(pre: Element): void {
+  const [first] = pre.children;
+  if (pre.children.length === 1 && first instanceof Text && first.data.startsWith("\n")) {
+    first.data = first.data.slice(1);
+  }
 }
 
 /**
@@ -738,7 +846,7 @@ function replaceNode(node: DOMNode, context: Context): ReactElement | undefined 
     return image(attributes, context);
   }
   if (LINKED_MEDIA.has(name)) {
-    return mediaLink(attributes, context);
+    return mediaLink(node, attributes, context);
   }
   if (DROPPED_WITH_CONTENT.has(name)) {
     return EMPTY;
@@ -754,6 +862,9 @@ function replaceNode(node: DOMNode, context: Context): ReactElement | undefined 
     if (embed !== null) {
       return embed;
     }
+  }
+  if (name === "pre") {
+    dropLeadingNewline(node);
   }
   const props = elementProps(name, attributes, context);
   return VOID_ELEMENTS.has(name)
@@ -951,7 +1062,9 @@ export function renderContent(html: string, cms: CmsUrls, options: RenderContent
       htmlparser2: { lowerCaseTags: true, lowerCaseAttributeNames: true, decodeEntities: true },
       replace: (node) => replaceNode(node, context),
     },
+    postId: options.postId !== undefined && Number.isSafeInteger(options.postId) && options.postId > 0 ? options.postId : undefined,
     depth: 0,
+    markers: 0,
   };
   if (mayNestDeeperThan(html, PRESCAN_LIMIT)) {
     console.warn(`renderContent: the body nests more than ${MAX_DEPTH} elements deep; rendering it as text`);

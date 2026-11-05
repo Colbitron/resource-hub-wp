@@ -447,6 +447,9 @@ describe("the block marker", () => {
       ["data-topic", "has space"],
       ["data-topic", "has/slash"],
       ["data-topic", ".."],
+      ["data-topic", "%E6%97%A5"],
+      ["data-topic", "日"],
+      ["data-topic", "a?b"],
       ["data-topic-id", "0"],
       ["data-topic-id", "x"],
       ["data-exclude", "-1"],
@@ -462,6 +465,35 @@ describe("the block marker", () => {
       expect(render(html, { renderBlock }), `${name} missing`).toContain("<h2>More on Headless delivery</h2>");
     }
     expect(renderBlock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a topic slug already in the canonical form WordPress writes", () => {
+    const renderBlock = vi.fn<RenderBlock>(() => null);
+    render(MARKER.replace('data-topic="headless-delivery"', 'data-topic="%e6%97%a5"'), { renderBlock });
+    expect(renderBlock.mock.calls[0]?.[0].topic).toBe("%e6%97%a5");
+  });
+
+  it("leaves dropped elements out of the heading text", () => {
+    const renderBlock = vi.fn<RenderBlock>(() => null);
+    render(MARKER.replace("<h2>More on Headless delivery</h2>", "<h2><script>alert(1)</script>Head<style>p{}</style><em>ing</em></h2>"), {
+      renderBlock,
+    });
+    expect(renderBlock.mock.calls[0]?.[0].heading).toBe("Heading");
+  });
+
+  it(`hands at most the first five markers to renderBlock and renders the rest as their fallback`, () => {
+    const renderBlock = vi.fn<RenderBlock>(() => <aside>related</aside>);
+    const output = render(MARKER.repeat(7), { renderBlock });
+    expect(renderBlock).toHaveBeenCalledTimes(5);
+    expect(output.match(/<aside>related<\/aside>/g)).toHaveLength(5);
+    expect(output.match(/<h2>More on Headless delivery<\/h2>/g)).toHaveLength(2);
+  });
+
+  it("excludes the post ID passed in, whatever data-exclude says", () => {
+    const renderBlock = vi.fn<RenderBlock>(() => null);
+    render(MARKER, { renderBlock, postId: 15 });
+    render(MARKER, { renderBlock, postId: 99 });
+    expect(renderBlock.mock.calls.map(([props]) => props.exclude)).toEqual([15, 99]);
   });
 
   it("gives a null heading when the block has no h2", () => {
@@ -505,6 +537,30 @@ describe("embeds and media", () => {
     expect(render(html)).toBe(
       '<figure class="wp-block-video"><a href="/media/2026/11/photo.mp4" rel="noopener noreferrer">/media/2026/11/photo.mp4</a></figure>',
     );
+  });
+
+  it("links a video or audio without a src to its first usable source", () => {
+    const mp4 = UPLOAD.replace(".jpg", ".mp4");
+    expect(render(`<video controls><source src="javascript:alert(1)"><source src="${mp4}" type="video/mp4"><source src="https://example.com/b.webm"></video>`)).toBe(
+      '<a href="/media/2026/11/photo.mp4" rel="noopener noreferrer">/media/2026/11/photo.mp4</a>',
+    );
+    expect(render(`<video src="https://example.com/a.mp4"><source src="${mp4}"></video>`)).toBe(
+      '<a href="https://example.com/a.mp4" rel="noopener noreferrer">https://example.com/a.mp4</a>',
+    );
+    expect(render('<p><audio controls><source src="data:audio/mp3;base64,AA"></audio></p>')).toBe("<p></p>");
+  });
+
+  it("renders an embed inside a link as its text, never as a nested link", () => {
+    expect(render('<a href="https://example.com/"><iframe src="https://www.youtube.com/embed/x" title="A talk"></iframe></a>')).toBe(
+      '<a href="https://example.com/">A talk</a>',
+    );
+    expect(render(`<a href="/resources/"><video src="${UPLOAD.replace(".jpg", ".mp4")}"></video></a>`)).toBe(
+      '<a href="/resources/">/media/2026/11/photo.mp4</a>',
+    );
+    expect(render('<a href="/resources/"><div class="wp-block-embed__wrapper">https://example.com/talk</div></a>')).toBe(
+      '<a href="/resources/"><div class="wp-block-embed__wrapper">https://example.com/talk</div></a>',
+    );
+    expect(render('<a href="/a/"><span><a href="/b/">x</a></span></a>')).toBe('<a href="/a/"><span>x</span></a>');
   });
 
   it("drops an iframe without a usable src", () => {
@@ -739,5 +795,25 @@ describe("titles and alt text", () => {
     expect(render('<div class="wp-block-embed__wrapper">https://cms.example/wp-admin/</div>')).toBe(
       '<div class="wp-block-embed__wrapper">/wp-admin/</div>',
     );
+  });
+});
+
+describe("fidelity", () => {
+  it("drops the newline a browser drops after <pre>, so no blank first line appears", () => {
+    expect(render("<pre>\ncode</pre>")).toBe("<pre>code</pre>");
+    // The second newline is content; React writes one more for the browser to drop.
+    expect(render("<pre>\n\ncode</pre>")).toBe("<pre>\n\ncode</pre>");
+    // With more than one child React writes the text as it is, and the browser drops the newline itself.
+    expect(render("<pre>\n<code>x</code></pre>")).toBe("<pre>\n<code>x</code></pre>");
+    // A newline inside <code> is content.
+    expect(render('<pre class="wp-block-code"><code>\nx</code></pre>')).toBe('<pre class="wp-block-code"><code>\nx</code></pre>');
+  });
+
+  it("renders a CMS image with one valid dimension as a plain img without dimensions, since next/image needs both", () => {
+    for (const [width, height] of [["1024", "0"], ["abc", "683"], ["1024", ""]] as const) {
+      expect(render(`<img src="${UPLOAD}" width="${width}" height="${height}" alt="">`), `${width}x${height}`).toBe(
+        '<img alt="" src="/media/2026/11/photo.jpg" loading="lazy"/>',
+      );
+    }
   });
 });

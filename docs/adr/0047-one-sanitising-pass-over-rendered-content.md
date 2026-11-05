@@ -50,11 +50,13 @@ Editor-typed text is left as written, in a paragraph or in `<code>`: rewriting i
 
 ## Embeds become links
 
-WordPress renders an embed block as an `<iframe>`, or leaves the raw URL as text when no oEmbed provider answered. The pass turns an `<iframe>`, `<video>` or `<audio>` anywhere into a link to its `src`, titled by the iframe's `title` when it has one, and a raw embed URL into a link to itself. A link degrades gracefully, loads nothing from a third party and needs no allow-list of providers.
+WordPress renders an embed block as an `<iframe>`, or leaves the raw URL as text when no oEmbed provider answered. The pass turns an `<iframe>`, `<video>` or `<audio>` anywhere into a link to its `src` (a `<video>` or `<audio>` without one, to its first `<source>` whose `src` makes a link), titled by its `title` when it has one, and a raw embed URL into a link to itself. Inside a link, where a browser would not nest another, each becomes its text, and an `<a>` inside an `<a>` is unwrapped. A link degrades gracefully, loads nothing from a third party and needs no allow-list of providers.
+
+A `<pre>` whose only child is text loses the newline right after its start tag, as the browser already dropped it from the CMS's HTML and React would otherwise write it back as a blank first line.
 
 ## The marker seam
 
-`<div data-rh-block="related-resources">` is found in the same pass. `data-count` (1 to 10), `data-topic` (a slug by the same predicate as `lib/routes.ts`), `data-topic-id` and `data-exclude` (positive integers) are validated and handed, with the text of the block's `<h2>`, to an injectable `renderBlock(props, fallback)`. The fallback is the wrapper as the pass renders it, its class kept and its `data-*` attributes dropped, with the CMS's own heading and list of links rewritten like any other content. The default `renderBlock` returns the fallback; slice 4 plugs in `<RelatedResources>`. An invalid marker renders the fallback without calling `renderBlock`.
+`<div data-rh-block="related-resources">` is found in the same pass. `data-count` (1 to 10), `data-topic` (a slug by `isSlug` in `lib/routes.ts`, and already in the form `canonicalSlug` gives, which is the form WordPress writes, so `topic:{slug}` is the tag the data layer sets), `data-topic-id` and `data-exclude` (positive integers) are validated and handed, with the text of the block's `<h2>` (without the content of dropped elements such as `<script>`), to an injectable `renderBlock(props, fallback)`. The caller passes the resource's ID as `postId`, and it is the one excluded, whatever `data-exclude` says; a marker that disagrees still renders. At most five markers in a body reach `renderBlock`, since each costs the server a related-route call and a fetch; the rest render their fallback. The fallback is the wrapper as the pass renders it, its class kept and its `data-*` attributes dropped, with the CMS's own heading and list of links rewritten like any other content. The default `renderBlock` returns the fallback; slice 4 plugs in `<RelatedResources>`. An invalid marker renders the fallback without calling `renderBlock`.
 
 ## Considered options
 
