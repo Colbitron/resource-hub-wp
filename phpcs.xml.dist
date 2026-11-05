@@ -15,7 +15,7 @@
 	<arg value="sp"/>
 	<arg name="parallel" value="8"/>
 
-	<config name="minimum_wp_version" value="6.7"/>
+	<config name="minimum_wp_version" value="6.9"/>
 	<config name="testVersion" value="8.2-"/>
 
 	<rule ref="WordPress">
