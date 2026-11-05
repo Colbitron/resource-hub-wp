@@ -164,10 +164,31 @@ describe("the secret", () => {
     expect(revalidateTag).not.toHaveBeenCalled();
   });
 
-  it("accepts a secret of exactly 32 characters", async () => {
-    const value = "x".repeat(32);
+  it.each([
+    ["32", 32],
+    ["256", 256],
+  ])("accepts a secret of exactly %s characters", async (_name, length) => {
+    const value = "x".repeat(length);
     process.env.REVALIDATE_SECRET = value;
     await okBody(await POST(request({ headers: { Authorization: `Bearer ${value}` }, body: batch([resourceUpdate()]) })));
+  });
+
+  it("is a 500 when REVALIDATE_SECRET is 257 characters, even with a bearer that matches it, never echoed", async () => {
+    const value = `${SECRET}${"~".repeat(257 - SECRET.length)}`;
+    process.env.REVALIDATE_SECRET = value;
+    const response = await POST(
+      request({ headers: { Authorization: `Bearer ${value}` }, body: batch([resourceUpdate()]) }),
+    );
+    const text = await response.clone().text();
+    await expectError(
+      response,
+      500,
+      "The front end's revalidation secret is longer than 256 characters, so every request is refused.",
+    );
+    expect(text).not.toContain(SECRET);
+    const logged = vi.mocked(console.error).mock.calls.flat().map(String).join(" ");
+    expect(logged).not.toContain(SECRET);
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -365,6 +386,11 @@ describe("reading the body", () => {
     vi.useRealTimers();
   });
 
+  /** No timer is left pending once the answer is out: the deadline is cleared however the read ends. */
+  function expectNoTimers() {
+    expect(vi.getTimerCount()).toBe(0);
+  }
+
   /** Only the timers the route's deadline uses are faked, so streams and promises run as usual. */
   function fakeTimers() {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
@@ -391,6 +417,7 @@ describe("reading the body", () => {
     await expectError(await pending, 400, TOO_SLOW);
     expect(cancelled).toBe(true);
     expect(revalidateTag).not.toHaveBeenCalled();
+    expectNoTimers();
   });
 
   it("is a 400 when a body dribbles in slower than the deadline, however valid it would be", async () => {
@@ -416,6 +443,7 @@ describe("reading the body", () => {
     await expectError(await pending, 400, TOO_SLOW);
     expect(pulls).toBeLessThanOrEqual(8);
     expect(revalidateTag).not.toHaveBeenCalled();
+    expectNoTimers();
   });
 
   it("accepts a slow body that finishes inside the deadline", async () => {
@@ -437,6 +465,18 @@ describe("reading the body", () => {
     await vi.advanceTimersByTimeAsync(1900);
     const ok = await okBody(await pending);
     expect(ok.revalidated).toContain("/resources/webinar/example/");
+    expectNoTimers();
+  });
+
+  it.each([
+    ["locked by another reader", (incoming: Request) => void incoming.body?.getReader()],
+    ["already read", async (incoming: Request) => void (await incoming.text())],
+  ])("is a 400 when the body is %s, so getReader() throws", async (_name, disturb) => {
+    const incoming = request({ body: batch([resourceUpdate()]) });
+    await disturb(incoming);
+    expect(() => incoming.body?.getReader()).toThrow(TypeError);
+    await expectError(await POST(incoming), 400, "The body could not be read.");
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 
   it("is a 400 when the stream fails partway", async () => {

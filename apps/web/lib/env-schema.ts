@@ -105,6 +105,13 @@ const mediaOriginSchema = httpUrl
 /** The fewest characters `REVALIDATE_SECRET` may have. */
 export const MIN_SECRET_LENGTH = 32;
 
+/**
+ * The most characters `REVALIDATE_SECRET` may have: the CMS's cap
+ * (`Config::SECRET_MAX_LENGTH`), so a secret one side accepts the other does
+ * too.
+ */
+export const MAX_SECRET_LENGTH = 256;
+
 /** Printable ASCII without the space (0x21 to 0x7E): every character a bearer token can carry. */
 const BEARER_SAFE = /^[\x21-\x7E]*$/;
 
@@ -114,9 +121,10 @@ const BEARER_SAFE = /^[\x21-\x7E]*$/;
  * whitespace (a trailing newline or a space pasted with it), which the
  * bearer token the CMS sends can never carry, so no request could ever
  * match it; `"too-short"` when it has fewer than `MIN_SECRET_LENGTH`
- * characters.
+ * characters; `"too-long"` when it has more than `MAX_SECRET_LENGTH`, which
+ * the CMS refuses, so the two sides could never share it.
  */
-export type SecretProblem = "bad-characters" | "too-short";
+export type SecretProblem = "bad-characters" | "too-short" | "too-long";
 
 /**
  * What is wrong with a `REVALIDATE_SECRET` value, or `null` when nothing is.
@@ -131,6 +139,9 @@ export function secretProblem(value: string): SecretProblem | null {
   if (value.length < MIN_SECRET_LENGTH) {
     return "too-short";
   }
+  if (value.length > MAX_SECRET_LENGTH) {
+    return "too-long";
+  }
   return null;
 }
 
@@ -138,6 +149,7 @@ const SECRET_PROBLEM_MESSAGES: Record<SecretProblem, string> = {
   "bad-characters":
     "must be printable ASCII with no whitespace, because a bearer token cannot carry anything else",
   "too-short": `must be at least ${MIN_SECRET_LENGTH} characters long`,
+  "too-long": `must be at most ${MAX_SECRET_LENGTH} characters long, the most the CMS accepts`,
 };
 
 /** A `REVALIDATE_SECRET` that is set but breaks the rule; `problem` says which part. */
@@ -176,7 +188,7 @@ export function parseWpApiUrl(env: EnvSource): string {
 }
 
 /**
- * The bearer secret the CMS sends to `POST /api/revalidate`: at least 32
+ * The bearer secret the CMS sends to `POST /api/revalidate`: 32 to 256
  * printable ASCII characters with no whitespace (root `CLAUDE.md`,
  * "Configuration, front end"). Compared byte for byte, so it is never
  * trimmed: a value with a space or newline in it is refused, not repaired.

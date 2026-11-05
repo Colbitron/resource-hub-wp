@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   EnvError,
+  MAX_SECRET_LENGTH,
   MIN_SECRET_LENGTH,
   optionalMediaOrigin,
   parseMediaOrigin,
@@ -196,6 +197,29 @@ describe("parseRevalidateSecret", () => {
     }
   });
 
+  it("accepts a secret of exactly 256 characters, the CMS's cap", () => {
+    const value = "~".repeat(256);
+    expect(MAX_SECRET_LENGTH).toBe(256);
+    expect(parseRevalidateSecret({ REVALIDATE_SECRET: value })).toBe(value);
+  });
+
+  it("refuses a secret of 257 characters, without echoing it", () => {
+    const value = `${GOOD}${"~".repeat(257 - GOOD.length)}`;
+    expect(value).toHaveLength(257);
+    let thrown: unknown;
+    try {
+      parseRevalidateSecret({ REVALIDATE_SECRET: value });
+    } catch (caught) {
+      thrown = caught;
+    }
+    expect(thrown).toBeInstanceOf(SecretError);
+    expect((thrown as SecretError).problem).toBe("too-long");
+    expect((thrown as Error).message).toMatch(
+      /^REVALIDATE_SECRET must be at most 256 characters long, the most the CMS accepts\./,
+    );
+    expect((thrown as Error).message).not.toContain(GOOD);
+  });
+
   it.each([
     ["a trailing newline", `${GOOD}\n`],
     ["a trailing carriage return and newline", `${GOOD}\r\n`],
@@ -222,6 +246,7 @@ describe("parseRevalidateSecret", () => {
   it("reports the characters before the length", () => {
     expect(secretProblem("short\n")).toBe("bad-characters");
     expect(secretProblem("short")).toBe("too-short");
+    expect(secretProblem(`${"~".repeat(300)}\n`)).toBe("bad-characters");
     expect(secretProblem(GOOD)).toBeNull();
   });
 

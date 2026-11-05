@@ -2,7 +2,13 @@ import { createHash, timingSafeEqual } from "node:crypto";
 
 import { revalidatePath, revalidateTag } from "next/cache";
 
-import { EnvError, MIN_SECRET_LENGTH, SecretError, type SecretProblem } from "@/lib/env-schema";
+import {
+  EnvError,
+  MAX_SECRET_LENGTH,
+  MIN_SECRET_LENGTH,
+  SecretError,
+  type SecretProblem,
+} from "@/lib/env-schema";
 import { revalidateSecret } from "@/lib/env";
 import { plainIssueMessage } from "@/lib/plain-issues";
 import { eventsToInvalidations } from "@/lib/tags";
@@ -22,7 +28,8 @@ import {
  * next one runs:
  *
  * 1. The secret. `REVALIDATE_SECRET` missing, shorter than 32 characters,
- *    or holding a character a bearer token cannot carry (anything outside
+ *    longer than 256 (the CMS refuses one that long, so the two could never
+ *    agree on it), or holding a character a bearer token cannot carry (anything outside
  *    printable ASCII, whitespace included) is a `500`: the front end is
  *    misconfigured, and no request can be authorised, so the editor is told
  *    that rather than `unauthorized`. This runs before auth on purpose; all
@@ -153,7 +160,8 @@ type BodyRead =
  * the reader, which settles the pending `read()` at once (a cancelled
  * stream closes before its source is told), and the loop sees the flag and
  * reports `too-slow` rather than a short body. The timer is cleared however
- * the read ends, so nothing runs after the answer.
+ * the read ends, so nothing runs after the answer. A body that cannot be
+ * read at all, because it is locked or already disturbed, is `unreadable`.
  */
 async function readBody(request: Request, limit: number, deadlineMs: number): Promise<BodyRead> {
   const declared = request.headers.get("content-length");
@@ -163,15 +171,19 @@ async function readBody(request: Request, limit: number, deadlineMs: number): Pr
   if (request.body === null) {
     return { ok: true, bytes: new Uint8Array(0) };
   }
-  const reader = request.body.getReader();
+  const body = request.body;
   const chunks: Uint8Array[] = [];
   let received = 0;
   let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    reader.cancel().catch(() => {});
-  }, deadlineMs);
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    // Inside the `try`: a body that is locked or already read throws here,
+    // and that is an unreadable body, not an unhandled error.
+    const reader = body.getReader();
+    timer = setTimeout(() => {
+      timedOut = true;
+      reader.cancel().catch(() => {});
+    }, deadlineMs);
     for (;;) {
       const { done, value } = await reader.read();
       if (timedOut) {
@@ -216,6 +228,7 @@ function describePath(path: readonly PropertyKey[]): string {
 /** The `500` sentence for each way `REVALIDATE_SECRET` can break the rule. */
 const SECRET_PROBLEM_ERRORS: Record<SecretProblem, string> = {
   "too-short": `The front end's revalidation secret is shorter than ${MIN_SECRET_LENGTH} characters, so every request is refused.`,
+  "too-long": `The front end's revalidation secret is longer than ${MAX_SECRET_LENGTH} characters, so every request is refused.`,
   "bad-characters":
     "The front end's revalidation secret has characters a bearer token cannot carry, such as a space or line break, so every request is refused.",
 };
