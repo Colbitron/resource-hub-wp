@@ -332,11 +332,12 @@ final class SenderTest extends RevalidationTestCase {
 			$seen[ $outcome ] = ( new Result( Result::FAILED, $outcome, 418, '', 'boom', 1 ) )->describe();
 		}
 
-		$this->assertCount( 11, Result::OUTCOMES );
+		$this->assertCount( 12, Result::OUTCOMES );
 		$this->assertCount( count( Result::OUTCOMES ), array_unique( $seen ) );
 		$this->assertStringContainsString( '418', $seen[ Result::UNEXPECTED_CODE ] );
 		$this->assertStringContainsString( 'boom', $seen[ Result::TRANSPORT_ERROR ] );
 		$this->assertStringContainsString( 'check the front-end URL', $seen[ Result::BAD_BODY ] );
 		$this->assertStringContainsString( 'encoded as JSON', $seen[ Result::ENCODE_ERROR ] );
+		$this->assertStringContainsString( 'topic or page', $seen[ Result::RESERVED_TYPE ] );
 	}
 }

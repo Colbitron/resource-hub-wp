@@ -21,8 +21,10 @@ namespace ResourceHub\Revalidation;
  * decoded ({@see Payload::decode_slugs()}), because one slug the front end refuses would fail the
  * whole batch with a 400 (ADR 0024). Then a resource event whose top-level `types` is not exactly
  * one element is held back: the schema requires one, so sending it would fail the whole batch with
- * a 400 too. It is recorded on that resource as a failure with a plain
- * message, and the rest of the batch goes out. An `update` whose current state is valid but whose
+ * a 400 too. So is a `resource_type` term event whose slug decodes to `topic` or `page`
+ * ({@see Payload::is_reserved_type_term()}), which the schema refuses as a type. Each is recorded
+ * on its resource or term as a failure with a plain message, logged to PostHog when configured and
+ * printed under WP-CLI, and the rest of the batch goes out. An `update` whose current state is valid but whose
  * `previous.types` is not is sent as an `update` with the current type standing in for the earlier
  * ones ({@see ResourceState::with_valid_previous_types()}), so the save that fixes a resource's type
  * goes out and the old slug and topics are still revalidated.
@@ -90,14 +92,15 @@ final class Dispatcher {
 				$event = ResourceEvents::refresh( $event );
 			}
 
-			$event = Payload::decode_slugs( $event );
+			$event  = Payload::decode_slugs( $event );
+			$reason = self::reason_to_hold_back( $event );
+
+			if ( null !== $reason ) {
+				$results[] = $this->hold_back( $event, $reason );
+				continue;
+			}
 
 			if ( 'resource' === $event['type'] ) {
-				if ( ! ResourceState::has_one_type( $event ) ) {
-					$results[] = $this->hold_back( $event );
-					continue;
-				}
-
 				$event = ResourceState::with_valid_previous_types( $event );
 			}
 
@@ -146,20 +149,21 @@ final class Dispatcher {
 
 	/**
 	 * Sends one event now, as a batch of one: the status page's test button (ADR 0019). Its slugs are
-	 * decoded as at `shutdown` ({@see Payload::decode_slugs()}). A resource
-	 * event without exactly one type is held back and recorded like any other, and one whose
-	 * `previous.types` alone is invalid is sent with the current type in its place, as at `shutdown`.
+	 * decoded as at `shutdown` ({@see Payload::decode_slugs()}). An event that cannot be sent is held
+	 * back and recorded like any other, and a resource event whose `previous.types` alone is invalid
+	 * is sent with the current type in its place, as at `shutdown`.
 	 *
 	 * @param array<string, mixed> $event The event.
 	 */
 	public function send_one( array $event ): Result {
-		$event = Payload::decode_slugs( $event );
+		$event  = Payload::decode_slugs( $event );
+		$reason = self::reason_to_hold_back( $event );
+
+		if ( null !== $reason ) {
+			return $this->hold_back( $event, $reason );
+		}
 
 		if ( 'resource' === $event['type'] ) {
-			if ( ! ResourceState::has_one_type( $event ) ) {
-				return $this->hold_back( $event );
-			}
-
 			$event = ResourceState::with_valid_previous_types( $event );
 		}
 
@@ -189,14 +193,30 @@ final class Dispatcher {
 	}
 
 	/**
-	 * Records a resource event that cannot be sent as a failure on its resource, and logs it, under
-	 * its own batch ID so the PostHog event names it.
+	 * Why an event, its slugs already decoded, cannot be sent, or null when it can: a resource event
+	 * without exactly one type, or a `resource_type` term event whose slug is reserved. Either would
+	 * fail the schema, and with it the whole batch.
 	 *
-	 * @param array<string, mixed> $event The resource event.
+	 * @param array<string, mixed> $event The event.
 	 */
-	private function hold_back( array $event ): Result {
+	private static function reason_to_hold_back( array $event ): ?Result {
+		if ( 'resource' === $event['type'] ) {
+			return ResourceState::has_one_type( $event ) ? null : Result::no_single_type();
+		}
+
+		return Payload::is_reserved_type_term( $event ) ? Result::reserved_type() : null;
+	}
+
+	/**
+	 * Records an event that cannot be sent as a failure on its resource or term, and logs it, under
+	 * its own batch ID so the PostHog event names it. A deleted term has nowhere to hold the record,
+	 * so PostHog alone keeps it.
+	 *
+	 * @param array<string, mixed> $event  The event.
+	 * @param Result               $result Why it is held back.
+	 */
+	private function hold_back( array $event, Result $result ): Result {
 		$batch_id = wp_generate_uuid4();
-		$result   = Result::no_single_type();
 
 		$this->store->record( $batch_id, array( $event ), $result );
 		$this->posthog->capture( $batch_id, array( $event ), $result );
