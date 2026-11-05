@@ -93,9 +93,12 @@
 	color: var(--rh-color-text-muted);
 }
 
-/* The body: the editor's HTML after the sanitiser, styled by element. */
+/*
+ * The body: the editor's HTML after the sanitiser, styled by element. A body
+ * never renders an `h1`: when it has one, the pass shows every heading one
+ * level down (ADR 0047), so the levels here start at `h2`.
+ */
 
-.rh-resource__body h1,
 .rh-resource__body h2,
 .rh-resource__body h3,
 .rh-resource__body h4,
@@ -107,8 +110,6 @@
 	line-height: var(--rh-leading-tight);
 }
 
-/* A body's own `h1` is kept as the editor wrote it but shown at the page's second level. */
-.rh-resource__body h1,
 .rh-resource__body h2 {
 	font-size: var(--rh-text-xl);
 }
@@ -202,10 +203,31 @@
 	font-size: inherit;
 }
 
-/* Tables stay tables (their semantics go with `display`); long cells wrap instead. */
+/*
+ * Every table sits in the pass's scroll region (`tableRegion` in
+ * lib/content/render.tsx): a focusable, labelled box that scrolls sideways,
+ * so a table wider than the column scrolls inside it and the page never
+ * does. The region is a tab stop, so it shows the focus ring; its margin is
+ * the table's.
+ */
+.rh-resource__body .rh-table-scroll {
+	margin: 0 0 var(--rh-space-4);
+	overflow-x: auto;
+}
+
+.rh-resource__body .rh-table-scroll:focus-visible {
+	outline: var(--rh-focus-width) solid var(--rh-color-focus);
+	outline-offset: 2px;
+}
+
+/*
+ * Tables stay tables (their semantics go with `display`); cells wrap their
+ * words, and a table whose words alone are wider than the column scrolls in
+ * its region.
+ */
 .rh-resource__body table {
 	width: 100%;
-	margin: 0 0 var(--rh-space-4);
+	margin: 0;
 	border-collapse: collapse;
 	font-size: var(--rh-text-sm);
 }

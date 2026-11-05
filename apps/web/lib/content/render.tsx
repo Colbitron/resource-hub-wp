@@ -96,8 +96,14 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   text (the oEmbed was not resolved) becomes a link to that URL. Inside a
  *   link, where a browser would not nest another, each becomes its text, and
  *   an `<a>` inside an `<a>` is unwrapped.
+ * - Tables: every `<table>` renders inside a focusable region that scrolls
+ *   sideways, named by its `<caption>` or "Table" (`tableRegion`).
+ * - Headings: when the body renders an `<h1>`, every body heading is shown
+ *   one level down, capped at `h6`, so the page's own title stays its only
+ *   `<h1>` and the body's levels keep their order (`headingName`); a body
+ *   with no `<h1>` keeps its levels.
  * - Depth: a body that nests more than `MAX_DEPTH` elements deep renders as
- *   plain text (`textOnly`). `nestsDeeperThan` decides it before the parse
+ *   plain text (`textOnly`). `outline` decides it before the parse
  *   that renders, by running htmlparser2 itself over the body and stopping
  *   it at the first element past the limit, so the parser never holds more
  *   than `MAX_DEPTH + 1` open elements and its work per tag stays bounded.
@@ -317,6 +323,13 @@ interface Context {
   markers: number;
   /** How many `<a>` elements the pass is inside; see `insideLink`. */
   links: number;
+  /**
+   * True when the body renders an `<h1>`: every body heading is then shown
+   * one level down (`headingName`), so the page keeps its own `<h1>` as the
+   * only one and the body's headings keep their order. Set from the
+   * pre-pass (`outline`) before the parse that renders.
+   */
+  demoteHeadings: boolean;
 }
 
 const UPLOADS_DIRECTORY = "/wp-content/uploads";
@@ -852,7 +865,7 @@ const NO_TEXT_CHILDREN = new Set(["tr", "tbody", "thead", "tfoot", "colgroup", "
  * called once per level, that cost the depth times the size of the body
  * (about a second for 170,000 elements under 255 levels). `parse` has
  * already done it for the whole tree, once, before the first `replace`. The
- * tree is at most `MAX_DEPTH` elements deep, as `nestsDeeperThan` checked on
+ * tree is at most `MAX_DEPTH` elements deep, as `outline` checked on
  * the same parser version with the same options, so this recursion is bounded.
  */
 function children(node: Element, context: Context): ReactNode {
@@ -1112,6 +1125,64 @@ function dropLeadingNewline(pre: Element): void {
   }
 }
 
+const HEADING = /^h([1-6])$/;
+
+/**
+ * The element name a body element renders as: a heading one level down when
+ * the body renders an `<h1>` (`Context.demoteHeadings`), capped at `h6`;
+ * any other name unchanged. Every level moves, not just `h1`, so the body's
+ * headings keep their order relative to each other: `h1`, `h3`, `h2` become
+ * `h2`, `h4`, `h3`. A body without an `<h1>` (WordPress's editor starts its
+ * headings at `h2`, under the post's title) is left as written, so its `h2`s
+ * stay directly under the page's `<h1>` instead of skipping a level (ADR
+ * 0047's 2026-11-05 amendment).
+ */
+function headingName(name: string, context: Context): string {
+  const level = context.demoteHeadings ? HEADING.exec(name) : null;
+  return level === null ? name : `h${Math.min(Number(level[1]) + 1, 6)}`;
+}
+
+/** The scroll region's accessible name when its table has no caption, or a caption with no text. */
+const TABLE_LABEL = "Table";
+
+/**
+ * The accessible name of a table's scroll region: the text of its
+ * `<caption>` (the first one among its children, as a browser takes it),
+ * without the dropped elements' content (`textOf`) and without any word that
+ * names the CMS, since it renders as an attribute; `TABLE_LABEL` when there
+ * is no caption or nothing is left of it.
+ */
+function tableLabel(table: Element, context: Context): string {
+  const caption = table.children.find((child) => child instanceof Element && child.name.toLowerCase() === "caption");
+  const text = caption instanceof Element ? withoutCmsMentions(textOf(caption), context).replace(/\s+/g, " ").trim() : "";
+  return text === "" ? TABLE_LABEL : text;
+}
+
+/**
+ * A rendered `<table>` inside a focusable, labelled region that scrolls
+ * sideways (`.rh-table-scroll` in `components/resource.css`), so a table too
+ * wide for a phone scrolls inside the column instead of widening the page or
+ * squeezing its cells. `tabIndex={0}` lets a keyboard reach and scroll it
+ * (axe's `scrollable-region-focusable`), and `role="region"` with an
+ * `aria-label` names the stop a screen reader lands on. The region is the
+ * pass's own markup, not the editor's, so it carries an app class and the
+ * ARIA attributes the sanitiser never lets content carry. The table inside a
+ * `figure.wp-block-table` is wrapped, not the figure, so the figure's caption
+ * stays outside the scrolling box. Inside a link, where a focusable region
+ * would be an interactive element in another, the table renders bare.
+ */
+function tableRegion(node: Element, table: ReactElement, context: Context): ReactElement {
+  if (insideLink(context)) {
+    return table;
+  }
+  const props = checked(
+    { className: "rh-table-scroll", role: "region", tabIndex: 0, "aria-label": tableLabel(node, context) },
+    context,
+  );
+  props["aria-label"] ??= TABLE_LABEL;
+  return createElement("div", props, table);
+}
+
 /**
  * `replace` for every node. Text is left to the parser, which hands it to
  * React as a string; every other node is replaced by what this returns,
@@ -1155,9 +1226,11 @@ function replaceNode(node: DOMNode, context: Context): ReactElement | undefined 
     dropLeadingNewline(node);
   }
   const props = checked(elementProps(name, attributes, context), context);
-  return VOID_ELEMENTS.has(name)
-    ? createElement(name, props)
-    : createElement(name, props, children(node, context));
+  if (VOID_ELEMENTS.has(name)) {
+    return createElement(name, props);
+  }
+  const element = createElement(headingName(name, context), props, children(node, context));
+  return name === "table" ? tableRegion(node, element, context) : element;
 }
 
 const defaultRenderBlock: RenderBlock = (_props, fallback) => fallback;
@@ -1195,7 +1268,7 @@ function tagAt(html: string, start: number): { name: string; closing: boolean } 
  */
 const PARSER_OPTIONS: ParserOptions = { lowerCaseTags: true, lowerCaseAttributeNames: true, decodeEntities: true };
 
-/** Thrown by `nestsDeeperThan`'s handler to stop the parser at the first element past the limit. */
+/** Thrown by `outline`'s handler to stop the parser at the first element past the limit. */
 class TooDeep extends Error {}
 
 /** htmlparser2's `Parser`, with its own judgement of which elements are void made readable. */
@@ -1205,10 +1278,27 @@ class DepthProbe extends Parser {
   }
 }
 
+/** What the pre-pass learns about a body: whether it nests too deep, and whether it renders an `<h1>`. */
+interface Outline {
+  readonly tooDeep: boolean;
+  readonly hasH1: boolean;
+}
+
 /**
- * True when htmlparser2, with `PARSER_OPTIONS`, would hold more than `limit`
- * elements open at once while parsing `html`: the tree `html-react-parser`
- * builds from it would be more than `limit` elements deep.
+ * Elements whose content the pass never renders, as their names reach the
+ * pre-pass: an `<h1>` inside one of them is not an `<h1>` of the body.
+ */
+const UNRENDERED_CONTENT: ReadonlySet<string> = new Set([...DROPPED_WITH_CONTENT, ...LINKED_MEDIA]);
+
+/**
+ * The pre-pass over `html`: `tooDeep` when htmlparser2, with
+ * `PARSER_OPTIONS`, would hold more than `limit` elements open at once while
+ * parsing it (the tree `html-react-parser` builds from it would be more than
+ * `limit` elements deep), and `hasH1` when an `<h1>` opens outside every
+ * element whose content the pass leaves out (`UNRENDERED_CONTENT`), which
+ * decides whether the body's headings are demoted (`headingName`). When
+ * `tooDeep` is true the parse stopped early and `hasH1` is meaningless: the
+ * body renders as plain text.
  *
  * It runs the parser itself, so comments, attribute values, `<script>`,
  * `<textarea>`, CDATA, implied end tags and foreign content are read exactly
@@ -1222,24 +1312,40 @@ class DepthProbe extends Parser {
  * pushes an element onto its stack, and `onclosetag` as it pops one, so
  * `depth` is the stack's length; void elements, which the parser never
  * pushes (and reports closed at once), are left out by the parser's own
- * `isVoidElement`. The handler throws at the first element past `limit`, so
+ * `isVoidElement`. `unrendered` counts the open elements in
+ * `UNRENDERED_CONTENT` the same way, so it is the number of them on the
+ * stack. The handler throws at the first element past `limit`, so
  * the stack never holds more than `limit + 1`. That bounds the parser's work
  * per tag (it searches the stack for every end tag and shifts it for every
  * start tag), so the pass is linear in the length of `html`. No `onopentag`
  * handler is given, so the parser does not collect attributes.
  */
-function nestsDeeperThan(html: string, limit: number): boolean {
+function outline(html: string, limit: number): Outline {
   let depth = 0;
+  let unrendered = 0;
+  let hasH1 = false;
   const probe: DepthProbe = new DepthProbe(
     {
       onopentagname(name) {
-        if (!probe.isVoid(name) && ++depth > limit) {
+        if (probe.isVoid(name)) {
+          return;
+        }
+        if (++depth > limit) {
           throw new TooDeep();
+        }
+        if (UNRENDERED_CONTENT.has(name)) {
+          unrendered++;
+        } else if (name === "h1" && unrendered === 0) {
+          hasH1 = true;
         }
       },
       onclosetag(name) {
-        if (!probe.isVoid(name)) {
-          depth--;
+        if (probe.isVoid(name)) {
+          return;
+        }
+        depth--;
+        if (UNRENDERED_CONTENT.has(name)) {
+          unrendered--;
         }
       },
     },
@@ -1249,11 +1355,11 @@ function nestsDeeperThan(html: string, limit: number): boolean {
     probe.end(html);
   } catch (error) {
     if (error instanceof TooDeep) {
-      return true;
+      return { tooDeep: true, hasH1: false };
     }
     throw error;
   }
-  return false;
+  return { tooDeep: false, hasH1 };
 }
 
 /** Elements whose content the parser reads as text, not markup; `textOnly` leaves it out. */
@@ -1373,16 +1479,19 @@ export function renderContent(html: string, cms: CmsUrls, options: RenderContent
     postId: options.postId !== undefined && Number.isSafeInteger(options.postId) && options.postId > 0 ? options.postId : undefined,
     markers: 0,
     links: 0,
+    demoteHeadings: false,
   };
   if (html.length > MAX_CONTENT_LENGTH) {
     console.warn(`renderContent: the body is longer than ${MAX_CONTENT_LENGTH} characters; rendering it as text`);
     return textOnly(html, context);
   }
   try {
-    if (nestsDeeperThan(html, MAX_DEPTH)) {
+    const { tooDeep, hasH1 } = outline(html, MAX_DEPTH);
+    if (tooDeep) {
       console.warn(`renderContent: the body nests more than ${MAX_DEPTH} elements deep; rendering it as text`);
       return textOnly(html, context);
     }
+    context.demoteHeadings = hasH1;
     return parse(html, context.options);
   } catch (error) {
     console.error("renderContent: the body could not be rendered; rendering it as text", error);

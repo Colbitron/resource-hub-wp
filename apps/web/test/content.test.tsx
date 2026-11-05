@@ -530,7 +530,8 @@ describe("sanitising", () => {
         '<p title="T" lang="fr" dir="ltr">Bonjour</p>' +
         '<ol start="3" reversed="">' +
         "<li>a</li></ol>" +
-        '<table><thead><tr><th colSpan="2" scope="col">H</th></tr></thead><tbody><tr><td rowSpan="2">c</td></tr></tbody></table>' +
+        '<div class="rh-table-scroll" role="region" tabindex="0" aria-label="Table">' +
+        '<table><thead><tr><th colSpan="2" scope="col">H</th></tr></thead><tbody><tr><td rowSpan="2">c</td></tr></tbody></table></div>' +
         '<blockquote cite="https://example.com/q"><p>q</p></blockquote>' +
         '<time dateTime="2026-11-05">today</time>' +
         '<details open=""><summary>s</summary>d</details>' +
@@ -561,7 +562,7 @@ describe("sanitising", () => {
   it("drops comments, the doctype and whitespace between table rows", () => {
     expect(render("<!DOCTYPE html><!-- note --><p>x</p>")).toBe("<p>x</p>");
     expect(render("<table>\n  <tbody>\n    <tr><td>x</td></tr>\n  </tbody>\n</table>")).toBe(
-      "<table><tbody><tr><td>x</td></tr></tbody></table>",
+      '<div class="rh-table-scroll" role="region" tabindex="0" aria-label="Table"><table><tbody><tr><td>x</td></tr></tbody></table></div>',
     );
   });
 
@@ -1077,5 +1078,82 @@ describe("fidelity", () => {
         '<img alt="" src="/media/2026/11/photo.jpg" loading="lazy"/>',
       );
     }
+  });
+});
+
+describe("tables", () => {
+  const REGION = '<div class="rh-table-scroll" role="region" tabindex="0" aria-label=';
+
+  it("wraps every table in a focusable region named by its caption", () => {
+    expect(render("<table><caption>Plans by  <em>price</em>\n</caption><tr><td>x</td></tr></table>")).toBe(
+      `${REGION}"Plans by price"><table><caption>Plans by  <em>price</em>\n</caption><tr><td>x</td></tr></table></div>`,
+    );
+  });
+
+  it('names a table with no caption, or a caption with no text, "Table"', () => {
+    expect(render("<table><tr><td>x</td></tr></table>")).toBe(`${REGION}"Table"><table><tr><td>x</td></tr></table></div>`);
+    expect(render("<table><caption> <script>x</script> </caption><tr><td>x</td></tr></table>")).toContain(`${REGION}"Table">`);
+  });
+
+  it("takes the label from the caption's text without the dropped elements' content or words that name the CMS", () => {
+    expect(render("<table><caption>Costs<style>p{}</style> from https://cms.example/wp-admin/ today</caption></table>")).toContain(
+      `${REGION}"Costs from today">`,
+    );
+    expect(render("<table><caption>cms.example</caption></table>")).toContain(`${REGION}"Table">`);
+  });
+
+  it("wraps the table inside a WordPress table block, not the figure", () => {
+    expect(
+      render('<figure class="wp-block-table"><table><tbody><tr><td>x</td></tr></tbody></table><figcaption>Caption</figcaption></figure>'),
+    ).toBe(
+      `<figure class="wp-block-table">${REGION}"Table"><table><tbody><tr><td>x</td></tr></tbody></table></div><figcaption>Caption</figcaption></figure>`,
+    );
+  });
+
+  it("wraps a nested table too, and leaves a table inside a link bare", () => {
+    expect(render("<table><tr><td><table><tr><td>x</td></tr></table></td></tr></table>").match(/rh-table-scroll/g)).toHaveLength(2);
+    expect(render('<a href="/resources/"><table><tr><td>x</td></tr></table></a>')).toBe(
+      '<a href="/resources/"><table><tr><td>x</td></tr></table></a>',
+    );
+  });
+
+  it("never lets content carry the region's class or its ARIA attributes", () => {
+    expect(render('<div class="rh-table-scroll" role="region" tabindex="0" aria-label="x">y</div>')).toBe("<div>y</div>");
+  });
+});
+
+describe("headings", () => {
+  it("shows every heading one level down when the body has an h1, keeping their order", () => {
+    expect(render('<h1 id="a">One</h1><h3>Three</h3><h2 class="x">Two</h2>')).toBe(
+      '<h2 id="c-a">One</h2><h4>Three</h4><h3 class="x">Two</h3>',
+    );
+  });
+
+  it("caps the shift at h6", () => {
+    expect(render("<h1>a</h1><h5>b</h5><h6>c</h6>")).toBe("<h2>a</h2><h6>b</h6><h6>c</h6>");
+  });
+
+  it("leaves a body without an h1 as written", () => {
+    expect(render("<h2>Two</h2><h3>Three</h3><h6>Six</h6>")).toBe("<h2>Two</h2><h3>Three</h3><h6>Six</h6>");
+  });
+
+  it("counts an h1 anywhere the pass renders it, in any case, and not one inside content it drops", () => {
+    expect(render("<section><div><H1>Deep</H1></div></section><h2>x</h2>")).toBe("<div><h2>Deep</h2></div><h3>x</h3>");
+    expect(render("<h2>x</h2><template><h1>t</h1></template><noscript><h1>n</h1></noscript><video><h1>v</h1></video>")).toBe(
+      "<h2>x</h2>",
+    );
+    expect(render("<h2>x</h2><!-- <h1>c</h1> --><p>&lt;h1&gt;</p>")).toBe("<h2>x</h2><p>&lt;h1&gt;</p>");
+  });
+
+  it("demotes the marker's fallback heading with the rest, and still reads it as the block's heading", () => {
+    let heading: string | null = null;
+    const output = render(`<h1>Title</h1>${MARKER}`, {
+      renderBlock: (props, fallback) => {
+        heading = props.heading;
+        return fallback;
+      },
+    });
+    expect(heading).toBe("More on Headless delivery");
+    expect(output).toContain("<h3>More on Headless delivery</h3>");
   });
 });

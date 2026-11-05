@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 // `renderContent` runs htmlparser2 twice over a body, from two copies. The
-// depth pre-pass (`nestsDeeperThan`) runs the app's own htmlparser2, pinned
+// depth pre-pass (`outline`) runs the app's own htmlparser2, pinned
 // in package.json. The parse that renders runs the copy html-dom-parser
 // bundles in lib/node_modules/htmlparser2: html-react-parser's ESM entry
 // re-exports its CommonJS build, which requires html-dom-parser's CommonJS
