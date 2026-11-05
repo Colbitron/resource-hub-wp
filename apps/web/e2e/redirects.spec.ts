@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type APIResponse } from "@playwright/test";
+import { expect, test, type APIRequestContext, type APIResponse, type Page } from "@playwright/test";
 
 import { mockCms } from "./mock-cms/client.mts";
 import { E2E_REVALIDATE_SECRET } from "./mock-cms/config.mts";
@@ -11,6 +11,12 @@ import { E2E_REVALIDATE_SECRET } from "./mock-cms/config.mts";
  * segment, a non-canonical segment or an old slug gets one computed 308 to
  * the canonical URL, which answers 200, with `Cache-Control: no-store`, and
  * a type changed and changed back never serves a cached redirect.
+ *
+ * Most tests use the API request context, which has no HTTP cache: they prove
+ * what the server sends, which an ISR route that stored its 308s could also
+ * pass. The browser round trip drives Chromium, whose cache keeps a 308 that
+ * lacks a cache header for ever (ADR 0025), so it is the test that would fail
+ * on a stored redirect.
  *
  * Every hop is requested with `maxRedirects: 0`, so each response is seen as
  * sent. `expectRedirect` is the one place a redirect is asserted: the
@@ -142,7 +148,7 @@ test("a renamed slug is one 308 from the old slug to the new", async ({ request 
   await expectRedirect(request, fixturePath("webinar", before), fixturePath("article", after));
 });
 
-test("a type changed and changed back never serves a cached redirect", async ({ request }) => {
+test("a type changed and changed back: each step answers a fresh single-hop 308 with no-store headers", async ({ request }) => {
   const slug = unique("round-trip");
   const { id } = await cms.createResource({ title: "Round trip", type: "webinar", slug });
   const asWebinar = fixturePath("webinar", slug);
@@ -160,6 +166,79 @@ test("a type changed and changed back never serves a cached redirect", async ({ 
   await revalidate(request, [await updateEvent(id, { type: "podcast" })]);
   await expectOk(request, asWebinar);
   await expectRedirect(request, asPodcast, asWebinar);
+});
+
+/** One navigation's redirect, as Chromium's network layer reported it. */
+interface BrowserHop {
+  from: string;
+  status: number;
+  cacheControl: string;
+  fromCache: boolean;
+}
+
+/**
+ * Records every redirect Chromium follows on `page`, and whether its disk or
+ * memory cache answered it instead of the server, from the DevTools protocol,
+ * which reports a cached redirect that Playwright's events do not mark.
+ */
+async function watchRedirects(page: Page): Promise<BrowserHop[]> {
+  const hops: BrowserHop[] = [];
+  const session = await page.context().newCDPSession(page);
+  await session.send("Network.enable");
+  session.on("Network.requestWillBeSent", (event) => {
+    const redirect = event.redirectResponse;
+    if (redirect === undefined) return;
+    const cacheControl = Object.entries(redirect.headers).find(([name]) => name.toLowerCase() === "cache-control")?.[1] ?? "";
+    hops.push({
+      from: new URL(redirect.url).pathname,
+      status: redirect.status,
+      cacheControl: String(cacheControl),
+      fromCache: redirect.fromDiskCache === true || redirect.fromPrefetchCache === true || redirect.fromServiceWorker === true,
+    });
+  });
+  return hops;
+}
+
+/**
+ * Navigates Chromium to `from` and expects it to land on `to` with the
+ * resource's title, through at most one redirect that came from the server
+ * with `no-store`, never from the browser's cache.
+ */
+async function expectBrowserLands(page: Page, hops: BrowserHop[], from: string, to: string, title: string): Promise<void> {
+  hops.length = 0;
+  const response = await page.goto(from);
+  expect(new URL(page.url()).pathname, `${from} should land on ${to}`).toBe(to);
+  expect(response?.status(), `${to} should answer 200`).toBe(200);
+  await expect(page.getByTestId("fixture-title")).toHaveText(title);
+  await expect(page.getByTestId("fixture-path")).toHaveText(to);
+  expect(hops, `the redirects followed from ${from}`).toEqual(
+    from === to ? [] : [{ from, status: 308, cacheControl: expect.stringContaining("no-store"), fromCache: false }],
+  );
+}
+
+test("in Chromium, a type changed and changed back lands on the current URL at every step", async ({ page, request }) => {
+  const slug = unique("browser-round-trip");
+  const title = `Browser round trip ${RUN}`;
+  const { id } = await cms.createResource({ title, type: "webinar", slug });
+  const asWebinar = fixturePath("webinar", slug);
+  const asPodcast = fixturePath("podcast", slug);
+  const hops = await watchRedirects(page);
+
+  // As a webinar: the podcast URL redirects, and Chromium may not keep that redirect.
+  await expectBrowserLands(page, hops, asWebinar, asWebinar, title);
+  await expectBrowserLands(page, hops, asPodcast, asWebinar, title);
+
+  // webinar -> podcast: a kept podcast -> webinar redirect would now loop.
+  await cms.setType(id, "podcast");
+  await revalidate(request, [await updateEvent(id, { type: "webinar" })]);
+  await expectBrowserLands(page, hops, asPodcast, asPodcast, title);
+  await expectBrowserLands(page, hops, asWebinar, asPodcast, title);
+
+  // podcast -> webinar: a kept webinar -> podcast redirect would now loop.
+  await cms.setType(id, "webinar");
+  await revalidate(request, [await updateEvent(id, { type: "podcast" })]);
+  await expectBrowserLands(page, hops, asWebinar, asWebinar, title);
+  await expectBrowserLands(page, hops, asPodcast, asWebinar, title);
 });
 
 test("a segment in mixed case is one 308 to the lower-case URL", async ({ request }) => {
