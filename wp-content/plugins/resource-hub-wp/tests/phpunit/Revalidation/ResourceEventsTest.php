@@ -275,6 +275,70 @@ final class ResourceEventsTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * An update that renames a resource and changes its topics, followed by a removal in the same request,
+	 * sends the removal under the state from before the update: the one the front end can have cached,
+	 * not the renamed state that only existed during the request.
+	 *
+	 * @dataProvider removals_after_an_update
+	 *
+	 * @param string $removal How the resource is removed: `trash`, `unpublish` or `delete`.
+	 */
+	public function test_removal_after_an_update_reports_the_state_before_the_request( string $removal ): void {
+		$post_id = $this->make_resource( 'publish', 'original-slug', 'webinar', array( 'performance' ) );
+		$a11y    = $this->term_id( Taxonomies::TOPIC, 'accessibility' );
+
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+		wp_update_post(
+			array(
+				'ID'        => $post_id,
+				'post_name' => 'renamed-slug',
+				'tax_input' => array( Taxonomies::TOPIC => array( $a11y ) ),
+			)
+		);
+
+		$this->assertSame( 'renamed-slug', $this->queue->events()[0]['slug'], 'The update raised the renamed state.' );
+
+		switch ( $removal ) {
+			case 'trash':
+				wp_trash_post( $post_id );
+				break;
+			case 'unpublish':
+				wp_update_post(
+					array(
+						'ID'          => $post_id,
+						'post_status' => 'draft',
+					)
+				);
+				break;
+			case 'delete':
+				wp_delete_post( $post_id, true );
+				break;
+		}
+
+		$event = $this->assert_single_queued_event();
+
+		$this->assertSame( $removal, $event['event'] );
+		$this->assertSame( $post_id, $event['id'] );
+		$this->assertSame( 'original-slug', $event['slug'] );
+		$this->assertSame( array( 'webinar' ), $event['types'] );
+		$this->assertSame( array( 'performance' ), $event['topics'] );
+		$this->assertNull( $event['previous'] );
+	}
+
+	/**
+	 * Cases for test_removal_after_an_update_reports_the_state_before_the_request().
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function removals_after_an_update(): array {
+		return array(
+			'update then trash'        => array( 'trash' ),
+			'update then unpublish'    => array( 'unpublish' ),
+			'update then force delete' => array( 'delete' ),
+		);
+	}
+
+	/**
 	 * Saves that never touch public state send nothing: editing a draft, trashing a draft, deleting a
 	 * trashed resource, restoring from the trash, and a force delete of a draft.
 	 */

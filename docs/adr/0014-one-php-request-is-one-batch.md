@@ -9,6 +9,8 @@ A bulk edit or bulk trash of twenty resources in the admin would, with one reque
 
 Within a batch, events are deduplicated per resource ID for resource events and per (taxonomy, term ID) for term events, so a post and a term that share a numeric ID never merge. Each group becomes one event carrying the earliest `previous` and the latest current state, so a post saved twice in one request is reported once with the full change. Resource events and term events ([ADR 0017](0017-term-events.md)) share the same `events` array. A batch over 25 events is split into several requests of at most 25.
 
+Amended 2026-11-05, after review of the hook: when a group ends in a removal (`unpublish`, `trash` or `delete`, or a term `delete`) and an earlier event in it was an `update`, the merged event's top-level state is the state from before the request began, not the renamed state the update left, because only the earlier state can be in the front end's cache; `previous` stays `null` as on every removal. An update that renames a resource followed by a trash in one request therefore sends `trash` under the original slug, and a term renamed and then deleted sends `delete` with its original slug and name.
+
 ## Considered options
 
 - **One request per event.** Rejected: bulk actions turn into bursts of near-identical requests, each revalidating the same listings.

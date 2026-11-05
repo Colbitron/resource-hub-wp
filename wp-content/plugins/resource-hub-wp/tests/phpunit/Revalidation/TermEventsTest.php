@@ -107,6 +107,32 @@ final class TermEventsTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * A rename followed by a delete in the same request sends `delete` with the slug and name the term had
+	 * before the request, the ones the front end can have cached.
+	 */
+	public function test_rename_then_delete_reports_the_original_term(): void {
+		$term_id = $this->make_term( Taxonomies::TOPIC, 'original-topic', 'Original topic' );
+
+		wp_update_term(
+			$term_id,
+			Taxonomies::TOPIC,
+			array(
+				'name' => 'Renamed topic',
+				'slug' => 'renamed-topic',
+			)
+		);
+		wp_delete_term( $term_id, Taxonomies::TOPIC );
+
+		$event = $this->assert_single_queued_event();
+
+		$this->assertSame( 'delete', $event['event'] );
+		$this->assertSame( $term_id, $event['id'] );
+		$this->assertSame( 'original-topic', $event['slug'] );
+		$this->assertSame( 'Original topic', $event['name'] );
+		$this->assertNull( $event['previous'] );
+	}
+
+	/**
 	 * `resource_flag` and core taxonomies send nothing.
 	 */
 	public function test_flags_and_other_taxonomies_send_nothing(): void {

@@ -16,7 +16,9 @@ namespace ResourceHub\Revalidation;
  * Deduplication is per resource ID for resource events and per (taxonomy, term ID) for term events,
  * so a post and a term that share a numeric ID never merge. A group becomes one event that carries
  * the earliest `previous` and the latest current state: the event is a change from the state before
- * the first save to the state after the last one. Events keep the position of their first observation.
+ * the first save to the state after the last one. A group that ends in a removal reports the state
+ * from before the first save at the top level, when there was one. Events keep the position of their
+ * first observation.
  */
 final class Queue {
 	/**
@@ -116,8 +118,12 @@ final class Queue {
 	 *   public before the earliest, so the whole change is a `publish` (or `create`) with no `previous`;
 	 *   or it was, so the whole change is an `update` whose `previous` is that earliest state.
 	 * - The item is not public after the latest event: the latest removal event stands, with `previous`
-	 *   null as the schema requires. A `publish` followed by a `trash` in one request still sends the
-	 *   `trash`; the front end's refetch finds nothing, which costs one revalidation and is never wrong.
+	 *   null as the schema requires. If the item was public before the earliest event, the top-level
+	 *   state is that earliest state, the one the front end can have cached, not a state that only
+	 *   existed during this request: an update that renames a resource and a trash in the same request
+	 *   send `trash` under the original slug. A `publish` followed by a `trash` in one request still
+	 *   sends the `trash`, with the latest state; the front end's refetch finds nothing, which costs
+	 *   one revalidation and is never wrong.
 	 *
 	 * @param array<string, mixed>|null $before The state before the earliest event in the group.
 	 * @param array<string, mixed>      $latest The latest event.
@@ -129,6 +135,10 @@ final class Queue {
 		$exists  = in_array( $latest['event'], array( 'publish', 'create', 'update' ), true );
 
 		if ( ! $exists ) {
+			if ( null !== $before ) {
+				$merged = array_merge( $merged, $before );
+			}
+
 			$merged['previous'] = null;
 
 			return $merged;

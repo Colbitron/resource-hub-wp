@@ -135,18 +135,26 @@ final class QueueTest extends RevalidationTestCase {
 	}
 
 	/**
-	 * An update followed by a trash is the trash, with the latest state at the top level and no `previous`.
+	 * An update followed by a trash is the trash, with the state from before the update at the top level,
+	 * the one the front end can have cached, and no `previous`.
 	 */
 	public function test_update_then_trash_is_trash(): void {
 		$queue = new Queue();
-		$queue->add( self::resource( 'update', 1, 'renamed', array(), self::state( 'original' ) ) );
-		$queue->add( self::resource( 'trash', 1, 'renamed' ) );
+		$queue->add( self::resource( 'update', 1, 'renamed', array( 'b' ), self::state( 'original', array( 'a' ) ) ) );
+		$queue->add( self::resource( 'trash', 1, 'renamed', array( 'b' ) ) );
 
 		$event = $queue->events()[0];
 
 		$this->assertSame( 'trash', $event['event'] );
-		$this->assertSame( 'renamed', $event['slug'] );
+		$this->assertSame( 'original', $event['slug'] );
+		$this->assertSame( array( 'a' ), $event['topics'] );
 		$this->assertNull( $event['previous'] );
+		$this->assert_valid_request(
+			array(
+				'version' => 1,
+				'events'  => $queue->events(),
+			)
+		);
 	}
 
 	/**
@@ -184,7 +192,7 @@ final class QueueTest extends RevalidationTestCase {
 
 	/**
 	 * Term groups merge the same way: create then update is create; update then update keeps the earliest
-	 * previous; update then delete is delete.
+	 * previous; update then delete is delete, under the slug and name from before the update.
 	 */
 	public function test_term_events_merge(): void {
 		$queue = new Queue();
@@ -251,6 +259,8 @@ final class QueueTest extends RevalidationTestCase {
 			$events[1]['previous']
 		);
 		$this->assertSame( 'delete', $events[2]['event'] );
+		$this->assertSame( 'named', $events[2]['slug'] );
+		$this->assertSame( 'Named', $events[2]['name'] );
 		$this->assertNull( $events[2]['previous'] );
 		$this->assert_valid_request(
 			array(
