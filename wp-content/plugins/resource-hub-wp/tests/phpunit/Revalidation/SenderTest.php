@@ -41,7 +41,7 @@ final class SenderTest extends RevalidationTestCase {
 	}
 
 	/**
-	 * The request: POST to `{url}/api/revalidate`, bearer and JSON headers, the payload as JSON, a 3-second
+	 * The request: POST to `{url}/api/revalidate/`, bearer and JSON headers, the payload as JSON, a 3-second
 	 * timeout, no redirects, a bounded response size. The trailing slash on the configured URL is dropped.
 	 */
 	public function test_request_shape(): void {
@@ -52,7 +52,7 @@ final class SenderTest extends RevalidationTestCase {
 		$this->assertCount( 1, $this->requests );
 
 		$request = $this->requests[0];
-		$this->assertSame( 'https://hub.example/api/revalidate', $request['url'] );
+		$this->assertSame( 'https://hub.example/api/revalidate/', $request['url'] );
 		$this->assertSame( 'POST', $request['args']['method'] );
 		$this->assertSame( 3, $request['args']['timeout'] );
 		$this->assertSame( 0, $request['args']['redirection'] );
@@ -60,6 +60,39 @@ final class SenderTest extends RevalidationTestCase {
 		$this->assertSame( 'Bearer s3cret', $request['args']['headers']['Authorization'] );
 		$this->assertSame( 'application/json', $request['args']['headers']['Content-Type'] );
 		$this->assertSame( self::payload(), json_decode( $request['args']['body'], true ) );
+	}
+
+	/**
+	 * The URL is the configured origin plus `/api/revalidate/` exactly once, with no double slash, whether
+	 * the configured URL ends in a slash or not. The route keeps its own trailing slash because the front
+	 * end's `trailingSlash: true` answers the slashless form with a 308, which the sender does not follow.
+	 *
+	 * @dataProvider frontend_urls
+	 *
+	 * @param string $configured The configured front-end URL.
+	 * @param string $expected   The URL the request must go to.
+	 */
+	public function test_url_has_one_slash_before_the_path_and_one_after( string $configured, string $expected ): void {
+		$this->configure( $configured );
+
+		( new Sender() )->send( self::payload() );
+
+		$this->assertCount( 1, $this->requests );
+		$this->assertSame( $expected, $this->requests[0]['url'] );
+		$this->assertStringNotContainsString( '//api', $this->requests[0]['url'] );
+	}
+
+	/**
+	 * Cases for test_url_has_one_slash_before_the_path_and_one_after().
+	 *
+	 * @return array<string, array{0: string, 1: string}>
+	 */
+	public function frontend_urls(): array {
+		return array(
+			'no trailing slash'        => array( 'https://hub.example', 'https://hub.example/api/revalidate/' ),
+			'one trailing slash'       => array( 'https://hub.example/', 'https://hub.example/api/revalidate/' ),
+			'several trailing slashes' => array( 'https://hub.example//', 'https://hub.example/api/revalidate/' ),
+		);
 	}
 
 	/**

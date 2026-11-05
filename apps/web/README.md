@@ -27,7 +27,7 @@ pnpm web:build       # next build
 | Variable | Purpose |
 | --- | --- |
 | `WP_API_URL` | Base URL of the CMS's REST API (`/wp-json`). Locally, wp-env serves it at `http://localhost:8888/wp-json`. |
-| `REVALIDATE_SECRET` | Shared secret the CMS sends as a bearer token to `POST /api/revalidate`. |
+| `REVALIDATE_SECRET` | Shared secret the CMS sends as a bearer token to `POST /api/revalidate/`. |
 
 Both live in `.env.local` (gitignored) and in Vercel project settings, never in git.
 

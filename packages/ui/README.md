@@ -8,7 +8,7 @@ Every schema and every property carries a `description` that states what the val
 
 | File | Describes |
 |---|---|
-| `schemas/revalidate-request.schema.json` | Body of `POST {FRONTEND_URL}/api/revalidate`, WordPress to front end: a batch of resource and term events |
+| `schemas/revalidate-request.schema.json` | Body of `POST {FRONTEND_URL}/api/revalidate/`, WordPress to front end: a batch of resource and term events |
 | `schemas/revalidate-response-ok.schema.json` | The `200` reply: the paths the front end revalidated |
 | `schemas/revalidate-response-error.schema.json` | The `400`, `401` and `500` replies: `{ "error": "…" }`; `401` is exactly `unauthorized` |
 | `schemas/related-response.schema.json` | `GET /wp-json/resource-hub/v1/related/{id}?count=n`: related resource IDs with the reason each was picked |

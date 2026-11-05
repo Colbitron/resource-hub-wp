@@ -11,7 +11,7 @@ namespace ResourceHub\Revalidation;
 
 /**
  * Wraps a batch of events as `{ "version": 1, "events": [ … ] }`, the body of
- * `POST {FRONTEND_URL}/api/revalidate` (`revalidate-request.schema.json`).
+ * `POST {FRONTEND_URL}/api/revalidate/` (`revalidate-request.schema.json`).
  */
 final class Payload {
 	/**
