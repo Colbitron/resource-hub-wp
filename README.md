@@ -197,6 +197,7 @@ Each real decision has a record under [`docs/adr/`](docs/adr/). One sentence eac
 - [0039](docs/adr/0039-vercel-image-optimizer.md) Images go through Vercel's image optimizer within the plan's monthly allowance, with WordPress's own sizes proxied through Cloudflare as the fallback.
 - [0040](docs/adr/0040-the-cms-url-never-reaches-the-browser.md) The CMS URL never reaches the browser: every CMS request is server-side, images go through a `/media/` rewrite, and rendered HTML is rewritten in one pass; this reduces exposure and is not a security boundary.
 - [0041](docs/adr/0041-the-shared-package-is-a-workspace-dependency.md) `@colbitron/resource-hub-ui` is a `workspace:*` dependency and is never published, because every consumer lives in this repository; it supersedes 0028 and 0038.
+- [0042](docs/adr/0042-phpunit-validates-payloads-against-the-shared-schemas.md) PHPUnit validates every revalidation payload against the shared schemas: `.wp-env.json` maps `packages/ui` into the containers and `opis/json-schema` reads draft 2020-12, so the PHP side fails on drift in the same pull request as the Node side.
 
 ## Contract with the front end
 

@@ -18,4 +18,5 @@ The send runs in cron ([ADR 0012](0012-revalidation-is-sent-from-wp-cron.md)), s
 
 - If the front end ever needs slow work on revalidation, it answers first and does the work after. The plugin's timeout is not raised to accommodate it.
 - A timeout is its own outcome in the editor notice, distinct from a 500.
+- Amended 2026-11-05: the response is bounded as well as the wait, with `limit_response_size` at 64 KB for the front end (enough to parse a full 200's `revalidated` list for 25 events; only about 1 KB is stored) and 1 KB for PostHog, whose answer is ignored, so a misconfigured URL cannot make a cron request download an unbounded body.
 - A change the editor does not retry stays stale on the front end until the ISR safety net on that side refreshes it.

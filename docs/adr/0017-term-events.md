@@ -16,3 +16,4 @@ Renaming a topic, re-slugging a type or deleting either changes listings and lab
 - The front end tags type hubs `type:{slug}` so a type event has something to invalidate.
 - Old topic URLs return 404 after a re-slug; there is no topic redirect. Resource pages on the front end recover from a type re-slug by themselves, because the type segment of their URL is checked and a mismatch redirects ([ADR 0025](0025-redirects-are-computed-308s-with-no-store.md)).
 - Assigning or removing terms on a resource is not a term event; it is an `update` of that resource.
+- An edit that changes neither the slug nor the name, such as a description or a parent, sends nothing, because the front end shows neither.
