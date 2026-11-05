@@ -11,8 +11,12 @@ namespace ResourceHub;
 
 use ResourceHub\Cli\SeedCommand;
 use ResourceHub\ContentModel\Meta;
+use ResourceHub\ContentModel\OneType;
+use ResourceHub\ContentModel\Permalink;
 use ResourceHub\ContentModel\PostType;
+use ResourceHub\ContentModel\ReservedTypeSlugs;
 use ResourceHub\ContentModel\Taxonomies;
+use ResourceHub\ContentModel\UsedTypes;
 use ResourceHub\Editor\SidebarAssets;
 
 /**
@@ -60,6 +64,10 @@ final class Plugin {
 		add_action( 'init', array( new PostType(), 'register' ) );
 		add_action( 'init', array( new Taxonomies(), 'register' ) );
 		add_action( 'init', array( new Meta(), 'register' ) );
+		( new OneType() )->register();
+		( new ReservedTypeSlugs() )->register();
+		( new Permalink() )->register();
+		( new UsedTypes() )->register();
 		add_action( 'enqueue_block_editor_assets', array( new SidebarAssets( $this->file ), 'enqueue' ) );
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {

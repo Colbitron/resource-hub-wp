@@ -28,7 +28,8 @@ final class ContentModelTest extends WP_UnitTestCase {
 		$this->assertTrue( $post_type->public );
 		$this->assertTrue( $post_type->show_in_rest );
 		$this->assertSame( 'resources', $post_type->rest_base );
-		$this->assertSame( 'resources', $post_type->rewrite['slug'] );
+		$this->assertSame( 'resources/%resource_type%', $post_type->rewrite['slug'] );
+		$this->assertSame( 'resources', $post_type->has_archive );
 
 		foreach ( array( 'title', 'editor', 'excerpt', 'thumbnail', 'revisions', 'custom-fields' ) as $feature ) {
 			$this->assertTrue( post_type_supports( PostType::NAME, $feature ), "Missing support for {$feature}." );
@@ -83,6 +84,14 @@ final class ContentModelTest extends WP_UnitTestCase {
 		$this->assertSame( 'manage_categories', $caps->edit_terms );
 		$this->assertSame( 'manage_categories', $caps->delete_terms );
 		$this->assertSame( 'edit_posts', $caps->assign_terms );
+	}
+
+	/**
+	 * Quick Edit and Bulk Edit on the Resources list do not offer the type: they save outside REST,
+	 * where OneType guards only the status, and Bulk Edit adds terms rather than replacing them.
+	 */
+	public function test_type_is_not_in_quick_edit(): void {
+		$this->assertFalse( get_taxonomy( Taxonomies::TYPE )->show_in_quick_edit );
 	}
 
 	/**
@@ -164,6 +173,8 @@ final class ContentModelTest extends WP_UnitTestCase {
 				'post_author' => $author_id,
 			)
 		);
+		// A published resource keeps exactly one type through every REST save (OneType).
+		wp_set_object_terms( $post_id, self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) ), Taxonomies::TYPE );
 
 		wp_set_current_user( $author_id );
 

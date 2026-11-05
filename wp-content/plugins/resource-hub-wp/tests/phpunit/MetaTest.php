@@ -12,6 +12,7 @@ namespace ResourceHub\Tests;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\MetaRules;
 use ResourceHub\ContentModel\PostType;
+use ResourceHub\ContentModel\Taxonomies;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_UnitTestCase;
@@ -363,9 +364,11 @@ final class MetaTest extends WP_UnitTestCase {
 		$request = new WP_REST_Request( 'POST', '/wp/v2/resources' );
 		$request->set_body_params(
 			array(
-				'title'  => 'A resource',
-				'status' => 'publish',
-				'meta'   => $meta,
+				'title'          => 'A resource',
+				'status'         => 'publish',
+				'meta'           => $meta,
+				// A published resource needs exactly one type (OneType).
+				Taxonomies::TYPE => array( self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) ) ),
 			)
 		);
 

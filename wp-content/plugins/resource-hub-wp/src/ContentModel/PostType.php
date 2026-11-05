@@ -54,10 +54,12 @@ final class PostType {
 				'description'     => __( 'A filterable library of articles, ebooks, webinars, podcasts, and case studies.', 'resource-hub' ),
 				// Public with a rewrite slug so resources have WordPress URLs for the server-rendered block; the headless front end is the
 				// primary reader. Pretty URLs under /resources/ work once rewrite rules are regenerated, which activation triggers (Plugin::activate()).
+				// Single resources are /resources/{type}/{slug}/, mirroring the front end (ADR 0024): the slug carries the taxonomy's rewrite
+				// tag, which Permalink fills. The archive slug is set apart, because `true` would reuse the rewrite slug, tag and all.
 				'public'          => true,
-				'has_archive'     => true,
+				'has_archive'     => 'resources',
 				'rewrite'         => array(
-					'slug'       => 'resources',
+					'slug'       => 'resources/' . Permalink::TYPE_TAG,
 					'with_front' => false,
 				),
 				'show_in_rest'    => true,

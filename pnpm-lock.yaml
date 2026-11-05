@@ -236,6 +236,12 @@ importers:
       '@wordpress/editor':
         specifier: ^16.0.0
         version: 16.0.0(@date-fns/tz@1.5.0)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(postcss@8.5.32)(react-dom@19.3.0(react@19.3.1))(react@19.3.1)(stylelint@17.16.0(supports-color@7.2.0)(typescript@5.9.3))
+      '@wordpress/hooks':
+        specifier: ^5.0.0
+        version: 5.0.0
+      '@wordpress/html-entities':
+        specifier: ^5.0.0
+        version: 5.0.0
       '@wordpress/i18n':
         specifier: ^7.0.0
         version: 7.0.0

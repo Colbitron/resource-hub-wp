@@ -17,6 +17,10 @@ import { useSelect } from '@wordpress/data';
 import { TextareaControl, TextControl } from '@wordpress/components';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
+// The Types panel's radio buttons ship in this bundle, the one script PHP
+// loads on the resource editor.
+import '../resource-type';
+
 const POST_TYPE = 'resource';
 
 // Mirrors MetaRules::SUMMARY_MAX_LENGTH and the REST schema's maxLength.
