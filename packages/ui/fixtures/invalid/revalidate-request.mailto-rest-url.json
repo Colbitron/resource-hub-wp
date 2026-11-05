@@ -1,0 +1,15 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "resource",
+			"event": "publish",
+			"id": 1,
+			"slug": "mailto-url",
+			"rest_url": "mailto:a@b",
+			"types": [ "article" ],
+			"topics": [],
+			"previous": null
+		}
+	]
+}

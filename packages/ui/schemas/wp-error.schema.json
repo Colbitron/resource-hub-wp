@@ -1,0 +1,32 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://raw.githubusercontent.com/Colbitron/resource-hub-wp/main/packages/ui/schemas/wp-error.schema.json",
+	"title": "WordPress REST error",
+	"description": "The error body WordPress core produces from a WP_Error, which both custom routes (related and resolve) return for a 400 (a bad argument, such as count out of range or a malformed slug) and a 404 (no such public resource). The shape is core's, not the plugin's: code, message and data.status are always present, and core may add more keys at the top level (additional_errors when a WP_Error carries several codes) and inside data (such as params on a 400), so neither object is closed.",
+	"type": "object",
+	"properties": {
+		"code": {
+			"description": "A machine-readable error code, such as rest_invalid_param, rest_post_invalid_id or resource_hub_not_found.",
+			"type": "string",
+			"minLength": 1
+		},
+		"message": {
+			"description": "A human-readable explanation, translatable and not stable across versions, so the front end branches on code and data.status, not on this.",
+			"type": "string"
+		},
+		"data": {
+			"description": "The error's data. status mirrors the HTTP status; core adds other keys for some errors, such as params with per-parameter messages on rest_invalid_param.",
+			"type": "object",
+			"properties": {
+				"status": {
+					"description": "The HTTP status the error was sent with: 400 or 404 from the custom routes.",
+					"type": "integer",
+					"minimum": 400,
+					"maximum": 599
+				}
+			},
+			"required": [ "status" ]
+		}
+	},
+	"required": [ "code", "message", "data" ]
+}

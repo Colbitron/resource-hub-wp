@@ -1,0 +1,37 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "resource",
+			"event": "publish",
+			"id": 101,
+			"slug": "core-web-vitals-in-practice",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/101",
+			"types": [ "guide" ],
+			"topics": [ "performance" ],
+			"previous": null
+		},
+		{
+			"type": "resource",
+			"event": "trash",
+			"id": 77,
+			"slug": "an-old-webinar",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/77",
+			"types": [ "webinar" ],
+			"topics": [],
+			"previous": null
+		},
+		{
+			"type": "term",
+			"taxonomy": "resource_topic",
+			"event": "update",
+			"id": 9,
+			"slug": "accessibility",
+			"name": "Accessibility",
+			"previous": {
+				"slug": "a11y",
+				"name": "A11y"
+			}
+		}
+	]
+}

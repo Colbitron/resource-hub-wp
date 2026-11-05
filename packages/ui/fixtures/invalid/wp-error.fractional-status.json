@@ -1,0 +1,7 @@
+{
+	"code": "resource_hub_not_found",
+	"message": "No public resource has that slug.",
+	"data": {
+		"status": 404.5
+	}
+}

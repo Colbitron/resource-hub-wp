@@ -1,0 +1,14 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "term",
+			"taxonomy": "resource_type",
+			"event": "update",
+			"id": 20,
+			"slug": "pages",
+			"name": "Pages",
+			"previous": { "slug": "page", "name": "Page" }
+		}
+	]
+}

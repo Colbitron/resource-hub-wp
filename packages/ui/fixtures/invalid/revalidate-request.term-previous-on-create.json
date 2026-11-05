@@ -1,0 +1,14 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "term",
+			"taxonomy": "resource_topic",
+			"event": "create",
+			"id": 9,
+			"slug": "new-topic",
+			"name": "New topic",
+			"previous": { "slug": "old", "name": "Old" }
+		}
+	]
+}

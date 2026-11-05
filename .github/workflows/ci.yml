@@ -54,6 +54,12 @@ jobs:
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
 
+      # The JSON Schema contract with the front end (ADR 0010): compiles every
+      # schema in strict mode and checks every fixture. Pure Node, so it runs
+      # before anything that needs Docker.
+      - name: Test the contract schemas
+        run: pnpm --filter @colbitron/resource-hub-ui test
+
       - name: Lint JavaScript
         run: pnpm lint:js
 

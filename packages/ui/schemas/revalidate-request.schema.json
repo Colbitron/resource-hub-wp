@@ -1,0 +1,208 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://raw.githubusercontent.com/Colbitron/resource-hub-wp/main/packages/ui/schemas/revalidate-request.schema.json",
+	"title": "Revalidation request",
+	"description": "The JSON body WordPress POSTs to {FRONTEND_URL}/api/revalidate when resources or their terms change. The request also carries Authorization: Bearer {REVALIDATE_SECRET} and Content-Type: application/json headers, which are not part of this schema. One body is a batch: one WordPress PHP request (a single save, a bulk edit, a bulk trash) produces one batch, events within a batch are deduplicated per resource ID for resource events and per (taxonomy, term ID) for term events, each group becoming one event carrying the earliest previous state and the latest current state, and a batch that would exceed 25 events is split into several requests. The front end treats publish and update as refresh and unpublish, trash and delete as remove, revalidating the union of the paths and cache tags (resources, resource:{slug}, topic:{slug}, type:{slug}) implied by the current and previous state of every event.",
+	"type": "object",
+	"properties": {
+		"version": {
+			"description": "The contract version this body follows. Fixed at 1; a breaking change to the event shapes bumps it so the front end can reject bodies it does not understand with a 400.",
+			"const": 1
+		},
+		"events": {
+			"description": "The changes this batch reports, in the order WordPress observed them. Between 1 and 25 events; each is a resource event or a term event, told apart by type.",
+			"type": "array",
+			"items": {
+				"oneOf": [
+					{ "$ref": "#/$defs/resourceEvent" },
+					{ "$ref": "#/$defs/termEvent" }
+				]
+			},
+			"minItems": 1,
+			"maxItems": 25
+		}
+	},
+	"required": [ "version", "events" ],
+	"additionalProperties": false,
+	"$defs": {
+		"resourceState": {
+			"description": "Where a resource is listed: its slug, its single type and its topics. The fields the front end needs to name every path and cache tag that shows the resource.",
+			"type": "object",
+			"properties": {
+				"slug": {
+					"description": "The resource's post_name as it appears in /resources/[type]/[slug]/.",
+					"$ref": "common.schema.json#/$defs/slug"
+				},
+				"types": {
+					"description": "The resource's one resource_type term, as a one-element array.",
+					"$ref": "common.schema.json#/$defs/typeList"
+				},
+				"topics": {
+					"description": "The resource's resource_topic terms as slugs; empty when it has none.",
+					"$ref": "common.schema.json#/$defs/topicList"
+				}
+			},
+			"required": [ "slug", "types", "topics" ],
+			"additionalProperties": false
+		},
+		"resourceEvent": {
+			"description": "A change to one resource post. The top-level slug, types and topics describe the public state the event concerns: the state after the save for publish and update, and the last public state before removal for unpublish, trash and delete, so a trashed post's slug is the slug readers used, never the __trashed form WordPress renames it to. The front end refreshes on publish and update and removes on unpublish, trash and delete, where its refetch of the resource returns nothing and the page becomes a 404.",
+			"type": "object",
+			"properties": {
+				"type": {
+					"description": "Marks a resource event. The discriminator between the two event shapes.",
+					"const": "resource"
+				},
+				"event": {
+					"description": "What happened. publish: the resource became public (first publish, or a draft or private post made public). update: a public resource was saved while staying public. unpublish: a public resource was moved to draft, pending, private or scheduled (future), so rescheduling a live resource counts. trash: a public resource was trashed. delete: a public resource was permanently deleted without passing through the trash (a force delete through WP-CLI or the REST API); permanently deleting a resource that is already in the trash sends nothing, because its trash event was already sent. Changes that never touch public state, such as editing a draft, send nothing.",
+					"type": "string",
+					"enum": [ "publish", "update", "unpublish", "trash", "delete" ]
+				},
+				"id": {
+					"description": "The post ID. Stable across renames and the key the front end uses to deduplicate and to fetch the resource again.",
+					"$ref": "common.schema.json#/$defs/id"
+				},
+				"slug": {
+					"description": "The resource's slug in the public state this event concerns (see the event description).",
+					"$ref": "common.schema.json#/$defs/slug"
+				},
+				"rest_url": {
+					"description": "The absolute URL of this resource in the core REST API, {WP_URL}/wp-json/wp/v2/resources/{id}, so the front end can refetch it without building the URL itself. Always http or https; the pattern rejects other schemes such as javascript: and mailto:, which format uri alone accepts. The schema cannot know the WordPress origin, so before fetching this URL the front end must also check that its host matches its configured WordPress origin and refuse it otherwise: that check is the guard against server-side request forgery, and it lives on the front end.",
+					"type": "string",
+					"format": "uri",
+					"pattern": "^https?://"
+				},
+				"types": {
+					"description": "The resource's one resource_type term in the public state this event concerns, as a one-element array.",
+					"$ref": "common.schema.json#/$defs/typeList"
+				},
+				"topics": {
+					"description": "The resource's resource_topic terms in the public state this event concerns, as slugs; empty when it has none.",
+					"$ref": "common.schema.json#/$defs/topicList"
+				},
+				"previous": {
+					"description": "On update only: the slug, type and topics the resource had before this save, so the front end can also revalidate the listings and URL the resource just left (a renamed slug, a changed type, a removed topic). null for every other event, because publish has no earlier public state and the removal events already describe the last public state in the top-level fields.",
+					"oneOf": [
+						{ "type": "null" },
+						{ "$ref": "#/$defs/resourceState" }
+					]
+				}
+			},
+			"required": [ "type", "event", "id", "slug", "rest_url", "types", "topics", "previous" ],
+			"additionalProperties": false,
+			"if": {
+				"type": "object",
+				"properties": { "event": { "const": "update" } },
+				"required": [ "event" ]
+			},
+			"then": {
+				"type": "object",
+				"properties": { "previous": { "$ref": "#/$defs/resourceState" } }
+			},
+			"else": {
+				"type": "object",
+				"properties": { "previous": { "type": "null" } }
+			}
+		},
+		"termState": {
+			"description": "A term's slug and name: the two things the front end shows and routes on.",
+			"type": "object",
+			"properties": {
+				"slug": {
+					"description": "The term's slug as it appears in a URL segment.",
+					"$ref": "common.schema.json#/$defs/slug"
+				},
+				"name": {
+					"description": "The term's display name.",
+					"type": "string",
+					"minLength": 1
+				}
+			},
+			"required": [ "slug", "name" ],
+			"additionalProperties": false
+		},
+		"termEvent": {
+			"description": "A change to one term in the resource_topic or resource_type taxonomy: the term was created, renamed or re-slugged, or deleted. Reassigning terms to a resource is not a term event; it is reported as an update of that resource. The front end refreshes the listings that name the term, and for a rename also the listing at the previous slug.",
+			"type": "object",
+			"properties": {
+				"type": {
+					"description": "Marks a term event. The discriminator between the two event shapes.",
+					"const": "term"
+				},
+				"taxonomy": {
+					"description": "Which taxonomy the term belongs to. resource_flag terms are managed in code and never change, so they send no events.",
+					"type": "string",
+					"enum": [ "resource_topic", "resource_type" ]
+				},
+				"event": {
+					"description": "What happened. create: a new term exists (no resource lists it yet, so the front end only needs its listing to exist). update: the term's slug or name changed. delete: the term is gone and its listing becomes a 404.",
+					"type": "string",
+					"enum": [ "create", "update", "delete" ]
+				},
+				"id": {
+					"description": "The term ID.",
+					"$ref": "common.schema.json#/$defs/id"
+				},
+				"slug": {
+					"description": "The term's slug after the change (for delete, the slug it had). For resource_type, never topic or page.",
+					"$ref": "common.schema.json#/$defs/slug"
+				},
+				"name": {
+					"description": "The term's display name after the change (for delete, the name it had).",
+					"type": "string",
+					"minLength": 1
+				},
+				"previous": {
+					"description": "On update only: the slug and name before the change, so the front end can also revalidate the listing at the old slug. null for create and delete.",
+					"oneOf": [
+						{ "type": "null" },
+						{ "$ref": "#/$defs/termState" }
+					]
+				}
+			},
+			"required": [ "type", "taxonomy", "event", "id", "slug", "name", "previous" ],
+			"additionalProperties": false,
+			"allOf": [
+				{
+					"if": {
+						"type": "object",
+						"properties": { "event": { "const": "update" } },
+						"required": [ "event" ]
+					},
+					"then": {
+						"type": "object",
+						"properties": { "previous": { "$ref": "#/$defs/termState" } }
+					},
+					"else": {
+						"type": "object",
+						"properties": { "previous": { "type": "null" } }
+					}
+				},
+				{
+					"if": {
+						"type": "object",
+						"properties": { "taxonomy": { "const": "resource_type" } },
+						"required": [ "taxonomy" ]
+					},
+					"then": {
+						"type": "object",
+						"properties": {
+							"slug": { "$ref": "common.schema.json#/$defs/typeSlug" },
+							"previous": {
+								"oneOf": [
+									{ "type": "null" },
+									{
+										"type": "object",
+										"properties": {
+											"slug": { "$ref": "common.schema.json#/$defs/typeSlug" }
+										}
+									}
+								]
+							}
+						}
+					}
+				}
+			]
+		}
+	}
+}

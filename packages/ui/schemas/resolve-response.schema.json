@@ -1,0 +1,23 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://raw.githubusercontent.com/Colbitron/resource-hub-wp/main/packages/ui/schemas/resolve-response.schema.json",
+	"title": "Slug resolve response",
+	"description": "The 200 body of GET /wp-json/resource-hub/v1/resolve?slug={slug}: the current canonical identity of a public resource that is, or once was, reachable at that slug. The front end calls it when a resource URL misses, so a renamed resource redirects to its new URL instead of returning a 404. A slug that matches no public resource, now or before, is answered with a WordPress REST 404 (wp-error.schema.json).",
+	"type": "object",
+	"properties": {
+		"id": {
+			"description": "The post ID of the resource the slug resolves to.",
+			"$ref": "common.schema.json#/$defs/id"
+		},
+		"type": {
+			"description": "The resource's current resource_type slug, the first variable segment of its canonical URL /resources/[type]/[slug]/. Never topic or page.",
+			"$ref": "common.schema.json#/$defs/typeSlug"
+		},
+		"slug": {
+			"description": "The resource's current slug. Equal to the queried slug when the resource was found under its current name, different when the query used an old slug.",
+			"$ref": "common.schema.json#/$defs/slug"
+		}
+	},
+	"required": [ "id", "type", "slug" ],
+	"additionalProperties": false
+}

@@ -1,0 +1,505 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 1,
+			"slug": "resource-1",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/1",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-1",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 2,
+			"slug": "resource-2",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/2",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-2",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 3,
+			"slug": "resource-3",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/3",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-3",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 4,
+			"slug": "resource-4",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/4",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-4",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 5,
+			"slug": "resource-5",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/5",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-5",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 6,
+			"slug": "resource-6",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/6",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-6",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 7,
+			"slug": "resource-7",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/7",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-7",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 8,
+			"slug": "resource-8",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/8",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-8",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 9,
+			"slug": "resource-9",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/9",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-9",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 10,
+			"slug": "resource-10",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/10",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-10",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 11,
+			"slug": "resource-11",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/11",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-11",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 12,
+			"slug": "resource-12",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/12",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-12",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 13,
+			"slug": "resource-13",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/13",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-13",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 14,
+			"slug": "resource-14",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/14",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-14",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 15,
+			"slug": "resource-15",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/15",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-15",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 16,
+			"slug": "resource-16",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/16",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-16",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 17,
+			"slug": "resource-17",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/17",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-17",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 18,
+			"slug": "resource-18",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/18",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-18",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 19,
+			"slug": "resource-19",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/19",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-19",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 20,
+			"slug": "resource-20",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/20",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-20",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 21,
+			"slug": "resource-21",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/21",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-21",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 22,
+			"slug": "resource-22",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/22",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-22",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 23,
+			"slug": "resource-23",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/23",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-23",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 24,
+			"slug": "resource-24",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/24",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-24",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 25,
+			"slug": "resource-25",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/25",
+			"types": [
+				"article"
+			],
+			"topics": [
+				"performance"
+			],
+			"previous": {
+				"slug": "resource-25",
+				"types": [
+					"article"
+				],
+				"topics": []
+			}
+		}
+	]
+}

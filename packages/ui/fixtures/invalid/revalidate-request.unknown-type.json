@@ -1,0 +1,15 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "post",
+			"event": "publish",
+			"id": 1,
+			"slug": "a-post",
+			"rest_url": "https://cms.example/wp-json/wp/v2/posts/1",
+			"types": [ "article" ],
+			"topics": [],
+			"previous": null
+		}
+	]
+}

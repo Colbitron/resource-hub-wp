@@ -1,0 +1,19 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 42,
+			"slug": "x",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/42",
+			"types": [ "podcast" ],
+			"topics": [ "performance" ],
+			"previous": {
+				"slug": "x",
+				"types": [ "webinar" ],
+				"topics": [ "performance", "accessibility" ]
+			}
+		}
+	]
+}

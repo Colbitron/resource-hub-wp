@@ -1,0 +1,16 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://raw.githubusercontent.com/Colbitron/resource-hub-wp/main/packages/ui/schemas/revalidate-response-error.schema.json",
+	"title": "Revalidation response (400, 401, 500)",
+	"description": "The body the front end returns when it rejects or fails a revalidation batch, with one of three statuses: 400 when the body does not match the revalidation request schema (the error says what was wrong), 401 when the bearer token is missing or wrong (the error is exactly the word unauthorized), and 500 when the front end accepted the batch but failed while revalidating (the error describes the failure). WordPress stores the status and this body in post meta and shows them to the editor.",
+	"type": "object",
+	"properties": {
+		"error": {
+			"description": "A short, human-readable reason, shown to the editor as is. The literal string unauthorized for a 401.",
+			"type": "string",
+			"minLength": 1
+		}
+	},
+	"required": [ "error" ],
+	"additionalProperties": false
+}

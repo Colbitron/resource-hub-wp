@@ -1,3 +1,8 @@
+# The root is the plugin; packages/ holds what is shared with the front end
+# (the contract schemas in packages/ui, ADR 0010).
+packages:
+  - packages/*
+
 # Native or postinstall build scripts pnpm asked about. None are needed:
 # - fs-ext-extra-prebuilt comes in through @php-wasm/node, which wp-env only
 #   uses in its non-Docker Playground mode. We run Docker.

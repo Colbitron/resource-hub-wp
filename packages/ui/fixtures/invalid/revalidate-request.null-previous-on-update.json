@@ -1,0 +1,15 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 1,
+			"slug": "changed",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/1",
+			"types": [ "article" ],
+			"topics": [],
+			"previous": null
+		}
+	]
+}

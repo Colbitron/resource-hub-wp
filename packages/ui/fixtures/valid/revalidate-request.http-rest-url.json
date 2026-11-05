@@ -1,0 +1,19 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 12,
+			"slug": "local-dev-resource",
+			"rest_url": "http://localhost:8888/wp-json/wp/v2/resources/12",
+			"types": [ "article" ],
+			"topics": [ "performance" ],
+			"previous": {
+				"slug": "local-dev-resource",
+				"types": [ "article" ],
+				"topics": [ "performance" ]
+			}
+		}
+	]
+}
