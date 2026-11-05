@@ -34,6 +34,12 @@ import "./listing.css";
  *   `notFound()`: the data layer answers `null` or `NO_SUCH_PAGE`.
  * - A page with no resources is a 200 with the empty state, when both terms
  *   exist: a filter combination with nothing in it is not a missing page.
+ * - A resource the reader schema refuses is left off the page and the rest
+ *   render (ADR 0049's per-item parsing, `ResourceListing.skipped`); the
+ *   count and the pagination stay the CMS's, so pages never shift. A page
+ *   whose resources all fail, on a list too short to throw, is the empty
+ *   state with a 200, saying the CMS's resources cannot be shown rather than
+ *   that there are none, since the count above it says there are.
  *
  * The routes are ISR (`export const revalidate = 3600`, the data layer's
  * interval as a literal, ADR 0049, and `generateStaticParams` returning `[]`,
@@ -176,9 +182,11 @@ export async function ListingPage({ request }: { request: ListingRequest }) {
       {cards.length === 0 ? (
         <div className="rh-listing__empty">
           <p>
-            {filter.type !== undefined && filter.topic !== undefined
-              ? "No resources match this type and topic yet."
-              : "No resources here yet."}
+            {listing.total > 0
+              ? "The resources on this page cannot be shown right now."
+              : filter.type !== undefined && filter.topic !== undefined
+                ? "No resources match this type and topic yet."
+                : "No resources here yet."}
           </p>
           {(filter.type !== undefined || filter.topic !== undefined) && (
             <p>

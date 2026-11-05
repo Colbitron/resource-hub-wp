@@ -358,6 +358,47 @@ test.describe("non-canonical URLs", () => {
   });
 });
 
+test.describe("a resource the reader schema refuses", () => {
+  // WordPress keeps an escape an editor types in a slug; the front end refuses
+  // it (slugProblem), so the list skips that one resource (ADR 0049).
+  test("is left off its page, the other cards render, and the count and pages stay the CMS's", async ({ page, request }) => {
+    const title = "A refused case study";
+    await cms.createResource({ title, type: "case-study", slug: "refused%2dcase-study" });
+    await clearAppCache(request);
+
+    const all = seededTitles();
+    // 15 resources newest first: page 1 holds the refused one and the eleven
+    // seeded before it, page 2 the last three, as the CMS paginates them.
+    await expectListing(page, "/resources/", "Resources", all.slice(0, PER_PAGE - 1));
+    await expect(page.getByText("15 resources")).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Pagination" }).getByRole("link", { name: "Page 2", exact: true })).toHaveAttribute(
+      "href",
+      "/resources/page/2/",
+    );
+    expect(await page.content()).not.toContain(title);
+    await expectListing(page, "/resources/page/2/", "Resources", all.slice(PER_PAGE - 1));
+    await expectListing(page, "/resources/case-study/", "Case study resources", seededTitles({ type: "case-study" }));
+  });
+
+  test("a short page whose resources all fail is a 200 with the empty state, not a 404", async ({ page, request }) => {
+    expect(seededTitles({ type: "webinar", topic: "accessibility" })).toEqual([]);
+    for (const slug of ["refused%2done", "refused%2dtwo"]) {
+      await cms.createResource({ title: `Refused ${slug}`, type: "webinar", topics: ["accessibility"], slug });
+    }
+    await clearAppCache(request);
+
+    const response = await page.goto("/resources/webinar/topic/accessibility/");
+    expect(response?.status()).toBe(200);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Webinar resources on Accessibility");
+    await expect(page.locator(".rh-card")).toHaveCount(0);
+    // The count is the CMS's, and the empty state does not contradict it.
+    await expect(page.getByText("2 resources")).toBeVisible();
+    await expect(page.getByText("The resources on this page cannot be shown right now.")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Show all resources" })).toHaveAttribute("href", "/resources/");
+    await expect(page.getByRole("navigation", { name: "Pagination" })).toHaveCount(0);
+  });
+});
+
 test("the HTML never names the CMS", async ({ request }) => {
   for (const path of ["/resources/", "/resources/page/2/", "/resources/webinar/", "/resources/article/topic/accessibility/", "/resources/nope/"]) {
     const html = await (await get(request, path)).text();
