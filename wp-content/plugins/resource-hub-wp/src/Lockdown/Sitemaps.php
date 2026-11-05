@@ -35,6 +35,11 @@ final class Sitemaps {
 	 * @param mixed $enabled What core and earlier filters decided.
 	 */
 	public function enabled( $enabled ): bool {
+		// Pluggable functions load after plugins; a call before then cannot know the user, so it fails closed.
+		if ( ! function_exists( 'is_user_logged_in' ) ) {
+			return false;
+		}
+
 		return (bool) $enabled && is_user_logged_in();
 	}
 }

@@ -103,10 +103,12 @@ final class Gate {
 	 * `is_robots()` alone is not enough: `robots` is a public query var, so anyone can add
 	 * `?robots=1` to a feed, sitemap or attachment URL, and the flag would then exempt that request.
 	 * The test is on the main query's own arguments rather than the request path, because they are
-	 * what WordPress acts on: `/robots.txt` reaches the query as `robots=1` alone, under pretty and
-	 * plain permalinks alike, and an unknown parameter such as `?utm_source=` never becomes a query
-	 * var, while any public query var added to it (`feed`, `sitemap`, `attachment_id`) does, and
-	 * makes it a theme request like any other.
+	 * what WordPress acts on. Under pretty permalinks, core's rewrite rule turns `/robots.txt` into
+	 * `robots=1` alone. Under plain permalinks, WordPress writes no rewrite rules for the web server,
+	 * so `/robots.txt` never reaches WordPress and the web server answers it with its own 404; only
+	 * `/?robots=1` reaches the query, again as `robots=1` alone. An unknown parameter such as
+	 * `?utm_source=` never becomes a query var, while any public query var added to the request
+	 * (`feed`, `sitemap`, `attachment_id`) does, and makes it a theme request like any other.
 	 *
 	 * @param WP_Query $query The main query.
 	 */

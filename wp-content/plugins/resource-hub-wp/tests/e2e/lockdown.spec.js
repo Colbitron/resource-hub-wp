@@ -237,6 +237,18 @@ test.describe( 'CMS lockdown', () => {
 		).toHaveCount( 0 );
 	} );
 
+	test( 'a logged-in user still gets the sitemap', async ( { page } ) => {
+		const response = await page.request.get( '/wp-sitemap.xml', {
+			maxRedirects: 0,
+		} );
+
+		expect( response.status() ).toBe( 200 );
+		expect( response.headers()[ 'content-type' ] ).toContain(
+			'application/xml'
+		);
+		expect( await response.text() ).toContain( '<sitemapindex' );
+	} );
+
 	test( 'the REST API stays public and says noindex', async ( {
 		anonymous,
 	} ) => {

@@ -301,6 +301,11 @@ final class GateTest extends LockdownTestCase {
 			'plain sitemap'    => array( '/?robots=1&sitemap=index' ),
 			'plain attachment' => array( '/?attachment_id={attachment}&robots=1' ),
 			'plain feed'       => array( '/?robots=1&feed=rss2' ),
+			'empty sitemap'    => array( '/?robots=1&sitemap=' ),
+			'preview'          => array( '/?robots=1&preview=true' ),
+			'plain post'       => array( '/?robots=1&p=1' ),
+			'sitemap XSL'      => array( '/wp-sitemap.xsl?robots=1' ),
+			'index XSL'        => array( '/wp-sitemap-index.xsl?robots=1' ),
 		);
 	}
 
