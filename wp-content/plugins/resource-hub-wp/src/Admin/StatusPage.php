@@ -189,7 +189,7 @@ final class StatusPage {
 	/**
 	 * The front-end URL option's sanitizer: the site's origin only, `https://` except for
 	 * `http://localhost` and `http://127.0.0.1` in development, with any port, and no path, query,
-	 * fragment or credentials; a trailing slash is dropped. The send appends `/api/revalidate`, so a
+	 * fragment or credentials; a trailing slash is dropped. The send appends `/api/revalidate/`, so a
 	 * path would double it. An empty value clears the option. Anything else is refused with a
 	 * settings error and the stored value is kept.
 	 *

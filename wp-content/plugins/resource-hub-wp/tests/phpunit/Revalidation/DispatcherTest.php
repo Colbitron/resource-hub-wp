@@ -226,7 +226,7 @@ final class DispatcherTest extends RevalidationTestCase {
 	 */
 	private function flush_with_schedule_refused( callable $during_send ): array {
 		$this->responder = static function ( string $url, array $args ) use ( $during_send ): array {
-			if ( str_ends_with( $url, '/api/revalidate' ) ) {
+			if ( str_ends_with( $url, Sender::PATH ) ) {
 				$during_send( json_decode( $args['body'], true )['events'] );
 			}
 
