@@ -215,10 +215,10 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The one difference from typing the decoded slug: core frees the bare slug a trashed resource
-	 * still holds only when it matches the slug as typed, so the decoded slug gets a suffix.
+	 * A decoded slug takes the bare slug a trashed resource still holds, as typing it would: the
+	 * trashed resource is renamed `…__trashed` first.
 	 */
-	public function test_slug_held_by_a_trashed_resource_gets_a_suffix(): void {
+	public function test_decoded_slug_takes_the_slug_a_trashed_resource_holds(): void {
 		$trashed = $this->resource( 'publish', 'case-study' );
 		wp_trash_post( $trashed );
 		$this->assertSame( 'case-study__trashed', get_post( $trashed )->post_name, 'Core did not rename the trashed resource.' );
@@ -230,6 +230,26 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 			)
 		);
 		$this->assertSame( 'case-study', get_post( $trashed )->post_name, 'The trashed resource does not hold the slug.' );
+
+		$this->assertSame( 'case-study', get_post( $this->resource( 'publish', 'case%2dstudy' ) )->post_name );
+		$this->assertSame( 'case-study__trashed', get_post( $trashed )->post_name );
+	}
+
+	/**
+	 * Core's `add_trashed_suffix_to_trashed_posts` filter turns that rename off for a decoded slug
+	 * as it does for a typed one, and core's uniqueness check then gives a suffix.
+	 */
+	public function test_trashed_rename_honours_cores_filter(): void {
+		$trashed = $this->resource( 'publish', 'case-study' );
+		wp_trash_post( $trashed );
+		wp_update_post(
+			array(
+				'ID'        => $trashed,
+				'post_name' => 'case-study',
+			)
+		);
+
+		add_filter( 'add_trashed_suffix_to_trashed_posts', '__return_false' );
 
 		$this->assertSame( 'case-study-2', get_post( $this->resource( 'publish', 'case%2dstudy' ) )->post_name );
 		$this->assertSame( 'case-study', get_post( $trashed )->post_name );

@@ -35,12 +35,14 @@ namespace ResourceHub\ContentModel;
  * - a term slug generated from the name needs nothing: core runs `sanitize_text_field()` on a
  *   term's name on save (`pre_term_name`), which strips every percent escape from it.
  * A slug already stored with such an escape is decoded the next time its post or term is saved.
+ * A cron publish of a scheduled resource (`wp_publish_post()`) writes only the status and reaches
+ * none of these hooks, so `wp resource-hub decode-slugs` repairs whatever is left.
  *
- * One narrow difference from typing the decoded slug: core renames a post `…__trashed` when it is
- * trashed, and before checking uniqueness it also renames a trashed post that still holds the bare
- * slug (one trashed before WordPress 5.4, or edited in the trash), comparing with the slug as
- * typed. So `case%2dstudy`, when such a trashed resource holds `case-study`, becomes
- * `case-study-2`, where typing `case-study` would take the slug from it.
+ * Core renames a post `…__trashed` when it is trashed, and before checking uniqueness it also
+ * renames any trashed post that still holds the bare slug (one trashed before WordPress 5.4, or
+ * edited in the trash), comparing with the slug as typed. unique_post_slug() does the same with
+ * the decoded slug, so `case%2dstudy` takes `case-study` from such a trashed resource exactly as
+ * typing `case-study` would.
  */
 final class SlugEscapes {
 	/**
@@ -150,6 +152,13 @@ final class SlugEscapes {
 	 * Hooked to `pre_wp_unique_post_slug`, which core does not reach for `draft`, `pending` and
 	 * `auto-draft`; post_data() covers those.
 	 *
+	 * Before that, unless the post is being trashed, it renames any trashed post holding the bare
+	 * decoded slug, as `wp_insert_post()` does for the slug as typed and through the same core
+	 * function and filter, so the decoded slug is freed exactly as a typed one is. Core's other
+	 * caller of `wp_unique_post_slug()`, `get_sample_permalink()` (the editor's permalink preview),
+	 * also reaches this for a resource whose stored slug still has such an escape, and then does
+	 * the same rename the resource's next save would.
+	 *
 	 * @param string|null $override    Null, or an earlier filter's slug, which is kept.
 	 * @param string      $slug        Sanitized slug.
 	 * @param int         $post_id     Post ID.
@@ -172,6 +181,11 @@ final class SlugEscapes {
 		// An empty slug is left to core, which then uses the title or the post ID.
 		if ( '' === $decoded ) {
 			return '';
+		}
+
+		// Core's own filter, applied as `wp_insert_post()` applies it, so a site that turns the rename off for typed slugs turns it off here too.
+		if ( 'trash' !== $post_status && apply_filters( 'add_trashed_suffix_to_trashed_posts', true, $decoded, (int) $post_id ) ) { // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- core's hook, not ours.
+			wp_add_trashed_suffix_to_post_name_for_trashed_posts( $decoded, (int) $post_id );
 		}
 
 		return wp_unique_post_slug( $decoded, (int) $post_id, (string) $post_status, $post_type, (int) $post_parent );
