@@ -437,15 +437,15 @@ function uploadSrcset(srcset: string | undefined, context: Context): string | un
   return candidates.length === 0 ? undefined : candidates.join(", ");
 }
 
+/**
+ * `element`'s attributes. htmlparser2 has already made them what a browser
+ * reads: with `lowerCaseAttributeNames` it lower-cases each name before
+ * storing it, and it stores a name only when it is not stored yet, so the
+ * first of `HREF="javascript:…" href="/ok"` wins, as in a browser. A test
+ * pins that behaviour, so a parser upgrade that changed it would fail.
+ */
 function readAttributes(element: Element): Attributes {
-  const attributes = new Map<string, string>();
-  for (const [name, value] of Object.entries(element.attribs)) {
-    const key = name.toLowerCase();
-    if (!attributes.has(key)) {
-      attributes.set(key, value);
-    }
-  }
-  return attributes;
+  return new Map(Object.entries(element.attribs));
 }
 
 function tokens(value: string | undefined, allowed: (token: string) => boolean): string[] {

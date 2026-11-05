@@ -255,75 +255,82 @@ describe("images", () => {
   });
 });
 
-const XSS_VECTORS: string[] = [
-  "<script>alert(1)</script>",
-  '<SCRIPT SRC="https://evil.example/x.js"></SCRIPT>',
-  "<img src=x onerror=alert(1)>",
-  '<img src="x" ONERROR="alert(1)">',
-  '<IMG SRC="javascript:alert(1)">',
-  '<a href="javascript:alert(1)">x</a>',
-  '<a href="JaVaScRiPt:alert(1)">x</a>',
-  '<a href="  javascript:alert(1)">x</a>',
-  '<a href="java\tscript:alert(1)">x</a>',
-  '<a href="java\nscript:alert(1)">x</a>',
-  '<a href="java\r\nscript:alert(1)">x</a>',
-  '<a href="\u0001javascript:alert(1)">x</a>',
-  '<a href="&#106;&#97;&#118;&#97;script:alert(1)">x</a>',
-  '<a href="&#x6A;avascript:alert(1)">x</a>',
-  '<a href="&#0000106avascript:alert(1)">x</a>',
-  '<a href="jav&#x09;ascript:alert(1)">x</a>',
-  '<a href="jav&#x0A;ascript:alert(1)">x</a>',
-  '<a href="javascript&colon;alert(1)">x</a>',
-  '<a href="javascript://%0aalert(1)">x</a>',
-  '<a href="vbscript:msgbox(1)">x</a>',
-  '<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">x</a>',
-  '<a href="javascript:alert(1)" href="/ok">x</a>',
-  '<a HREF="javascript:alert(1)" href="/ok">x</a>',
-  '<a href="/ok" onclick="alert(1)">x</a>',
-  '<a href="/ok" style="background:url(javascript:alert(1))">x</a>',
-  '<img src="data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9ImFsZXJ0KDEpIj48L3N2Zz4=">',
-  `<img src="${UPLOAD}" srcset="javascript:alert(1) 1x">`,
-  `<img src="${UPLOAD}" srcset="${UPLOAD} 1x, javascript:alert(1) 2x">`,
-  `<img src="${UPLOAD}" alt="" width="10" height="10" onload="alert(1)">`,
-  "<svg onload=alert(1)></svg>",
-  "<svg><script>alert(1)</script></svg>",
-  '<svg><a xlink:href="javascript:alert(1)"><text>x</text></a></svg>',
-  '<svg><use href="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=#x"></use></svg>',
-  '<math><mi xlink:href="javascript:alert(1)">x</mi></math>',
-  '<math href="javascript:alert(1)">x</math>',
-  '<noscript><p title="</noscript><img src=x onerror=alert(1)>"></noscript>',
-  "<noscript><script>alert(1)</script></noscript>",
-  '<iframe src="javascript:alert(1)"></iframe>',
-  '<iframe srcdoc="<script>alert(1)</script>"></iframe>',
-  '<object data="javascript:alert(1)"></object>',
-  '<embed src="javascript:alert(1)">',
-  "<style>body{background:url(javascript:alert(1))}</style>",
-  '<style>@import "https://evil.example/x.css";</style>',
-  '<div style="background:url(javascript:alert(1))">x</div>',
-  '<p onmouseover="alert(1)">x</p>',
-  '<p ONMOUSEOVER="alert(1)">x</p>',
-  "<details open ontoggle=alert(1)><summary>x</summary></details>",
-  '<form action="javascript:alert(1)"><input type="submit" value="go"></form>',
-  '<button onclick="alert(1)">x</button>',
-  '<base href="javascript:alert(1)//">',
-  '<meta http-equiv="refresh" content="0;url=javascript:alert(1)">',
-  '<link rel="stylesheet" href="https://evil.example/x.css">',
-  "<template><script>alert(1)</script></template>",
-  '<video><source onerror="alert(1)" src="x"></video>',
-  '<video src="javascript:alert(1)"></video>',
-  '<audio src="x" onerror="alert(1)"></audio>',
-  '<xss id="x" tabindex="1" onfocus="alert(1)"></xss>',
-  '<p id="__proto__" class="a&quot; onmouseover=&quot;alert(1)">x</p>',
-  '<a href="/ok" rel="noopener" target="_blank" onmouseover="alert(1)">x</a>',
-  "<![CDATA[<script>alert(1)</script>]]>",
-  "<!--<script>alert(1)</script>-->",
-  "<?php echo 'x'; ?>",
-  '<blockquote cite="javascript:alert(1)">x</blockquote>',
-  '<q cite="data:text/html,<script>alert(1)</script>">x</q>',
-  '<marquee onstart="alert(1)">x</marquee>',
-  '<body onload="alert(1)"><p>x</p></body>',
-  '<a href="&#x6A;&#x61;&#x76;&#x61;&#x73;&#x63;&#x72;&#x69;&#x70;&#x74;&#x3A;alert(1)">x</a>',
+/**
+ * Injection vectors and what each renders as, exactly. `null` marks the one
+ * whose output is next/image's long markup; the negative checks below cover
+ * it with the rest.
+ */
+const XSS_CASES: ReadonlyArray<readonly [vector: string, expected: string | null]> = [
+  ["<script>alert(1)</script>", ""],
+  ['<SCRIPT SRC="https://evil.example/x.js"></SCRIPT>', ""],
+  ["<img src=x onerror=alert(1)>", ""],
+  ['<img src="x" ONERROR="alert(1)">', ""],
+  ['<IMG SRC="javascript:alert(1)">', ""],
+  ['<a href="javascript:alert(1)">x</a>', "<a>x</a>"],
+  ['<a href="JaVaScRiPt:alert(1)">x</a>', "<a>x</a>"],
+  ['<a href="  javascript:alert(1)">x</a>', "<a>x</a>"],
+  ['<a href="java\tscript:alert(1)">x</a>', "<a>x</a>"],
+  ['<a href="java\nscript:alert(1)">x</a>', "<a>x</a>"],
+  ['<a href="java\r\nscript:alert(1)">x</a>', "<a>x</a>"],
+  ['<a href="\u0001javascript:alert(1)">x</a>', "<a>x</a>"],
+  ['<a href="&#106;&#97;&#118;&#97;script:alert(1)">x</a>', "<a>x</a>"],
+  ['<a href="&#x6A;avascript:alert(1)">x</a>', "<a>x</a>"],
+  ['<a href="&#0000106avascript:alert(1)">x</a>', "<a>x</a>"],
+  ['<a href="jav&#x09;ascript:alert(1)">x</a>', "<a>x</a>"],
+  ['<a href="jav&#x0A;ascript:alert(1)">x</a>', "<a>x</a>"],
+  ['<a href="javascript&colon;alert(1)">x</a>', "<a>x</a>"],
+  ['<a href="javascript://%0aalert(1)">x</a>', "<a>x</a>"],
+  ['<a href="vbscript:msgbox(1)">x</a>', "<a>x</a>"],
+  ['<a href="data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==">x</a>', "<a>x</a>"],
+  ['<a href="javascript:alert(1)" href="/ok">x</a>', "<a>x</a>"],
+  ['<a HREF="javascript:alert(1)" href="/ok">x</a>', "<a>x</a>"],
+  ['<a href="/ok" onclick="alert(1)">x</a>', '<a href="/ok">x</a>'],
+  ['<a href="/ok" style="background:url(javascript:alert(1))">x</a>', '<a href="/ok">x</a>'],
+  ['<img src="data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9ImFsZXJ0KDEpIj48L3N2Zz4=">', ""],
+  [`<img src="${UPLOAD}" srcset="javascript:alert(1) 1x">`, '<img alt="" src="/media/2026/11/photo.jpg" loading="lazy"/>'],
+  [`<img src="${UPLOAD}" srcset="${UPLOAD} 1x, javascript:alert(1) 2x">`, '<img alt="" srcSet="/media/2026/11/photo.jpg 1x" src="/media/2026/11/photo.jpg" loading="lazy"/>'],
+  [`<img src="${UPLOAD}" alt="" width="10" height="10" onload="alert(1)">`, null],
+  ["<svg onload=alert(1)></svg>", ""],
+  ["<svg><script>alert(1)</script></svg>", ""],
+  ['<svg><a xlink:href="javascript:alert(1)"><text>x</text></a></svg>', ""],
+  ['<svg><use href="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=#x"></use></svg>', ""],
+  ['<math><mi xlink:href="javascript:alert(1)">x</mi></math>', ""],
+  ['<math href="javascript:alert(1)">x</math>', ""],
+  ['<noscript><p title="</noscript><img src=x onerror=alert(1)>"></noscript>', ""],
+  ["<noscript><script>alert(1)</script></noscript>", ""],
+  ['<iframe src="javascript:alert(1)"></iframe>', ""],
+  ['<iframe srcdoc="<script>alert(1)</script>"></iframe>', ""],
+  ['<object data="javascript:alert(1)"></object>', ""],
+  ['<embed src="javascript:alert(1)">', ""],
+  ["<style>body{background:url(javascript:alert(1))}</style>", ""],
+  ['<style>@import "https://evil.example/x.css";</style>', ""],
+  ['<div style="background:url(javascript:alert(1))">x</div>', "<div>x</div>"],
+  ['<p onmouseover="alert(1)">x</p>', "<p>x</p>"],
+  ['<p ONMOUSEOVER="alert(1)">x</p>', "<p>x</p>"],
+  ["<details open ontoggle=alert(1)><summary>x</summary></details>", '<details open=""><summary>x</summary></details>'],
+  ['<form action="javascript:alert(1)"><input type="submit" value="go"></form>', ""],
+  ['<button onclick="alert(1)">x</button>', ""],
+  ['<base href="javascript:alert(1)//">', ""],
+  ['<meta http-equiv="refresh" content="0;url=javascript:alert(1)">', ""],
+  ['<link rel="stylesheet" href="https://evil.example/x.css">', ""],
+  ["<template><script>alert(1)</script></template>", ""],
+  ['<video><source onerror="alert(1)" src="x"></video>', '<a href="x" rel="noopener noreferrer">x</a>'],
+  ['<video src="javascript:alert(1)"></video>', ""],
+  ['<audio src="x" onerror="alert(1)"></audio>', '<a href="x" rel="noopener noreferrer">x</a>'],
+  ['<xss id="x" tabindex="1" onfocus="alert(1)"></xss>', ""],
+  ['<p id="__proto__" class="a&quot; onmouseover=&quot;alert(1)">x</p>', "<p>x</p>"],
+  ['<a href="/ok" rel="noopener" target="_blank" onmouseover="alert(1)">x</a>', '<a href="/ok" target="_blank" rel="noopener noreferrer">x</a>'],
+  ["<![CDATA[<script>alert(1)</script>]]>", ""],
+  ["<!--<script>alert(1)</script>-->", ""],
+  ["<?php echo 'x'; ?>", ""],
+  ['<blockquote cite="javascript:alert(1)">x</blockquote>', "<blockquote>x</blockquote>"],
+  ['<q cite="data:text/html,<script>alert(1)</script>">x</q>', "<q>x</q>"],
+  ['<marquee onstart="alert(1)">x</marquee>', "x"],
+  ['<body onload="alert(1)"><p>x</p></body>', "<p>x</p>"],
+  ['<a href="&#x6A;&#x61;&#x76;&#x61;&#x73;&#x63;&#x72;&#x69;&#x70;&#x74;&#x3A;alert(1)">x</a>', "<a>x</a>"],
 ];
+
+const XSS_VECTORS = XSS_CASES.map(([vector]) => vector);
 
 const DANGEROUS_ELEMENT =
   /<(script|style|iframe|object|embed|svg|math|form|input|button|base|meta|link|template|noscript|video|audio|source|xss|marquee|body|use|text)\b/i;
@@ -342,10 +349,34 @@ describe("sanitising", () => {
     expect(output).not.toContain("srcdoc");
     expect(output).not.toContain("<!");
     expect(output).not.toContain("<?");
+    // The vector leaves the content after it alone, so the checks above cannot pass on an empty render.
+    expect(render(`${vector}<p>benign</p>`)).toContain("<p>benign</p>");
   });
 
-  it("runs at least 25 vectors", () => {
+  it.each(XSS_CASES.filter((entry): entry is readonly [string, string] => entry[1] !== null))(
+    "renders %s exactly as %j",
+    (vector, expected) => {
+      expect(render(vector)).toBe(expected);
+    },
+  );
+
+  it("runs at least 25 vectors and pins the exact output of at least 15", () => {
     expect(XSS_VECTORS.length).toBeGreaterThanOrEqual(25);
+    expect(XSS_CASES.filter(([, expected]) => expected !== null).length).toBeGreaterThanOrEqual(15);
+  });
+
+  it("renders benign content as markup, never as nothing", () => {
+    const cases = [
+      ["<p>Hello <strong>world</strong></p>", "<p>Hello <strong>world</strong></p>"],
+      ["<h2>Heading</h2><ul><li>One</li><li>Two</li></ul>", "<h2>Heading</h2><ul><li>One</li><li>Two</li></ul>"],
+      ['<figure class="wp-block-quote"><blockquote><p>Q</p><cite>A</cite></blockquote></figure>', '<figure class="wp-block-quote"><blockquote><p>Q</p><cite>A</cite></blockquote></figure>'],
+      ["Plain text", "Plain text"],
+    ] as const;
+    for (const [html, expected] of cases) {
+      const output = render(html);
+      expect(output, html).not.toBe("");
+      expect(output, html).toBe(expected);
+    }
   });
 
   it("keeps the first of two attributes with the same name, as a browser does", () => {
