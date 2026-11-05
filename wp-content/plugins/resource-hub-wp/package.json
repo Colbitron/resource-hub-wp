@@ -7,8 +7,8 @@
 	"scripts": {
 		"build": "wp-scripts build --webpack-src-dir=blocks",
 		"start": "wp-scripts start --webpack-src-dir=blocks",
-		"lint:js": "wp-scripts lint-js blocks editor tests/e2e playwright.config.js webpack.config.js",
-		"format": "wp-scripts format blocks editor tests/e2e playwright.config.js webpack.config.js",
+		"lint:js": "wp-scripts lint-js admin blocks editor tests/e2e playwright.config.js webpack.config.js",
+		"format": "wp-scripts format admin blocks editor tests/e2e playwright.config.js webpack.config.js",
 		"test:e2e": "wp-scripts test-playwright",
 		"test:e2e:debug": "wp-scripts test-playwright --debug"
 	},

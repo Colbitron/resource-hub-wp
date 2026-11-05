@@ -3,9 +3,10 @@
  *
  * `wp-scripts build --webpack-src-dir=blocks` discovers block entries from
  * `block.json` files under `blocks/`. The editor sidebar panel and the
- * revalidation feedback are plugins, not blocks, so they are added here as
- * `editor/resource-details` and `editor/revalidation-feedback`, each landing
- * under `build/editor/` with its `.asset.php` beside it.
+ * revalidation feedback are plugins, not blocks, and the status page's picker
+ * is an admin script, so they are added here: `editor/resource-details`,
+ * `editor/revalidation-feedback` and `admin/status-page`, each landing under
+ * `build/` with its `.asset.php` beside it.
  */
 const { resolve } = require( 'path' );
 const defaultConfig = require( '@wordpress/scripts/config/webpack.config' );
@@ -27,6 +28,7 @@ const config = {
 			__dirname,
 			'editor/revalidation-feedback/index.js'
 		),
+		'admin/status-page': resolve( __dirname, 'admin/status-page/index.js' ),
 	} ),
 };
 

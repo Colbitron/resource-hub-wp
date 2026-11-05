@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace ResourceHub;
 
 use ResourceHub\Admin\ListColumn;
+use ResourceHub\Admin\StatusPage;
 use ResourceHub\Admin\TermNotice;
 use ResourceHub\Cli\SeedCommand;
 use ResourceHub\ContentModel\Meta;
@@ -79,6 +80,7 @@ final class Plugin {
 		add_action( 'rest_api_init', array( new ResolveRoute(), 'register' ) );
 		( new ListColumn() )->register();
 		( new TermNotice() )->register();
+		( new StatusPage( $this->file ) )->register();
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			\WP_CLI::add_command( 'resource-hub seed', SeedCommand::class );
