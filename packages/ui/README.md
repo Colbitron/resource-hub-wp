@@ -16,7 +16,7 @@ Every schema and every property carries a `description` that states what the val
 | `schemas/wp-error.schema.json` | The WordPress core REST error shape both custom routes return for `400` and `404` |
 | `schemas/common.schema.json` | Shared `$defs` the others reference: `id`, `slug`, `typeSlug`, `topicSlug`, `typeList`, `topicList`, `path` |
 
-The bearer token on the revalidation request is a header and is not part of any schema.
+The bearer token on the revalidation request is a header and is not part of any schema. The stylesheets the package also holds are described under [Stylesheets](#stylesheets).
 
 ## Semantics the schemas assume
 
@@ -35,6 +35,22 @@ The bearer token on the revalidation request is a header and is not part of any 
 **`rest_url` is fetched, so the front end checks its host.** The schema pins its scheme to `http` or `https`, which rejects `javascript:`, `mailto:` and the like, but it cannot know the WordPress origin. Before fetching `rest_url` the front end must check that its host matches the WordPress origin it is configured with, and refuse it otherwise. That check is the guard against server-side request forgery, and it lives on the front end.
 
 **Related items are IDs only.** The related route returns `{ "id", "source" }` pairs, at most 10, and the front end fetches the full objects with `GET /wp-json/wp/v2/resources?include={ids}&orderby=include&_embed`, so one code path renders a resource everywhere.
+
+## Stylesheets
+
+The package also holds the stylesheets the CMS and the front end render with, so the two sides look the same from one source ([ADR 0045](../../docs/adr/0045-plain-css-on-shared-tokens.md)). The tokens and the class names are part of the contract: renaming one is a contract change, made on both sides in the same pull request.
+
+| File | Holds |
+|---|---|
+| `tokens.css` | Design tokens as custom properties on `:root`, all prefixed `--rh-`: colour (with a dark scheme under `prefers-color-scheme`), type scale and system font stacks, spacing, radius and measure. Every other stylesheet builds on these and defines no colour or size of its own. |
+| `card.css` | The resource card: `.rh-card` and its parts (`__media`, `__body`, `__meta`, `__type`, `__title`, `__link`, `__summary`, `__topics`, `__topic`) and the `.rh-card-grid` that lays cards out. The markup it expects is in the file's header comment. |
+
+Plain CSS, no framework, no preprocessor and no shared JavaScript. Each consumer loads a stylesheet only where it is used: the front end imports it from the component that renders the markup, and WordPress attaches it through `block.json`. `tokens.css` must be loaded before the others. Import by file name:
+
+```js
+import '@colbitron/resource-hub-ui/tokens.css';
+import '@colbitron/resource-hub-ui/card.css';
+```
 
 ## Public URL shape (informational)
 

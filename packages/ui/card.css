@@ -1,0 +1,158 @@
+/*
+ * The resource card. Class names are part of the contract (ADRs 0041, 0045):
+ * the front end's <ResourceCard> and the CMS render the same markup.
+ *
+ * Built only on the tokens in tokens.css, which the consumer loads first.
+ *
+ * Markup:
+ *   <article class="rh-card">
+ *     <div class="rh-card__media"><img …></div>            (optional)
+ *     <div class="rh-card__body">
+ *       <p class="rh-card__meta"><span class="rh-card__type">…</span><time>…</time></p>
+ *       <h2 class="rh-card__title"><a class="rh-card__link" href="…">…</a></h2>
+ *       <p class="rh-card__summary">…</p>
+ *       <ul class="rh-card__topics"><li class="rh-card__topic">…</li></ul>
+ *     </div>
+ *   </article>
+ *
+ * The title's link is the card's only interactive element. Its ::after covers
+ * the whole card, so the card is clickable without nesting anything in the
+ * link, and the focus ring is drawn around the card through the same box.
+ *
+ * The trade-off of that stretched link (ADR 0045): the overlay sits above the
+ * summary and the topics, so their text cannot be selected with the mouse; a
+ * drag starts on the link. Accepted, because the card is a link to the page
+ * that holds the same text. The alternative, if selection is ever wanted, is
+ * to lift the summary above the overlay (`position: relative; z-index: 1`):
+ * its text becomes selectable, but a click on it no longer navigates.
+ *
+ * In a .rh-card-grid every card in a row is as tall as the tallest: each grid
+ * item stretches to the row, and is itself a one-cell grid the card fills.
+ */
+
+.rh-card-grid {
+	display: grid;
+	/* min(100%, …) keeps a column from being wider than the viewport at phone width. */
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+	gap: var(--rh-space-5);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.rh-card-grid > * {
+	display: grid;
+	min-width: 0;
+}
+
+.rh-card {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	background: var(--rh-color-surface);
+	border: var(--rh-border-width) solid var(--rh-color-border);
+	border-radius: var(--rh-radius);
+	color: var(--rh-color-text);
+	font-family: var(--rh-font-sans);
+	line-height: var(--rh-leading-body);
+	overflow-wrap: anywhere;
+}
+
+.rh-card:hover {
+	border-color: var(--rh-color-text-muted);
+}
+
+.rh-card__media {
+	/* A reserved box: the image fills it, so loading causes no layout shift. */
+	aspect-ratio: 16 / 9;
+	overflow: hidden;
+	background: var(--rh-color-surface-raised);
+	border-bottom: var(--rh-border-width) solid var(--rh-color-border);
+	border-radius: var(--rh-radius) var(--rh-radius) 0 0;
+}
+
+.rh-card__media > img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.rh-card__body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--rh-space-2);
+	padding: var(--rh-space-4);
+}
+
+.rh-card__meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--rh-space-1) var(--rh-space-3);
+	margin: 0;
+	color: var(--rh-color-text-muted);
+	font-size: var(--rh-text-sm);
+}
+
+.rh-card__type {
+	color: var(--rh-color-text);
+	font-weight: 600;
+}
+
+.rh-card__title {
+	margin: 0;
+	font-family: var(--rh-font-serif);
+	font-size: var(--rh-text-md);
+	font-weight: 600;
+	line-height: var(--rh-leading-tight);
+}
+
+.rh-card__link {
+	color: var(--rh-color-text);
+	text-decoration: none;
+}
+
+.rh-card__link:hover {
+	text-decoration: underline;
+	text-underline-offset: 0.15em;
+}
+
+.rh-card__link::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: var(--rh-radius);
+}
+
+.rh-card__link:focus-visible {
+	outline: none;
+}
+
+.rh-card__link:focus-visible::after {
+	outline: var(--rh-focus-width) solid var(--rh-color-focus);
+	outline-offset: 2px;
+}
+
+.rh-card__summary {
+	margin: 0;
+	max-width: var(--rh-measure);
+}
+
+.rh-card__topics {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--rh-space-1) var(--rh-space-2);
+	margin: var(--rh-space-1) 0 0;
+	padding: 0;
+	list-style: none;
+	color: var(--rh-color-text-muted);
+	font-size: var(--rh-text-sm);
+}
+
+.rh-card__topic {
+	padding: 0 var(--rh-space-2);
+	border: var(--rh-border-width) solid var(--rh-color-border);
+	border-radius: var(--rh-radius-sm);
+	background: var(--rh-color-surface-raised);
+}

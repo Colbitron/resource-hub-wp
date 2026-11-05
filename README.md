@@ -201,6 +201,7 @@ Each real decision has a record under [`docs/adr/`](docs/adr/). One sentence eac
 - [0042](docs/adr/0042-phpunit-validates-payloads-against-the-shared-schemas.md) PHPUnit validates every revalidation payload against the shared schemas: `.wp-env.json` maps `packages/ui` into the containers and `opis/json-schema` reads draft 2020-12, so the PHP side fails on drift in the same pull request as the Node side.
 - [0043](docs/adr/0043-fetch-cache-with-tags-without-cache-components.md) The front end caches with `fetch`, `next: { tags, revalidate }` and `revalidateTag`/`revalidatePath`, with Cache Components, `'use cache'` and `unstable_cache` left out, because the `fetch` Data Cache persists across deployments and instances and `'use cache'` defaults to memory.
 - [0044](docs/adr/0044-xml-rpc-is-off-in-the-plugin.md) XML-RPC is off in the plugin: no methods, no `X-Pingback`, no RSD link, because no client uses it and it was an unguarded save path for the one-type rule; a host or Cloudflare block was the alternative.
+- [0045](docs/adr/0045-plain-css-on-shared-tokens.md) Styling is plain CSS on shared `--rh-` tokens with `rh-` class names as contract, no framework and no web fonts, dark mode through `prefers-color-scheme`, and the tokens reaching every front-end page through a `Shell` component rather than `layout.tsx`.
 
 ## Contract with the front end
 
