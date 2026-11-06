@@ -17,7 +17,8 @@ use ResourceHub\ContentModel\Taxonomies;
 use WP_Post;
 
 /**
- * Derives `publish`, `update`, `unpublish`, `trash` and `delete` from core's post hooks (ADRs 0011, 0015, 0016).
+ * Derives `publish`, `update`, `unpublish`, `trash` and `delete` from core's post hooks (ADR 0011).
+ * The state each event carries, and `previous` on `update`, are in `packages/ui/README.md`.
  *
  * `wp_after_insert_post` is the one trigger for saves: it fires after terms and meta are written,
  * from every write path (the REST controller, `wp_insert_post()`, `wp_publish_post()`, and the
@@ -136,7 +137,7 @@ final class ResourceEvents {
 			return;
 		}
 
-		// `unpublish` and `trash`: the top-level fields are the last public state (ADR 0015).
+		// `unpublish` and `trash`: the top-level fields are the last public state, the one the front end can have cached.
 		$this->queue->add( self::event( $event, $post->ID, $last_public, null ) );
 	}
 
@@ -210,7 +211,7 @@ final class ResourceEvents {
 
 	/**
 	 * An `update` event that re-sends a published resource's current state, with `previous` equal to
-	 * it. For the status page's "Send test revalidation" (ADR 0019). Null unless the post is a
+	 * it. For the status page's "Send test revalidation". Null unless the post is a
 	 * published resource.
 	 *
 	 * @param WP_Post $post The post.

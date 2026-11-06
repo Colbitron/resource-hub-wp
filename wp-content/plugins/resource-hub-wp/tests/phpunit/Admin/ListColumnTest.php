@@ -1,6 +1,6 @@
 <?php
 /**
- * The "Revalidation" column on the Resources list (ADR 0018).
+ * The "Revalidation" column on the Resources and Pages lists (see `docs/architecture/revalidation.md`).
  *
  * @package ResourceHub
  */
@@ -32,24 +32,57 @@ final class ListColumnTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The column is hooked onto the resource list, added after core's columns, and hidden by default
-	 * on that screen only.
+	 * The column is hooked onto the resource and page lists, added after core's columns, and hidden by
+	 * default on those two screens only.
 	 */
 	public function test_column_is_added_and_hidden_by_default(): void {
-		$this->assertNotFalse( has_filter( 'manage_' . PostType::NAME . '_posts_columns' ) );
-		$this->assertNotFalse( has_action( 'manage_' . PostType::NAME . '_posts_custom_column' ) );
-		$this->assertNotFalse( has_filter( 'default_hidden_columns' ) );
+		$this->assertSame( array( PostType::NAME, 'page' ), ResultStore::POST_TYPES );
+		$this->assertSame( array( 'edit-resource', 'edit-page' ), ListColumn::list_screens() );
 
-		$column  = new ListColumn();
+		$column = new ListColumn();
+
+		// The plugin registered its own instance, so the hooks are checked by name.
+		foreach ( ResultStore::POST_TYPES as $post_type ) {
+			$this->assertNotFalse( has_filter( 'manage_' . $post_type . '_posts_columns' ), $post_type );
+			$this->assertNotFalse( has_action( 'manage_' . $post_type . '_posts_custom_column' ), $post_type );
+
+			$hidden = $column->hide_by_default( array(), convert_to_screen( 'edit-' . $post_type ) );
+			$this->assertContains( ListColumn::COLUMN, $hidden, $post_type );
+		}
+
+		$this->assertNotFalse( has_filter( 'default_hidden_columns' ) );
+		$this->assertFalse( has_filter( 'manage_post_posts_columns' ) );
+
 		$columns = $column->add_column( array( 'title' => 'Title' ) );
 		$this->assertSame( array( 'title', ListColumn::COLUMN ), array_keys( $columns ) );
 		$this->assertSame( 'Revalidation', $columns[ ListColumn::COLUMN ] );
 
-		$hidden = $column->hide_by_default( array(), convert_to_screen( 'edit-' . PostType::NAME ) );
-		$this->assertContains( ListColumn::COLUMN, $hidden );
-
 		$elsewhere = $column->hide_by_default( array(), convert_to_screen( 'edit-post' ) );
 		$this->assertNotContains( ListColumn::COLUMN, $elsewhere );
+	}
+
+	/**
+	 * A page's cell reads the page's own record, the one `PageEvents` stores, like a resource's.
+	 */
+	public function test_page_cell_shows_its_record(): void {
+		$page_id = self::factory()->post->create( array( 'post_type' => 'page' ) );
+		update_post_meta(
+			$page_id,
+			ResultStore::META_KEY,
+			ResultTextTest::record(
+				array(
+					'status'  => Result::FAILED,
+					'outcome' => Result::NOT_CONFIGURED,
+					'event'   => 'update',
+					'time'    => '2027-01-15T10:00:00Z',
+				)
+			)
+		);
+
+		$cell = ListColumn::cell( $page_id, (int) strtotime( '2027-01-15T10:05:00Z' ) );
+
+		$this->assertStringContainsString( '>Not configured<', $cell );
+		$this->assertStringContainsString( '>5 minutes ago</time>', $cell );
 	}
 
 	/**

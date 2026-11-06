@@ -12,7 +12,7 @@ namespace ResourceHub\Tests\Revalidation;
 use ResourceHub\Revalidation\Queue;
 
 /**
- * Tests for {@see Queue} with hand-built events (ADR 0014).
+ * Tests for {@see Queue} with hand-built events (see `packages/ui/README.md`).
  */
 final class QueueTest extends RevalidationTestCase {
 	/**

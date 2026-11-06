@@ -1,5 +1,6 @@
 /**
- * The resource picker's search on Settings > Resource Hub (ADR 0019).
+ * The resource picker's search on Settings > Resource Hub (see
+ * `docs/architecture/revalidation.md`).
  *
  * PHP renders the picker with the most recently modified published resources,
  * so the form works without this script. Typing in the search box replaces

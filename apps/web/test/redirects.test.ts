@@ -238,9 +238,9 @@ describe("decideResourceRequest", () => {
 describe("a redirect's target is a fixed point", () => {
   /**
    * Next.js 16.4.5's `params` normalisation of one segment, as measured on `next start` with
-   * `a%XXb` for every byte 0x20-0x7e (ADR 0035): an escape of a character `encodeURIComponent`
-   * leaves alone (`A-Z a-z 0-9 - _ . ! ~ * ' ( )`) is decoded, and every other escape's hex is
-   * upper-cased.
+   * `a%XXb` for every byte 0x20-0x7e (the `DECODED_IN_PARAMS` docblock in `lib/routes.ts`): an
+   * escape of a character `encodeURIComponent` leaves alone (`A-Z a-z 0-9 - _ . ! ~ * ' ( )`) is
+   * decoded, and every other escape's hex is upper-cased.
    */
   function nextParam(wire: string): string {
     return wire.replace(/%[0-9A-Fa-f]{2}/g, (escape) => {

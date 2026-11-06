@@ -7,14 +7,15 @@ import { E2E_REVALIDATE_SECRET } from "./mock-cms/config.mts";
  * The resource page's redirects (`lib/redirects.ts`) against the built app
  * and the mock CMS, through the test-only page at
  * `/fixtures/redirect/[type]/[slug]/` (app/fixtures/redirect/…). The contract
- * (root `CLAUDE.md`, "Public URLs"; ADRs 0025 and 0035): a wrong type
+ * (ADR 0025; the URL shape is in `packages/ui/README.md`): a wrong type
  * segment, a non-canonical segment or an old slug gets one computed 308 to
- * the canonical URL, which answers 200, with `Cache-Control: no-store`, and
- * a type changed and changed back never serves a cached redirect.
+ * the canonical URL, which answers 200, with a cache header that keeps a
+ * browser from holding it, and a type changed and changed back never serves
+ * a cached redirect.
  *
  * The fixture route renders on every request, so these tests cover the
  * decision's edge cases without a route cache in the way. It sits behind
- * the same proxy as every path (ADR 0035's 2026-11-06 amendment), so a
+ * the same proxy as every path (see `docs/architecture/caching.md`), so a
  * mixed-case segment gets the proxy's `no-store` 308 before the decision
  * runs, and under the catch-all's `headers()` rule, so the fixture's own
  * 308s carry `public, max-age=0, must-revalidate` in place of Next.js's

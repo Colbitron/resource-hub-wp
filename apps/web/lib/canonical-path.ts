@@ -1,6 +1,6 @@
 /**
- * The canonical form of a public path, decided from the path alone (root
- * `CLAUDE.md`, "Public URLs"; ADRs 0025, 0035, 0049 and 0052). `proxy.ts`
+ * The canonical form of a public path, decided from the path alone (ADRs
+ * 0025 and 0052; the URL shape is in `packages/ui/README.md`). `proxy.ts`
  * sends a request for a non-canonical path a single-hop 308 to the form this
  * module computes, with `Cache-Control: no-store`, before any route runs.
  *
@@ -22,12 +22,13 @@
  *    The proxy sees the path as sent, hex case included, and its target is
  *    what WordPress stores, so the redirect is one hop; the page, which sees
  *    only Next.js's upper-cased hex, still treats either hex case as
- *    canonical (ADR 0049). An invalid sequence (a lone continuation byte,
- *    an overlong form, a surrogate) and an ASCII escape Next.js does not
- *    decode (`%20`, `%2F`) are left exactly as sent. A path differing from a
- *    stored slug only in normalisation form reaches this rule as NFC too; a
- *    CMS without `intl` could store an NFD slug, whose own URL would then
- *    redirect to a 404, which is the one case this rule does not cover.
+ *    canonical, or its redirect would point at itself. An invalid sequence
+ *    (a lone continuation byte, an overlong form, a surrogate) and an ASCII
+ *    escape Next.js does not decode (`%20`, `%2F`) are left exactly as sent.
+ *    A path differing from a stored slug only in normalisation form reaches
+ *    this rule as NFC too; a CMS without `intl` could store an NFD slug,
+ *    whose own URL would then redirect to a 404, which is the one case this
+ *    rule does not cover.
  *    Repeated slashes (`/about//team/`) collapse to one, though Next.js's own
  *    308 removes them before the proxy runs. An escape of a character Next.js decodes in params
  *    (`DECODED_IN_PARAMS` in `lib/routes.ts`: `encodeURIComponent`'s
@@ -63,13 +64,13 @@
  *    one pair would send it to `/resources/page/1/`, a second hop. It is left
  *    to the route's 404, so the computed form is always a fixed point.
  *
- * Why the case rule covers every path and not the library alone (ADR 0035's
- * and ADR 0052's 2026-11-06 amendments): the resource page and the pages
- * catch-all are ISR routes that store what they answer, and Next.js keys the
- * stored entry by the decoded path, which on a case-insensitive file system
- * (macOS, where the suite runs) makes `/About/` and `/about/` one entry, and
- * `/Дом/` and `/дом/` likewise, since APFS folds case in every script and
- * compares normalisation forms as equal.
+ * Why the case rule covers every path and not the library alone (ADR 0025;
+ * the measurements are in `docs/architecture/caching.md`): the resource page
+ * and the pages catch-all are ISR routes that store what they answer, and
+ * Next.js keys the stored entry by the decoded path, which on a
+ * case-insensitive file system (macOS, where the suite runs) makes `/About/`
+ * and `/about/` one entry, and `/Дом/` and `/дом/` likewise, since APFS folds
+ * case in every script and compares normalisation forms as equal.
  * Measured on 16.4.5 under `next start`: with no proxy in front, a request
  * for `/Company/` before any for `/company/` stored the page's 308 to
  * `/company/` under that key, and `/company/` then redirected to itself.

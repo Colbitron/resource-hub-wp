@@ -1,6 +1,6 @@
 <?php
 /**
- * The "Revalidation" column on the Resources list.
+ * The "Revalidation" column on the Resources and Pages lists.
  *
  * @package ResourceHub
  */
@@ -9,14 +9,15 @@ declare(strict_types=1);
 
 namespace ResourceHub\Admin;
 
-use ResourceHub\ContentModel\PostType;
 use ResourceHub\Revalidation\ResultStore;
 use WP_Screen;
 
 /**
- * Shows each resource's last revalidation result in a few words plus its time, for the saves that
- * never open the block editor: bulk actions, the trash and Quick Edit (ADR 0018). Hidden by default
- * through `default_hidden_columns`; Screen Options turns it on. It never prints the response body.
+ * Shows each resource's or page's last revalidation result in a few words plus its time, for the
+ * saves that never open the block editor: bulk actions, the trash and Quick Edit. One
+ * class for every post type in {@see ResultStore::POST_TYPES}, since each list saves the same way.
+ * Hidden by default through `default_hidden_columns`; Screen Options turns it on. It never prints
+ * the response body.
  */
 final class ListColumn {
 	/**
@@ -25,16 +26,19 @@ final class ListColumn {
 	public const COLUMN = 'rh_revalidation';
 
 	/**
-	 * Hooks the column onto the `resource` list table.
+	 * Hooks the column onto the `resource` and `page` list tables.
 	 */
 	public function register(): void {
-		add_filter( 'manage_' . PostType::NAME . '_posts_columns', array( $this, 'add_column' ) );
-		add_action( 'manage_' . PostType::NAME . '_posts_custom_column', array( $this, 'render_cell' ), 10, 2 );
+		foreach ( ResultStore::POST_TYPES as $post_type ) {
+			add_filter( 'manage_' . $post_type . '_posts_columns', array( $this, 'add_column' ) );
+			add_action( 'manage_' . $post_type . '_posts_custom_column', array( $this, 'render_cell' ), 10, 2 );
+		}
+
 		add_filter( 'default_hidden_columns', array( $this, 'hide_by_default' ), 10, 2 );
 	}
 
 	/**
-	 * Adds the column after the date. Hooked to `manage_resource_posts_columns`.
+	 * Adds the column after the date. Hooked to `manage_{post_type}_posts_columns`.
 	 *
 	 * @param array<string, string> $columns The columns.
 	 * @return array<string, string>
@@ -56,7 +60,7 @@ final class ListColumn {
 	public function hide_by_default( $hidden, $screen ): array {
 		$hidden = (array) $hidden;
 
-		if ( $screen instanceof WP_Screen && 'edit-' . PostType::NAME === $screen->id ) {
+		if ( $screen instanceof WP_Screen && in_array( $screen->id, self::list_screens(), true ) ) {
 			$hidden[] = self::COLUMN;
 		}
 
@@ -64,7 +68,16 @@ final class ListColumn {
 	}
 
 	/**
-	 * Prints one row's cell. Hooked to `manage_resource_posts_custom_column`.
+	 * The IDs of the list screens the column is on: `edit-resource` and `edit-page`.
+	 *
+	 * @return string[]
+	 */
+	public static function list_screens(): array {
+		return array_map( static fn( string $post_type ): string => 'edit-' . $post_type, ResultStore::POST_TYPES );
+	}
+
+	/**
+	 * Prints one row's cell. Hooked to `manage_{post_type}_posts_custom_column`.
 	 *
 	 * @param string $column  Column key.
 	 * @param int    $post_id The row's post.

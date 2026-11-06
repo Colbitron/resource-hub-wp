@@ -10,33 +10,34 @@ import { REVALIDATE_EACH_TIME } from "./lib/route-headers";
  *
  * The redirect (`lib/canonical-path.ts`): an upper-case letter in any
  * segment, or a trailing `/page/1/` on a listing, gets one 308 to the
- * canonical path with `Cache-Control: no-store`. ADR 0035's 2026-11-05
- * amendment on the listings records why the listings' redirects are here and
- * not in the pages (a `permanentRedirect()` from an ISR page is stored), and
- * its 2026-11-06 amendment with ADR 0052's why the rule now covers every
- * path: the resource page and the pages catch-all are ISR too, and Next.js's
- * stored entry is keyed by the decoded path, which a case-insensitive file
- * system shares between `/About/` and `/about/`, so a mixed-case request
- * that reached either route first would store a redirect at the canonical
- * path's own key. A proxy redirect with no data costs about a fifth of a
- * millisecond, and the proxy adds about a tenth of one to every other
- * matched request; the matcher below keeps ASCII canonical page paths out of
- * it (a percent-encoded one runs it, for nothing: see the matcher).
+ * canonical path with `Cache-Control: no-store` (ADR 0025; see
+ * `docs/architecture/caching.md`). The listings' redirects are here and not
+ * in the pages because a `permanentRedirect()` from an ISR page is stored,
+ * and the rule covers every path because the resource page and the pages
+ * catch-all are ISR too, and Next.js's stored entry is keyed by the decoded
+ * path, which a case-insensitive file system shares between `/About/` and
+ * `/about/`, so a mixed-case request that reached either route first would
+ * store a redirect at the canonical path's own key. A proxy redirect with no
+ * data costs about a fifth of a millisecond, and the proxy adds about a
+ * tenth of one to every other matched request; the matcher below keeps
+ * ASCII canonical page paths out of it (a percent-encoded one runs it, for
+ * nothing: see the matcher).
  *
  * The 404 (issue #46): a path no route could answer with anything but a
  * 404, decided by the routes' own checks, is rewritten to `/404` with status
  * 404 (`NOT_FOUND_ROUTE` in `lib/path-decision.ts`), which serves the
  * prerendered `app/not-found.tsx`. It was first the one way to put that page
- * in a 404's HTML, since a `notFound()` thrown by a page sends Next.js
- * 16.4.5's empty `__next_error__` document (ADR 0050's 2026-11-05
- * amendment). The routes now put it there themselves for the 404s they
- * decide from data (`components/DataNotFound.tsx`), and the rewrite stays
- * for what it saves: a junk URL renders no page and stores no entry of its
- * own, so a scanner's thousand paths share one cached copy rather than
- * filling the route cache. The rewrite is internal (the browser keeps its URL), and the
- * response carries the `Cache-Control` every other 404 of the app's routes
- * carries (`lib/route-headers.ts`, ADR 0025 as amended): a browser asks
- * again each time, and nothing here outlives a deploy that adds a route.
+ * in a 404's HTML, since a `notFound()` thrown by a page outside any
+ * Suspense boundary sends Next.js 16.4.5's empty `__next_error__` document
+ * (`docs/architecture/caching.md`, "Not-found pages"). The routes now put it
+ * there themselves for the 404s they decide from data
+ * (`components/DataNotFound.tsx`), and the rewrite stays for what it saves:
+ * a junk URL renders no page and stores no entry of its own, so a scanner's
+ * thousand paths share one cached copy rather than filling the route cache.
+ * The rewrite is internal (the browser keeps its URL), and the response
+ * carries the `Cache-Control` every other 404 of the app's routes carries
+ * (`lib/route-headers.ts`, ADR 0025): a browser asks again each time, and
+ * nothing here outlives a deploy that adds a route.
  * Measured 2026-11-06 on the two servers the app runs on, which differ:
  *
  * - Under `next start`, `/404` is the pathname the server treats as its
@@ -80,7 +81,7 @@ import { REVALIDATE_EACH_TIME } from "./lib/route-headers";
  * The redirect's target keeps the request's query string. Next.js requires
  * the redirect's URL to be absolute, and then writes a path-only `Location`
  * for one on the request's own origin. Next.js's own trailing-slash 308 runs
- * before this, so a slashless non-canonical path takes two hops (ADR 0035).
+ * before this, so a slashless non-canonical path takes two hops (ADR 0025).
  */
 export function proxy(request: NextRequest): NextResponse | undefined {
   const decision = decidePath(request.nextUrl.pathname);

@@ -45,7 +45,7 @@ use WP_Term;
  * there leaves it no worse. Such a resource can arise only through the unguarded paths below.
  * Guarded: REST saves, Quick Edit, Bulk Edit, and type deletion from the Types screen and REST
  * (UsedTypes). Not guarded: the classic `post.php` form submission, WP-CLI, and PHP calls to
- * `wp_insert_post()` and the like, the seeder among them; XML-RPC is off (XmlRpc, ADR 0044). The
+ * `wp_insert_post()` and the like, the seeder among them; XML-RPC is off (XmlRpc). The
  * revalidation hook never sends an event whose top-level `types` isn't exactly one element, so
  * the front end never receives an invalid state from any of the unguarded paths.
  */

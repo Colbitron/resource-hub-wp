@@ -16,7 +16,8 @@ use WP_REST_Request;
 use WP_Term;
 
 /**
- * Writes `_rh_last_revalidation` on every resource, term and page in a batch and exposes it over REST (ADR 0018).
+ * Writes `_rh_last_revalidation` on every resource, term and page in a batch and exposes it over REST
+ * (see `docs/architecture/revalidation.md`).
  *
  * A batch gets one result, written to every object it carried, each copy noting how many other
  * changes travelled with it. The status moves from `pending`, written when the batch is scheduled,
@@ -40,6 +41,15 @@ final class ResultStore {
 	 * REST field name on `resource`, `page`, `resource_topic` and `resource_type` objects.
 	 */
 	public const REST_FIELD = 'rh_last_revalidation';
+
+	/**
+	 * The post types whose saves send an event and hold a record: the field is registered on each, and
+	 * the block editor's notice ({@see \ResourceHub\Editor\RevalidationAssets}) and the list column
+	 * ({@see \ResourceHub\Admin\ListColumn}) show the record on each.
+	 *
+	 * @var string[]
+	 */
+	public const POST_TYPES = array( PostType::NAME, PagePath::POST_TYPE );
 
 	/**
 	 * Status while the batch is scheduled and not yet sent.
@@ -111,11 +121,10 @@ final class ResultStore {
 
 	/**
 	 * Registers the read-only `edit`-context REST field on the post type, on pages and on both taxonomies.
-	 * Hooked to `rest_api_init`. The block editor's notice reads it for resources only (ADR 0018); a
-	 * page's record is stored and exposed, and read by nothing in the admin yet.
+	 * Hooked to `rest_api_init`. The block editor's notice polls it after a save of a resource or a page.
 	 */
 	public function register_rest_fields(): void {
-		foreach ( array( PostType::NAME, PagePath::POST_TYPE ) as $post_type ) {
+		foreach ( self::POST_TYPES as $post_type ) {
 			register_rest_field(
 				$post_type,
 				self::REST_FIELD,
@@ -139,7 +148,7 @@ final class ResultStore {
 	}
 
 	/**
-	 * The field's value for a resource: its stored result, for a user who may edit it, in the `edit` context.
+	 * The field's value for a resource or a page: its stored result, for a user who may edit it, in the `edit` context.
 	 *
 	 * @param array<string, mixed> $prepared The prepared post response, with `id`.
 	 * @param string               $field    Field name. Unused.
@@ -267,10 +276,10 @@ final class ResultStore {
 	 * lose a real result.
 	 *
 	 * The cost: if the later send never completes, the guarded result is lost, and the record stays
-	 * `pending` until the stale-pending display covers it (ADR 0018). The read here and the write
-	 * after it are not atomic, so a `pending` written between them is still overwritten. Only a
-	 * `pending` is protected: an older guarded result still replaces a later final, such as a
-	 * held-back save's failure.
+	 * `pending` until the stale-pending display covers it (see `docs/architecture/revalidation.md`).
+	 * The read here and the write after it are not atomic, so a `pending` written between them is
+	 * still overwritten. Only a `pending` is protected: an older guarded result still replaces a
+	 * later final, such as a held-back save's failure.
 	 *
 	 * @param string $meta_type `post` or `term`.
 	 * @param int    $object_id Post or term ID.

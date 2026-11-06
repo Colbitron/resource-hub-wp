@@ -11,7 +11,7 @@ import type { WpPage } from "./wp/schemas/rest";
  * What a request for `/` or `/{segments}/` gets (ADR 0052): the WordPress
  * page to render, the welcome page when the root has no front page, a
  * computed single-hop 308 to the page's canonical path, or a 404. The same
- * rules as the resource page's decision (`lib/redirects.ts`; ADRs 0025, 0035):
+ * rules as the resource page's decision (`lib/redirects.ts`; ADR 0025):
  *
  * - A segment that cannot be part of a page path (`isPageSegment`: not a slug,
  *   or holding a dot, as `favicon.ico` does), a first segment the front
@@ -40,9 +40,9 @@ import type { WpPage } from "./wp/schemas/rest";
  * Why a redirect cannot loop: the target is built from the CMS's canonical
  * segments through `canonicalSlug`, so a request for it is canonical, and the
  * plugin answers a canonical path with itself, since each segment is a stored
- * slug under its stored parent. Across changes the target is computed from
- * the current answer, and the stored copy of a decision lives only until the
- * page event that names the path it concerns (ADR 0025, amended). And two cache entries that
+ * slug under its stored parent. Across changes the target is computed from the
+ * current answer, and the stored copy of a decision lives only until the page
+ * event that names the path it concerns (ADR 0025). And two cache entries that
  * disagree, one written before a move and one after, cannot bounce a reader
  * between two paths, because a redirect is sent only after the target's own
  * entry has answered the same page at that path; `test/page-request.test.ts`
@@ -54,7 +54,7 @@ import type { WpPage } from "./wp/schemas/rest";
  * `pages` tag and cleared by the next page event, which names the paths it
  * changes, and every response carries the `headers()` rule's
  * `public, max-age=0, must-revalidate` so a browser never keeps a stored
- * 308 (ADR 0052's and ADR 0035's 2026-11-06 amendments). A mixed-case
+ * 308 (ADR 0052; see `docs/architecture/caching.md`). A mixed-case
  * request never reaches the route: `proxy.ts` sends its `no-store` 308
  * first, since Next.js keys a stored entry by the decoded path and a
  * case-insensitive file system shares the key between `/About/` and

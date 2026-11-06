@@ -1,4 +1,7 @@
 <?xml version="1.0"?>
+<!-- PHPUnit 9.6, because the WordPress core test library that wp-env provides depends on yoast/phpunit-polyfills 1.x,
+     whose ceiling is PHPUnit 9. convertDeprecationsToExceptions and the coverage element below are PHPUnit 9 names:
+     when the pin moves, this file needs the PHPUnit 10+ configuration migration as well. -->
 <phpunit
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.6/phpunit.xsd"

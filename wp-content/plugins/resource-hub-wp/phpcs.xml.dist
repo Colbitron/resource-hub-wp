@@ -2,6 +2,10 @@
 <ruleset name="Resource Hub">
 	<description>WordPress Coding Standards as the base, the WordPress VIP Minimum ruleset added to it, and the PSR-12 sniffs that do not conflict with either layered on top.</description>
 
+	<!-- Where WordPress and PSR-12 disagree, WordPress wins, so the code reads like core and every other WordPress plugin.
+	     Rejected for the same reason: PSR-12 as the base with WordPress on top, and PSR-12 alone with WordPress-Extra for
+	     the security sniffs. -->
+
 	<file>resource-hub.php</file>
 	<file>src</file>
 	<file>tests</file>
@@ -57,7 +61,7 @@
 	</rule>
 
 	<rule ref="PSR12">
-		<!-- Where PSR-12 and WordPress disagree, WordPress wins. Each exclusion names the conflict. -->
+		<!-- Where PSR-12 and WordPress disagree, WordPress wins. Each group of exclusions names its conflict. -->
 		<exclude name="Generic.WhiteSpace.DisallowTabIndent"/><!-- WP indents with tabs. -->
 		<exclude name="Generic.Files.LineLength"/><!-- WP has no hard line limit. -->
 		<exclude name="PSR2.Classes.ClassDeclaration"/><!-- WP keeps the opening brace on the class line. -->
@@ -79,7 +83,7 @@
 	</rule>
 
 	<!-- WordPress forbids stacked blank lines inside functions; PSR-12 silences that check (severity 0) and Minimum excludes it.
-	     WordPress wins (ADR 0003), so it is restored here, after the PSR-12 block, where it takes effect. -->
+	     WordPress wins, so it is restored here, after the PSR-12 block, where it takes effect. -->
 	<rule ref="Squiz.WhiteSpace.SuperfluousWhitespace.EmptyLines">
 		<severity>5</severity>
 	</rule>

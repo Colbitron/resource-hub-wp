@@ -4,7 +4,7 @@ import { ListingPage, listingMetadata } from "@/components/ListingPage";
 
 /** `/resources/topic/[topic]/`: one topic across every type. The static `topic` segment wins over `[type]`. */
 
-// The data layer's interval, as a literal: Next.js reads segment config statically (ADR 0049).
+// The data layer's interval, as a literal: Next.js reads segment config statically.
 export const revalidate = 3600;
 
 export function generateStaticParams(): { topic: string }[] {

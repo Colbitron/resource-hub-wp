@@ -21,8 +21,10 @@ import {
 /**
  * `POST /api/revalidate/`: the endpoint WordPress calls with a batch of
  * events so the pages its change touched are rebuilt on the next request
- * (root `CLAUDE.md`, "Revalidation request" and "Revalidation response";
- * ADRs 0043, 0046 and 0048).
+ * (the request and response are in `packages/ui/README.md`; the caching
+ * model is ADR 0043; what each event clears is in
+ * `docs/architecture/caching.md`, and the route's rules in
+ * `docs/architecture/revalidation.md`).
  *
  * The request is handled in this order, and each step answers before the
  * next one runs:
@@ -51,19 +53,28 @@ import {
  * 4. Revalidation. `eventsToInvalidations` gives the tags and paths for the
  *    union of every event's current and previous state; each tag goes to
  *    `revalidateTag(tag, { expire: 0 })`, so no page serves one more stale
- *    render, and each path to `revalidatePath`. Nothing is fetched from the
- *    CMS, or from anywhere: `rest_url` is validated and otherwise ignored,
- *    so the route has no request to forge. A failure here is a `500`.
+ *    render, and each path to `revalidatePath`. The `'max'` profile was
+ *    rejected because a removal would then serve one more stale render to
+ *    the next reader; `updateTag` expires at once but is not available in a
+ *    Route Handler. Nothing is fetched from the CMS, or from anywhere:
+ *    `rest_url` is validated and otherwise ignored, so the route has no
+ *    request to forge. A failure here is a `500`.
  * 5. `200 { "revalidated": [paths] }`: the paths, as the response schema
  *    lists them; the tags are not reported.
  *
  * Every response carries `Cache-Control: no-store`. Any method but `POST`
  * is a `405` with `Allow: POST`. The route is served at `/api/revalidate/`,
  * with the slash, because `trailingSlash: true` answers the slashless path
- * with a `308` the plugin's client will not follow with its body (ADR 0043).
+ * with a `308` the plugin's client will not follow with its body.
  *
- * The plugin times out after 3 seconds (ADR 0013), so nothing here is slow:
- * no fetch, no retry, no work after the answer.
+ * Besides the `405` for another method, every refusal is a `400`, `401` or
+ * `500`; `413` for a body over the cap and `415` for a wrong content type
+ * were rejected because the contract and the error schema list only those
+ * three, and the plugin's notice is written around them.
+ *
+ * The plugin times out after 3 seconds and never retries (see
+ * `docs/architecture/revalidation.md`), so nothing here is slow: no fetch,
+ * no retry, no work after the answer.
  */
 
 /**
@@ -72,18 +83,18 @@ import {
  * each topic slug likewise, and `previous` repeats three of those), so a full
  * batch with several topics per event is well under 16 KB; 64 KB leaves room
  * for the longest slugs the schema allows, and is the same bound the plugin
- * puts on the response it reads from this route (ADR 0013, amended
- * 2026-11-05). A body over it is refused before it is parsed, so no request
- * can make the handler hold more than this in memory.
+ * puts on the response it reads from this route (`Sender::RESPONSE_LIMIT`). A
+ * body over it is refused before it is parsed, so no request can make the
+ * handler hold more than this in memory.
  */
 const MAX_BODY_BYTES = 64 * 1024;
 
 /**
  * How long the body may take to arrive, from when the route starts reading
- * it. The plugin gives up after 3 seconds (ADR 0013), so a body still
- * arriving after 2 is from a client that is stalled or dribbling bytes, and
- * holding the request open for it only ties up the function. Past it the
- * read is cancelled and the request is a `400`.
+ * it. The plugin gives up after 3 seconds, so a body still arriving after 2
+ * is from a client that is stalled or dribbling bytes, and holding the
+ * request open for it only ties up the function. Past it the read is
+ * cancelled and the request is a `400`.
  */
 const READ_DEADLINE_MS = 2000;
 

@@ -12,7 +12,7 @@ namespace ResourceHub\ContentModel;
 use WP_Term;
 
 /**
- * Registers `resource_topic`, `resource_type`, and the code-managed `resource_flag` (ADR 0009).
+ * Registers `resource_topic`, `resource_type`, and the code-managed `resource_flag` (ADR 0007).
  */
 final class Taxonomies {
 	/**
@@ -38,7 +38,7 @@ final class Taxonomies {
 	/**
 	 * Registers the taxonomies and makes sure the `featured` flag exists. Hooked to `init`.
 	 *
-	 * `hierarchical` is a capability boundary here, not only a UI choice (ADR 0009). Core's terms
+	 * `hierarchical` is a capability boundary here, not only a UI choice (ADR 0007). Core's terms
 	 * controller lets a user create a term in a flat taxonomy when they can `assign_terms`, but in
 	 * a hierarchical one only when they can `edit_terms`. So a flat taxonomy is open to anyone who
 	 * can tag a post, and a hierarchical one with its own `edit_terms` is closed.

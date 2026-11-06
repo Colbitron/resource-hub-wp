@@ -1,6 +1,6 @@
 <?php
 /**
- * Keeps anonymous REST reads out of every HTTP cache but the front end's (ADR 0023).
+ * Keeps anonymous REST reads out of every HTTP cache but the front end's (ADR 0043).
  *
  * @package ResourceHub
  */

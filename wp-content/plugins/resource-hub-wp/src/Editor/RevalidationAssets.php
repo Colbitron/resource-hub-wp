@@ -10,12 +10,18 @@ declare(strict_types=1);
 namespace ResourceHub\Editor;
 
 use ResourceHub\Admin\ResultText;
-use ResourceHub\ContentModel\PostType;
+use ResourceHub\Pages\PagePath;
+use ResourceHub\Revalidation\ResultStore;
 
 /**
- * Loads `build/editor/revalidation-feedback.js` on the block editor for `resource` posts only
- * (ADR 0018). The script polls the post's `rh_last_revalidation` field after a save and puts the
- * outcome in a `core/notices` notice, in the sentences {@see ResultText::sentences()} hands it.
+ * Loads `build/editor/revalidation-feedback.js` on the block editor for the post types in
+ * {@see ResultStore::POST_TYPES}, `resource` and `page`, and no other. The script polls
+ * the post's `rh_last_revalidation` field after a save and puts the outcome in a `core/notices`
+ * notice, in the sentences {@see ResultText::sentences()} hands it. The REST route it polls comes
+ * from each post type's own `rest_base` ({@see RevalidationAssets::rest_paths()}), so the list of
+ * post types is kept in one place. The script polls only after a save that sent something, which
+ * for a page means it was or is served ({@see PagePath::is_served()}); it is handed the posts page's
+ * ID ({@see PagePath::posts_page_id()}) for that test, so the rule's inputs come from PHP.
  */
 final class RevalidationAssets {
 	/**
@@ -53,7 +59,7 @@ final class RevalidationAssets {
 	public function enqueue(): void {
 		$screen = get_current_screen();
 
-		if ( ! $screen || PostType::NAME !== $screen->post_type ) {
+		if ( ! $screen || ! in_array( $screen->post_type, ResultStore::POST_TYPES, true ) ) {
 			return;
 		}
 
@@ -71,7 +77,42 @@ final class RevalidationAssets {
 			true
 		);
 
-		wp_localize_script( self::HANDLE, self::OBJECT_NAME, array( 'sentences' => ResultText::sentences() ) );
+		wp_localize_script(
+			self::HANDLE,
+			self::OBJECT_NAME,
+			array(
+				'sentences'   => ResultText::sentences(),
+				'restPaths'   => self::rest_paths(),
+				'postsPageId' => PagePath::posts_page_id(),
+			)
+		);
 		wp_set_script_translations( self::HANDLE, 'resource-hub' );
+	}
+
+	/**
+	 * The REST route of one object of each post type the script runs on, keyed by post type and
+	 * without the ID: `resource` to `/wp/v2/resources`, `page` to `/wp/v2/pages`. Read from each post
+	 * type's registration, so a post type that is not registered or not in REST is left out, and the
+	 * script does nothing for it.
+	 *
+	 * @return array<string, string>
+	 */
+	public static function rest_paths(): array {
+		$paths = array();
+
+		foreach ( ResultStore::POST_TYPES as $post_type ) {
+			$object = get_post_type_object( $post_type );
+
+			if ( ! $object || ! $object->show_in_rest ) {
+				continue;
+			}
+
+			$base      = is_string( $object->rest_base ) && '' !== $object->rest_base ? $object->rest_base : $post_type;
+			$namespace = is_string( $object->rest_namespace ) && '' !== $object->rest_namespace ? $object->rest_namespace : 'wp/v2';
+
+			$paths[ $post_type ] = '/' . trim( $namespace, '/' ) . '/' . $base;
+		}
+
+		return $paths;
 	}
 }

@@ -13,7 +13,8 @@ use ResourceHub\ContentModel\Taxonomies;
 use WP_Term;
 
 /**
- * Derives `create`, `update` and `delete` for `resource_topic` and `resource_type` terms (ADR 0017).
+ * Derives `create`, `update` and `delete` for `resource_topic` and `resource_type` terms (see
+ * `packages/ui/README.md`).
  *
  * `edit_terms` fires inside `wp_update_term()` before the row changes and captures the old slug and
  * name; `created_{taxonomy}`, `edited_{taxonomy}` and `delete_{taxonomy}` queue the events.

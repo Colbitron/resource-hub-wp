@@ -15,7 +15,7 @@ use WP_Term;
 
 /**
  * Shows a term's `_rh_last_revalidation` as an inline admin notice at the top of its edit form
- * (ADRs 0017, 0018). The `{$taxonomy}_term_edit_form_top` action hands over the term itself, so
+ * (see `docs/architecture/revalidation.md`). The `{$taxonomy}_term_edit_form_top` action hands over the term itself, so
  * nothing is read from the request.
  */
 final class TermNotice {

@@ -14,9 +14,9 @@ import { TERMS } from "./mock-cms/seed.mts";
  * This sends what the CMS would send if every seeded type and topic had been
  * edited: a batch of term `update` events, which clears `resources`, `terms`
  * and every `type:` and `topic:` tag, which between them are every tag a
- * listing or term fetch carries (ADR 0046), and the first page of every
- * listing as a path. Resource pages by slug are not covered; specs that read
- * one give it a slug of its own.
+ * listing or term fetch carries (the table in `docs/architecture/caching.md`),
+ * and the first page of every listing as a path. Resource pages by slug are
+ * not covered; specs that read one give it a slug of its own.
  */
 export async function clearAppCache(request: APIRequestContext): Promise<void> {
   const events = TERMS.filter((term) => term.taxonomy !== "resource_flag").map((term) => ({

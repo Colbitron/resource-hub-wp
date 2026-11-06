@@ -10,9 +10,9 @@ import { idSchema } from "./common";
  * now, or `page: null` for none. A miss is a 200, so the Data Cache keeps it.
  *
  * Two variants with the same rules for every known key, as for the other
- * contract responses (ADR 0010, amended 2026-11-05): the strict mirror for the
- * conformance tests, and the reader the data layer parses with, which drops
- * a key it does not know.
+ * contract responses (ADR 0010: strict where we produce, lenient on unknown
+ * keys where we consume): the strict mirror for the conformance tests, and the
+ * reader the data layer parses with, which drops a key it does not know.
  *
  * The reader is stricter than the schema on `path` in one way: every segment
  * must be a page segment (`isPageSegment`), a slug with no dot, so the path

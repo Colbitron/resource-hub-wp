@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace ResourceHub\Tests\Revalidation;
 
 use ResourceHub\ContentModel\Taxonomies;
+use ResourceHub\Pages\PagePath;
+use ResourceHub\Revalidation\PageEvents;
 use ResourceHub\Revalidation\Payload;
 use ResourceHub\Revalidation\Result;
 use ResourceHub\Revalidation\ResultStore;
@@ -20,7 +22,7 @@ use ResourceHub\Revalidation\Sender;
 use WP_REST_Request;
 
 /**
- * Tests for {@see ResultStore} (ADR 0018).
+ * Tests for {@see ResultStore} (see `docs/architecture/revalidation.md`).
  */
 final class ResultStoreTest extends RevalidationTestCase {
 	/**
@@ -391,12 +393,14 @@ final class ResultStoreTest extends RevalidationTestCase {
 
 		rest_get_server();
 
-		$this->assertArrayHasKey( ResultStore::REST_FIELD, $wp_rest_additional_fields['resource'] );
+		foreach ( ResultStore::POST_TYPES as $post_type ) {
+			$this->assertArrayHasKey( ResultStore::REST_FIELD, $wp_rest_additional_fields[ $post_type ] );
 
-		$field = $wp_rest_additional_fields['resource'][ ResultStore::REST_FIELD ];
-		$this->assertNull( $field['update_callback'] );
-		$this->assertTrue( $field['schema']['readonly'] );
-		$this->assertSame( array( 'edit' ), $field['schema']['context'] );
+			$field = $wp_rest_additional_fields[ $post_type ][ ResultStore::REST_FIELD ];
+			$this->assertNull( $field['update_callback'] );
+			$this->assertTrue( $field['schema']['readonly'] );
+			$this->assertSame( array( 'edit' ), $field['schema']['context'] );
+		}
 
 		foreach ( TermEvents::TAXONOMIES as $taxonomy ) {
 			$this->assertArrayHasKey( ResultStore::REST_FIELD, $wp_rest_additional_fields[ $taxonomy ] );
@@ -423,6 +427,54 @@ final class ResultStoreTest extends RevalidationTestCase {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'subscriber' ) ) );
 		$this->assertNull( $store->rest_post_value( array( 'id' => $first ), ResultStore::REST_FIELD, $edit ) );
 		$this->assertNull( $store->rest_term_value( array( 'id' => $topic ), ResultStore::REST_FIELD, $edit ) );
+	}
+
+	/**
+	 * A page's record is on `/wp/v2/pages` in the `edit` context, for a user who may edit the page, exactly
+	 * as a resource's is: absent from `view`, absent from the public collection, and null from the callback
+	 * for a user who cannot edit the page (issue #47).
+	 */
+	public function test_page_rest_field_is_edit_context_only(): void {
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'   => PagePath::POST_TYPE,
+				'post_status' => 'publish',
+				'post_name'   => 'about',
+			)
+		);
+		$store   = new ResultStore();
+		$store->record(
+			'batch-page',
+			array( PageEvents::event( 'update', $page_id, '/about/', '/about/' ) ),
+			new Result( Result::SENT, Result::OK, 200, '{"revalidated":["/about/"]}', null, 10 )
+		);
+
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		$edit = new WP_REST_Request( 'GET', '/wp/v2/pages/' . $page_id );
+		$edit->set_param( 'context', 'edit' );
+		$edit_data = rest_get_server()->dispatch( $edit )->get_data();
+
+		$this->assertArrayHasKey( ResultStore::REST_FIELD, $edit_data );
+		$this->assertSame( Result::SENT, $edit_data[ ResultStore::REST_FIELD ]['status'] );
+		$this->assertSame( 'update', $edit_data[ ResultStore::REST_FIELD ]['event'] );
+		$this->assertSame( 'batch-page', $edit_data[ ResultStore::REST_FIELD ]['batch_id'] );
+
+		$view = new WP_REST_Request( 'GET', '/wp/v2/pages/' . $page_id );
+		$this->assertArrayNotHasKey( ResultStore::REST_FIELD, rest_get_server()->dispatch( $view )->get_data() );
+		$this->assertNull( $store->rest_post_value( array( 'id' => $page_id ), ResultStore::REST_FIELD, $view ) );
+
+		wp_set_current_user( 0 );
+		$public = rest_get_server()->dispatch( new WP_REST_Request( 'GET', '/wp/v2/pages' ) )->get_data();
+		$this->assertNotEmpty( $public );
+		foreach ( $public as $item ) {
+			$this->assertArrayNotHasKey( ResultStore::REST_FIELD, $item );
+		}
+
+		// A user who may not edit the page: core answers `context=edit` with a 403, and the callback with null.
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'subscriber' ) ) );
+		$this->assertSame( 403, rest_get_server()->dispatch( $edit )->get_status() );
+		$this->assertNull( $store->rest_post_value( array( 'id' => $page_id ), ResultStore::REST_FIELD, $edit ) );
 	}
 
 	/**

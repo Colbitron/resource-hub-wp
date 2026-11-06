@@ -2,12 +2,12 @@ import type { z } from "zod";
 
 /**
  * Plain sentences for Zod's own issue messages, for the revalidate route's
- * `400` bodies, which the plugin stores and shows to the editor (ADR 0018).
- * Zod's defaults read like a stack trace there ("Invalid discriminator value.
- * Expected 'update' | …", "Too small: expected string to have >=1
- * characters"); these read as the end of a sentence that starts with the
- * issue's path: `events[0].event` + ` must be "update", "publish", … or
- * "delete"`.
+ * `400` bodies, which the plugin stores and shows to the editor (see
+ * `docs/architecture/revalidation.md`). Zod's defaults read like a stack trace
+ * there ("Invalid discriminator value. Expected 'update' | …", "Too small:
+ * expected string to have >=1 characters"); these read as the end of a
+ * sentence that starts with the issue's path: `events[0].event` + ` must be
+ * "update", "publish", … or "delete"`.
  *
  * Passed to `safeParse` as the per-parse error map, so it fills in only the
  * issues whose schema set no message of its own: a message written on a

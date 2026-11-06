@@ -255,10 +255,10 @@ describe("eventsToInvalidations", () => {
   });
 
   it("covers only the pre-request state of a trash that followed an update in the same request", () => {
-    // ADR 0014: the hook renamed the resource to renamed-example and then
-    // trashed it; the merged event carries the state from before the request
-    // at the top level, and previous is null. renamed-example was never
-    // public, so nothing names it.
+    // The batch semantics (packages/ui/README.md): the hook renamed the
+    // resource to renamed-example and then trashed it; the merged event
+    // carries the state from before the request at the top level, and previous
+    // is null. renamed-example was never public, so nothing names it.
     const result = eventsToInvalidations([
       resource({
         event: "trash",
@@ -288,7 +288,8 @@ describe("eventsToInvalidations", () => {
     }
   });
 
-  it("covers an update whose previous.types stands in the current type (ADR 0016)", () => {
+  // The previous.types rule is in packages/ui/README.md.
+  it("covers an update whose previous.types stands in the current type", () => {
     expect(
       eventsToInvalidations([
         resource({
@@ -572,7 +573,8 @@ describe("eventsToInvalidations", () => {
   });
 });
 
-describe("fetch tags (ADR 0046)", () => {
+// The fetch tagging rule is in docs/architecture/caching.md.
+describe("fetch tags", () => {
   it("tag every listing page with its filter's tags and terms", () => {
     expect(listingTags()).toEqual(["resources", "terms"]);
     expect(listingTags({ type: "webinar" })).toEqual(["type:webinar", "terms"]);
@@ -623,15 +625,16 @@ describe("fetch tags (ADR 0046)", () => {
   });
 });
 
-describe("the tagging rule, against ADR 0046's table written out by hand", () => {
+describe("the tagging rule, against tags written out by hand", () => {
   /*
-   * Each fetch's tags are written here from the table's text, as literal
-   * strings, without lib/tags.ts. The functions are checked against them,
-   * and coverage is checked against them, so the rule is not proved with the
-   * code it checks. Every slug below is already canonical (lower case,
-   * percent-encoded), so a literal tag is the tag Next.js stores.
+   * Each fetch's tags are written here from the rules in
+   * docs/architecture/caching.md, as literal strings, without lib/tags.ts. The
+   * functions are checked against them, and coverage is checked against them,
+   * so the rule is not proved with the code it checks. Every slug below is
+   * already canonical (lower case, percent-encoded), so a literal tag is the
+   * tag Next.js stores.
    */
-  const adr = {
+  const expected = {
     library: ["resources", "terms"],
     type: (t: string) => [`type:${t}`, "terms"],
     topic: (p: string) => [`topic:${p}`, "terms"],
@@ -661,8 +664,8 @@ describe("the tagging rule, against ADR 0046's table written out by hand", () =>
 
   interface Fetch {
     readonly name: string;
-    /** The tags ADR 0046's table gives this fetch, written out by hand. */
-    readonly adr: readonly string[];
+    /** The tags docs/architecture/caching.md gives this fetch, written out by hand. */
+    readonly expected: readonly string[];
     /** The tags lib/tags.ts gives it. */
     readonly code: readonly string[];
   }
@@ -671,25 +674,25 @@ describe("the tagging rule, against ADR 0046's table written out by hand", () =>
   function fetchesShowing(state: ResourceState): Fetch[] {
     const [type] = state.types;
     return [
-      { name: "library", adr: adr.library, code: listingTags() },
-      { name: `type ${type}`, adr: adr.type(type), code: listingTags({ type }) },
+      { name: "library", expected: expected.library, code: listingTags() },
+      { name: `type ${type}`, expected: expected.type(type), code: listingTags({ type }) },
       ...state.topics.flatMap((topic) => [
-        { name: `topic ${topic}`, adr: adr.topic(topic), code: listingTags({ topic }) },
+        { name: `topic ${topic}`, expected: expected.topic(topic), code: listingTags({ topic }) },
         {
           name: `type ${type} topic ${topic}`,
-          adr: adr.typeTopic(type, topic),
+          expected: expected.typeTopic(type, topic),
           code: listingTags({ type, topic }),
         },
-        { name: `block for ${topic}`, adr: adr.block(topic), code: listingTags({ topic }) },
+        { name: `block for ${topic}`, expected: expected.block(topic), code: listingTags({ topic }) },
       ]),
-      { name: `resource ${state.slug}`, adr: adr.resource(state.slug), code: resourceFetchTags(state.slug) },
-      { name: `resource ${state.slug} by ID`, adr: adr.resourceById, code: resourceByIdTags() },
-      { name: `related section on ${HOST}`, adr: adr.related(HOST), code: relatedTags(HOST) },
-      { name: "featured", adr: adr.featured, code: flagListingTags() },
-      { name: "resolve", adr: adr.resolve, code: resolveTags() },
+      { name: `resource ${state.slug}`, expected: expected.resource(state.slug), code: resourceFetchTags(state.slug) },
+      { name: `resource ${state.slug} by ID`, expected: expected.resourceById, code: resourceByIdTags() },
+      { name: `related section on ${HOST}`, expected: expected.related(HOST), code: relatedTags(HOST) },
+      { name: "featured", expected: expected.featured, code: flagListingTags() },
+      { name: "resolve", expected: expected.resolve, code: resolveTags() },
       // The flag lookup shows no resource, but marking one featured is a resource event, which must reach it.
-      { name: "featured flag lookup", adr: adr.flagLookup, code: flagLookupTags() },
-      { name: "filter bar term lists", adr: adr.filterBar, code: taxonomyListTags() },
+      { name: "featured flag lookup", expected: expected.flagLookup, code: flagLookupTags() },
+      { name: "filter bar term lists", expected: expected.filterBar, code: taxonomyListTags() },
     ];
   }
 
@@ -726,13 +729,13 @@ describe("the tagging rule, against ADR 0046's table written out by hand", () =>
   it("gives every fetch exactly the tags the ADR's table names", () => {
     for (const state of states) {
       for (const fetch of fetchesShowing(state)) {
-        expect(new Set(fetch.code), fetch.name).toEqual(new Set(fetch.adr));
+        expect(new Set(fetch.code), fetch.name).toEqual(new Set(fetch.expected));
         expect(fetch.code, fetch.name).toHaveLength(new Set(fetch.code).size);
       }
     }
     for (const event of termEvents) {
       expect(new Set(termLookupTags(event.taxonomy, event.slug))).toEqual(
-        new Set(adr.termLookup(event.taxonomy, event.slug)),
+        new Set(expected.termLookup(event.taxonomy, event.slug)),
       );
     }
   });
@@ -742,7 +745,7 @@ describe("the tagging rule, against ADR 0046's table written out by hand", () =>
       for (const event of eventsOn(state)) {
         const { tags } = eventsToInvalidations([event]);
         for (const fetch of fetchesShowing(state)) {
-          expect(shares(fetch.adr, tags), `${event.event} ${state.slug}: ${fetch.name}`).toBe(true);
+          expect(shares(fetch.expected, tags), `${event.event} ${state.slug}: ${fetch.name}`).toBe(true);
         }
       }
     }
@@ -753,8 +756,8 @@ describe("the tagging rule, against ADR 0046's table written out by hand", () =>
       for (const event of eventsOn(state)) {
         const { tags } = eventsToInvalidations([event]);
         const lookups = [
-          ...state.topics.map((topic) => adr.termLookup("resource_topic", topic)),
-          adr.termLookup("resource_type", state.types[0]),
+          ...state.topics.map((topic) => expected.termLookup("resource_topic", topic)),
+          expected.termLookup("resource_type", state.types[0]),
         ];
         for (const lookup of lookups) {
           expect(shares(lookup, tags), `${event.event} ${state.slug}: ${lookup.join()}`).toBe(true);
@@ -769,11 +772,11 @@ describe("the tagging rule, against ADR 0046's table written out by hand", () =>
       expect(paths).toContain("/resources/");
       for (const state of states) {
         for (const fetch of fetchesShowing(state)) {
-          expect(shares(fetch.adr, tags), `${event.event} ${event.slug}: ${fetch.name}`).toBe(true);
+          expect(shares(fetch.expected, tags), `${event.event} ${event.slug}: ${fetch.name}`).toBe(true);
         }
       }
       for (const slug of [event.slug, ...(event.previous === null ? [] : [event.previous.slug])]) {
-        expect(shares(adr.termLookup(event.taxonomy, slug), tags), slug).toBe(true);
+        expect(shares(expected.termLookup(event.taxonomy, slug), tags), slug).toBe(true);
       }
     }
   });
@@ -782,7 +785,7 @@ describe("the tagging rule, against ADR 0046's table written out by hand", () =>
     const { tags } = eventsToInvalidations([
       term({ taxonomy: "resource_topic", event: "create", slug: "new-topic", name: "New" }),
     ]);
-    expect(shares(adr.termLookup("resource_topic", "new-topic"), tags)).toBe(true);
+    expect(shares(expected.termLookup("resource_topic", "new-topic"), tags)).toBe(true);
   });
 
   it("does not let a resource event clear terms, though the filter bar's counts still refresh", () => {
@@ -790,7 +793,7 @@ describe("the tagging rule, against ADR 0046's table written out by hand", () =>
       for (const event of eventsOn(state)) {
         const { tags } = eventsToInvalidations([event]);
         expect(tags).not.toContain("terms");
-        expect(shares(adr.filterBar, tags)).toBe(true);
+        expect(shares(expected.filterBar, tags)).toBe(true);
       }
     }
   });

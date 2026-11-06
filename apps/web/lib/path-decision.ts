@@ -1,7 +1,7 @@
 /**
  * What `proxy.ts` answers from the path alone, before any route runs: a
  * single-hop 308 to the canonical form of a non-canonical path
- * (`lib/canonical-path.ts`; ADRs 0025, 0035, 0052), or the not-found page's
+ * (`lib/canonical-path.ts`; ADRs 0025 and 0052), or the not-found page's
  * HTML for a path no route could ever answer with anything but a 404
  * (issue #46), or nothing, leaving the request to its route.
  *
@@ -9,8 +9,8 @@
  * outside any Suspense boundary is sent by Next.js 16.4.5 as its empty
  * `__next_error__` document, with `app/not-found.tsx` only in the inlined
  * RSC payload, rendered on hydration, so without JavaScript, and to a
- * crawler, the body is empty
- * (ADR 0050's 2026-11-05 amendment). The prerendered not-found page, which
+ * crawler, the body is empty (`docs/architecture/caching.md`, "Not-found
+ * pages"). The prerendered not-found page, which
  * the router renders for a URL no route matches, has the page in its HTML,
  * and since ADR 0052 the root catch-all matches every URL, so no request
  * reaches that fallback on its own; a rewrite from the proxy to `/404`

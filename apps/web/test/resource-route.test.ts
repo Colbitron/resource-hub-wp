@@ -4,19 +4,19 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * The single resource route keeps the segment config ADR 0035's 2026-11-06
- * amendment rests on: an ISR route like the listings (ADR 0050), with the
- * data layer's interval as a literal and no params at build, so each URL is
- * rendered on its first request and stored, its 308s and 404s included,
- * until an event or the interval clears it. Measured on Next.js 16.4.5: a
- * request-time API (`connection()`, `headers()`) or a `no-store` fetch in an
- * ISR route with no prerendered params is a runtime 500. The decision runs
- * first, outside any Suspense boundary, so a redirect is thrown before the
- * shell, and a not-found decision renders `DataNotFound`, whose own boundary
- * puts the not-found page in the 404's HTML (issue #46); `generateMetadata`
- * never throws `notFound()`, which for some crawlers would abort the shell.
- * The header a stored 308 reaches a browser with is the `headers()` rule's
- * (`lib/route-headers.ts`).
+ * The single resource route keeps the segment config its redirects rest on
+ * (ADR 0025; see `docs/architecture/caching.md`): an ISR route like the
+ * listings (ADR 0043), with the data layer's interval as a literal and no
+ * params at build, so each URL is rendered on its first request and stored,
+ * its 308s and 404s included, until an event or the interval clears it.
+ * Measured on Next.js 16.4.5: a request-time API (`connection()`, `headers()`)
+ * or a `no-store` fetch in an ISR route with no prerendered params is a
+ * runtime 500. The decision runs first, outside any Suspense boundary, so a
+ * redirect is thrown before the shell, and a not-found decision renders
+ * `DataNotFound`, whose own boundary puts the not-found page in the 404's HTML
+ * (issue #46); `generateMetadata` never throws `notFound()`, which for some
+ * crawlers would abort the shell. The header a stored 308 reaches a browser
+ * with is the `headers()` rule's (`lib/route-headers.ts`).
  */
 
 const ROUTE_DIR = new URL("../app/resources/[type]/[slug]/", import.meta.url);
@@ -33,7 +33,7 @@ function withoutComments(code: string): string {
 describe("the single resource route", () => {
   const code = withoutComments(source("page.tsx"));
 
-  it("exports revalidate = 3600 as a literal, the data layer's interval (ADR 0049)", () => {
+  it("exports revalidate = 3600 as a literal, the data layer's interval", () => {
     expect(code).toMatch(/^export const revalidate = 3600;$/m);
   });
 

@@ -1,5 +1,5 @@
 /**
- * Rewrites for the CMS URLs in rendered HTML (ADRs 0036 and 0040): links on
+ * Rewrites for the CMS URLs in rendered HTML (ADR 0040): links on
  * the CMS become root-relative, and uploads become `/media/…`, which
  * `next.config.ts` rewrites to the CMS's uploads directory one to one.
  *
@@ -31,10 +31,11 @@
  * unchanged.
  *
  * A configured CMS URL may carry the path WordPress is installed in
- * (`https://example.com/blog`), as `WP_MEDIA_ORIGIN` may (ADR 0040). Links are
- * then the CMS only under that path, which is stripped with the origin; a URL
- * on the same host outside it is another site's and is left alone. Each
- * configured URL is parsed once and remembered, not once per link.
+ * (`https://example.com/blog`), as `WP_MEDIA_ORIGIN` may
+ * (`apps/web/README.md`). Links are then the CMS only under that path, which
+ * is stripped with the origin; a URL on the same host outside it is another
+ * site's and is left alone. Each configured URL is parsed once and remembered,
+ * not once per link.
  *
  * These are rewrites, not sanitizers: `javascript:` and other schemes are
  * never treated as the CMS and pass through as they came. Filtering what

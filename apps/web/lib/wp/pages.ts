@@ -32,7 +32,8 @@ function isPostId(id: number): boolean {
  * route answers, so a front end a deploy ahead of the CMS (a preview against
  * the hosted CMS, a CMS rollback) shows the welcome page at `/` and a 404
  * elsewhere rather than a 500. That is the one place a missing route is not
- * an error (ADR 0049 names the rule it bends).
+ * an error: everywhere else the data layer throws on it, because it means a
+ * missing plugin or route, not a missing object (`fetch.ts`).
  */
 export async function lookupPage(path: string): Promise<PageLookup | null> {
   const requestPath = "/resource-hub/v1/page";

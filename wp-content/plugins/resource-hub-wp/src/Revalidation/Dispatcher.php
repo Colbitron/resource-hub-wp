@@ -14,7 +14,8 @@ namespace ResourceHub\Revalidation;
 /**
  * At `shutdown`, turns the request's queue into batches of at most 25 and schedules one WP-Cron
  * single event per batch, with the full payload as the event's arguments, then spawns cron
- * (ADRs 0012, 0014). The cron callback sends, records and logs; it never reads the post again.
+ * (ADR 0011; see `docs/architecture/revalidation.md`). The cron callback sends, records and logs;
+ * it never reads the post again.
  *
  * Before batching, each `publish` and `update` event is refreshed from its post, so it carries the
  * state the request left behind ({@see ResourceEvents::refresh()}, {@see PageEvents::refresh()}), and every event has its slugs
@@ -150,7 +151,7 @@ final class Dispatcher {
 	}
 
 	/**
-	 * Sends one event now, as a batch of one: the status page's test button (ADR 0019). Its slugs are
+	 * Sends one event now, as a batch of one: the status page's test button. Its slugs are
 	 * decoded as at `shutdown` ({@see Payload::decode_slugs()}). An event that cannot be sent is held
 	 * back and recorded like any other, and a resource event whose `previous.types` alone is invalid
 	 * is sent with the current type in its place, as at `shutdown`.

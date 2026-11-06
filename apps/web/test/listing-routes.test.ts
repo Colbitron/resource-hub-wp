@@ -6,11 +6,13 @@ import { describe, expect, it } from "vitest";
 import { CMS_REVALIDATE_SECONDS } from "../lib/wp/fetch";
 
 /**
- * The eight listing routes keep the segment config ADR 0050 rests on. Next.js
- * reads `revalidate` statically, so it has to be a literal in each file and
- * cannot be imported; this test is what keeps those literals equal to the
- * data layer's interval. And a listing stays ISR only while it calls nothing
- * that makes the route dynamic (`connection()`, `headers()`, `cookies()`,
+ * The eight listing routes keep the segment config ISR rests on: the build
+ * never needs the CMS (ADR 0043), and each listing is rendered on its first
+ * request and stored (`docs/architecture/caching.md`). Next.js reads
+ * `revalidate` statically, so it has to be a literal in each file and cannot
+ * be imported; this test is what keeps those literals equal to the data
+ * layer's interval. And a listing stays ISR only while it calls nothing that
+ * makes the route dynamic (`connection()`, `headers()`, `cookies()`,
  * `searchParams`) and has a `generateStaticParams` for its dynamic segments.
  */
 

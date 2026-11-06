@@ -72,7 +72,7 @@ test.describe("the path", () => {
   test("without the trailing slash is a 308 to the slashed path, which is why the plugin posts to /api/revalidate/", async ({
     request,
   }) => {
-    // trailingSlash: true redirects every slashless path (ADR 0043). A POST
+    // trailingSlash: true redirects every slashless path. A POST
     // that follows a 308 keeps its method and body, but the plugin's client
     // does not follow redirects on a POST, so it must post to the slash.
     const response = await request.post("/api/revalidate", {
@@ -165,7 +165,7 @@ test.describe("freshness end to end", () => {
     await cms.resetRequests();
 
     // 1. Two loads, one upstream fetch: the second is served from the cache,
-    //    although the mock answers with Cache-Control: no-cache (ADR 0023).
+    //    although the mock answers with Cache-Control: no-cache (ADR 0043).
     expect(await fixtureTitle(request)).toBe("Alt text at scale");
     expect(await fixtureTitle(request)).toBe("Alt text at scale");
     expect(await fixtureFetches()).toBe(1);

@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * memoizes by argument until `render.next()` starts a new render, as the
  * server's per-request scope does. They check that a list read twice in a
  * render (a page and its `generateMetadata`) is fetched, parsed and warned
- * about once (ADR 0049).
+ * about once.
  */
 
 const render = vi.hoisted(() => {

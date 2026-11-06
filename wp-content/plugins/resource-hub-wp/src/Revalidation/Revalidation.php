@@ -124,7 +124,7 @@ final class Revalidation {
 
 	/**
 	 * Sends a real `update` event for one published resource now and returns the result, recorded
-	 * like any other: the entry point for the status page's "Send test revalidation" (ADR 0019).
+	 * like any other: the entry point for the status page's "Send test revalidation".
 	 * Null when the post is not a published resource, because there is nothing real to send. A
 	 * resource without exactly one type gets the same held-back failure a save would.
 	 *

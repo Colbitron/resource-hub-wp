@@ -17,7 +17,15 @@ use RuntimeException;
  * One validator for the test run, with every schema registered under its `$id` so the cross-file
  * `$ref`s to `common.schema.json` resolve (ADR 0010). The schemas are read from the repository's
  * `packages/ui/schemas/`, which wp-env mounts into the tests container at the same path relative to
- * the WordPress root as it has relative to the repository root (ADR 0042).
+ * the WordPress root as it has relative to the repository root (the `mappings` entry in `.wp-env.json`).
+ *
+ * The validator is `opis/json-schema` because it implements draft 2020-12 in full, cross-file `$ref`s
+ * and the `uri` format included; `justinrainbow/json-schema` supports that draft only in part, and the
+ * schemas' `if`/`then`/`else` and cross-file `$ref`s are what it handles unevenly. Rejected: copying
+ * the schemas into the plugin, because a copy can drift with nothing failing; mounting the whole
+ * repository as the WordPress root, because the plugin's path in the container would change for every
+ * other command; and checking the PHP output from Node, which needs a second harness when the test
+ * already has the payload in hand.
  */
 final class SchemaValidator {
 	/**

@@ -10,12 +10,12 @@ import { wpTermSchema, type WpTaxonomy, type WpTerm } from "./schemas/rest";
  * by slug (to turn a listing's path segment into the term ID the REST
  * filter takes), and the `featured` flag's ID.
  *
- * Both reads of a collection are parsed per item (`cmsGetList`, ADR 0049): a
- * term the reader schema refuses is left out with a warning, and an answer
+ * Both reads of a collection are parsed per item (`cmsGetList` in `fetch.ts`):
+ * a term the reader schema refuses is left out with a warning, and an answer
  * of four or more terms in which more than half fail throws a `CmsError`.
  */
 
-/** The `resource_flag` term that marks a featured resource (ADR 0009). */
+/** The `resource_flag` term that marks a featured resource (ADR 0007). */
 export const FEATURED_FLAG_SLUG = "featured";
 
 /** Core's largest `per_page`. */
@@ -90,7 +90,7 @@ export async function listTerms(taxonomy: WpTaxonomy): Promise<WpTerm[]> {
  *
  * Tagged, a miss included, with `termLookupTags` for a topic or type, which a
  * term event for the slug clears, and with `flagLookupTags()` for a flag:
- * flags send no term events (ADR 0046).
+ * flags send no term events (`packages/ui/README.md`).
  *
  * Parsed per item, like `getResourceBySlug`: core returns at most one term
  * here, and an answer in which every term failed throws whatever its size,

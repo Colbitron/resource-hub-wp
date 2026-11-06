@@ -382,7 +382,7 @@ final class PageRouteTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Core sends the same `no-cache` header on this route as on the others (ADR 0023).
+	 * The plugin sends the same `no-cache` header on this route as on the others (ADR 0043).
 	 */
 	public function test_anonymous_responses_carry_the_no_cache_header(): void {
 		wp_set_current_user( 0 );
