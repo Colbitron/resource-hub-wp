@@ -5,11 +5,14 @@
  *
  *   node e2e/lighthouse.mts
  *
- * Builds the app with the test environment (`appServerEnv`) first, unless
- * `RH_E2E_PREBUILT=1` says the build in `.next` is already that one, as in
- * CI after the end-to-end run. Then it clears the fetch cache, starts the
- * mock and `next start` on the harness's ports (refusing a port something
- * already answers on), requests each URL once so Lighthouse measures the
+ * Builds the app with the test environment (`appServerEnv`) first and
+ * stamps the build (`build-stamp.mts`), unless `RH_E2E_PREBUILT=1` says the
+ * build in `.next` is already that one, as in CI after the end-to-end run;
+ * then the stamp must say so, or the run stops before starting anything.
+ * Then it clears the fetch cache, starts the mock and `next start` on the
+ * harness's ports (refusing a port something already answers on, and
+ * failing at once if either server exits while it waits), requests each URL
+ * once so Lighthouse measures the
  * cached page a reader gets rather than its first render, and runs
  * `lhci collect`, `lhci upload` (to `lighthouse-results/`) and `lhci assert`,
  * in that order, so the reports are written even when a budget fails. The
@@ -22,12 +25,19 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { appendFileSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
+import { createRequire } from "node:module";
+
+import { assertPrebuilt, writeBuildStamp } from "./build-stamp.mts";
 import { appServerEnv, appSiteOrigin, mockCmsOrigin, mockCmsPort, prebuilt, webPort } from "./mock-cms/config.mts";
 import { SAMPLED_URLS } from "./sampled-urls.mts";
 
 const APP_DIR = new URL("..", import.meta.url).pathname;
 const RAW_DIR = join(APP_DIR, ".lighthouseci");
 const REPORT_DIR = join(APP_DIR, "lighthouse-results");
+
+const require = createRequire(import.meta.url);
+/** The runs per URL, read from the config the assertions use, for the summary's heading. */
+const RUNS: number = require("../lighthouserc.cjs").ci.collect.numberOfRuns;
 
 const children: ChildProcess[] = [];
 
@@ -37,7 +47,7 @@ function run(command: string, args: string[], env: Record<string, string> = {}):
 }
 
 /** Starts a long-running server in its own process group, so stopping it stops what it spawned too. */
-function startServer(command: string, args: string[], env: Record<string, string>): void {
+function startServer(command: string, args: string[], env: Record<string, string>): ChildProcess {
   const child = spawn(command, args, {
     cwd: APP_DIR,
     stdio: ["ignore", "inherit", "inherit"],
@@ -45,6 +55,7 @@ function startServer(command: string, args: string[], env: Record<string, string
     detached: true,
   });
   children.push(child);
+  return child;
 }
 
 function stopServers(): void {
@@ -68,9 +79,13 @@ async function answers(url: string): Promise<boolean> {
   }
 }
 
-async function waitFor(url: string, timeoutMs: number): Promise<void> {
+/** Waits until `url` answers, failing at once if `server`, which should answer it, exits first. */
+async function waitFor(url: string, server: ChildProcess, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (server.exitCode !== null || server.signalCode !== null) {
+      throw new Error(`The server for ${url} exited (${server.exitCode ?? server.signalCode}) before it answered; its output is above.`);
+    }
     if (await answers(url)) return;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
@@ -83,9 +98,16 @@ interface Lhr {
   audits: Record<string, { numericValue?: number }>;
 }
 
-function median(values: number[]): number {
+/** The median, or `null` when no run produced the number (an audit that errored in every run). */
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.floor(sorted.length / 2)];
+}
+
+/** A median for the table, or "n/a" when there is none. */
+function cell(value: number | null, format: (value: number) => string): string {
+  return value === null ? "n/a" : format(value);
 }
 
 /** The median of each budgeted number per URL, from the raw runs `lhci collect` wrote. */
@@ -104,11 +126,13 @@ function summary(): string {
   for (const [url, lhrs] of byUrl) {
     const pick = (read: (lhr: Lhr) => number | null | undefined) =>
       median(lhrs.map(read).filter((value): value is number => typeof value === "number"));
+    const fixed = (digits: number) => (value: number) => value.toFixed(digits);
+    const whole = (value: number) => String(Math.round(value));
     rows.push(
-      `| ${new URL(url).pathname} | ${lhrs.length} | ${pick((l) => l.categories.performance?.score).toFixed(2)} | ${pick((l) => l.categories.accessibility?.score).toFixed(2)} | ${Math.round(pick((l) => l.audits["largest-contentful-paint"]?.numericValue))} | ${pick((l) => l.audits["cumulative-layout-shift"]?.numericValue).toFixed(3)} | ${Math.round(pick((l) => l.audits["total-blocking-time"]?.numericValue))} |`,
+      `| ${new URL(url).pathname} | ${lhrs.length} | ${cell(pick((l) => l.categories.performance?.score), fixed(2))} | ${cell(pick((l) => l.categories.accessibility?.score), fixed(2))} | ${cell(pick((l) => l.audits["largest-contentful-paint"]?.numericValue), whole)} | ${cell(pick((l) => l.audits["cumulative-layout-shift"]?.numericValue), fixed(3))} | ${cell(pick((l) => l.audits["total-blocking-time"]?.numericValue), whole)} |`,
     );
   }
-  return `### Lighthouse (mobile, median of 3)\n\n${rows.join("\n")}\n`;
+  return `### Lighthouse (mobile, median of ${RUNS})\n\n${rows.join("\n")}\n`;
 }
 
 async function main(): Promise<number> {
@@ -122,13 +146,18 @@ async function main(): Promise<number> {
     }
   }
 
-  if (!prebuilt() && run("pnpm", ["exec", "next", "build"], env) !== 0) return 1;
+  if (prebuilt()) {
+    assertPrebuilt();
+  } else {
+    if (run("pnpm", ["exec", "next", "build"], env) !== 0) return 1;
+    writeBuildStamp({ ...process.env, ...env });
+  }
   if (run("node", ["e2e/clear-fetch-cache.mts"]) !== 0) return 1;
 
-  startServer("node", ["e2e/mock-cms/main.mts"], { RH_MOCK_CMS_PORT: String(mockCmsPort()) });
-  await waitFor(`${mock}/__mock/health`, 15_000);
-  startServer("pnpm", ["exec", "next", "start", "--port", String(webPort())], env);
-  await waitFor(`${app}/`, 60_000);
+  const mockServer = startServer("node", ["e2e/mock-cms/main.mts"], { RH_MOCK_CMS_PORT: String(mockCmsPort()) });
+  await waitFor(`${mock}/__mock/health`, mockServer, 15_000);
+  const appServer = startServer("pnpm", ["exec", "next", "start", "--port", String(webPort())], env);
+  await waitFor(`${app}/`, appServer, 60_000);
 
   // One request per URL renders each ISR listing and fills the Data Cache,
   // as a reader after the first would find it.
