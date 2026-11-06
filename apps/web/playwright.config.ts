@@ -81,16 +81,24 @@ export default defineConfig({
             // threshold 0: any change in a pixel's colour counts that pixel as
             // different. The default 0.2 let the accent move from #1f4f8f to
             // #2a5a9a unnoticed, which is the kind of change this gate exists
-            // to show. maxDiffPixelRatio 0.001: up to one pixel in a thousand
-            // may differ before the shot fails. Baselines are rendered under
-            // amd64 emulation on Apple silicon and compared on CI's native
-            // amd64, where anti-aliasing at a glyph's or a curve's edge can
-            // land a pixel apart; a token or component change moves far more
-            // than that (an accent change fails every shot in the light
-            // scheme, measured when this was set).
+            // to show. maxDiffPixels 50: at most 50 pixels of a full page may
+            // differ. The noise floor measured on 2026-11-06 was zero: six
+            // runs of the four shots in the pinned image, under amd64
+            // emulation on Apple silicon, matched their baselines pixel for
+            // pixel. The 50 is headroom for anti-aliasing at a glyph's or a
+            // curve's edge landing a pixel apart between that emulation and
+            // CI's native amd64, and a count, not a ratio, so it does not grow
+            // with the page (the specimen is 1280×7529 and 360×10443 px, where
+            // the old 0.1% allowed about 9,600 and 3,750 pixels). Measured then:
+            // the accent mutation above differs in 26,093 and 35,741 pixels, and
+            // a 3 px focus ring drawn at 2 px in 732. The focus ring has its
+            // own shot at no tolerance at all (specimen.screenshot.ts).
             // Under QEMU emulation one full-page shot of the specimen takes a few
             // seconds, and toHaveScreenshot needs two; the default 5 s is too short.
-            expect: { toHaveScreenshot: { timeout: 30_000, threshold: 0, maxDiffPixelRatio: 0.001 } },
+            expect: { toHaveScreenshot: { timeout: 30_000, threshold: 0, maxDiffPixels: 50 } },
+            // Two full-page comparisons and a crop, under emulation, and
+            // writing the diffs when they fail: more than the default 30 s.
+            timeout: 120_000,
             use: {
               ...devices["Desktop Chrome"],
               reducedMotion: "reduce" as const,

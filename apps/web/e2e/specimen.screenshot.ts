@@ -4,10 +4,10 @@ import { expect, test } from "@playwright/test";
  * Pixel baselines of the design specimen (`app/fixtures/specimen/`), the page
  * that shows every shared token, every component and the states between
  * them (focus, selected filters, pagination's ends, an empty listing): at
- * 360 and 1280 px, in
- * the light and the dark scheme, with reduced motion. A change to a token,
- * a component's markup or its CSS moves pixels here, so every design change
- * shows its cost as a diff in review.
+ * 360 and 1280 px, in the light and the dark scheme, with reduced motion;
+ * and, for each, a crop of the focused link and its ring, compared with no
+ * tolerance. A change to a token, a component's markup or its CSS moves
+ * pixels here, so every design change shows its cost as a diff in review.
  *
  * Only the `screenshots` project runs this file, and that project only
  * exists when `e2e/screenshots.mts` has started Chromium in Playwright's
@@ -21,6 +21,8 @@ const SPECIMEN_PATH = "/fixtures/specimen/";
 
 const WIDTHS = [360, 1280] as const;
 const SCHEMES = ["light", "dark"] as const;
+/** Pixels around the focused link's box in its own shot: the ring's 2 px offset and 3 px width, and a band of surface. */
+const FOCUS_MARGIN = 10;
 
 for (const width of WIDTHS) {
   for (const colorScheme of SCHEMES) {
@@ -53,7 +55,31 @@ for (const width of WIDTHS) {
         // CSS.getPlatformFontsForNode; the same order every run). One capture
         // first, thrown away, so the baseline is always the settled layout.
         await page.screenshot({ fullPage: true });
-        await expect(page).toHaveScreenshot(`specimen-${width}-${colorScheme}.png`, { fullPage: true });
+        // Soft, so the focus ring's own shot below is still compared, and its
+        // diff written, when the whole page differs.
+        await expect.soft(page).toHaveScreenshot(`specimen-${width}-${colorScheme}.png`, { fullPage: true });
+
+        // The focus ring alone, compared with no tolerance at all: its
+        // colour (`--rh-color-focus`), width (`--rh-focus-width`) and offset
+        // are a few hundred pixels of a page of millions, under any useful
+        // tolerance for the whole page. The crop is the link's box grown by
+        // FOCUS_MARGIN on every side, enough for the 2 px offset, the ring
+        // and a band of the surface around it, so a wider or further ring
+        // moves pixels inside it.
+        await expect(focused).toBeFocused();
+        await focused.scrollIntoViewIfNeeded();
+        const box = await focused.boundingBox();
+        if (box === null) throw new Error("The focused link has no box.");
+        await expect(page).toHaveScreenshot(`focus-ring-${width}-${colorScheme}.png`, {
+          clip: {
+            x: Math.floor(box.x - FOCUS_MARGIN),
+            y: Math.floor(box.y - FOCUS_MARGIN),
+            width: Math.ceil(box.width + 2 * FOCUS_MARGIN),
+            height: Math.ceil(box.height + 2 * FOCUS_MARGIN),
+          },
+          maxDiffPixels: 0,
+          threshold: 0,
+        });
       });
     });
   }
