@@ -255,9 +255,11 @@ describe("openGraphImage", () => {
     expect(toCard(withMedia([wide()]))?.image?.src).toBe("/media/2026/11/share-1024x538.jpg");
   });
 
-  it("takes a size exactly 1200 wide", () => {
-    const sizes = { ...wideSizes(), og: { source_url: `${WIDE}-1200x630.jpg`, width: 1200, height: 630 } };
-    expect(ogOf(wide(sizes))?.src).toBe("/media/2026/11/share-1200x630.jpg");
+  it("takes a size exactly 1200 wide, and skips one 1199 wide", () => {
+    const narrow = { ...wideSizes(), narrow: { source_url: `${WIDE}-1199x629.jpg`, width: 1199, height: 629 } };
+    const exact = { ...narrow, og: { source_url: `${WIDE}-1200x630.jpg`, width: 1200, height: 630 } };
+    expect(ogOf(wide(exact))?.src).toBe("/media/2026/11/share-1200x630.jpg");
+    expect(ogOf(wide(narrow))?.src).toBe("/media/2026/11/share-1536x806.jpg");
   });
 
   it("falls back to the original when no size is wide enough", () => {
@@ -265,10 +267,17 @@ describe("openGraphImage", () => {
       Object.entries(wideSizes()).filter(([name]) => name !== "1536x1536" && name !== "2048x2048"),
     );
     expect(ogOf(wide(sizes))).toEqual({ src: "/media/2026/11/share.jpg", width: 2400, height: 1260, alt: "A photo" });
-    // An original under 1200 is still the largest file there is, so it is used.
+    // An original wider than its widest size, none of them 1200 wide.
     expect(ogOf(media())).toEqual({ src: "/media/2026/11/photo.jpg", width: 1600, height: 900, alt: "A photo" });
     const small = { large: { source_url: `${UPLOADS}/2026/11/photo-1024x576.jpg`, width: 1024, height: 576 } };
     expect(ogOf(media({}, { sizes: small }))?.src).toBe("/media/2026/11/photo.jpg");
+    // An original under 1200 is still the largest file there is, so it is used, not dropped.
+    const under = {
+      width: 1000,
+      height: 563,
+      sizes: { medium_large: { source_url: `${UPLOADS}/2026/11/photo-768x432.jpg`, width: 768, height: 432 } },
+    };
+    expect(ogOf(media({}, under))).toEqual({ src: "/media/2026/11/photo.jpg", width: 1000, height: 563, alt: "A photo" });
   });
 
   it("skips an untrusted or wrong-shape size, and takes the next one that qualifies", () => {

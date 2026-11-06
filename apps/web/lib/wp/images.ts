@@ -43,9 +43,10 @@ import type { WpResource } from "./schemas/rest";
  *    is skipped, never a reason to drop the image; the original failing is.
  *
  * Neither choice checks a file size. Social networks cap `og:image` (LinkedIn
- * at 5 MB), and a size is a WordPress derivative well under that; the
- * original is whatever was uploaded, and the REST response carries
- * `filesize` only sometimes, so keeping it under a cap is the editor's part.
+ * at 5 MB). A size is a WordPress derivative, usually well under that but not
+ * always (a 2048-wide PNG of a photograph can pass it); the original is
+ * whatever was uploaded; and the REST response carries `filesize` only
+ * sometimes, so keeping the files under a cap is the editor's part.
  */
 
 /** The largest width or height accepted, in pixels: well past any camera's, small enough to be a real number. */

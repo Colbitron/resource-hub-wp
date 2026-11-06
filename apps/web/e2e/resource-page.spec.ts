@@ -339,13 +339,15 @@ test.describe("metadata", () => {
     await expect(page.locator('meta[property="og:image:width"]')).toHaveAttribute("content", "240");
   });
 
-  test("og:image is at least 1200 wide when the upload is, while the page keeps the card's size", async ({ page }) => {
-    // ID 30's 1600×900 upload has sizes 768 and 1024 wide: none reaches 1200, so og:image is the original.
+  test("og:image is the smallest size at least 1200 wide, while the page keeps the card's size", async ({ page }) => {
+    // ID 30's 1600×900 upload has sizes 768, 1024 and 1536 wide: the page takes 1024 and og:image 1536.
+    // The fall-back to the original is in the test above: ID 33's upload is 240 wide.
     await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
     const ogImage = page.locator('meta[property="og:image"]');
-    expect(new URL((await ogImage.getAttribute("content")) as string, page.url()).pathname).toBe("/media/2026/11/taxonomies-versus-meta.png");
-    await expect(page.locator('meta[property="og:image:width"]')).toHaveAttribute("content", "1600");
-    await expect(page.locator('meta[property="og:image:height"]')).toHaveAttribute("content", "900");
+    expect(new URL((await ogImage.getAttribute("content")) as string, page.url()).pathname).toBe("/media/2026/11/taxonomies-versus-meta-1536x864.png");
+    await expect(page.locator('meta[property="og:image:width"]')).toHaveAttribute("content", "1536");
+    await expect(page.locator('meta[property="og:image:height"]')).toHaveAttribute("content", "864");
+    await expect(page.locator('meta[property="og:image:alt"]')).toHaveAttribute("content", "Three boxes joined by two bars: a term, a post and a field");
     await expect(page.locator(".rh-resource__media img")).toHaveAttribute("width", "1024");
   });
 
