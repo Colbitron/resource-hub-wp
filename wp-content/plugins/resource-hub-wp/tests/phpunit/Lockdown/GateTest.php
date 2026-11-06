@@ -311,7 +311,7 @@ final class GateTest extends LockdownTestCase {
 
 	/**
 	 * The 404's head links to no feed and no RSD endpoint; a logged-in user's page keeps its feed
-	 * links. It has no RSD link either: XML-RPC is off for everyone (ADR 0044), which
+	 * links. It has no RSD link either: XML-RPC is off for everyone, which
 	 * {@see \ResourceHub\Tests\Security\XmlRpcTest} covers, so the link is gone before the gate runs;
 	 * {@see self::test_the_gate_drops_the_rsd_link_itself()} covers the gate's own removal.
 	 */

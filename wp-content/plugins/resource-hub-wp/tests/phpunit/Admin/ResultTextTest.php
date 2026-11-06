@@ -1,6 +1,6 @@
 <?php
 /**
- * Every stored outcome in plain words, and the stale-pending display (ADR 0018).
+ * Every stored outcome in plain words, and the stale-pending display (see `docs/architecture/revalidation.md`).
  *
  * @package ResourceHub
  */

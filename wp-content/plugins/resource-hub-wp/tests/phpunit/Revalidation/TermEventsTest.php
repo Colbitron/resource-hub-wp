@@ -12,7 +12,7 @@ namespace ResourceHub\Tests\Revalidation;
 use ResourceHub\ContentModel\Taxonomies;
 
 /**
- * Tests for {@see \ResourceHub\Revalidation\TermEvents} through core's term functions (ADR 0017).
+ * Tests for {@see \ResourceHub\Revalidation\TermEvents} through core's term functions (see `packages/ui/README.md`).
  */
 final class TermEventsTest extends RevalidationTestCase {
 	/**

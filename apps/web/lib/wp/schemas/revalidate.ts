@@ -17,9 +17,8 @@ import {
  * `revalidate-response-error.schema.json` in `packages/ui/schemas/`. Every
  * object in those schemas has `additionalProperties: false`.
  *
- * The request comes in two variants built from the same definitions (ADR 0010,
- * amended 2026-11-05: strict where we produce, lenient on unknown keys where
- * we consume):
+ * The request comes in two variants built from the same definitions (ADR 0010:
+ * strict where we produce, lenient on unknown keys where we consume):
  *
  * - `revalidateRequestSchemaStrict` is the exact mirror, every object a
  *   `z.strictObject`. The conformance tests prove it against the package's

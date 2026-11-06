@@ -15,7 +15,7 @@ use ResourceHub\Revalidation\ResourceEvents;
 use WP_REST_Request;
 
 /**
- * Tests for {@see ResourceEvents} through core's real write paths (ADRs 0011, 0015, 0016).
+ * Tests for {@see ResourceEvents} through core's real write paths (ADR 0011; see `packages/ui/README.md`).
  */
 final class ResourceEventsTest extends RevalidationTestCase {
 	/**

@@ -1,5 +1,6 @@
 /**
- * Revalidation feedback in the block editor (ADR 0018).
+ * Revalidation feedback in the block editor (see
+ * `docs/architecture/revalidation.md`).
  *
  * The send to the front end runs in cron after the save has returned, so the
  * save response cannot carry the result. After a save that is neither an
@@ -18,11 +19,11 @@
  * landed before this save (too old), or the save response carried that
  * earlier save's own record, pending or final (same batch, excluded). The
  * store never writes a cron batch's final result over another batch's pending,
- * so a later save's records are not overwritten by an earlier send (ADR 0018). A
- * later save pauses the earlier poll while it runs, and replaces it only if it
- * succeeds and starts a poll of its own; a save that fails, such as one
- * refused for breaking the one-type rule, sent nothing, so the earlier save's
- * poll resumes.
+ * so a later save's records are not overwritten by an earlier send (the guard
+ * is in PHP's `ResultStore`). A later save pauses the earlier poll while it
+ * runs, and replaces it only if it succeeds and starts a poll of its own; a
+ * save that fails, such as one refused for breaking the one-type rule, sent
+ * nothing, so the earlier save's poll resumes.
  *
  * Which saves are polled for: only those that sent something, which the
  * server decides per post type. A resource sends an event when it was or is

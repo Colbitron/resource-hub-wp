@@ -1,7 +1,7 @@
 /*
- * The 404 page (app/not-found.tsx): a heading, a sentence and a link, on
- * the shell's base styles and the shared tokens (ADR 0045). Imported by the
- * page that renders the markup.
+ * The 404 page (app/not-found.tsx): a heading, a sentence and a link, on the
+ * shell's base styles and the shared tokens (see packages/ui/README.md).
+ * Imported by the page that renders the markup.
  */
 
 .rh-not-found {

@@ -182,9 +182,10 @@ jobs:
       - name: Build the front end
         run: pnpm web:build
 
-      # The fixture pages are routes only under RH_FIXTURES=1 (ADR 0045). This
-      # build runs without it, so if they reached the output anyway, the test-
-      # only pages would ship; fail before the e2e build overwrites .next.
+      # The fixture pages are routes only under RH_FIXTURES=1 (see
+      # apps/web/e2e/README.md). This build runs without it, so if they reached
+      # the output anyway, the test-only pages would ship; fail before the e2e
+      # build overwrites .next.
       - name: Check the fixture routes are not in the production build
         run: |
           if [ -e apps/web/.next/server/app/fixtures ]; then
@@ -435,9 +436,9 @@ jobs:
 
   deploy-web:
     name: Deploy the front end to Vercel
-    # The front end goes live only after the CMS it reads (the root CLAUDE.md,
-    # "Deploy order"), and only when its own lint, typecheck, tests and build
-    # have passed on this commit.
+    # The front end goes live only after the CMS it reads (ADR 0051; see
+    # docs/runbooks/deploy.md), and only when its own lint, typecheck, tests
+    # and build have passed on this commit.
     needs: [ deploy, web ]
     # Main only, on a push or a manual dispatch. Unlike the CMS deploy, a tag
     # dispatch does not deploy the front end: a deploy hook always builds the

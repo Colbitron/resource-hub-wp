@@ -1,6 +1,6 @@
 <?php
 /**
- * XML-RPC is off and not advertised (ADR 0044).
+ * XML-RPC is off and not advertised; the reasons are in `src/Security/XmlRpc.php`.
  *
  * @package ResourceHub
  */

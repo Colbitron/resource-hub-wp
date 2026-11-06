@@ -83,7 +83,7 @@ export const slugSchema = ruleSchema(slugProblem);
 /**
  * `$defs/reservedTypeSlugs`: the words a `resource_type` slug may never be,
  * because `/resources/topic/[topic]/` and `/resources/[type]/page/[n]/` already
- * use them as path segments (ADR 0034). Defined in `lib/routes.ts`.
+ * use them as path segments (ADR 0024). Defined in `lib/routes.ts`.
  */
 export { isReservedTypeSlug, RESERVED_TYPE_SLUG_MESSAGE, RESERVED_TYPE_SLUGS };
 

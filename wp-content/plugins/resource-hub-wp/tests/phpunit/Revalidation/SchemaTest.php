@@ -14,7 +14,7 @@ use WP_UnitTestCase;
 
 /**
  * Proves the schema check the other revalidation tests rely on is real: every valid request fixture in
- * `packages/ui/fixtures/` passes and every invalid one fails through the same validator (ADRs 0010, 0042).
+ * `packages/ui/fixtures/` passes and every invalid one fails through the same validator (ADR 0010).
  */
 final class SchemaTest extends WP_UnitTestCase {
 	/**

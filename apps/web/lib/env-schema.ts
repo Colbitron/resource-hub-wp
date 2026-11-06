@@ -221,8 +221,8 @@ export function parseWpApiUrl(env: EnvSource): string {
 
 /**
  * The bearer secret the CMS sends to `POST /api/revalidate`: 32 to 256
- * printable ASCII characters with no whitespace (root `CLAUDE.md`,
- * "Configuration, front end"). Compared byte for byte, so it is never
+ * printable ASCII characters with no whitespace (the contract's rule, in
+ * `packages/ui/README.md`). Compared byte for byte, so it is never
  * trimmed: a value with a space or newline in it is refused, not repaired.
  * Throws `EnvError` when it is missing and `SecretError` when it breaks the
  * rule; neither message includes the value.

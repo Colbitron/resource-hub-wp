@@ -74,7 +74,8 @@ export const wpTermSchema = z.object({
 /**
  * A whole term list, for the tests and fixtures. The data layer does not
  * parse a list with it: `cmsGetList` parses each term with `wpTermSchema`,
- * so one bad term is skipped rather than failing the list (ADR 0049).
+ * so one bad term is skipped rather than failing the list (the rule is in
+ * `fetch.ts`).
  */
 export const wpTermListSchema = z.array(wpTermSchema);
 
@@ -164,7 +165,7 @@ const wpResourceEmbeddedSchema = z
  * terms of those three taxonomies. `resource_type` is not held to
  * exactly one ID here, although the content model gives every resource one
  * type: a resource saved outside the REST API can have none or two (ADR
- * 0016), and one such resource should not fail a whole listing, so the code
+ * 0024), and one such resource should not fail a whole listing, so the code
  * that builds its URL decides.
  *
  * Because core omits `_embedded` for a resource with nothing to embed, a
@@ -219,7 +220,7 @@ export const wpPageSchema = z.object({
  * A whole resource list, for the tests and fixtures. The data layer does not
  * parse a list with it: `cmsGetList` parses each resource with
  * `wpResourceSchema`, so one bad resource is skipped rather than failing the
- * list (ADR 0049).
+ * list (the rule is in `fetch.ts`).
  */
 export const wpResourceListSchema = z.array(wpResourceSchema);
 

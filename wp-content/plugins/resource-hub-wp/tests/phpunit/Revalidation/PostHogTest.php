@@ -14,7 +14,7 @@ use ResourceHub\Revalidation\Result;
 use WP_Error;
 
 /**
- * Tests for {@see PostHog} (ADR 0032).
+ * Tests for {@see PostHog} (see `docs/architecture/revalidation.md`).
  */
 final class PostHogTest extends RevalidationTestCase {
 	/**

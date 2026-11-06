@@ -1,6 +1,6 @@
 <?php
 /**
- * Anonymous REST reads carry a no-cache header (ADR 0023).
+ * Anonymous REST reads carry a no-cache header (ADR 0043).
  *
  * @package ResourceHub
  */

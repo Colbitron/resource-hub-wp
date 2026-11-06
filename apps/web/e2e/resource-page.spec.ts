@@ -7,18 +7,17 @@ import { RESOURCES, TERMS } from "./mock-cms/seed.mts";
 
 /**
  * The single resource page at the real route `/resources/[type]/[slug]/`
- * against the built app and the mock CMS (root `CLAUDE.md`, "Public URLs",
- * "Server side only" and "Block marker"; ADRs 0035, 0037, 0040 and 0047):
- * what it renders, that the CMS's address is nowhere in the response, its
- * metadata, the redirect contract on the real route (one computed 308, then
- * a 200; the proxy's 308 for mixed case; a 404 for an unknown slug), what
- * ISR stores and what clears it (ADR 0035's 2026-11-06 amendment: the 200,
- * the 308 and the 404 are stored and served as route-cache hits with the
- * `headers()` rule's `Cache-Control`, and a resource event clears a stored
- * redirect at the old URL and a stored 404 at the new one), the Chromium
- * round trip that a browser-kept redirect would fail, that the page and its
- * metadata make one CMS request between them, and the page's accessibility
- * and layout stability.
+ * against the built app and the mock CMS (ADRs 0025 and 0040; see
+ * `packages/ui/README.md` and `docs/architecture/caching.md`): what it
+ * renders, that the CMS's address is nowhere in the response, its metadata,
+ * the redirect contract on the real route (one computed 308, then a 200; the
+ * proxy's 308 for mixed case; a 404 for an unknown slug), what ISR stores and
+ * what clears it (the 200, the 308 and the 404 are stored and served as
+ * route-cache hits with the `headers()` rule's `Cache-Control`, and a resource
+ * event clears a stored redirect at the old URL and a stored 404 at the new
+ * one), the Chromium round trip that a browser-kept redirect would fail, that
+ * the page and its metadata make one CMS request between them, and the page's
+ * accessibility and layout stability.
  *
  * `e2e/redirects.spec.ts` keeps the decision's edge cases on the fixture
  * route, which renders on every request; this spec proves the real, stored
@@ -403,7 +402,7 @@ test.describe("metadata", () => {
 
     // A 404: the miss is one cached lookup and one resolve request, whose miss the Data
     // Cache never stores; the route cache stores the 404 itself, so a second request for
-    // the same URL asks the CMS nothing (ADR 0035's 2026-11-06 amendment).
+    // the same URL asks the CMS nothing (see `docs/architecture/caching.md`).
     const missing = unique("missing");
     await cms.resetRequests();
     await expectNotFound(request, resourcePath("article", missing));

@@ -13,8 +13,8 @@ namespace ResourceHub\Revalidation;
  * Reads the front-end URL, the revalidation secret and the optional PostHog settings.
  *
  * Each of the two revalidation values comes from a PHP constant when it is defined, falling back
- * to an option of the same name in lower case (ADR 0019). The PostHog values are constants only
- * (ADR 0032). None of them is ever committed; `wp-config.php` on the host and wp-env's `config`
+ * to an option of the same name in lower case. The PostHog values are constants only.
+ * None of them is ever committed; `wp-config.php` on the host and wp-env's `config`
  * define them. The secret never leaves this class except as the bearer header {@see Sender} sends.
  */
 final class Config {
@@ -119,7 +119,7 @@ final class Config {
 
 	/**
 	 * Which source supplies a revalidation value: `constant`, `option`, or `none`. For the status page,
-	 * which shows the source without showing the value (ADR 0019).
+	 * which shows the source without showing the value.
 	 *
 	 * @param string $name One of {@see Config::FRONTEND_URL} or {@see Config::REVALIDATE_SECRET}.
 	 */

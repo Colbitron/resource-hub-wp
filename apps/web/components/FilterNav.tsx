@@ -57,7 +57,7 @@ function FilterGroup({ id, name, all, terms, selected, hrefFor }: FilterGroupPro
 
 /**
  * The filter bar: one row of type links and one of topic links, as plain
- * links to the listing paths (ADR 0034: filters are path segments, so no
+ * links to the listing paths (ADR 0024: filters are path segments, so no
  * client JavaScript is needed to change one). The current term in each row
  * carries `aria-current="true"`, and so does "All" when nothing in that row
  * is selected. Each row is a list named by its visible label, so a screen

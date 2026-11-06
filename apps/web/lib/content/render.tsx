@@ -15,10 +15,12 @@ import { canonicalSlug, isSlug } from "../routes";
 import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, type CmsUrls } from "../urls";
 
 /**
- * The one server-side pass over a resource's `content.rendered` (ADRs 0036,
- * 0037, 0040 and 0047). WordPress hands the front end HTML that editors
- * wrote, with the CMS's absolute URLs in it; this turns it into React nodes
- * that show nothing of the CMS and run nothing of the editor's.
+ * The one server-side pass over a resource's `content.rendered` (ADR 0040:
+ * one parse pass owns every rewrite). WordPress hands the front end HTML
+ * that editors wrote, with the CMS's absolute URLs in it; this turns it into
+ * React nodes that show nothing of the CMS and run nothing of the editor's.
+ * The defaults still open (external images, the `mailto:`/`tel:` exemption,
+ * unwrapping CMS links) are issue #53.
  *
  * `html-react-parser` parses the string once and calls `replace` for every
  * top-level node before it renders anything of its own; below the top level
@@ -30,7 +32,11 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  * Nothing here uses `dangerouslySetInnerHTML`, so no fragment of the input
  * reaches the page as markup; that is what makes a sanitiser inside `replace`
  * sound. The output is never serialised and parsed again, so the mutation
- * tricks that defeat string sanitisers do not apply.
+ * tricks that defeat string sanitisers do not apply. The sanitiser is
+ * written here rather than taken from a library (`sanitize-html`, DOMPurify):
+ * a library would sanitise the string first and leave it to be parsed again,
+ * a second pass with its own configuration to keep in step with this one,
+ * and every rewrite here would still be needed on top.
  *
  * In that one pass:
  *
@@ -120,7 +126,7 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  * Server only: it imports `next/image` and runs in Server Components.
  */
 
-/** The related-resources marker, parsed and validated (ADR 0037). */
+/** The related-resources marker, parsed and validated (`packages/ui/README.md`). */
 export interface RelatedBlockProps {
   /** `data-count`, 1 to 10. */
   readonly count: number;
@@ -260,7 +266,7 @@ const LINK_SCHEMES = new Set(["http:", "https:", "mailto:", "tel:"]);
  * `mailto:info@example.com` stays a link on a CMS at `example.com`. Without
  * it every contact link on an apex-domain CMS would lose its link. The
  * default chosen while the project owner was away on 2026-11-05, pending
- * their review (ADR 0047).
+ * their review (issue #53).
  */
 const CONTACT_SCHEMES = new Set(["mailto:", "tel:"]);
 
@@ -278,7 +284,7 @@ const CLASS_TOKEN = /^[A-Za-z0-9_-]+$/;
  * it, so no content class may start with it, in any case.
  */
 const APP_CLASS_PREFIX = "rh-";
-/** The one app class content may carry: the block marker's wrapper's own, from the plugin (ADR 0038). */
+/** The one app class content may carry: the block marker's wrapper's own, in the contract (`packages/ui/README.md`). */
 const MARKER_CLASSES: ReadonlySet<string> = new Set(["rh-related"]);
 const NO_CLASSES: ReadonlySet<string> = new Set();
 const ID_VALUE = /^[A-Za-z][A-Za-z0-9_.:-]*$/;
@@ -760,7 +766,7 @@ function isCmsUrlText(text: string, context: Context): boolean {
  * rewritten target, when there is one that does not name the CMS; when
  * there is none (the `href` was dropped, or its rewrite still names the
  * CMS), its content stays. Any other content is the editor's and stays as
- * written, markup included, even when it names the CMS (ADR 0047), so
+ * written, markup included, even when it names the CMS, so
  * `<a href="https://cms.example/wp-admin/"><b>bold</b> cms.example</a>` is
  * unwrapped to its content rather than flattened to text.
  */
@@ -983,7 +989,7 @@ function linkTo(href: string, text?: string): ReactElement {
 
 /**
  * `<img>` by the image trust rule. `next/image` only for a CMS image with a
- * width and a height, which it needs to reserve the space (ADR 0039); a CMS
+ * width and a height, which it needs to reserve the space; a CMS
  * image without them is a plain lazy `<img>` with its `srcset` and `sizes`;
  * an external image is a plain lazy `<img>` by its `src` alone, sending no
  * referrer to the other host.
@@ -1133,9 +1139,11 @@ function markerProps(node: Element, attributes: Attributes, context: Context): R
 }
 
 /**
- * The block marker (ADR 0037). The fallback is the wrapper with its `class`
- * and its children through the pass; the `data-*` attributes are read here
- * and never rendered, so the marker stays on the server.
+ * The block marker, as the contract in `packages/ui/README.md` states it;
+ * the plugin's render callback that will emit it is not built yet (issue
+ * #50). The fallback is the wrapper with its `class` and its children
+ * through the pass; the `data-*` attributes are read here and never
+ * rendered, so the marker stays on the server.
  *
  * Whether `renderBlock` gets the marker is decided, and counted, before its
  * children render, so `MAX_MARKERS` counts in document order: a marker
@@ -1187,8 +1195,7 @@ const HEADING = /^h([1-6])$/;
  * headings keep their order relative to each other: `h1`, `h3`, `h2` become
  * `h2`, `h4`, `h3`. A body without an `<h1>` (WordPress's editor starts its
  * headings at `h2`, under the post's title) is left as written, so its `h2`s
- * stay directly under the page's `<h1>` instead of skipping a level (ADR
- * 0047's 2026-11-05 amendment).
+ * stay directly under the page's `<h1>` instead of skipping a level.
  */
 function headingName(name: string, context: Context): string {
   const level = context.demoteHeadings ? HEADING.exec(name) : null;
@@ -1199,7 +1206,7 @@ function headingName(name: string, context: Context): string {
 const TABLE_LABEL = "Table";
 
 /**
- * The most characters a table's scroll region's name has (ADR 0047). A
+ * The most characters a table's scroll region's name has. A
  * caption can hold any amount of text, including a whole nested table, as
  * htmlparser2 nests a `<table>` inside a `<caption>`: without a cap, each of
  * a chain of nested tables named by its caption repeats all its

@@ -12,15 +12,19 @@ declare(strict_types=1);
 namespace ResourceHub\Revalidation;
 
 /**
- * POSTs a payload to `{FRONTEND_URL}/api/revalidate/` with a 3-second timeout and no retries (ADR 0013),
- * and turns whatever happens into a {@see Result}.
+ * POSTs a payload to `{FRONTEND_URL}/api/revalidate/` with a 3-second timeout and no retries (see
+ * `docs/architecture/revalidation.md`), and turns whatever happens into a {@see Result}.
  *
  * The secret travels only in the `Authorization` header of this request. It is never written to the
  * result, to meta, to PostHog or to WP-CLI output.
  */
 final class Sender {
 	/**
-	 * Seconds to wait for the front end. The VIP ruleset's cap; nothing here needs more.
+	 * Seconds to wait for the front end, the VIP ruleset's cap. The send runs in cron, so this bounds
+	 * how long a cron request holds a PHP worker, not how long the editor waits. Five seconds with a
+	 * scoped `phpcs:ignore` was rejected: nothing needs the extra time, and the sniff is right that a
+	 * short timeout is the habit to keep. So if the front end ever needs slow work on revalidation, it
+	 * answers first and does the work after; this timeout is not raised for it.
 	 */
 	public const TIMEOUT = 3;
 

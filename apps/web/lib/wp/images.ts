@@ -13,8 +13,10 @@ import type { WpResource } from "./schemas/rest";
  * `CARD_SOURCE_MIN_WIDTH`, and `openGraphImage`, for the page's `og:image`,
  * with `OPEN_GRAPH_MIN_WIDTH`. Both are `chooseImage`; whichever is called,
  * the original either passes rules 1 to 3 or there is no image, so the two
- * are `null` together. The image trust rule is ADR 0047's for images in a
- * body, held to a stricter bar because `next/image` needs a size (ADR 0039):
+ * are `null` together. The image trust rule is the one for images in a body
+ * (the `lib/content/render.tsx` docblock), held to a stricter bar because
+ * `next/image` needs a size to reserve the space, so a late image moves
+ * nothing (`apps/web/README.md`):
  *
  * 1. The embedded media is the first entry of `_embedded['wp:featuredmedia']`
  *    (core embeds one); a `null` entry, which is how the reader schema keeps

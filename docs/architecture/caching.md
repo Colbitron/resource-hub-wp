@@ -1,6 +1,6 @@
 # Caching, URLs and redirects
 
-For a contributor changing caching, data fetching, URLs or redirects on the front end, or the REST cache headers on the CMS. The decision is [ADR 0043](../adr/0043-fetch-cache-with-tags-without-cache-components.md) (the caching model) with [ADR 0024](../adr/0024-type-paths-mirrored-on-both-sites.md) and [ADR 0025](../adr/0025-redirects-are-computed-308s-with-no-store.md) (URLs and redirects). How a revalidation request reaches the route is in [revalidation.md](revalidation.md).
+For a contributor changing caching, data fetching, URLs or redirects on the front end, or the REST cache headers on the CMS. The decision is [ADR 0043](../adr/0043-fetch-cache-with-tags-without-cache-components.md) (the caching model) with [ADR 0024](../adr/0024-type-paths-mirrored-on-both-sites.md) and [ADR 0025](../adr/0025-permanent-redirects-are-computed-and-never-kept-by-browsers.md) (URLs and redirects). How a revalidation request reaches the route is in [revalidation.md](revalidation.md).
 
 ## The model
 

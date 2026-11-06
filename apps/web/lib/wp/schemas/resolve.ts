@@ -9,10 +9,10 @@ import { idSchema, slugSchema, typeSlugSchema } from "./common";
  * a `404` in the WordPress error shape (`wp-error.ts`).
  *
  * The schema has `additionalProperties: false`. As for the revalidation
- * request (ADR 0010, amended 2026-11-05), there are two variants with the same
- * rules for every known key: the strict mirror for the conformance tests, and
- * the reader the data layer parses with, which drops a key it does not know,
- * so a CMS a deploy ahead that adds a field breaks nothing.
+ * request (ADR 0010), there are two variants with the same rules for every
+ * known key: the strict mirror for the conformance tests, and the reader the
+ * data layer parses with, which drops a key it does not know, so a CMS a
+ * deploy ahead that adds a field breaks nothing.
  */
 const resolveResponseShape = {
   id: idSchema,

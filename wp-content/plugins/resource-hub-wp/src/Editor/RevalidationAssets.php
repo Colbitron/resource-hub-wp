@@ -15,7 +15,7 @@ use ResourceHub\Revalidation\ResultStore;
 
 /**
  * Loads `build/editor/revalidation-feedback.js` on the block editor for the post types in
- * {@see ResultStore::POST_TYPES}, `resource` and `page`, and no other (ADR 0018). The script polls
+ * {@see ResultStore::POST_TYPES}, `resource` and `page`, and no other. The script polls
  * the post's `rh_last_revalidation` field after a save and puts the outcome in a `core/notices`
  * notice, in the sentences {@see ResultText::sentences()} hands it. The REST route it polls comes
  * from each post type's own `rest_base` ({@see RevalidationAssets::rest_paths()}), so the list of

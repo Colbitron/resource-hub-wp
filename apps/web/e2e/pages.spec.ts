@@ -4,21 +4,20 @@ import { mockCms } from "./mock-cms/client.mts";
 import { appSiteOrigin, E2E_REVALIDATE_SECRET, mockCmsOrigin, mockCmsPort } from "./mock-cms/config.mts";
 
 /**
- * The CMS's pages on the front end (root `CLAUDE.md`, "Pages"; ADR 0052)
- * against the built app and the mock CMS: `/` as the welcome page while no
- * front page is set and as the static front page once one is; every other
- * published page at its parent chain; the redirect contract (one computed
- * 308 for the front page's own slug and a moved page's old path, stored by
- * ISR and sent with the `headers()` rule's `Cache-Control`; the proxy's
- * `no-store` 308 for an upper-case letter); what ISR stores and what a page
- * event clears (ADR 0052's 2026-11-06 amendment: the welcome page and the
- * front page at `/`, a stored 308 at `/welcome/` and at a moved page's old
- * path, a stored 404 at a path a page is then published at); the 404s (a
- * draft, a wrong parent whose slug two pages share, the posts page, a
- * reserved first segment and a dotted segment, the last two without a CMS
- * request); the `pages` tag's freshness; the Chromium round trip that a
- * browser-kept redirect would fail; and that nothing of the CMS reaches the
- * HTML.
+ * The CMS's pages on the front end (ADR 0052; `packages/ui/README.md`) against
+ * the built app and the mock CMS: `/` as the welcome page while no front page
+ * is set and as the static front page once one is; every other published page
+ * at its parent chain; the redirect contract (one computed 308 for the front
+ * page's own slug and a moved page's old path, stored by ISR and sent with the
+ * `headers()` rule's `Cache-Control`; the proxy's `no-store` 308 for an
+ * upper-case letter); what ISR stores and what a page event clears (ADR 0052
+ * and `docs/architecture/caching.md`: the welcome page and the front page at
+ * `/`, a stored 308 at `/welcome/` and at a moved page's old path, a stored
+ * 404 at a path a page is then published at); the 404s (a draft, a wrong
+ * parent whose slug two pages share, the posts page, a reserved first segment
+ * and a dotted segment, the last two without a CMS request); the `pages` tag's
+ * freshness; the Chromium round trip that a browser-kept redirect would fail;
+ * and that nothing of the CMS reaches the HTML.
  *
  * Changes to the mock are followed by the page event the CMS would send,
  * because the app's Data Cache does not see the mock change (e2e/README.md).
@@ -248,7 +247,7 @@ test.describe("pages at their paths", () => {
     // From the proxy, never the route: Next.js keys a stored entry by the decoded path, and a
     // case-insensitive file system shares the key between `/About/` and `/about/`, so a
     // mixed-case request that reached the route first would store its 308 at the canonical
-    // path's own key (measured, ADR 0052's 2026-11-06 amendment).
+    // path's own key (measured; see `docs/architecture/caching.md`).
     await expectRedirect(await get(request, `/About/${TEAM.slug}/`), `/${ABOUT.slug}/${TEAM.slug}/`, "/About/team/", "proxy");
     await expectRedirect(await get(request, `/${ABOUT.slug}/Team/`), `/${ABOUT.slug}/${TEAM.slug}/`, "/about/Team/", "proxy");
     await expectRedirect(await get(request, `/%41bout/${TEAM.slug}/`), `/${ABOUT.slug}/${TEAM.slug}/`, "/%41bout/team/", "proxy");

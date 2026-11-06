@@ -38,10 +38,11 @@ export interface MockResponse {
 const JSON_HEADERS = { "Content-Type": "application/json; charset=UTF-8" };
 
 /**
- * ADR 0023: anonymous REST responses the front end reads must not be cached
- * between it and the CMS. The plugin's filter sends this on every response
- * from `/wp/v2/resources`, the taxonomy routes and `/resource-hub/v1/`,
- * errors included, so the mock does too (`covered()`).
+ * Anonymous REST responses the front end reads must not be cached between it
+ * and the CMS (ADR 0043; the header is in `packages/ui/README.md`). The
+ * plugin's filter sends this on every response from `/wp/v2/resources`, the
+ * taxonomy routes and `/resource-hub/v1/`, errors included, so the mock does
+ * too (`covered()`).
  */
 const NO_CACHE = "no-cache, must-revalidate, max-age=0";
 
@@ -590,7 +591,8 @@ function resolve(state: MockState, url: URL): MockResponse {
 // --- /resource-hub/v1/related/{id} --------------------------------------------------
 
 /**
- * The plugin's related route (ADRs 0020, 0021, 0030): `count` is an integer
+ * The plugin's related route, which is not built yet (issue #50): the mock
+ * answers by the contract in `packages/ui/README.md`. `count` is an integer
  * from 1 to 10, default 3, checked by core's schema validation; an ID that is
  * not a published resource is a 404; the merge is `MockState.related()`.
  */

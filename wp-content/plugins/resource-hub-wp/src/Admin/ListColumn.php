@@ -14,7 +14,7 @@ use WP_Screen;
 
 /**
  * Shows each resource's or page's last revalidation result in a few words plus its time, for the
- * saves that never open the block editor: bulk actions, the trash and Quick Edit (ADR 0018). One
+ * saves that never open the block editor: bulk actions, the trash and Quick Edit. One
  * class for every post type in {@see ResultStore::POST_TYPES}, since each list saves the same way.
  * Hidden by default through `default_hidden_columns`; Screen Options turns it on. It never prints
  * the response body.

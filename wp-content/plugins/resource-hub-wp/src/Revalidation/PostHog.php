@@ -10,11 +10,16 @@ declare(strict_types=1);
 namespace ResourceHub\Revalidation;
 
 /**
- * Sends one anonymous `revalidation_result` event per batch to PostHog when both constants are set (ADR 0032).
+ * Sends one anonymous `revalidation_result` event per batch to PostHog when both constants are set.
  *
  * It is the only record of a force delete's or a term delete's outcome, and the only history: meta
  * keeps the last result per object. The request has the same 3-second timeout as the send, its
  * response is ignored, and nothing retries it: logging must never become a second thing that can fail.
+ *
+ * Rejected sinks: an option or a custom table (storage that grows without bound, and a table needs raw
+ * SQL), a log file (no filesystem writes at runtime), and logging on the front end only, because the
+ * front end cannot record a request that never reached it, such as a timeout or a missing
+ * configuration. Sampling and rollups for high volume are tracked in issue #17.
  */
 final class PostHog {
 	/**
@@ -89,7 +94,7 @@ final class PostHog {
 		$host = (string) wp_parse_url( home_url(), PHP_URL_HOST );
 		$site = '' !== $host ? $host : 'unknown';
 
-		// Anonymous, with no person profile: the "person" would be the server (ADR 0032).
+		// Anonymous, with no person profile: the "person" would be the server.
 		$body = array(
 			'api_key'     => $this->key,
 			'event'       => self::EVENT,
