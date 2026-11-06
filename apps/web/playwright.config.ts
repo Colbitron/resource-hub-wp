@@ -28,7 +28,8 @@ const MOCK_PORT = mockCmsPort();
 // a silently reused server may be another checkout's build or mock, or one
 // started with different settings, and the run would test that instead.
 // RH_E2E_REUSE=1 opts in while iterating on a spec; harness.spec.ts then
-// checks that the mock answering is this checkout's (`/__mock/health`).
+// checks that the mock answering is this checkout's (`/__mock/health`) and
+// that the app is this checkout's current build (`/fixtures/app-identity/`).
 const reuseExistingServer = process.env.RH_E2E_REUSE === "1" && !process.env.CI;
 
 // The screenshot project exists only when a browser server is given: the
