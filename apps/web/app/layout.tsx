@@ -55,6 +55,9 @@ export function generateMetadata(): Metadata {
 // stylesheet, because only the browser knows whether script runs: without
 // it the control can never show, so its slot in the footer is removed
 // rather than kept invisible (lib/theme.ts, `THEME_NOSCRIPT_STYLE`).
+//
+// These two are the app's only `dangerouslySetInnerHTML`, each a constant
+// built from no input (test/dangerous-html.test.ts holds that).
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={figtree.variable} suppressHydrationWarning>

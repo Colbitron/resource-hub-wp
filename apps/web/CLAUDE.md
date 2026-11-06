@@ -5,7 +5,7 @@ The front end of the project, at `apps/web/`. The root `CLAUDE.md` holds what ap
 ## Hard constraints
 
 - **The CMS URL never reaches the browser.** `WP_API_URL` is server-only (never `NEXT_PUBLIC_`), every CMS request happens on the Next.js server, every CMS URL in rendered output is rewritten, and no error message names the CMS origin (ADR 0040). This reduces exposure; it is not a security boundary.
-- **Never `dangerouslySetInnerHTML`.** CMS HTML goes through `renderContent`, the one server-side pass in `lib/content/render.tsx`, which renders React nodes from an allow-list, strips the CMS domain from links, rewrites images to `/media/…` and hands the block marker to `renderBlock`. kses is no guard, because editors have `unfiltered_html`. The one `dangerouslySetInnerHTML` in the app is the theme's head script in `app/layout.tsx`: a constant from `lib/theme.ts`, built from no input, never CMS HTML.
+- **Never `dangerouslySetInnerHTML`.** CMS HTML goes through `renderContent`, the one server-side pass in `lib/content/render.tsx`, which renders React nodes from an allow-list, strips the CMS domain from links, rewrites images to `/media/…` and hands the block marker to `renderBlock`. kses is no guard, because editors have `unfiltered_html`. The two `dangerouslySetInnerHTML` uses are in `app/layout.tsx`: the theme's head script and the `<noscript>` style rule beside it, both constants exported from `lib/theme.ts`, built from no input, never CMS HTML.
 
 ## What it is
 
