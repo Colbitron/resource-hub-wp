@@ -5,8 +5,8 @@ import { expect, test } from "@playwright/test";
  * that shows every shared token, every component and the states between
  * them (focus, selected filters, pagination's ends, an empty listing): at
  * 360 and 1280 px, in the light and the dark scheme, with reduced motion;
- * and, for each, a crop of the focused link and its ring, compared with no
- * tolerance. A change to a token, a component's markup or its CSS moves
+ * and, for each, a crop of the focused link and its ring, compared with a
+ * tolerance of a few pixels. A change to a token, a component's markup or its CSS moves
  * pixels here, so every design change shows its cost as a diff in review.
  *
  * Only the `screenshots` project runs this file, and that project only
@@ -23,6 +23,13 @@ const WIDTHS = [360, 1280] as const;
 const SCHEMES = ["light", "dark"] as const;
 /** Pixels around the focused link's box in its own shot: the ring's 2 px offset and 3 px width, and a band of surface. */
 const FOCUS_MARGIN = 10;
+/**
+ * Differing pixels the focus ring's crop may have: room for a glyph edge or
+ * the ring's rounded corner to anti-alias a pixel apart between amd64
+ * emulation on Apple silicon (where the baselines were made) and CI's
+ * native amd64, and far under the 440 pixels a ring one pixel narrower moves.
+ */
+const FOCUS_MAX_DIFF_PIXELS = 10;
 
 for (const width of WIDTHS) {
   for (const colorScheme of SCHEMES) {
@@ -59,10 +66,10 @@ for (const width of WIDTHS) {
         // diff written, when the whole page differs.
         await expect.soft(page).toHaveScreenshot(`specimen-${width}-${colorScheme}.png`, { fullPage: true });
 
-        // The focus ring alone, compared with no tolerance at all: its
-        // colour (`--rh-color-focus`), width (`--rh-focus-width`) and offset
-        // are a few hundred pixels of a page of millions, under any useful
-        // tolerance for the whole page. The crop is the link's box grown by
+        // The focus ring alone, compared with a tolerance of
+        // FOCUS_MAX_DIFF_PIXELS: its colour (`--rh-color-focus`), width
+        // (`--rh-focus-width`) and offset are a few hundred pixels of a page
+        // of millions, under any useful tolerance for the whole page. The crop is the link's box grown by
         // FOCUS_MARGIN on every side, enough for the 2 px offset, the ring
         // and a band of the surface around it, so a wider or further ring
         // moves pixels inside it.
@@ -77,7 +84,7 @@ for (const width of WIDTHS) {
             width: Math.ceil(box.width + 2 * FOCUS_MARGIN),
             height: Math.ceil(box.height + 2 * FOCUS_MARGIN),
           },
-          maxDiffPixels: 0,
+          maxDiffPixels: FOCUS_MAX_DIFF_PIXELS,
           threshold: 0,
         });
       });

@@ -78,6 +78,9 @@ export default defineConfig({
             // test-results/ must survive for the upload. Gitignored, and
             // uploaded beside test-results/ on a failure.
             outputDir: "./test-results-screenshots",
+            // No retry, in CI either: a difference that comes and goes must
+            // fail the gate and be looked at, not pass on a second attempt.
+            retries: 0,
             // threshold 0: any change in a pixel's colour counts that pixel as
             // different. The default 0.2 let the accent move from #1f4f8f to
             // #2a5a9a unnoticed, which is the kind of change this gate exists
@@ -92,7 +95,7 @@ export default defineConfig({
             // the old 0.1% allowed about 9,600 and 3,750 pixels). Measured then:
             // the accent mutation above differs in 26,093 and 35,741 pixels, and
             // a 3 px focus ring drawn at 2 px in 732. The focus ring has its
-            // own shot at no tolerance at all (specimen.screenshot.ts).
+            // own shot at 10 pixels (specimen.screenshot.ts).
             // Under QEMU emulation one full-page shot of the specimen takes a few
             // seconds, and toHaveScreenshot needs two; the default 5 s is too short.
             expect: { toHaveScreenshot: { timeout: 30_000, threshold: 0, maxDiffPixels: 50 } },
