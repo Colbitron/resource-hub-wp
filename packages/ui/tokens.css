@@ -34,14 +34,16 @@
 	/*
 	 * The five brand accents, for small marks only (a dot beside a printed
 	 * type name), never text and never a text background: in the light
-	 * scheme lemon, coral and mint sit under 3:1 against the surface.
-	 * Cobalt, lemon and mint are lifted a step in the dark scheme.
+	 * scheme lemon, coral and mint sit under 3:1 against the surface, and
+	 * grape against the raised surface.
+	 * Cobalt, lemon and mint are lifted a step in the dark scheme; coral and
+	 * grape have one brand value, written twice so every colour is a pair.
 	 */
-	--rh-mark-coral: #ee6358;
+	--rh-mark-coral: light-dark(#ee6358, #ee6358);
 	--rh-mark-cobalt: light-dark(#4056d6, #8a98f0);
 	--rh-mark-lemon: light-dark(#d8ad2e, #efc34a);
 	--rh-mark-mint: light-dark(#1fa97d, #35c498);
-	--rh-mark-grape: #9d78e0;
+	--rh-mark-grape: light-dark(#9d78e0, #9d78e0);
 
 	/*
 	 * Type. One typeface, Figtree, for everything. Each consumer loads the

@@ -14,7 +14,7 @@
  *
  * It also pins the shape DESIGN.md relies on: every token is declared once,
  * in the one `:root` block, so no scoped override can carry a value this
- * test never measured; every colour is written with `light-dark()` and
+ * test never measured; every colour, the marks included, is written with `light-dark()` and
  * `color-scheme: light dark` is set, so a consumer's theme choice can set
  * `color-scheme` on <html>; and a `prefers-color-scheme` media query, which
  * that choice could not override, is refused.
@@ -204,8 +204,8 @@ describe( 'tokens.css colour', () => {
 	it( 'declares every colour with light-dark() and sets color-scheme, with no media query', () => {
 		assert.match( css, /:root\s*\{[^}]*color-scheme:\s*light dark;/ );
 		assert.doesNotMatch( css, /prefers-color-scheme/ );
-		const colourTokens = [ ...declarations.keys() ].filter( ( name ) => name.startsWith( '--rh-color-' ) );
-		assert.ok( colourTokens.length >= 8 );
+		const colourTokens = [ ...declarations.keys() ].filter( ( name ) => /^--rh-(color|mark)-/.test( name ) );
+		assert.ok( colourTokens.length >= 13 );
 		for ( const name of colourTokens ) {
 			assert.match( declarations.get( name ), /^light-dark\(/, `${ name } is not a light-dark() pair` );
 		}
