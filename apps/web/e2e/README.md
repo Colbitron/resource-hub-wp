@@ -108,7 +108,8 @@ Control requests are never counted, so the counters show what the app did. Every
 - `harness.spec.ts`: that the mock answering is this checkout's.
 - `a11y.spec.ts`: the axe scan above.
 - `specimen.spec.ts`: that every token the specimen shows has a value on the page (which tokens it shows, `SPECIMEN_TOKENS`, is checked against `tokens.css` by `test/specimen-tokens.test.ts`); the shell, the filters with a type and a topic selected, a card of each type, pagination in the middle and at both ends, prose, the resource, CMS page, welcome and 404 components; that its copy of the listing's empty state is the same markup as the real empty listing's; that its images load, nothing scrolls sideways at 360 px, and it passes the same axe scan.
-- `specimen.screenshot.ts`: the pixel baselines above, full pages and focus-ring crops, in the `screenshots` project only.
+- `font-swap.spec.ts`: that loading Figtree late moves nothing: with the font file held back two seconds, the resource page and a listing at 360 px, each with a long bold title, are measured from the first paint until after the file lands (CLS at most 0.05 and no heading changing height, which a re-wrapped line would), and an undelayed page is drawn in Figtree (CDP's `CSS.getPlatformFontsForNode`), so `display: optional` (`app/fonts.ts`) never drops the face for everyone.
+- `specimen.screenshot.ts`: the pixel baselines above, full pages and focus-ring crops, in the `screenshots` project only. It loads the specimen twice, so the captured load always takes Figtree from the browser's cache.
 
 ## Fixture pages
 

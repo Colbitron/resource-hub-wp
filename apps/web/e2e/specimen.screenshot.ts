@@ -38,6 +38,12 @@ for (const width of WIDTHS) {
       test.use({ viewport: { width, height: 800 }, colorScheme });
 
       test("the specimen matches its baseline", async ({ page }) => {
+        // Figtree is `display: optional` (app/fonts.ts): a file that misses
+        // its short block period, which emulation can make it do, leaves the
+        // page in the fallback face for good. One load first puts the file in
+        // the browser's cache, so the captured load always draws Figtree.
+        await page.goto(SPECIMEN_PATH);
+        await page.evaluate(() => document.fonts.ready.then(() => undefined));
         await page.goto(SPECIMEN_PATH);
         // Every card image is eager; wait until each has decoded, and for the
         // fonts, so the capture never catches a half-loaded page.
