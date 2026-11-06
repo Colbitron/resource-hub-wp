@@ -8,9 +8,10 @@ import "./theme-toggle.css";
  * The theme control's markup: a native `<fieldset>` with a `<legend>` and
  * one radio per choice, System, Light and Dark, each with an inline icon and
  * a visible word. Presentational: `ThemeToggle` renders it live, with the
- * stored choice and a handler, and the design specimen renders it in each
- * state with no handler. The stylesheet is imported here, by the component
- * that renders the markup (`packages/ui/DESIGN.md`).
+ * stored choice and `setTheme`, and the design specimen renders it in each
+ * state with a handler that does nothing (`StillThemeFieldset`). The
+ * stylesheet is imported here, by the component that renders the markup
+ * (`packages/ui/DESIGN.md`).
  *
  * Why native radios and not a cycling button or a menu: the platform gives
  * the group, the single selection, the arrow keys and the announcements for
@@ -36,8 +37,10 @@ import "./theme-toggle.css";
  * `value` is `null` while the choice is not known: on the server, and on
  * the client until hydration has read storage. Then no option is checked
  * and the group is invisible but keeps its space, so nothing shifts when it
- * appears, and without JavaScript it never appears, which is right, since
- * the choice could not be applied; the page follows the system preference.
+ * appears. Without JavaScript it never appears, which is right, since the
+ * choice could not be applied, and the page follows the system preference;
+ * a `<noscript>` style in the root layout then removes the header's slot for
+ * it, so no empty space is kept (`THEME_NOSCRIPT_STYLE` in `lib/theme.ts`).
  */
 
 export interface ThemeFieldsetProps {
@@ -45,8 +48,15 @@ export interface ThemeFieldsetProps {
   name: string;
   /** The checked option, or `null` while unknown. */
   value: ThemeChoice | null;
-  /** Called with the option the reader picked. Without it the radios are uncontrolled, for the specimen. */
-  onChange?: (choice: ThemeChoice) => void;
+  /**
+   * Called with the option the reader picked. The radios are always
+   * controlled, so `value` alone decides which is checked: a handler that
+   * does nothing leaves the group as it is. A function cannot cross from a
+   * Server Component to the client, so the parent that passes it must be a
+   * client component (`ThemeToggle`, or the specimen's `StillThemeFieldset`);
+   * this file has no `"use client"` of its own and becomes client code there.
+   */
+  onChange: (choice: ThemeChoice) => void;
 }
 
 const LABELS: Record<ThemeChoice, string> = {
@@ -93,7 +103,8 @@ export function ThemeFieldset({ name, value, onChange }: ThemeFieldsetProps) {
               name={name}
               id={inputId}
               value={choice}
-              {...(onChange ? { checked, onChange: () => onChange(choice) } : { defaultChecked: checked })}
+              checked={checked}
+              onChange={() => onChange(choice)}
             />
             <label className="rh-theme__label" htmlFor={inputId}>
               <svg className="rh-theme__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

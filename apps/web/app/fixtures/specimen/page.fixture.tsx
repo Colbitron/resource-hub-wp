@@ -8,7 +8,6 @@ import { PageArticle } from "@/components/PageArticle";
 import { Pagination } from "@/components/Pagination";
 import { ResourceArticle } from "@/components/ResourceArticle";
 import { ResourceCard, type ResourceCardProps } from "@/components/ResourceCard";
-import { ThemeFieldset } from "@/components/ThemeFieldset";
 import { WelcomePage } from "@/components/WelcomePage";
 import { renderContent } from "@/lib/content/render";
 import { cmsUrls } from "@/lib/env";
@@ -30,6 +29,7 @@ import {
   SPACE_TOKENS,
   TEXT_SIZE_TOKENS,
 } from "./tokens";
+import { StillThemeFieldset } from "./StillThemeFieldset";
 
 // The listing's own styles (filters, pagination, the empty state), which
 // ListingPage imports for the real routes; every other component brings its
@@ -439,7 +439,7 @@ export default function SpecimenFixturePage() {
           <p>The header&rsquo;s control with each option checked. These copies change nothing; the header&rsquo;s is live.</p>
           <div className="rh-specimen__themes">
             {THEME_CHOICES.map((choice) => (
-              <ThemeFieldset key={choice} name={`specimen-theme-${choice}`} value={choice} />
+              <StillThemeFieldset key={choice} name={`specimen-theme-${choice}`} value={choice} />
             ))}
           </div>
         </div>

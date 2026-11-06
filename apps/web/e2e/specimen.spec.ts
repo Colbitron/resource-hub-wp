@@ -61,6 +61,19 @@ test("shows the theme control with each option checked, and the header's live on
   const live = page.getByRole("banner").getByRole("group", { name: "Theme" });
   await expect(live).toBeVisible();
   await expect(live.getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
+
+  // The copies are inert: a click or an arrow key on one leaves its state, the
+  // page's theme and storage as they were.
+  const systemCopy = states.nth(0);
+  await systemCopy.getByRole("radio", { name: "Dark theme", exact: true }).click();
+  await expect(systemCopy.getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
+  await expect(systemCopy.getByRole("radio", { name: "Dark theme", exact: true })).not.toBeChecked();
+  await states.nth(1).getByRole("radio", { name: "Light theme", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(states.nth(1).getByRole("radio", { name: "Light theme", exact: true })).toBeChecked();
+  await expect(page.locator("html")).not.toHaveAttribute("data-theme");
+  expect(await page.evaluate(() => localStorage.getItem("rh-theme"))).toBeNull();
+  await expect(live.getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
 });
 
 test("shows pagination in the middle and at both ends", async ({ page }) => {
