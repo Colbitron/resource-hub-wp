@@ -1,0 +1,19 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "page",
+			"event": "update",
+			"id": 15,
+			"path": "/company/team/",
+			"previous": { "path": "/about/team/" }
+		},
+		{
+			"type": "page",
+			"event": "update",
+			"id": 12,
+			"path": "/",
+			"previous": { "path": "/home/" }
+		}
+	]
+}

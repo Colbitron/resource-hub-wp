@@ -1,0 +1,12 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "page",
+			"event": "publish",
+			"id": 15,
+			"path": "/about/team/",
+			"previous": { "path": "/team/" }
+		}
+	]
+}

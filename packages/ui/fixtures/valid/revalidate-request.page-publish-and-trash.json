@@ -1,0 +1,29 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "page",
+			"event": "publish",
+			"id": 15,
+			"path": "/about/team/",
+			"previous": null
+		},
+		{
+			"type": "page",
+			"event": "trash",
+			"id": 12,
+			"path": "/",
+			"previous": null
+		},
+		{
+			"type": "resource",
+			"event": "update",
+			"id": 123,
+			"slug": "example",
+			"rest_url": "https://cms.example/wp-json/wp/v2/resources/123",
+			"types": [ "webinar" ],
+			"topics": [ "performance" ],
+			"previous": { "slug": "example", "types": [ "webinar" ], "topics": [] }
+		}
+	]
+}

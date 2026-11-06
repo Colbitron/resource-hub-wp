@@ -12,6 +12,7 @@ import { sourceLink, type SourceLink } from "@/lib/source-link";
 import { toCard } from "@/lib/wp/cards";
 import { featuredImage, type FeaturedImage } from "@/lib/wp/images";
 
+import "./prose.css";
 import "./resource.css";
 
 /**
@@ -169,7 +170,7 @@ export function ResourceArticle({ rendered }: { rendered: RenderedResource }) {
         </div>
       )}
       {view.description !== null && <p className="rh-resource__summary">{view.description}</p>}
-      <div className="rh-resource__body">
+      <div className="rh-resource__body rh-prose">
         {/*
          * The related-resources block (ADR 0037): the pass finds the marker
          * and hands it to `renderBlock`, whose default renders the CMS's own

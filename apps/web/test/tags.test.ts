@@ -9,12 +9,14 @@ import { encodeHeaderSafe } from "next/dist/server/lib/encode-header-safe";
 import { describe, expect, it } from "vitest";
 
 import {
+  PAGES_TAG,
   RESOURCES_TAG,
   TERMS_TAG,
   eventsToInvalidations,
   flagListingTags,
   flagLookupTags,
   listingTags,
+  pageTags,
   relatedTags,
   resolveTags,
   resourceByIdTags,
@@ -24,6 +26,7 @@ import {
   termLookupTags,
   topicTag,
   typeTag,
+  type PageEvent,
   type ResourceEvent,
   type ResourceState,
   type RevalidationEvent,
@@ -31,6 +34,7 @@ import {
   type TermState,
 } from "../lib/tags";
 import {
+  pageEventSchema,
   resourceEventSchema,
   revalidateRequestSchema,
   termEventSchema,
@@ -83,10 +87,29 @@ function term(overrides: TermInput): TermEvent {
   });
 }
 
+interface PageInput {
+  readonly event: PageEvent["event"];
+  readonly id?: number;
+  readonly path?: string;
+  readonly previous?: { path: string } | null;
+}
+
+/** A page event, parsed by the route's reader schema so every test input is schema-valid. */
+function pageEvent(overrides: PageInput): PageEvent {
+  return pageEventSchema.parse({
+    type: "page",
+    id: 14,
+    path: "/about/team/",
+    previous: null,
+    ...overrides,
+  });
+}
+
 describe("tag builders", () => {
-  it("build the five tags", () => {
+  it("build the six tags", () => {
     expect(RESOURCES_TAG).toBe("resources");
     expect(TERMS_TAG).toBe("terms");
+    expect(PAGES_TAG).toBe("pages");
     expect(resourceTag("example")).toBe("resource:example");
     expect(topicTag("performance")).toBe("topic:performance");
     expect(typeTag("webinar")).toBe("type:webinar");
@@ -380,6 +403,43 @@ describe("eventsToInvalidations", () => {
     expect(eventsToInvalidations([])).toEqual({ tags: [], paths: [] });
   });
 
+  it("clears pages and the paths of both states for a page event, and nothing of the library's (ADR 0051)", () => {
+    expect(
+      eventsToInvalidations([
+        pageEvent({ event: "update", path: "/company/team/", previous: { path: "/about/team/" } }),
+      ]),
+    ).toEqual({ tags: ["pages"], paths: ["/about/team/", "/company/team/"] });
+    expect(eventsToInvalidations([pageEvent({ event: "publish", path: "/" })])).toEqual({
+      tags: ["pages"],
+      paths: ["/"],
+    });
+    for (const event of ["unpublish", "trash", "delete"] as const) {
+      expect(eventsToInvalidations([pageEvent({ event })])).toEqual({ tags: ["pages"], paths: ["/about/team/"] });
+    }
+  });
+
+  it("never lets a resource or term event clear pages, nor a page event clear resources or terms", () => {
+    const library = eventsToInvalidations([
+      resource({ event: "update", previous: { slug: "old", types: ["podcast"], topics: ["a"] } }),
+      term({ taxonomy: "resource_topic", event: "create" }),
+    ]);
+    expect(library.tags).not.toContain("pages");
+    expect(library.paths).not.toContain("/");
+    const pages = eventsToInvalidations([pageEvent({ event: "publish" })]);
+    expect(pages.tags).toEqual(["pages"]);
+  });
+
+  it("mixes page events into a batch with the others", () => {
+    const { tags, paths } = eventsToInvalidations([
+      resource({ event: "publish" }),
+      pageEvent({ event: "update", path: "/", previous: { path: "/home/" } }),
+    ]);
+    expect(tags).toEqual(["pages", "resource:example", "resources", "topic:performance", "type:webinar"]);
+    expect(paths).toContain("/");
+    expect(paths).toContain("/home/");
+    expect(paths).toContain("/resources/webinar/example/");
+  });
+
   it("deduplicates and sorts across a full 25-event batch", () => {
     const events: RevalidationEvent[] = [];
     for (let i = 1; i <= 23; i++) {
@@ -556,6 +616,10 @@ describe("fetch tags (ADR 0046)", () => {
   it("tag resolve with resources and the filter bar's taxonomy lists with resources and terms", () => {
     expect(resolveTags()).toEqual(["resources"]);
     expect(taxonomyListTags()).toEqual(["resources", "terms"]);
+  });
+
+  it("tag a page lookup and a page read with pages only (ADR 0051)", () => {
+    expect(pageTags()).toEqual(["pages"]);
   });
 });
 

@@ -2,7 +2,7 @@ import "server-only";
 
 import { notFound, permanentRedirect } from "next/navigation";
 
-import { canonicalSlug, isSlug, isTypeSlug, resourcePath } from "./routes";
+import { canonicalSlug, isCanonicalSegment, isSlug, isTypeSlug, resourcePath } from "./routes";
 import { resourceType } from "./wp/cards";
 import { resolveSlug } from "./wp/resolve";
 import { getResourceBySlug } from "./wp/resources";
@@ -36,7 +36,7 @@ import type { WpResource } from "./wp/schemas/rest";
  *   character Next.js decodes in params, `encodeURIComponent`'s unescaped set
  *   `A-Z a-z 0-9 - _ . ! ~ * ' ( )` (`slugProblem` refuses a slug with one). Next.js's normalisation of the target therefore
  *   only upper-cases the hex of its escapes, which `isCanonicalSegment`
- *   ignores, so the request for the target is found and rendered, or is a
+ *   (`lib/routes.ts`) ignores, so the request for the target is found and rendered, or is a
  *   404 when the CMS's answers disagree (a stale cached miss beside resolve).
  *   It never redirects again. `test/redirects.test.ts` checks this as a
  *   property over thousands of generated slugs and requests.
@@ -89,29 +89,6 @@ export interface ResourceRequestOptions {
 }
 
 const NOT_FOUND: ResourceRequestDecision = { kind: "not-found" };
-
-/** `segment` without its percent escapes, so the hex of `%E6` is not read as a letter. */
-function outsideEscapes(segment: string): string {
-  return segment.replace(/%[0-9A-Fa-f]{2}/g, "");
-}
-
-/**
- * True when `segment`, as Next.js hands it to the page, is the canonical
- * form `canonical` (from `canonicalSlug`). Next.js normalises a path segment
- * before the page sees it: escapes of `encodeURIComponent`'s unescaped set
- * (`A-Z a-z 0-9 - _ . ! ~ * ' ( )`) are decoded (`%52esource` arrives as
- * `Resource`, `arti%27cle` as `arti'cle`) and the hex of every other escape is
- * upper-cased (`%e6%97%a5` and `%E6%97%A5` both arrive as `%E6%97%A5`), so the
- * page cannot tell those two requests apart and must treat both as canonical,
- * or the redirect to the lower-case form would loop. A stored slug never holds
- * an escape Next.js decodes (`slugProblem`), so the decoding cannot turn a
- * canonical target into a different slug. What it can see, and
- * redirects, is an upper-case ASCII letter outside an escape, and any other
- * difference once both sides are in canonical form (a wrong type segment).
- */
-function isCanonicalSegment(segment: string, canonical: string): boolean {
-  return !/[A-Z]/.test(outsideEscapes(segment)) && canonicalSlug(segment) === canonical;
-}
 
 /**
  * The decision for the request `/resources/{typeSegment}/{slugSegment}/`,

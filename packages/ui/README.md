@@ -13,8 +13,9 @@ Every schema and every property carries a `description` that states what the val
 | `schemas/revalidate-response-error.schema.json` | The `400`, `401` and `500` replies: `{ "error": "…" }`; `401` is exactly `unauthorized` |
 | `schemas/related-response.schema.json` | `GET /wp-json/resource-hub/v1/related/{id}?count=n`: related resource IDs with the reason each was picked |
 | `schemas/resolve-response.schema.json` | `GET /wp-json/resource-hub/v1/resolve?slug=…`: an old or current slug to the resource's canonical id, type and slug |
+| `schemas/page-response.schema.json` | `GET /wp-json/resource-hub/v1/page?path=…`: the published page the front end serves at a public path, with its canonical path, or `null` |
 | `schemas/wp-error.schema.json` | The WordPress core REST error shape both custom routes return for `400` and `404` |
-| `schemas/common.schema.json` | Shared `$defs` the others reference: `id`, `slug`, `typeSlug`, `topicSlug`, `typeList`, `topicList`, `path` |
+| `schemas/common.schema.json` | Shared `$defs` the others reference: `id`, `slug`, `typeSlug`, `topicSlug`, `typeList`, `topicList`, `path`, `pagePath` |
 
 The bearer token on the revalidation request is a header and is not part of any schema. The stylesheets the package also holds are described under [Stylesheets](#stylesheets).
 
@@ -26,7 +27,11 @@ The bearer token on the revalidation request is a header and is not part of any 
 
 **`previous` is non-null only and always on `update`.** It holds the slug, type and topics (for a term event, the slug and name) from before the save, so the front end can also revalidate the listings and URL the item just left. When the resource's earlier types were not exactly one, as on the save that gives its one type to a resource saved outside the REST API, `previous.types` carries the current type in their place, with `previous.slug` and `previous.topics` kept ([ADR 0016](../../docs/adr/0016-previous-state-on-update.md)). For every other event it is `null`: `publish` and `create` have no earlier public state, and the removal events already describe the last public state in the top-level fields.
 
-**The front end groups events.** `publish` and `update` mean refresh; `unpublish`, `trash` and `delete` mean remove, where its refetch of the resource returns nothing and the page becomes a 404. For every event it revalidates the union of the paths and cache tags implied by the current and the `previous` state. The tags are `resources`, `resource:{slug}`, `topic:{slug}` and `type:{slug}`.
+**The front end groups events.** `publish` and `update` mean refresh; `unpublish`, `trash` and `delete` mean remove, where its refetch of the resource returns nothing and the page becomes a 404. For every event it revalidates the union of the paths and cache tags implied by the current and the `previous` state. The tags are `resources`, `resource:{slug}`, `topic:{slug}` and `type:{slug}` for resource and term events, and `pages` for page events.
+
+**A page event is about a public path.** `{ "type": "page", "event", "id", "path", "previous": { "path" } | null }` describes a WordPress page (post type `page`) the front end serves ([ADR 0052](../../docs/adr/0052-the-front-end-renders-the-cms-pages.md)): `path` is the page's public path in the state the event concerns, `/` for the static front page (Settings > Reading), else its parent chain and slug with a trailing slash (`/about/team/`, the `pagePath` definition). The five event names mean what they mean for a resource, and `previous` is set on `update` only, with the path before the save: a slug or parent change, and a page becoming or ceasing to be the front page (an `update` between its own path and `/`), are updates. A parent's move or rename sends no event for its children, whose paths also changed; the front end clears one `pages` tag for every page lookup and read, so they follow. Posts send no events, and the front end never serves them. Events are deduplicated per page ID like resource events.
+
+**A page lookup is answered for the current state.** `GET /wp-json/resource-hub/v1/page?path=…` answers the static front page for `/`, else the published page whose parent chain is the path, else the one published page that has the last segment as its slug now (a page moved under another parent); unpublished pages, the posts page (`page_for_posts`) and an ambiguous slug are `null`. The answer's `path` is the page's canonical path now, `/` for the front page, so the front end redirects when it differs from what it asked for. A miss is a 200 with `page: null`, not a 404, so the front end's Data Cache keeps it. A top-level page is never slugged `resources`, `api`, `media` or `_next`, the front end's own first segments: WordPress gives such a slug a suffix on save, and the front end answers such a path with a 404 without asking.
 
 **A resource has exactly one type.** `types` is a one-element array because the type is a URL segment and a resource has one canonical URL. The array form keeps the field the same shape as `topics`.
 
@@ -58,6 +63,8 @@ Both sides mirror this; it is not schema-validated. Every path has a trailing sl
 
 | Path | Lists |
 |---|---|
+| `/` | The static front page, or the front end's welcome page when none is set |
+| `/[page]/…/` | A published WordPress page at its parent chain |
 | `/resources/` | Everything |
 | `/resources/[type]/` | One type |
 | `/resources/topic/[topic]/` | One topic |

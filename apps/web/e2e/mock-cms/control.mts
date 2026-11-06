@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { FaultError, parseFault } from "./faults.mts";
 import { buildId } from "./identity.mts";
 import { isTaxonomy, MockError, type MockState } from "./state.mts";
-import type { CreateResourceInput, HealthResponse, RenameTermInput, ResourceStatus } from "./types.mts";
+import type { CreatePageInput, CreateResourceInput, HealthResponse, PageStatus, RenameTermInput, ResourceStatus } from "./types.mts";
 import type { MockResponse } from "./rest.mts";
 
 /**
@@ -70,6 +70,36 @@ function parseCreate(body: unknown): CreateResourceInput {
     sourceUrl: optionalString(body, "sourceUrl"),
     content: optionalString(body, "content"),
     mediaId: body.mediaId as number | null | undefined,
+  };
+}
+
+const PAGE_STATUSES: readonly PageStatus[] = ["publish", "draft", "trash"];
+
+function optionalInteger(body: Record<string, unknown>, key: string): number | undefined {
+  const value = body[key];
+  if (value === undefined) return undefined;
+  if (!Number.isInteger(value) || (value as number) < 0) throw new MockError(422, `${key} must be a non-negative integer.`);
+  return value as number;
+}
+
+function parsePageStatus(value: unknown): PageStatus {
+  if (typeof value !== "string" || !(PAGE_STATUSES as readonly string[]).includes(value)) {
+    throw new MockError(422, `status must be one of ${PAGE_STATUSES.join(", ")}.`);
+  }
+  return value as PageStatus;
+}
+
+function parseCreatePage(body: unknown): CreatePageInput {
+  if (!isRecord(body)) throw new MockError(422, "The body must be a JSON object.");
+  const title = optionalString(body, "title");
+  if (title === undefined) throw new MockError(422, "title is needed.");
+  return {
+    title,
+    slug: optionalString(body, "slug"),
+    parent: optionalInteger(body, "parent"),
+    content: optionalString(body, "content"),
+    excerpt: optionalString(body, "excerpt"),
+    status: body.status === undefined ? undefined : parsePageStatus(body.status),
   };
 }
 
@@ -151,6 +181,50 @@ export function handleControl(state: MockState, method: string, url: URL, body: 
           }
           return json(200, state.summarise(state.setPicks(id, picks as number[])));
         }
+      }
+    }
+
+    if (method === "POST" && path === "/front-page") {
+      if (!isRecord(body) || !("pageId" in body)) throw new MockError(422, "pageId is needed: a page ID, or null.");
+      const pageId = body.pageId;
+      if (pageId !== null && !Number.isInteger(pageId)) throw new MockError(422, "pageId must be an integer or null.");
+      return json(200, state.setFrontPage(pageId as number | null));
+    }
+    if (method === "POST" && path === "/pages") {
+      return json(201, state.summarisePage(state.createPage(parseCreatePage(body))));
+    }
+    match = /^\/pages\/(\d+)$/.exec(path);
+    if (match && method === "DELETE") {
+      state.deletePage(Number(match[1]));
+      return json(200, { deleted: true });
+    }
+    match = /^\/pages\/(\d+)\/(title|slug|parent|content|status)$/.exec(path);
+    if (match && method === "POST") {
+      const id = Number(match[1]);
+      if (!isRecord(body)) throw new MockError(422, "The body must be a JSON object.");
+      switch (match[2]) {
+        case "title": {
+          const title = optionalString(body, "title");
+          if (title === undefined) throw new MockError(422, "title is needed.");
+          return json(200, state.summarisePage(state.setPageTitle(id, title)));
+        }
+        case "slug": {
+          const slug = optionalString(body, "slug");
+          if (slug === undefined) throw new MockError(422, "slug is needed.");
+          return json(200, state.summarisePage(state.setPageSlug(id, slug)));
+        }
+        case "parent": {
+          const parent = optionalInteger(body, "parent");
+          if (parent === undefined) throw new MockError(422, "parent is needed.");
+          return json(200, state.summarisePage(state.setPageParent(id, parent)));
+        }
+        case "content": {
+          const content = optionalString(body, "content");
+          if (content === undefined) throw new MockError(422, "content is needed.");
+          return json(200, state.summarisePage(state.setPageContent(id, content)));
+        }
+        case "status":
+          return json(200, state.summarisePage(state.setPageStatus(id, parsePageStatus(body.status))));
       }
     }
 

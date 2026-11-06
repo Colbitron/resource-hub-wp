@@ -1,10 +1,14 @@
 import { mockCmsOrigin } from "./config.mts";
 import type {
   ControlError,
+  CreatePageInput,
   CreateResourceInput,
   FaultInput,
   FaultSummary,
+  FrontPageSetting,
   HealthResponse,
+  PageStatus,
+  PageSummary,
   RenameTermInput,
   RequestCounts,
   ResourceStatus,
@@ -130,6 +134,48 @@ export class MockCmsClient {
   /** Deletes the term and removes it from every resource. */
   async deleteTerm(taxonomy: Taxonomy, id: number): Promise<void> {
     await this.control<{ deleted: true }>("DELETE", `/__mock/terms/${taxonomy}/${id}`);
+  }
+
+  // --- Pages (ADR 0052) --------------------------------------------------------------
+
+  /** Settings > Reading: a page ID makes it the static front page; `null` sets the site to show posts. */
+  setFrontPage(pageId: number | null): Promise<FrontPageSetting> {
+    return this.control<FrontPageSetting>("POST", "/__mock/front-page", { pageId });
+  }
+
+  createPage(input: CreatePageInput): Promise<PageSummary> {
+    return this.control<PageSummary>("POST", "/__mock/pages", input);
+  }
+
+  setPageTitle(id: number, title: string): Promise<PageSummary> {
+    return this.control<PageSummary>("POST", `/__mock/pages/${id}/title`, { title });
+  }
+
+  /** Changes the slug; unlike a resource's, no old slug is kept, as core keeps none for pages. */
+  setPageSlug(id: number, slug: string): Promise<PageSummary> {
+    return this.control<PageSummary>("POST", `/__mock/pages/${id}/slug`, { slug });
+  }
+
+  /** Moves the page under another parent (0 for the top level), which changes its path and its children's. */
+  setPageParent(id: number, parent: number): Promise<PageSummary> {
+    return this.control<PageSummary>("POST", `/__mock/pages/${id}/parent`, { parent });
+  }
+
+  setPageContent(id: number, content: string): Promise<PageSummary> {
+    return this.control<PageSummary>("POST", `/__mock/pages/${id}/content`, { content });
+  }
+
+  setPageStatus(id: number, status: PageStatus): Promise<PageSummary> {
+    return this.control<PageSummary>("POST", `/__mock/pages/${id}/status`, { status });
+  }
+
+  async deletePage(id: number): Promise<void> {
+    await this.control<{ deleted: true }>("DELETE", `/__mock/pages/${id}`);
+  }
+
+  /** `GET /wp-json/resource-hub/v1/page?path=…`. */
+  lookupPage(path: string): Promise<PublicResponse> {
+    return this.get(`/wp-json/resource-hub/v1/page?path=${encodeURIComponent(path)}`);
   }
 
   // --- Public routes, as the front end would call them ---------------------------------

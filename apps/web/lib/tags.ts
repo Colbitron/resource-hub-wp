@@ -3,8 +3,8 @@
  * revalidation batch invalidates (root `CLAUDE.md`, "Revalidation request" and
  * "Public URLs"; ADRs 0014 to 0017, 0043 and 0046).
  *
- * The tags are `resources`, `terms`, `resource:{slug}`, `topic:{slug}` and
- * `type:{slug}`. Every fetch in the data layer carries the ones the functions
+ * The tags are `resources`, `terms`, `resource:{slug}`, `topic:{slug}`,
+ * `type:{slug}` and `pages`. Every fetch in the data layer carries the ones the functions
  * under "Fetch tags" below give it, fixed before the request from the URL and
  * its parameters, never from the response, so a miss is tagged too. The
  * revalidate route clears what `eventsToInvalidations` returns, the tags with
@@ -36,6 +36,13 @@
  *   library, the other listings, the resource pages and the filter bar, none of
  *   which the event can name. `resources` stays because the resolve route
  *   answers with the resource's type slug, which a type rename changes.
+ *
+ * - A page event (ADR 0051): `pages` and the path named at the top level and in
+ *   `previous`. `pages` is on every page lookup and every page read: a
+ *   parent's move or rename changes the paths of every page below it without an
+ *   event for each, so one tag for every page is what reaches them, and the
+ *   site has few pages. A page event clears nothing of the library's, and no
+ *   resource or term event clears `pages`.
  *
  * Only term events produce `terms`. Tagging every fetch `resources` instead
  * would have done the same for term events, but then every resource event
@@ -69,6 +76,8 @@ import {
   type ListingFilter,
 } from "./routes";
 import type {
+  PageEvent,
+  PageState,
   ResourceEvent,
   ResourceState,
   RevalidationEvent,
@@ -76,7 +85,7 @@ import type {
   TermState,
 } from "./wp/schemas/revalidate";
 
-export type { ResourceEvent, ResourceState, RevalidationEvent, TermEvent, TermState };
+export type { PageEvent, PageState, ResourceEvent, ResourceState, RevalidationEvent, TermEvent, TermState };
 
 /**
  * The tag every event clears: on the library listing, resolve, the related
@@ -86,6 +95,9 @@ export const RESOURCES_TAG = "resources";
 
 /** The tag only term events clear: on every fetch that embeds or lists terms. */
 export const TERMS_TAG = "terms";
+
+/** The tag only page events clear: on every page lookup and every page read (ADR 0051). */
+export const PAGES_TAG = "pages";
 
 /** `resource:{slug}`, on the fetches for one resource. Throws a `RangeError` on a bad slug. */
 export function resourceTag(slug: string): string {
@@ -216,6 +228,16 @@ export function taxonomyListTags(): string[] {
   return [RESOURCES_TAG, TERMS_TAG];
 }
 
+/**
+ * A page lookup by path (`/resource-hub/v1/page`) and a page read by ID
+ * (`/wp/v2/pages/{id}`), a miss included: `pages`. The lookup's answer can
+ * change with any page event, including one for an ancestor whose move or
+ * rename changed this path, which no per-page tag could name.
+ */
+export function pageTags(): string[] {
+  return [PAGES_TAG];
+}
+
 /** What a batch invalidates: tags for `revalidateTag`, paths for `revalidatePath`. */
 export interface Invalidations {
   /** Deduplicated and sorted. */
@@ -273,6 +295,14 @@ export function eventsToInvalidations(events: readonly RevalidationEvent[]): Inv
   const tags = new Set<string>();
   const paths = new Set<string>();
   for (const event of events) {
+    if (event.type === "page") {
+      tags.add(PAGES_TAG);
+      paths.add(event.path);
+      if (event.previous !== null) {
+        paths.add(event.previous.path);
+      }
+      continue;
+    }
     tags.add(RESOURCES_TAG);
     if (event.type === "resource") {
       addResourceState(event, tags, paths);

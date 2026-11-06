@@ -3,6 +3,7 @@ import { z } from "zod";
 import { typeSlugProblem } from "../../routes";
 import {
   idSchema,
+  pagePathSchema,
   pathSchema,
   slugSchema,
   topicListSchema,
@@ -197,12 +198,39 @@ function buildRequestSchemas(unknownKeys: UnknownKeys) {
       }
     });
 
+  /** `$defs/pageState`: where a page is served. */
+  const pageState = object({
+    path: pagePathSchema,
+  });
+
   /**
-   * One event in a batch, told apart by `type`. The schema's `oneOf` over the two
-   * shapes can match at most one branch, since `type` is a different constant in
-   * each, so a discriminated union accepts the same events.
+   * `$defs/pageEvent` (ADR 0051): the five event names of a resource event,
+   * the page's ID and public path, and `previous` on `update` only, as for the
+   * other two shapes.
    */
-  const event = z.discriminatedUnion("type", [resourceEvent, termEvent]);
+  const pageEvent = z.discriminatedUnion("event", [
+    object({
+      type: z.literal("page"),
+      id: idSchema,
+      path: pagePathSchema,
+      event: z.literal("update"),
+      previous: pageState,
+    }),
+    object({
+      type: z.literal("page"),
+      id: idSchema,
+      path: pagePathSchema,
+      event: z.enum(["publish", "unpublish", "trash", "delete"]),
+      previous: z.null(),
+    }),
+  ]);
+
+  /**
+   * One event in a batch, told apart by `type`. The schema's `oneOf` over the
+   * three shapes can match at most one branch, since `type` is a different
+   * constant in each, so a discriminated union accepts the same events.
+   */
+  const event = z.discriminatedUnion("type", [resourceEvent, termEvent, pageEvent]);
 
   /** The request body: `version` 1 and a batch of 1 to 25 events. */
   const request = object({
@@ -213,7 +241,7 @@ function buildRequestSchemas(unknownKeys: UnknownKeys) {
       .max(25, { error: "must contain at most 25 events" }),
   });
 
-  return { resourceState, resourceEvent, termState, termEvent, event, request };
+  return { resourceState, resourceEvent, termState, termEvent, pageState, pageEvent, event, request };
 }
 
 const strictRequest = buildRequestSchemas("strict");
@@ -236,6 +264,8 @@ export const resourceStateSchema = readerRequest.resourceState;
 export const resourceEventSchema = readerRequest.resourceEvent;
 export const termStateSchema = readerRequest.termState;
 export const termEventSchema = readerRequest.termEvent;
+export const pageStateSchema = readerRequest.pageState;
+export const pageEventSchema = readerRequest.pageEvent;
 export const revalidationEventSchema = readerRequest.event;
 
 /** The `200` reply: every path the batch revalidated. */
@@ -256,6 +286,8 @@ export type ResourceState = z.infer<typeof resourceStateSchema>;
 export type ResourceEvent = z.infer<typeof resourceEventSchema>;
 export type TermState = z.infer<typeof termStateSchema>;
 export type TermEvent = z.infer<typeof termEventSchema>;
+export type PageState = z.infer<typeof pageStateSchema>;
+export type PageEvent = z.infer<typeof pageEventSchema>;
 export type RevalidationEvent = z.infer<typeof revalidationEventSchema>;
 export type RevalidateRequest = z.infer<typeof revalidateRequestSchema>;
 export type RevalidateResponseOk = z.infer<typeof revalidateResponseOkSchema>;

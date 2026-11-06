@@ -8,6 +8,9 @@
  *   them is `…/page/{n}/`, and page 1 has no `page` segment, so every listing
  *   page has one URL.
  * - `/resources/{type}/{slug}/` is a single resource.
+ * - `/` is the CMS's static front page, and `/{segment}/…/` any other published
+ *   WordPress page at its parent chain (ADR 0051). The first segment is never
+ *   one of `RESERVED_ROOT_SEGMENTS`, the front end's own routes.
  * - Every path ends with a slash (`trailingSlash: true`), as on the CMS.
  * - `topic` and `page` are route segments, so they are never a type slug.
  *
@@ -292,4 +295,106 @@ export function typeTopicListingPath(type: string, topic: string, page = 1): str
 /** `/resources/{type}/{slug}/`, a single resource's canonical path. */
 export function resourcePath(type: string, slug: string): string {
   return `${LIBRARY}${typeSegment(type)}/${slugSegment("resource", slug)}/`;
+}
+
+/*
+ * Pages (ADR 0051): the root and every published WordPress page at its path.
+ */
+
+/** The site's root: the CMS's static front page, or the welcome page when none is set. */
+export const ROOT_PATH = "/";
+
+/**
+ * The first path segments the front end's own routes use, which a page path
+ * can never start with: the library and its listings, the route handlers, the
+ * uploads rewrite and the framework's assets. The plugin keeps the same list
+ * (`ReservedPageSlugs`) and gives a top-level page asking for one a suffix,
+ * as core does for `embed`; a page saved before that rule is a 404 here,
+ * decided without a request.
+ */
+export const RESERVED_ROOT_SEGMENTS = ["resources", "api", "media", "_next"] as const;
+
+/** True for a canonical first segment the front end's routes own, so no page is served under it. */
+export function isReservedRootSegment(value: string): boolean {
+  return (RESERVED_ROOT_SEGMENTS as readonly string[]).includes(value.toLowerCase());
+}
+
+/**
+ * Why `value` cannot be one segment of a page's path, or `null` when it can:
+ * it must be a slug (`slugProblem`) without a `.`, which WordPress's
+ * `sanitize_title` turns into `-`, so no stored page slug has one. That rules
+ * out `favicon.ico`, `robots.txt` and the like before any request.
+ */
+export function pageSegmentProblem(value: string): string | null {
+  const problem = slugProblem(value);
+  if (problem !== null) {
+    return problem;
+  }
+  return value.includes(".") ? "must not contain a dot, which WordPress never stores in a slug" : null;
+}
+
+/** True for a segment that can be part of a page's path: see `pageSegmentProblem`. */
+export function isPageSegment(value: string): boolean {
+  return pageSegmentProblem(value) === null;
+}
+
+/**
+ * `/{segment}/…/` for a page's parent chain and slug, each segment in
+ * canonical form; `/` for no segments. Throws a `RangeError` on a segment
+ * that cannot be one (`pageSegmentProblem`) or a reserved first segment, so
+ * a caller checks untrusted segments first.
+ */
+export function pagePath(segments: readonly string[]): string {
+  if (segments.length === 0) {
+    return ROOT_PATH;
+  }
+  const canonical = segments.map((segment) => {
+    const problem = pageSegmentProblem(segment);
+    if (problem !== null) {
+      throw new RangeError(`Not a valid page path segment (${problem}): ${JSON.stringify(segment)}`);
+    }
+    return canonicalSlug(segment);
+  });
+  if (isReservedRootSegment(canonical[0])) {
+    throw new RangeError(`A page path cannot start with a reserved segment: ${JSON.stringify(canonical[0])}`);
+  }
+  return `${ROOT_PATH}${canonical.join("/")}/`;
+}
+
+/**
+ * The segments of a page path as the CMS writes it (`/about/team/`), or
+ * `null` when it is not one: `/` gives `[]`; anything without the leading and
+ * trailing slash, with an empty segment or with whitespace is `null`.
+ */
+export function pagePathSegments(path: string): string[] | null {
+  if (path === ROOT_PATH) {
+    return [];
+  }
+  if (!/^\/(?:[^/\s]+\/)+$/u.test(path)) {
+    return null;
+  }
+  return path.slice(1, -1).split("/");
+}
+
+/** `segment` without its percent escapes, so the hex of `%E6` is not read as a letter. */
+function outsideEscapes(segment: string): string {
+  return segment.replace(/%[0-9A-Fa-f]{2}/g, "");
+}
+
+/**
+ * True when `segment`, as Next.js hands it to a page, is the canonical form
+ * `canonical` (from `canonicalSlug`). Next.js normalises a path segment
+ * before the page sees it: escapes of `encodeURIComponent`'s unescaped set
+ * (`A-Z a-z 0-9 - _ . ! ~ * ' ( )`) are decoded (`%52esource` arrives as
+ * `Resource`, `arti%27cle` as `arti'cle`) and the hex of every other escape is
+ * upper-cased (`%e6%97%a5` and `%E6%97%A5` both arrive as `%E6%97%A5`), so the
+ * page cannot tell those two requests apart and must treat both as canonical,
+ * or the redirect to the lower-case form would loop. A stored slug never holds
+ * an escape Next.js decodes (`slugProblem`), so the decoding cannot turn a
+ * canonical target into a different slug. What it can see, and
+ * redirects, is an upper-case ASCII letter outside an escape, and any other
+ * difference once both sides are in canonical form (a wrong type segment).
+ */
+export function isCanonicalSegment(segment: string, canonical: string): boolean {
+  return !/[A-Z]/.test(outsideEscapes(segment)) && canonicalSlug(segment) === canonical;
 }

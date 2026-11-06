@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   isReservedTypeSlug,
+  pagePathSegments,
   RESERVED_TYPE_SLUG_MESSAGE,
   RESERVED_TYPE_SLUGS,
   slugProblem,
@@ -123,3 +124,13 @@ export const pathSchema = z
   .regex(/^\/(?!\/)\S*$/u, {
     error: "must start with a single slash and contain no whitespace",
   });
+
+/**
+ * `$defs/pagePath`: a WordPress page's public path, `/` or `/a/b/` with
+ * non-empty segments holding no slash and no whitespace (ADR 0051). Exactly
+ * the schema's rule, through `pagePathSegments`; the page reader
+ * (`lib/wp/schemas/page.ts`) is stricter, since it builds a route from it.
+ */
+export const pagePathSchema = z.string().refine((value) => pagePathSegments(value) !== null, {
+  error: "must be / or segments between slashes, each non-empty with no whitespace",
+});

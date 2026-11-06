@@ -1,0 +1,46 @@
+---
+status: accepted
+date: 2026-11-06
+---
+
+# The front end renders the CMS's pages: the static front page at `/` and every published page at its path
+
+Until now the front end served the library alone, and `/` was a hard-coded sentence. The owner's decision is that the front end is a portal to the CMS: `/` shows the WordPress static front page (Settings > Reading, `show_on_front=page` and `page_on_front`), and every other published WordPress page (post type `page`, hierarchy included) is served at its own path, `/about/`, `/about/team/`, with the trailing slash, by a catch-all route. Posts are never served, drafts and private pages never, and the CMS's own theme pages stay a 404 for anonymous visitors ([ADR 0031](0031-cms-theme-pages-are-for-logged-in-users.md)). Three things had to be settled that are hard to change afterwards: how the front end learns the page tree, how the front end's own routes and the CMS's pages share one URL space, and how a page change reaches the front end through the contract. The behaviour that follows from them (precedence, redirects, the front page at its own slug, tags) is in the root `CLAUDE.md` contract section, `apps/web/CLAUDE.md` and the plugin's `CLAUDE.md`.
+
+## How the front end learns the page tree: one plugin route, by path, answering 200 for a miss
+
+Core REST shows anonymous readers neither `page_on_front` (`/wp/v2/settings` needs `manage_options`) nor a lookup by full path (`/wp/v2/pages?slug=` matches the last segment only, whatever the parent). The plugin adds `GET /resource-hub/v1/page?path=…`, public like its other routes, which answers `{ "page": { "id", "path" } | null }` (`page-response.schema.json`): for `/`, the static front page when one is set and published; otherwise the page whose parent chain is the path (`get_page_by_path()`), or else the one published page that has the last segment as its slug now, which is a page moved under another parent, and the same guess core makes in `redirect_guess_404_permalink()`; two such pages are ambiguous and nothing is answered. The answer carries the page's canonical path now, so the front end redirects when that differs from what it asked for, with the same computed single-hop 308 and `Cache-Control: no-store` as a resource ([ADRs 0025](0025-redirects-are-computed-308s-with-no-store.md), [0035](0035-type-paths-with-a-computed-no-store-308.md)), and reads the page with core's `GET /wp/v2/pages/{id}` when it is the same. The front page's own path is answered as `/`, so it has one URL.
+
+A miss is a 200 with `page: null`, not a 404, unlike the resolve route ([ADR 0029](0029-old-slugs-resolve-through-core.md)). The front end's Data Cache stores only 200s, and the root with no front page set, which is the hosted CMS's state today, and every path a crawler tries would otherwise reach the CMS on every request; a cached miss is cleared by the next page event like any hit.
+
+## One URL space: the front end's routes win, and the CMS keeps pages out of their way
+
+Static and dynamic routes win over a catch-all in the App Router, so `/resources/…` and `/api/revalidate/` never reach it, and the `/media/` rewrite runs before dynamic routes. A top-level page slugged `resources`, `api`, `media` or `_next` could therefore never be served. Both sides hold the same list: the front end answers such a first segment with a 404 without asking the CMS, and the plugin tells `wp_unique_post_slug()` the slug is taken for a page with no parent, so it is saved with a suffix (`resources-2`), the way core already treats `embed` and the feed names for hierarchical post types. A page saved before that rule is a 404 on the front end and nothing more; the CMS neither warns nor refuses, because a suffix on save is what core does with its own reserved slugs, and an editor sees the slug they got in the permalink panel.
+
+## The contract: a `page` event, and one `pages` tag
+
+A page change reaches the front end as a third event shape in the revalidation batch, `{ "type": "page", "event": "publish" | "update" | "unpublish" | "trash" | "delete", "id", "path", "previous": { "path" } | null }`, with the five event names of a resource event and the same `previous`-on-`update` rule ([ADRs 0015](0015-five-resource-events.md), [0016](0016-previous-state-on-update.md)). A page becoming the front page is an `update` from its own path to `/`, and one that stops being it an `update` from `/` to its own path, so Settings > Reading sends ordinary page events. The front end clears one tag, `pages`, carried by every page lookup and every page read, and the paths the event names. One tag rather than one per page because a parent's move or rename changes the paths of every page below it, which no event names, and because the site has few pages; a resource or term event never clears `pages`, and a page event never clears anything of the library's.
+
+A new event `type` is not additive under the CMS-first deploy order ([ADR 0010](0010-contract-as-json-schema-in-a-shared-package.md), amended 2026-11-05): the front end answers a type it does not read with a 400, which would lose the whole batch. So the change lands in two pull requests in the reverse order: first the schema, the plugin's route and the front end, whose revalidate route accepts `page` events before any are sent; then the plugin's hooks that send them. Between the two, a page change reaches the front end through the hourly interval ([ADR 0049](0049-data-layer-fetch-policy.md)).
+
+## Considered options
+
+- **Core's `/wp/v2/settings` or the REST index for the front page.** The settings endpoint is for administrators, and the index does not carry `page_on_front`. Rejected.
+- **A fixed slug for the home page (`home`).** Editors could not choose it in WordPress's own setting. Rejected.
+- **Returning the whole page from the plugin route.** Duplicates core's pages controller and would need a second reader for the same shape. Rejected: IDs and paths only, as the related route returns IDs ([ADR 0021](0021-related-route-returns-ids-only.md)).
+- **Several core requests to walk the parent chain from the front end.** One request per level on every page view, with the chain's rules duplicated outside PHPUnit. Rejected.
+- **A 404 for a miss, as the resolve route answers.** Every view of `/` without a front page, and every crawler probe, would reach the CMS. Rejected; the resolve route is unchanged, since changing it is its own contract change.
+- **A wrong-parent request redirecting whenever the last slug is unique, or never.** Never would leave every moved page a 404 and ignore the guess core itself makes; always would need to answer two pages that share a slug under different parents. The unique case redirects, the ambiguous case is a 404.
+- **A per-page cache tag (`page:{id}` or by path).** A parent move changes descendants' paths without an event for each, so the lookups could not be cleared. Rejected for one `pages` tag.
+- **Sending page changes as a new top-level key in the batch instead of a new event type.** The old front end would drop the key silently and record the batch as sent, and a batch with no resource or term events would still fail `minItems`. Rejected: the two-pull-request order keeps the failure loud and short.
+- **Refusing a reserved page slug on save with an error, as a reserved type slug is refused.** A type slug is a URL segment the editor is asked to choose and has few of; a page slug is generated from the title, and core's own answer to a slug it cannot serve is a suffix. The suffix was chosen.
+- **A redirect from `/` to `/resources/` while no front page is set.** A permanent redirect from the root is hard to take back once browsers hold it, and a crawler should find a 200 at the root. The welcome page was chosen.
+
+## Consequences
+
+- `/` and every page path render on every request (`force-dynamic`, `connection()` first), for the reasons measured for the resource page in ADR 0035's amendment: a computed 308 must not be stored, and a route with no dynamic segment would otherwise be prerendered at build from a CMS the build must not need ([ADR 0050](0050-listings-are-isr-that-render-on-first-request.md)). The Data Cache sits behind the render.
+- Every URL no other route claims now reaches the catch-all and costs one page lookup, cached as a miss under `pages`. Its 404 is therefore decided by data, which on Next.js 16.4.5 is sent as the framework's empty error document with the not-found page arriving on hydration, where an unmatched URL used to get the prerendered not-found page in its HTML. That is the open follow-up in `apps/web/CLAUDE.md`, now covering every 404; `e2e/errors.spec.ts` pins it.
+- Core records old slugs (`_wp_old_slug`) for non-hierarchical post types only, so a renamed page's old path is a 404; a moved or renamed page's children are found by the guess when their slugs are unique.
+- The posts page (`page_for_posts`) is never served: it stands in for a posts listing the front end does not have.
+- `/wp/v2/pages` joins the routes whose anonymous responses carry the plugin's `no-cache` header ([ADR 0023](0023-next-data-cache-is-the-only-http-cache.md)).
+- The CMS lockdown is unchanged: the CMS's theme renders `/` and every page for logged-in users only ([ADR 0031](0031-cms-theme-pages-are-for-logged-in-users.md)).

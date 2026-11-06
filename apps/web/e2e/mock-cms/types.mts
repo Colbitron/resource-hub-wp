@@ -49,11 +49,35 @@ export interface MediaSummary {
   height: number | null;
 }
 
+/** A WordPress page's status, as `post_status`. */
+export type PageStatus = "publish" | "draft" | "trash";
+
+/** One page as `GET /__mock/state` summarises it (ADR 0052). */
+export interface PageSummary {
+  id: number;
+  slug: string;
+  parent: number;
+  status: PageStatus;
+  title: string;
+  /** The page's public path now: `/` when it is the front page, else its parent chain and slug. */
+  path: string;
+}
+
+/** Settings > Reading, as the options `show_on_front` and `page_on_front` hold them. */
+export interface FrontPageSetting {
+  showOnFront: "posts" | "page";
+  pageOnFront: number;
+}
+
 export interface StateSummary {
   origin: string;
   resources: ResourceSummary[];
   terms: TermSummary[];
   media: MediaSummary[];
+  pages: PageSummary[];
+  frontPage: FrontPageSetting;
+  /** `page_for_posts`: the page that stands in for the posts listing, never served by the front end. */
+  pageForPosts: number;
 }
 
 /** `POST /__mock/resources`: a new published resource. */
@@ -126,4 +150,22 @@ export interface FaultSummary {
 /** The body of every control error: a 4xx with a plain message. */
 export interface ControlError {
   error: string;
+}
+
+/** `POST /__mock/pages`: a new page, published unless `status` says otherwise. */
+export interface CreatePageInput {
+  title: string;
+  /** Defaults to the title slugified. */
+  slug?: string;
+  /** The parent page's ID; 0 or absent for a top-level page. */
+  parent?: number;
+  /** `content.rendered`; `{{origin}}` is replaced with the mock's origin. Default: one paragraph. */
+  content?: string;
+  excerpt?: string;
+  status?: PageStatus;
+}
+
+/** `POST /__mock/front-page`: `pageId` sets `show_on_front=page` and `page_on_front`; `null` sets `show_on_front=posts`. */
+export interface FrontPageInput {
+  pageId: number | null;
 }

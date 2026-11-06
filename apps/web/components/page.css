@@ -1,0 +1,23 @@
+/*
+ * A WordPress page (PageArticle) and the welcome page (WelcomePage): a title
+ * and a body in one column of `--rh-measure`, built on the shared tokens (ADR
+ * 0045). The body's element rules are `.rh-prose` in prose.css. These classes
+ * are the front end's own, not part of the contract.
+ */
+
+.rh-page {
+	max-width: var(--rh-measure);
+	overflow-wrap: break-word;
+}
+
+.rh-page__header {
+	margin-bottom: var(--rh-space-5);
+}
+
+.rh-page__title {
+	margin-bottom: var(--rh-space-3);
+}
+
+.rh-welcome {
+	padding: var(--rh-space-5) 0;
+}

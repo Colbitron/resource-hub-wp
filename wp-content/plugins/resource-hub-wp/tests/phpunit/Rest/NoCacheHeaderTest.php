@@ -98,9 +98,17 @@ final class NoCacheHeaderTest extends WP_UnitTestCase {
 	 * Every covered route answers an anonymous read with 200 and the header.
 	 */
 	public function test_anonymous_reads_get_the_header(): void {
+		$page   = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
 		$routes = array(
 			'/wp/v2/resources',
 			'/wp/v2/resources/' . $this->resource,
+			'/wp/v2/pages',
+			'/wp/v2/pages/' . $page,
 			'/' . NoCacheHeader::NAMESPACE . '/stand-in/1',
 		);
 

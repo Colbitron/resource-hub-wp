@@ -2,7 +2,7 @@
 	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"$id": "https://raw.githubusercontent.com/Colbitron/resource-hub-wp/main/packages/ui/schemas/revalidate-request.schema.json",
 	"title": "Revalidation request",
-	"description": "The JSON body WordPress POSTs to {FRONTEND_URL}/api/revalidate/ when resources or their terms change. The request also carries Authorization: Bearer {REVALIDATE_SECRET} and Content-Type: application/json headers, which are not part of this schema. One body is a batch: one WordPress PHP request (a single save, a bulk edit, a bulk trash) produces one batch, events within a batch are deduplicated per resource ID for resource events and per (taxonomy, term ID) for term events, each group becoming one event carrying the earliest previous state and the latest current state, and a batch that would exceed 25 events is split into several requests. The front end treats publish and update as refresh and unpublish, trash and delete as remove, revalidating the union of the paths and cache tags (resources, resource:{slug}, topic:{slug}, type:{slug}) implied by the current and previous state of every event.",
+	"description": "The JSON body WordPress POSTs to {FRONTEND_URL}/api/revalidate/ when resources or their terms change. The request also carries Authorization: Bearer {REVALIDATE_SECRET} and Content-Type: application/json headers, which are not part of this schema. One body is a batch: one WordPress PHP request (a single save, a bulk edit, a bulk trash) produces one batch, events within a batch are deduplicated per resource ID for resource events and per (taxonomy, term ID) for term events, each group becoming one event carrying the earliest previous state and the latest current state, and a batch that would exceed 25 events is split into several requests. The front end treats publish and update as refresh and unpublish, trash and delete as remove, revalidating the union of the paths and cache tags (resources, resource:{slug}, topic:{slug}, type:{slug}; pages for a page event) implied by the current and previous state of every event.",
 	"type": "object",
 	"properties": {
 		"version": {
@@ -10,12 +10,13 @@
 			"const": 1
 		},
 		"events": {
-			"description": "The changes this batch reports, in the order WordPress observed them. Between 1 and 25 events; each is a resource event or a term event, told apart by type.",
+			"description": "The changes this batch reports, in the order WordPress observed them. Between 1 and 25 events; each is a resource event, a term event or a page event, told apart by type.",
 			"type": "array",
 			"items": {
 				"oneOf": [
 					{ "$ref": "#/$defs/resourceEvent" },
-					{ "$ref": "#/$defs/termEvent" }
+					{ "$ref": "#/$defs/termEvent" },
+					{ "$ref": "#/$defs/pageEvent" }
 				]
 			},
 			"minItems": 1,
@@ -203,6 +204,63 @@
 					}
 				}
 			]
+		},
+		"pageState": {
+			"description": "Where a WordPress page is served: its public path. The one field the front end needs to name the path a page event concerns; the cache tag is the same (pages) for every page.",
+			"type": "object",
+			"properties": {
+				"path": {
+					"description": "The page's public path (common pagePath): / for the static front page, else its parent chain and slug.",
+					"$ref": "common.schema.json#/$defs/pagePath"
+				}
+			},
+			"required": [ "path" ],
+			"additionalProperties": false
+		},
+		"pageEvent": {
+			"description": "A change to one WordPress page (post type page) as the front end serves it: the page itself was published, saved, unpublished, trashed or deleted, or its public path changed because its slug or parent changed, or because it became or stopped being the static front page (Settings > Reading). The top-level path is the public state the event concerns: the path after the save for publish and update, the last public path for unpublish, trash and delete. A page that becomes the front page is an update from its own path to /; one that stops being it, an update from / to its own path. The front end clears the pages tag, which every page lookup and page read carries, and the paths named, so a parent move, which changes the paths of every descendant without an event for each, still reaches them. Posts never send events: the front end serves pages only.",
+			"type": "object",
+			"properties": {
+				"type": {
+					"description": "Marks a page event. The discriminator between the event shapes.",
+					"const": "page"
+				},
+				"event": {
+					"description": "What happened, with the same meanings as a resource event: publish (the page became public), update (a public page was saved, or its path changed, while staying public), unpublish (moved to draft, pending, private or scheduled), trash, delete (permanently deleted without passing through the trash).",
+					"type": "string",
+					"enum": [ "publish", "update", "unpublish", "trash", "delete" ]
+				},
+				"id": {
+					"description": "The page's post ID.",
+					"$ref": "common.schema.json#/$defs/id"
+				},
+				"path": {
+					"description": "The page's public path in the state this event concerns.",
+					"$ref": "common.schema.json#/$defs/pagePath"
+				},
+				"previous": {
+					"description": "On update only: the path before the save, so the front end can also revalidate the path the page just left. null for every other event.",
+					"oneOf": [
+						{ "type": "null" },
+						{ "$ref": "#/$defs/pageState" }
+					]
+				}
+			},
+			"required": [ "type", "event", "id", "path", "previous" ],
+			"additionalProperties": false,
+			"if": {
+				"type": "object",
+				"properties": { "event": { "const": "update" } },
+				"required": [ "event" ]
+			},
+			"then": {
+				"type": "object",
+				"properties": { "previous": { "$ref": "#/$defs/pageState" } }
+			},
+			"else": {
+				"type": "object",
+				"properties": { "previous": { "type": "null" } }
+			}
 		}
 	}
 }

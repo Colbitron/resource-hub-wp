@@ -618,7 +618,7 @@ describe("schema failures", () => {
 
   it.each([
     ["an unknown event name", { event: "archive", previous: null }, /events\[0\]/],
-    ["an unknown event type", { type: "page" }, /events\[0\]/],
+    ["an unknown event type", { type: "post" }, /events\[0\]/],
     ["a previous on publish", { event: "publish" }, /events\[0\]\.previous/],
     ["a reserved type slug", { types: ["topic"] }, /events\[0\]\.types\[0\] must not be "topic" or "page"/],
     ["two types", { types: ["webinar", "guide"] }, /events\[0\]\.types/],
@@ -656,7 +656,7 @@ describe("schema failures", () => {
 
   it.each([
     ["an unknown event name", { event: "archive", previous: null }, 'events[0].event must be "update", "publish", "unpublish", "trash" or "delete".'],
-    ["an unknown event type", { type: "page" }, 'events[0].type must be "resource" or "term".'],
+    ["an unknown event type", { type: "post" }, 'events[0].type must be "resource", "term" or "page".'],
     ["a string id", { id: "123" }, "events[0].id must be a number."],
     ["a fractional id", { id: 1.5 }, "events[0].id must be a whole number."],
     ["a zero id", { id: 0 }, "events[0].id must be at least 1."],
@@ -725,6 +725,28 @@ describe("a good batch", () => {
       ].map((tag) => [tag, { expire: 0 }]),
     );
     expect(revalidatePath.mock.calls).toEqual(paths.map((path) => [path]));
+  });
+
+  it("revalidates pages and the two paths of a page event (ADR 0051)", async () => {
+    const event = { type: "page", event: "update", id: 14, path: "/company/team/", previous: { path: "/about/team/" } };
+    const body = await okBody(await POST(request({ body: batch([event]) })));
+    expect(body).toEqual({ revalidated: ["/about/team/", "/company/team/"] });
+    expect(revalidateTag.mock.calls).toEqual([["pages", { expire: 0 }]]);
+    expect(revalidatePath.mock.calls).toEqual([["/about/team/"], ["/company/team/"]]);
+  });
+
+  it("refuses a page event with an unknown name or a bad path with a plain sentence", async () => {
+    await expectError(
+      await POST(request({ body: batch([{ type: "page", event: "move", id: 14, path: "/about/", previous: null }]) })),
+      400,
+      `${MISMATCH}events[0].event must be "update", "publish", "unpublish", "trash" or "delete".`,
+    );
+    await expectError(
+      await POST(request({ body: batch([{ type: "page", event: "publish", id: 14, path: "about/", previous: null }]) })),
+      400,
+      `${MISMATCH}events[0].path must be / or segments between slashes, each non-empty with no whitespace.`,
+    );
+    expect(revalidateTag).not.toHaveBeenCalled();
   });
 
   it("handles a term event and a removal, and drops unknown keys without a 400", async () => {

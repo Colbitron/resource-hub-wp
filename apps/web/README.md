@@ -39,6 +39,7 @@ All are server-only, read and validated in `lib/env.ts` when first used, never `
 
 - `/resources/`, `/resources/[type]/`, `/resources/topic/[topic]/` and `/resources/[type]/topic/[topic]/`, each paginated as `…/page/[n]/`: the listings, ISR routes rendered on their first request (ADR 0050), with a filter bar, a card grid and pagination from `components/ListingPage.tsx`. A mixed-case segment or a trailing `/page/1/` is redirected to the canonical URL by `proxy.ts` with a single-hop 308 and `Cache-Control: no-store` (ADR 0035).
 - `/resources/[type]/[slug]/`: the single resource, in a later pull request.
+- `/` and `/[page]/…/`: the CMS's static front page and every other published WordPress page at its parent chain, from the root catch-all `app/[[...path]]/page.tsx`, rendered on every request with the Data Cache behind it; a welcome page at `/` when no front page is set (ADR 0052).
 - `POST /api/revalidate/`: the on-demand revalidation route (ADR 0048).
 
 ## Status
