@@ -121,7 +121,7 @@ Both sides mirror this; it is not schema-validated. Every path has a trailing sl
 | `/resources/[type]/topic/[topic]/` | One type within one topic |
 | `/resources/[type]/[slug]/` | A single resource |
 
-The slug is the identity. On the front end, a wrong type segment, an old slug found through resolve, a wrong page parent or a non-canonical form redirects with a computed single-hop 308 that a browser is never allowed to keep; the CMS redirects no one, and its theme pages are a 404 for anonymous visitors, with `robots.txt` and `noindex, nofollow` on top ([ADR 0025](../../docs/adr/0025-redirects-are-computed-308s-with-no-store.md), [ADR 0031](../../docs/adr/0031-cms-theme-pages-are-for-logged-in-users.md)). `get_permalink()` stays absolute; the front end strips the CMS domain from every link in the HTML it renders.
+The slug is the identity. On the front end, a wrong type segment, an old slug found through resolve, a wrong page parent or a non-canonical form redirects with a computed single-hop 308 that a browser is never allowed to keep; the CMS redirects no one, and its theme pages are a 404 for anonymous visitors, with `robots.txt` and `noindex, nofollow` on top ([ADR 0025](../../docs/adr/0025-permanent-redirects-are-computed-and-never-kept-by-browsers.md), [ADR 0031](../../docs/adr/0031-cms-theme-pages-are-for-logged-in-users.md)). `get_permalink()` stays absolute; the front end strips the CMS domain from every link in the HTML it renders.
 
 ## Stylesheets
 
