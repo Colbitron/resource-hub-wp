@@ -15,7 +15,7 @@ use WP_Post;
 /**
  * Builds the revalidation components once per request and registers their hooks.
  *
- * The flow: {@see ResourceEvents} and {@see TermEvents} put events on the {@see Queue};
+ * The flow: {@see ResourceEvents}, {@see TermEvents} and {@see PageEvents} put events on the {@see Queue};
  * at `shutdown` the {@see Dispatcher} batches them and schedules a cron send; the cron callback
  * runs the {@see Sender}, the {@see ResultStore} and {@see PostHog}.
  */
@@ -49,6 +49,13 @@ final class Revalidation {
 	private TermEvents $term_events;
 
 	/**
+	 * Page and Settings > Reading hooks to events.
+	 *
+	 * @var PageEvents
+	 */
+	private PageEvents $page_events;
+
+	/**
 	 * Result storage and its REST field.
 	 *
 	 * @var ResultStore
@@ -69,6 +76,7 @@ final class Revalidation {
 		$this->queue           = new Queue();
 		$this->resource_events = new ResourceEvents( $this->queue );
 		$this->term_events     = new TermEvents( $this->queue );
+		$this->page_events     = new PageEvents( $this->queue );
 		$this->store           = new ResultStore();
 		$this->dispatcher      = new Dispatcher( $this->queue, new Sender(), $this->store, new PostHog() );
 	}
@@ -79,6 +87,7 @@ final class Revalidation {
 	public function register(): void {
 		$this->resource_events->register();
 		$this->term_events->register();
+		$this->page_events->register();
 		$this->dispatcher->register();
 		add_action( 'rest_api_init', array( $this->store, 'register_rest_fields' ) );
 

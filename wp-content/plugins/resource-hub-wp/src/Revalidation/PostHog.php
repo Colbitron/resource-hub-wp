@@ -127,7 +127,8 @@ final class PostHog {
 	}
 
 	/**
-	 * The fields that identify an event in PostHog: type, event, ID, slug, and the taxonomy for a term.
+	 * The fields that identify an event in PostHog: type, event, ID, the slug (the path for a page), and
+	 * the taxonomy for a term.
 	 *
 	 * @param array<string, mixed> $event The event.
 	 * @return array<string, mixed>
@@ -137,8 +138,13 @@ final class PostHog {
 			'type'  => $event['type'],
 			'event' => $event['event'],
 			'id'    => $event['id'],
-			'slug'  => $event['slug'],
 		);
+
+		if ( 'page' === $event['type'] ) {
+			$summary['path'] = $event['path'];
+		} else {
+			$summary['slug'] = $event['slug'];
+		}
 
 		if ( 'term' === $event['type'] ) {
 			$summary['taxonomy'] = $event['taxonomy'];
