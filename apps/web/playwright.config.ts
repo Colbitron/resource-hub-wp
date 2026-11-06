@@ -112,9 +112,11 @@ export default defineConfig({
     {
       // The fetch Data Cache is deleted between the build and the start, so no
       // entry outlives the process whose revalidated tags it would need
-      // (e2e/clear-fetch-cache.mts, e2e/README.md). RH_E2E_PREBUILT=1 skips
-      // the build and starts the one already in .next (config.mts, `prebuilt`).
-      command: `${prebuilt() ? "" : "pnpm exec next build && "}node e2e/clear-fetch-cache.mts && pnpm exec next start --port ${WEB_PORT}`,
+      // (e2e/clear-fetch-cache.mts, e2e/README.md). A build here is stamped
+      // (e2e/build-stamp.mts); RH_E2E_PREBUILT=1 skips the build and starts
+      // the one already in .next (config.mts, `prebuilt`) only when its stamp
+      // says it is this harness's build for these ports.
+      command: `${prebuilt() ? "node e2e/build-stamp.mts check" : "pnpm exec next build && node e2e/build-stamp.mts write"} && node e2e/clear-fetch-cache.mts && pnpm exec next start --port ${WEB_PORT}`,
       url: `http://localhost:${WEB_PORT}/`,
       reuseExistingServer,
       timeout: 180_000,
