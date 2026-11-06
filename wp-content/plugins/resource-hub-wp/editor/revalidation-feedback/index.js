@@ -24,12 +24,24 @@
  * refused for breaking the one-type rule, sent nothing, so the earlier save's
  * poll resumes.
  *
+ * Which saves are polled for: only those that sent something, which the
+ * server decides per post type. A resource sends an event when it was or is
+ * published (`ResourceEvents::derive()`, status alone). A page sends one only
+ * when it was or is served (`PageEvents::on_after_insert()`, through
+ * `PagePath::is_served()`): published, with no password, and not the posts
+ * page. `isServed()` below mirrors those two methods, with the posts page's ID
+ * handed over by PHP, so saving a password-protected page or the posts page
+ * waits for no answer that will never come.
+ *
  * Whether a `pending` is stale is judged with the server's clock, from the
  * REST response's `Date` header, never the browser's. The sentences come from
  * PHP (`ResultText::sentences()`), so every screen uses the same words.
  *
  * On load, a last result that is not a success is shown once. PHP enqueues
- * this only on the resource editor; the post-type check is a second guard.
+ * this only on the resource and page editors, and hands over the REST route
+ * of each post type it runs on (`restPaths`, from the post type's own
+ * `rest_base`), so the list of post types lives in PHP alone; a post type
+ * without a route here is a second guard, and the script does nothing for it.
  */
 import apiFetch from '@wordpress/api-fetch';
 import { dispatch, useSelect } from '@wordpress/data';
@@ -40,7 +52,6 @@ import { store as noticesStore } from '@wordpress/notices';
 import { registerPlugin } from '@wordpress/plugins';
 import { addQueryArgs } from '@wordpress/url';
 
-const POST_TYPE = 'resource';
 const FIELD = 'rh_last_revalidation';
 const NOTICE_ID = 'resource-hub-revalidation';
 const POLL_INTERVAL_MS = 1000;
@@ -54,6 +65,59 @@ const INVALID_SECRET = 'not_configured_invalid_secret';
 
 // Handed over by RevalidationAssets through wp_localize_script().
 const SENTENCES = window.resourceHubRevalidation?.sentences ?? {};
+// The REST route, without the ID, of each post type the notice runs on:
+// `{ resource: '/wp/v2/resources', page: '/wp/v2/pages' }`.
+const REST_PATHS = window.resourceHubRevalidation?.restPaths ?? {};
+// The posts page's ID while `show_on_front` is `page`, else 0, from
+// `PagePath::posts_page_id()`. wp_localize_script() hands it over as a string.
+const POSTS_PAGE_ID =
+	Number( window.resourceHubRevalidation?.postsPageId ) || 0;
+
+/**
+ * The REST route of a post type's objects, or null for a post type the
+ * notice does not run on.
+ *
+ * @param {string|undefined} postType The post type.
+ * @return {string|null} The route, without the ID.
+ */
+function restPathFor( postType ) {
+	const path =
+		typeof postType === 'string' &&
+		Object.prototype.hasOwnProperty.call( REST_PATHS, postType )
+			? REST_PATHS[ postType ]
+			: null;
+
+	return typeof path === 'string' && path !== '' ? path : null;
+}
+
+/**
+ * Whether the front end serves a post in the given state, so that a save
+ * which finds it served or leaves it served sends an event. Mirrors
+ * `ResourceEvents::derive()` for a resource (published) and
+ * `PagePath::is_served()` for a page (published, no password, not the posts
+ * page); any other post type sends nothing.
+ *
+ * @param {string|undefined} postType      The post type.
+ * @param {Object}           post          The post's saved state.
+ * @param {number|string}    post.id       The post's ID.
+ * @param {string|undefined} post.status   Its status.
+ * @param {string|undefined} post.password Its password, empty for none.
+ * @return {boolean} Whether it is served.
+ */
+function isServed( postType, { id, status, password } ) {
+	if ( status !== 'publish' ) {
+		return false;
+	}
+
+	switch ( postType ) {
+		case 'resource':
+			return true;
+		case 'page':
+			return ( password ?? '' ) === '' && Number( id ) !== POSTS_PAGE_ID;
+		default:
+			return false;
+	}
+}
 
 /**
  * A sentence from PHP, or an empty string when the script runs without them.
@@ -218,13 +282,14 @@ function notify( { status, message } ) {
  * Reads the post's record and the server's time from the response's `Date`
  * header.
  *
- * @param {number}      postId The post.
- * @param {AbortSignal} signal Aborts the request.
+ * @param {string}      restPath The post type's REST route, without the ID.
+ * @param {number}      postId   The post.
+ * @param {AbortSignal} signal   Aborts the request.
  * @return {Promise<{record: Object|null, serverNow: number}>} The record, if any, and the server's time.
  */
-async function fetchRecord( postId, signal ) {
+async function fetchRecord( restPath, postId, signal ) {
 	const response = await apiFetch( {
-		path: addQueryArgs( `/wp/v2/resources/${ postId }`, {
+		path: addQueryArgs( `${ restPath }/${ postId }`, {
 			context: 'edit',
 			_fields: FIELD,
 		} ),
@@ -265,13 +330,14 @@ function wait( ms, signal ) {
  * Polls the post's field until this save's record is no longer pending, or
  * the window closes, then shows it. Does nothing more once aborted.
  *
- * @param {Object}      save        The save to poll for.
- * @param {number}      save.postId The post.
- * @param {Object|null} save.known  The record the save response carried.
- * @param {number}      save.since  The saved post's `modified_gmt`, in milliseconds.
- * @param {AbortSignal} signal      Aborts the poll.
+ * @param {Object}      save          The save to poll for.
+ * @param {string}      save.restPath The post type's REST route, without the ID.
+ * @param {number}      save.postId   The post.
+ * @param {Object|null} save.known    The record the save response carried.
+ * @param {number}      save.since    The saved post's `modified_gmt`, in milliseconds.
+ * @param {AbortSignal} signal        Aborts the poll.
  */
-async function pollAfterSave( { postId, known, since }, signal ) {
+async function pollAfterSave( { restPath, postId, known, since }, signal ) {
 	let batch = null;
 	let latest = null;
 	let serverNow = NaN;
@@ -299,7 +365,7 @@ async function pollAfterSave( { postId, known, since }, signal ) {
 		}
 
 		try {
-			const read = await fetchRecord( postId, signal );
+			const read = await fetchRecord( restPath, postId, signal );
 			serverNow = read.serverNow;
 
 			if ( read.record && isThisSave( read.record ) ) {
@@ -330,15 +396,20 @@ async function pollAfterSave( { postId, known, since }, signal ) {
 }
 
 /**
- * Shows the last result when the editor opens a resource, unless it was a
- * success.
+ * Shows the last result when the editor opens a resource or a page, unless it
+ * was a success.
  *
- * @param {number}      postId The post.
- * @param {AbortSignal} signal Aborts the request.
+ * @param {string}      restPath The post type's REST route, without the ID.
+ * @param {number}      postId   The post.
+ * @param {AbortSignal} signal   Aborts the request.
  */
-async function showLastOnLoad( postId, signal ) {
+async function showLastOnLoad( restPath, postId, signal ) {
 	try {
-		const { record, serverNow } = await fetchRecord( postId, signal );
+		const { record, serverNow } = await fetchRecord(
+			restPath,
+			postId,
+			signal
+		);
 
 		if ( ! signal.aborted && record && record.status !== 'sent' ) {
 			notify( describe( record, serverNow ) );
@@ -355,25 +426,30 @@ async function showLastOnLoad( postId, signal ) {
  */
 function RevalidationFeedback() {
 	const {
-		isResource,
+		postType,
+		restPath,
 		postId,
 		isSaving,
 		isSilentSave,
 		saveSucceeded,
 		status,
+		password,
 		modifiedGmt,
 		known,
 	} = useSelect( ( select ) => {
 		const editor = select( editorStore );
+		const type = editor.getCurrentPostType();
 
 		return {
-			isResource: editor.getCurrentPostType() === POST_TYPE,
+			postType: type,
+			restPath: restPathFor( type ),
 			postId: editor.getCurrentPostId(),
 			isSaving: editor.isSavingPost(),
 			isSilentSave:
 				editor.isAutosavingPost() || editor.isPreviewingPost(),
 			saveSucceeded: editor.didPostSaveRequestSucceed(),
 			status: editor.getCurrentPostAttribute( 'status' ),
+			password: editor.getCurrentPostAttribute( 'password' ),
 			modifiedGmt: editor.getCurrentPostAttribute( 'modified_gmt' ),
 			known: editor.getCurrentPostAttribute( FIELD ) ?? null,
 		};
@@ -383,7 +459,8 @@ function RevalidationFeedback() {
 	const tracking = useRef( {
 		wasSaving: false,
 		silent: false,
-		statusBefore: '',
+		// Whether the post was served when the save started, as saved then.
+		servedBefore: false,
 		// The save whose poll had not finished when this save started.
 		interrupted: null,
 	} );
@@ -392,15 +469,15 @@ function RevalidationFeedback() {
 
 	// The last result, once per post.
 	useEffect( () => {
-		if ( ! isResource || ! postId ) {
+		if ( ! restPath || ! postId ) {
 			return undefined;
 		}
 
 		const controller = new AbortController();
-		showLastOnLoad( postId, controller.signal );
+		showLastOnLoad( restPath, postId, controller.signal );
 
 		return () => controller.abort();
-	}, [ isResource, postId ] );
+	}, [ restPath, postId ] );
 
 	// A save starting pauses the running poll. A save ending starts a poll of
 	// its own, or, when it starts none (it failed, or sent nothing), resumes
@@ -408,7 +485,7 @@ function RevalidationFeedback() {
 	useEffect( () => {
 		const track = tracking.current;
 
-		if ( ! isResource || isSaving === track.wasSaving ) {
+		if ( ! restPath || isSaving === track.wasSaving ) {
 			return;
 		}
 
@@ -416,7 +493,11 @@ function RevalidationFeedback() {
 
 		if ( isSaving ) {
 			track.silent = isSilentSave;
-			track.statusBefore = status;
+			track.servedBefore = isServed( postType, {
+				id: postId,
+				status,
+				password,
+			} );
 
 			if ( ! isSilentSave ) {
 				track.interrupted = running.current;
@@ -430,23 +511,32 @@ function RevalidationFeedback() {
 			return;
 		}
 
+		// The save sent an event if the post was served before it or is now.
 		const touchesPublic =
-			track.statusBefore === 'publish' || status === 'publish';
+			track.servedBefore ||
+			isServed( postType, { id: postId, status, password } );
 		const interrupted = track.interrupted;
 		track.interrupted = null;
 
 		if ( touchesPublic && saveSucceeded ) {
-			setSave( { postId, known, since: serverTime( modifiedGmt ) } );
+			setSave( {
+				restPath,
+				postId,
+				known,
+				since: serverTime( modifiedGmt ),
+			} );
 		} else if ( interrupted ) {
 			// A new object, so the poll effect runs again for the same save.
 			setSave( { ...interrupted } );
 		}
 	}, [
-		isResource,
+		postType,
+		restPath,
 		isSaving,
 		isSilentSave,
 		saveSucceeded,
 		status,
+		password,
 		modifiedGmt,
 		known,
 		postId,
