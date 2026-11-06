@@ -396,10 +396,13 @@ test.describe("metadata", () => {
         expect(content, `${path} og:url`).toBe(`${site}${expected}`);
         urls.push(content);
       }
-      // A resource's own image is under `/media/`; a listing carries the site's default share image (brand.spec.ts).
+      // A resource's own image is under `/media/`; a listing carries the site's default share image, by its
+      // file-based route, and a route that writes its own `openGraph` names its static import (brand.spec.ts).
       for (const selector of ['meta[property="og:image"]', 'meta[name="twitter:image"]']) {
         for (const image of await page.locator(selector).evaluateAll((metas) => metas.map((meta) => meta.getAttribute("content") ?? ""))) {
-          expect(image.startsWith(`${site}/media/`) || image.startsWith(`${site}/opengraph-image.png`), `${path} ${selector} ${image}`).toBe(true);
+          const own = image.startsWith(`${site}/media/`);
+          const fallback = image.startsWith(`${site}/opengraph-image.png`) || image.startsWith(`${site}/_next/static/media/opengraph-image.`);
+          expect(own || fallback, `${path} ${selector} ${image}`).toBe(true);
           urls.push(image);
         }
       }
