@@ -24,20 +24,41 @@ import { REVALIDATE_EACH_TIME } from "./lib/route-headers";
  * it (a percent-encoded one runs it, for nothing: see the matcher).
  *
  * The 404 (issue #46): a path no route could answer with anything but
- * `notFound()`, decided by the routes' own checks, is rewritten to the
- * prerendered `/_not-found` route, which is the one way on Next.js 16.4.5
- * to put `app/not-found.tsx` in the HTML: a `notFound()` from a page sends
- * the framework's empty `__next_error__` document, with the page arriving
- * on hydration (ADR 0050's 2026-11-05 amendment). The rewrite is internal
- * (the browser keeps its URL), the server sets the 404 status and `noindex`
- * itself, and the prerendered route answers an RSC request too. The
- * response leaves Next.js with `s-maxage=31536000` and nothing for a
- * browser, so the rewrite carries the `Cache-Control` every other 404 of
- * the app's routes carries (`lib/route-headers.ts`, ADR 0025 as amended):
- * a browser asks again each time, and nothing here outlives a deploy that
- * adds a route. Nothing is stored for the path: the route cache gets no
- * entry per junk URL, where the catch-all's `notFound()` stored one (ADR
- * 0052's note on junk paths).
+ * `notFound()`, decided by the routes' own checks, is rewritten to `/404`
+ * with status 404 (`NOT_FOUND_ROUTE` in `lib/path-decision.ts`), which is
+ * the one way on Next.js 16.4.5 to put `app/not-found.tsx` in the HTML: a
+ * `notFound()` from a page sends the framework's empty `__next_error__`
+ * document, with the page arriving on hydration (ADR 0050's 2026-11-05
+ * amendment). The rewrite is internal (the browser keeps its URL), and the
+ * response carries the `Cache-Control` every other 404 of the app's routes
+ * carries (`lib/route-headers.ts`, ADR 0025 as amended): a browser asks
+ * again each time, and nothing here outlives a deploy that adds a route.
+ * Measured 2026-11-06 on the two servers the app runs on, which differ:
+ *
+ * - Under `next start`, `/404` is the pathname the server treats as its
+ *   404 page: it answers with the prerendered not-found page, status 404
+ *   and `noindex` set by the server, the RSC payload for a client-side
+ *   navigation, and one route-cache entry shared by every junk URL (an
+ *   `x-nextjs-cache: HIT` on a URL never asked for before, where the
+ *   catch-all's `notFound()` stored one entry per URL). The response's own
+ *   header would be `s-maxage=31536000` alone, hence the one set here. The
+ *   App Router's `/_not-found` behaves the same here, and was the target
+ *   first; `e2e/errors.spec.ts` pins all of this.
+ * - On Vercel, `/404` is the static `404.html` its Next.js builder writes
+ *   from the same prerender and serves for its own 404s. The CDN serves it
+ *   for every junk URL from one cached copy (`x-matched-path: /404`,
+ *   `x-vercel-cache: HIT` on the first request for a new URL), with no
+ *   function invocation and no entry per URL; a client-side navigation
+ *   gets that HTML too, which the router then loads as a full document,
+ *   landing on the page at the junk URL. Vercel serves a rewritten
+ *   response with the status the proxy's response carries, and a static
+ *   file has no status of its own, so without `status: 404` the body is
+ *   right and the status is 200: a soft 404. A rewrite to `/_not-found`
+ *   instead is a prerendered function route there, rendered and stored
+ *   once per junk URL (`x-vercel-cache: MISS`, a body that embeds the
+ *   URL), with the proxy's 200 unless the status is set, which is why
+ *   the target changed. Under `next start` the status is the route's and
+ *   the one set here agrees with it.
  *
  * This proxy never reads the data layer: its `fetch` is not the Data Cache's,
  * so a CMS request here would reach the CMS on every matched request. What
@@ -61,7 +82,10 @@ export function proxy(request: NextRequest): NextResponse | undefined {
     // The not-found page reads nothing, and a client navigation's `_rsc`
     // cache-buster is for the route cache, which this response never enters.
     target.search = "";
-    return NextResponse.rewrite(target, { headers: { "Cache-Control": REVALIDATE_EACH_TIME } });
+    // The status is Vercel's: it serves the rewritten static file with the
+    // status given here, and a 200 otherwise. Next.js's own server sets 404
+    // for this path regardless (see above).
+    return NextResponse.rewrite(target, { status: 404, headers: { "Cache-Control": REVALIDATE_EACH_TIME } });
   }
   target.pathname = decision.path;
   return NextResponse.redirect(target, { status: 308, headers: { "Cache-Control": "no-store" } });

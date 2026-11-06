@@ -162,7 +162,7 @@ describe("decidePath", () => {
     }
   });
 
-  it("rewrites to the App Router's prerendered not-found route", () => {
-    expect(NOT_FOUND_ROUTE).toBe("/_not-found");
+  it("rewrites to /404, the path Next.js's server treats as its 404 page and Vercel serves its static 404.html at", () => {
+    expect(NOT_FOUND_ROUTE).toBe("/404");
   });
 });

@@ -6,9 +6,12 @@ import { mockCmsOrigin, mockCmsPort } from "./mock-cms/config.mts";
 /**
  * What a reader gets when there is nothing to show: the site's own 404 page
  * (`app/not-found.tsx`), in the shell. A 404 decided from the path alone is
- * answered by `proxy.ts` with a rewrite to the prerendered not-found route
- * (`lib/path-decision.ts`, issue #46), so the page is in the HTML, with no
- * JavaScript and no CMS request. A 404 decided by data comes from
+ * answered by `proxy.ts` with a rewrite to `/404` with status 404
+ * (`lib/path-decision.ts`, issue #46), the pathname Next.js's server treats
+ * as its 404 page and Vercel serves its static `404.html` at, so the page
+ * is in the HTML, with no JavaScript and no CMS request; `proxy.ts` has the
+ * measurements on both servers, and this suite runs on `next start` only.
+ * A 404 decided by data comes from
  * `notFound()` in a listing, in the resource page and in the page route,
  * which every URL no other route claims reaches (ADR 0052), and on Next.js
  * 16.4.5 each of those shows the page after hydration only, as measured and
@@ -141,12 +144,14 @@ test.describe("the 404 page", () => {
     // An ISR route stores what it answers under the URL it was asked for, so
     // its first answer for a new URL is a route-cache MISS and the next a HIT,
     // as the catch-all's own 404 shows. The proxy's rewrite serves the
-    // prerendered `/_not-found` entry instead: a URL never asked for before
-    // is a HIT at once, and every such URL gets the same document, so the
-    // same ETag (measured on Next.js 16.4.5 under `next start`).
+    // prerendered not-found page's one entry instead, the same one a direct
+    // request for `/404/` gets: a URL never asked for before is a HIT at
+    // once, and every such URL gets the same document, so the same ETag
+    // (measured on Next.js 16.4.5 under `next start`; on Vercel the CDN
+    // serves its static `404.html` for every such URL from one cached copy).
     const junk = `/${unique("never-asked")}.php`;
     const responses: APIResponse[] = [];
-    for (const path of [junk, junk, `/api/${unique("never-asked")}/`]) {
+    for (const path of [junk, junk, `/api/${unique("never-asked")}/`, "/404/"]) {
       const response = await get(request, path);
       expect(response.status(), path).toBe(404);
       expect(response.headers()["x-nextjs-cache"], path).toBe("HIT");

@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // A local `vercel build` writes the deployment's functions and static
+    // files here (gitignored), which are not this app's sources.
+    ".vercel/**",
   ]),
 ]);
 

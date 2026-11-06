@@ -9,15 +9,22 @@
  * sent by Next.js 16.4.5 as its empty `__next_error__` document, with
  * `app/not-found.tsx` only in the inlined RSC payload, rendered on
  * hydration, so without JavaScript, and to a crawler, the body is empty
- * (ADR 0050's 2026-11-05 amendment). Only the prerendered `/_not-found`
- * route, which the router renders for a URL no route matches, has the page
- * in its HTML. Since ADR 0052 the root catch-all matches every URL, so no
- * request reaches that fallback on its own; a rewrite from the proxy to
- * `/_not-found` is what reaches it, measured on 16.4.5 under `next start`
- * (`e2e/errors.spec.ts` pins it): the prerendered HTML, status 404 (the
- * server treats the route as its 404 page and sets the status itself),
- * `noindex` in the head, and the RSC payload for a client-side navigation.
- * The proxy reads no data, so it can answer only the 404s that are decided
+ * (ADR 0050's 2026-11-05 amendment). Only the prerendered not-found page,
+ * which the router renders for a URL no route matches, has the page in its
+ * HTML. Since ADR 0052 the root catch-all matches every URL, so no request
+ * reaches that fallback on its own; a rewrite from the proxy to `/404`
+ * (`NOT_FOUND_ROUTE`) with status 404 is what reaches it, on both servers
+ * the app runs on. Under `next start` (`e2e/errors.spec.ts` pins it) `/404`
+ * is the pathname Next.js's server treats as its 404 page and answers with
+ * the prerendered `app/not-found.tsx`: the HTML, status 404, `noindex` in
+ * the head, the RSC payload for a client-side navigation, and one shared
+ * route-cache entry rather than one per junk URL. On Vercel `/404` is the
+ * static `404.html` its Next.js builder writes from that same prerender
+ * and serves for its own 404s, cached at the CDN by that one destination
+ * rather than per junk URL, with no function invocation; the status is the
+ * rewrite's own, since Vercel serves a rewritten response with the status
+ * the proxy's response carries, and a static file is a 200 without it
+ * (`proxy.ts` has the measurements). The proxy reads no data, so it can answer only the 404s that are decided
  * from the path alone; the routes still answer with `notFound()` what needs
  * the CMS (an unknown slug, an unknown term, a page past the end, a path no
  * page has), and those keep the empty document until Next.js renders the
@@ -58,13 +65,19 @@ import { canonicalPath, isResourcesPath } from "./canonical-path";
 import { isSlug, isTypeSlug, OWN_ROUTE_PATHS, pagePathProblem, parseResourcesSegments, validListing } from "./routes";
 
 /**
- * The route the proxy rewrites a path-decided 404 to: the App Router's
- * prerendered not-found route, which the router itself renders for a URL
- * no route matches and whose request the server treats as its 404 page.
- * Not a public URL; the rewrite is internal and the browser keeps the
- * requested path.
+ * The path the proxy rewrites a path-decided 404 to, with status 404: the
+ * pathname Next.js's server treats as its 404 page (`is404Page` in
+ * `next/dist/server/base-server.js`, which maps the App Router's
+ * `/_not-found` onto it) and answers with the prerendered
+ * `app/not-found.tsx`, and the path Vercel's Next.js builder serves that
+ * same prerender at as a static `404.html`, the file its own 404 routing
+ * uses. The App Router's `/_not-found` was the target first: it is the
+ * same page under `next start`, but on Vercel it is a prerendered function
+ * route, rendered and stored once per junk URL with the proxy's 200 (the
+ * measurements of 2026-11-06 are in `proxy.ts`). Not a public URL; the
+ * rewrite is internal and the browser keeps the requested path.
  */
-export const NOT_FOUND_ROUTE = "/_not-found";
+export const NOT_FOUND_ROUTE = "/404";
 
 export type PathDecision = { readonly kind: "redirect"; readonly path: string } | { readonly kind: "not-found" };
 
