@@ -37,8 +37,8 @@ const reuseExistingServer = process.env.RH_E2E_REUSE === "1" && !process.env.CI;
 // differently. `e2e/screenshots.mts` (`pnpm web:test:screenshots`) starts
 // that container, sets RH_PW_REMOTE_WS to its endpoint and runs this project
 // alone; the test runner, the mock and the app stay on the host, and the
-// container's browser reaches the app's `localhost` through the connection
-// (`exposeNetwork`).
+// container's browser reaches the app's `localhost` port, and only that,
+// through the connection (`exposeNetwork`).
 const remoteBrowser = process.env.RH_PW_REMOTE_WS;
 
 export default defineConfig({
@@ -108,7 +108,12 @@ export default defineConfig({
               // is set everywhere, CI included, so every baseline is taken the
               // same way.
               launchOptions: { args: ["--no-zygote"] },
-              connectOptions: { wsEndpoint: remoteBrowser, exposeNetwork: "<loopback>" },
+              // The browser reaches the host, through the connection, at the
+              // app's origin and nothing else: not the mock (the specimen's
+              // images come through the app's /media/ rewrite) and no other
+              // port on the host's loopback. The rule is a host and port, as
+              // `exposeNetwork` takes them.
+              connectOptions: { wsEndpoint: remoteBrowser, exposeNetwork: `localhost:${WEB_PORT}` },
             },
           },
         ]
