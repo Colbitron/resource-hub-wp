@@ -12,7 +12,8 @@
  *   colour alone; under forced colours the fill becomes SelectedItem and the
  *   bar is drawn in SelectedItemText.
  * - Focus is a real outline on the segment, because box-shadow and
- *   backgrounds vanish under forced colours.
+ *   backgrounds vanish under forced colours, with room around every
+ *   segment for the whole ring.
  * - Every size is in rem or em, so text spacing and zoom reflow it, and the
  *   group wraps rather than dropping its words. Each segment is at least
  *   2rem tall, over the 24px target minimum.
@@ -22,19 +23,26 @@
 .rh-theme {
 	display: inline-flex;
 	flex-wrap: wrap;
-	gap: var(--rh-space-1);
+	/*
+	 * Room for the focus ring: it reaches --rh-focus-width plus its 2px
+	 * offset (5px) outside a segment, so the padding and the gap are the
+	 * next step up the scale, 8px, and the ring never overlaps the group's
+	 * border or the next segment (e2e/theme.spec.ts measures it).
+	 */
+	gap: var(--rh-space-2);
 	min-width: 0;
 	margin: 0;
-	padding: var(--rh-space-1);
+	padding: var(--rh-space-2);
 	/* A control's boundary, so the strong border, at 3:1 (DESIGN.md, "Colors"). */
 	border: var(--rh-border-width) solid var(--rh-color-border-strong);
 	border-radius: var(--rh-radius);
 }
 
 /*
- * Not known yet: before hydration has read the stored choice, and for ever
- * without JavaScript. Invisible but keeping its space, so the header does
- * not move when it appears; gone from the accessibility tree meanwhile.
+ * Not known yet: before hydration has read the stored choice. Invisible but
+ * keeping its space, so the header does not move when it appears; gone from
+ * the accessibility tree meanwhile. Without JavaScript the root layout's
+ * <noscript> style removes the header's slot instead (lib/theme.ts).
  */
 .rh-theme--pending {
 	visibility: hidden;

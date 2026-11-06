@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 import { Shell } from "@/components/Shell";
 import { siteUrl } from "@/lib/env";
-import { THEME_INIT_SCRIPT } from "@/lib/theme";
+import { THEME_INIT_SCRIPT, THEME_NOSCRIPT_STYLE } from "@/lib/theme";
 
 import { figtree } from "./fonts";
 
@@ -50,11 +50,17 @@ export function generateMetadata(): Metadata {
 // (components/ThemeToggle.tsx) re-applies the attribute after hydration as a
 // guard: the Next.js guide warns that development's Strict Mode remount can
 // reset it; not reproduced on Next.js 16.4.5 with React 19.3.
+//
+// The <noscript> beside it is the one style rule outside a component's
+// stylesheet, because only the browser knows whether script runs: without
+// it the control can never show, so its slot in the header is removed
+// rather than kept invisible (lib/theme.ts, `THEME_NOSCRIPT_STYLE`).
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={figtree.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <noscript dangerouslySetInnerHTML={{ __html: THEME_NOSCRIPT_STYLE }} />
       </head>
       <body>
         <Shell>{children}</Shell>

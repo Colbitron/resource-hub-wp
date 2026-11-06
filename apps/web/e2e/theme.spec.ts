@@ -235,6 +235,44 @@ test.describe("keyboard", () => {
     expect(outline.style).toBe("solid");
     expect(outline.width).not.toBe("0px");
   });
+
+  test("the focus ring fits inside the group and clear of the next segment, on every option", async ({ page }) => {
+    await page.goto("/");
+    await expect(group(page)).toBeVisible();
+    for (let i = 0; i < 3; i += 1) await page.keyboard.press("Tab");
+    for (const [index, choice] of (["system", "light", "dark"] as const).entries()) {
+      if (index > 0) await page.keyboard.press("ArrowRight");
+      await expect(radio(page, choice)).toBeFocused();
+      const geometry = await page.evaluate((focused) => {
+        const fieldset = document.querySelector("fieldset.rh-theme")!;
+        const labels = [...fieldset.querySelectorAll("label")];
+        const label = labels[focused]!;
+        const style = getComputedStyle(label);
+        const reach = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+        const box = label.getBoundingClientRect();
+        const ring = { left: box.left - reach, top: box.top - reach, right: box.right + reach, bottom: box.bottom + reach };
+        const outer = fieldset.getBoundingClientRect();
+        const border = getComputedStyle(fieldset);
+        // The fieldset's padding box: inside its border, where the ring may be drawn.
+        const inner = {
+          left: outer.left + parseFloat(border.borderLeftWidth),
+          top: outer.top + parseFloat(border.borderTopWidth),
+          right: outer.right - parseFloat(border.borderRightWidth),
+          bottom: outer.bottom - parseFloat(border.borderBottomWidth),
+        };
+        const others = labels.filter((_, i) => i !== focused).map((other) => other.getBoundingClientRect());
+        const overlaps = others.filter((o) => o.left < ring.right && o.right > ring.left && o.top < ring.bottom && o.bottom > ring.top).length;
+        return { style: style.outlineStyle, reach, ring, inner, overlaps };
+      }, index);
+      expect(geometry.style, choice).toBe("solid");
+      expect(geometry.reach, choice).toBeGreaterThan(0);
+      expect(geometry.ring.left, choice).toBeGreaterThanOrEqual(geometry.inner.left);
+      expect(geometry.ring.top, choice).toBeGreaterThanOrEqual(geometry.inner.top);
+      expect(geometry.ring.right, choice).toBeLessThanOrEqual(geometry.inner.right);
+      expect(geometry.ring.bottom, choice).toBeLessThanOrEqual(geometry.inner.bottom);
+      expect(geometry.overlaps, choice).toBe(0);
+    }
+  });
 });
 
 test.describe("names and sizes", () => {
@@ -295,6 +333,29 @@ test.describe("without JavaScript", () => {
       await expect(plain.locator("fieldset.rh-theme")).toBeHidden();
       await expect(html(plain)).not.toHaveAttribute("data-theme");
       expect(await surface(plain)).toBe(reference);
+      await context.close();
+    });
+  }
+
+  for (const width of [320, 1280]) {
+    test(`the header keeps no space for the control at ${width}px`, async ({ browser, page }) => {
+      // The reference: a page with JavaScript, with the control's slot taken out.
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/");
+      await expect(group(page)).toBeVisible();
+      const withControl = await page.locator(".rh-header").evaluate((node) => node.getBoundingClientRect().height);
+      const withoutControl = await page.evaluate(() => {
+        document.querySelector(".rh-header__theme")?.remove();
+        return document.querySelector(".rh-header")!.getBoundingClientRect().height;
+      });
+      // Otherwise the comparison below proves nothing.
+      expect(withControl).toBeGreaterThan(withoutControl);
+
+      const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width, height: 800 }, baseURL: appSiteOrigin() });
+      const plain = await context.newPage();
+      await plain.goto("/");
+      expect(await plain.locator(".rh-header__theme").boundingBox()).toBeNull();
+      expect(await plain.locator(".rh-header").evaluate((node) => node.getBoundingClientRect().height)).toBe(withoutControl);
       await context.close();
     });
   }
