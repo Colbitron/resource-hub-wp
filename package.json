@@ -34,7 +34,9 @@
 		"web:typecheck": "pnpm --filter resource-hub-web typecheck",
 		"web:build": "pnpm --filter resource-hub-web build",
 		"web:test": "pnpm --filter resource-hub-web test",
-		"web:test:e2e": "pnpm --filter resource-hub-web test:e2e"
+		"web:test:e2e": "pnpm --filter resource-hub-web test:e2e",
+		"images:generate": "node tools/featured-images/generate.mts",
+		"images:import": "tools/featured-images/import.sh"
 	},
 	"devDependencies": {
 		"@wordpress/env": "^12.0.0"

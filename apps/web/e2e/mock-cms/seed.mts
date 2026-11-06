@@ -19,8 +19,9 @@ import type { PageStatus, ResourceStatus, Taxonomy } from "./types.mts";
  *   topic's current slug, both filled in at render time.
  * - One long-form resource (ID 30, `taxonomies-versus-meta`) with headings,
  *   lists, a blockquote, a code block, a table, a figure and the marker, and
- *   a 1600×900 featured image with `large` and `medium_large` sizes, for the
- *   resource page's screenshots and its long-form checks.
+ *   a 1600×900 featured image with `medium_large`, `large` and `1536x1536`
+ *   sizes, for the resource page's screenshots, its long-form checks and
+ *   its `og:image`, which takes the 1536 size where the page takes `large`.
  * - Dates descend with the rows, so core's default order (`date` desc) is
  *   the row order.
  * - One draft (ID 34, the last row), so the related route has an
@@ -138,9 +139,11 @@ export const MEDIA: MediaSeed[] = [
     sizes: {},
   },
   {
-    // A full-size hero with WordPress's `large` and `medium_large` sizes, so
-    // the resource page's featured image has a size worth choosing and the
-    // page can be looked at and measured at a real width.
+    // A full-size hero with the sizes WordPress makes of a 1600-wide upload
+    // (`medium_large`, `large` and `1536x1536`), so the resource page's
+    // featured image has a size worth choosing (`large`, at least 800 wide),
+    // its `og:image` another (`1536x1536`, at least 1200 wide), and the page
+    // can be looked at and measured at a real width.
     id: 105,
     file: "2026/11/taxonomies-versus-meta.png",
     mime: "image/png",
@@ -151,6 +154,7 @@ export const MEDIA: MediaSeed[] = [
     sizes: {
       medium_large: { file: "2026/11/taxonomies-versus-meta-768x432.png", width: 768, height: 432 },
       large: { file: "2026/11/taxonomies-versus-meta-1024x576.png", width: 1024, height: 576 },
+      "1536x1536": { file: "2026/11/taxonomies-versus-meta-1536x864.png", width: 1536, height: 864 },
     },
   },
 ];
