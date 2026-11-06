@@ -16,9 +16,12 @@ use ResourceHub\Revalidation\ResultStore;
  * Turns a `_rh_last_revalidation` record into the words the admin screens show: a short label for
  * the list column on the Resources and Pages lists and a full sentence for the term notice and the status page.
  * The block editor's notice reads the same sentences, handed to its script by
- * {@see \ResourceHub\Editor\RevalidationAssets}. Nothing here prints the response
- * body: a sentence may quote the stored `error`, which is a transport message or one of the plugin's
- * own, never a body and never the secret.
+ * {@see \ResourceHub\Editor\RevalidationAssets}. Nothing here prints the raw response body. For a
+ * 400, a 500 or a transport failure a sentence may quote one message: the stored `error` (a transport
+ * message or one of the plugin's own), else the `error` string of the front end's JSON body, which the
+ * route words to name a path and never a value. When the body was cut and no message could be read
+ * from it, the sentence says the reply was too long to show. The secret never reaches a record, so no
+ * sentence can quote it. Every caller escapes the sentence on output.
  */
 final class ResultText {
 	/**
@@ -41,6 +44,13 @@ final class ResultText {
 	 * {@see ResultText::sentences()}, not an outcome.
 	 */
 	public const INVALID_SECRET = 'not_configured_invalid_secret';
+
+	/**
+	 * The sentence key for the note that follows a 400 or 500 whose body was cut at
+	 * {@see Result::BODY_LIMIT} bytes before any message could be read from it: a key of
+	 * {@see ResultText::sentences()}, not an outcome.
+	 */
+	public const BODY_TOO_LONG = 'body_too_long';
 
 	/**
 	 * Whether a record is a `not_configured` skipped because the secret in force breaks the rule. Only
@@ -141,7 +151,8 @@ final class ResultText {
 	/**
 	 * The sentence for each outcome, keyed by outcome, plus `stale` for a stale pending, `failed` for
 	 * an outcome this version does not know, {@see ResultText::INVALID_SECRET} for a `not_configured`
-	 * caused by an invalid secret, and `no_answer`, which only the block editor uses, for a
+	 * caused by an invalid secret, {@see ResultText::BODY_TOO_LONG} for the note after a reply too long
+	 * to quote, and `no_answer`, which only the block editor uses, for a
 	 * poll window that closed with no record for the save. `unexpected_code` holds `%d` for the HTTP
 	 * code. This is the one source of the wording: {@see ResultText::sentence()} reads it here, and the
 	 * block editor's script receives it through `wp_localize_script()`. Nothing in it is
@@ -164,6 +175,7 @@ final class ResultText {
 			Result::TRANSPORT_ERROR => __( 'Revalidation could not reach the front end.', 'resource-hub' ),
 			Result::NOT_CONFIGURED  => __( 'Revalidation skipped: the front-end URL or the secret is not configured.', 'resource-hub' ),
 			self::INVALID_SECRET    => __( 'Revalidation skipped: the front-end URL or the secret is not configured; the secret is set but not valid, so check Settings > Resource Hub.', 'resource-hub' ),
+			self::BODY_TOO_LONG     => __( 'The front end\'s reply was too long to show (over 1 KB).', 'resource-hub' ),
 			Result::NO_SINGLE_TYPE  => __( 'Revalidation not sent: a resource needs exactly one type.', 'resource-hub' ),
 			Result::RESERVED_TYPE   => __( 'Revalidation not sent: a type\'s slug cannot be topic or page. Give this type a different slug and save it again.', 'resource-hub' ),
 			Result::ENCODE_ERROR    => __( 'Revalidation not sent: the events could not be encoded as JSON.', 'resource-hub' ),
@@ -283,7 +295,10 @@ final class ResultText {
 	/**
 	 * A sentence with the record's error message after it, when there is one: the stored `error` (a
 	 * transport message or one of the plugin's own), else the front end's `error` string when the
-	 * stored body is its JSON `{ "error": "…" }`. The raw body itself is never printed. Escaped on output.
+	 * stored body is its JSON `{ "error": "…" }`. When neither gives a message and the record says its
+	 * body was cut ({@see Result::$truncated}), the {@see ResultText::BODY_TOO_LONG} note follows
+	 * instead, so a long reply is not mistaken for one with nothing to say. The raw body itself is
+	 * never printed. Escaped on output.
 	 *
 	 * @param string               $sentence The sentence.
 	 * @param array<string, mixed> $record   The stored record.
@@ -295,12 +310,17 @@ final class ResultText {
 			$error = self::error_from_body( $record );
 		}
 
+		if ( '' === trim( $error ) && true === ( $record['truncated'] ?? false ) ) {
+			$error = self::sentences()[ self::BODY_TOO_LONG ];
+		}
+
 		return '' === trim( $error ) ? $sentence : $sentence . ' ' . trim( $error );
 	}
 
 	/**
 	 * The front end's `error` string from a stored 400 or 500 body, or an empty string. The body is
-	 * cut to about 1 KB, so a long one no longer parses; then there is nothing to quote.
+	 * cut to about 1 KB, so a long one no longer parses; then there is nothing to quote, and the
+	 * record's `truncated` flag lets {@see ResultText::with_error()} say why.
 	 *
 	 * @param array<string, mixed> $record The stored record.
 	 */

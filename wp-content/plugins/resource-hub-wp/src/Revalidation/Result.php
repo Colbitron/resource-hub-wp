@@ -98,6 +98,10 @@ final class Result {
 	 * @param string      $body        Response body, already cut to about {@see Result::BODY_LIMIT} bytes by {@see Sender::cut()}.
 	 * @param string|null $error       Transport error message when no response arrived, else null.
 	 * @param int         $duration_ms Wall time of the request in milliseconds; 0 when none was made.
+	 * @param bool        $truncated   Whether the response body was longer than {@see Result::BODY_LIMIT} bytes, so
+	 *                                 `$body` holds only its start. Recorded rather than guessed from a body that
+	 *                                 fails to parse, so the admin screens can say the reply was too long to show
+	 *                                 instead of saying nothing ({@see \ResourceHub\Admin\ResultText::sentence()}).
 	 */
 	public function __construct(
 		public readonly string $status,
@@ -106,6 +110,7 @@ final class Result {
 		public readonly string $body,
 		public readonly ?string $error,
 		public readonly int $duration_ms,
+		public readonly bool $truncated = false,
 	) {
 	}
 
@@ -148,7 +153,7 @@ final class Result {
 	/**
 	 * The fields {@see ResultStore} and {@see PostHog} record, as a plain array.
 	 *
-	 * @return array{status: string, outcome: string, code: int|null, body: string, error: string|null, duration_ms: int}
+	 * @return array{status: string, outcome: string, code: int|null, body: string, truncated: bool, error: string|null, duration_ms: int}
 	 */
 	public function to_array(): array {
 		return array(
@@ -156,6 +161,7 @@ final class Result {
 			'outcome'     => $this->outcome,
 			'code'        => $this->code,
 			'body'        => $this->body,
+			'truncated'   => $this->truncated,
 			'error'       => $this->error,
 			'duration_ms' => $this->duration_ms,
 		);

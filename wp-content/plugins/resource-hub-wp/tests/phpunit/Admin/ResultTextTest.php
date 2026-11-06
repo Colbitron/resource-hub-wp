@@ -104,7 +104,7 @@ final class ResultTextTest extends WP_UnitTestCase {
 	public function test_sentences_are_the_one_source(): void {
 		$sentences = ResultText::sentences();
 
-		foreach ( array_merge( Result::OUTCOMES, array( ResultStore::PENDING, 'stale', 'failed', 'no_answer', ResultText::INVALID_SECRET ) ) as $key ) {
+		foreach ( array_merge( Result::OUTCOMES, array( ResultStore::PENDING, 'stale', 'failed', 'no_answer', ResultText::INVALID_SECRET, ResultText::BODY_TOO_LONG ) ) as $key ) {
 			$this->assertArrayHasKey( $key, $sentences );
 			$this->assertNotSame( '', $sentences[ $key ] );
 		}
@@ -112,6 +112,7 @@ final class ResultTextTest extends WP_UnitTestCase {
 		$this->assertSame( $sentences[ Result::NOT_CONFIGURED ], ResultText::sentence( self::record( array( 'outcome' => Result::NOT_CONFIGURED ) ) ) );
 		$this->assertSame( $sentences['failed'], ResultText::sentence( self::record( array( 'outcome' => 'no_answer' ) ) ), 'A non-outcome key is not an outcome.' );
 		$this->assertSame( $sentences['failed'], ResultText::sentence( self::record( array( 'outcome' => ResultText::INVALID_SECRET ) ) ), 'Nor is the invalid-secret key.' );
+		$this->assertSame( $sentences['failed'], ResultText::sentence( self::record( array( 'outcome' => ResultText::BODY_TOO_LONG ) ) ), 'Nor is the too-long key.' );
 		$this->assertSame( $sentences['failed'], ResultText::sentence( self::record( array( 'outcome' => 'something_new' ) ) ) );
 	}
 
@@ -186,7 +187,72 @@ final class ResultTextTest extends WP_UnitTestCase {
 		$this->assertSame( 'Revalidation failed on the front end (500).', ResultText::sentence( $html ) );
 
 		$cut = self::record( array( 'body' => '{"error":"a very long message that was cut' ) );
-		$this->assertSame( 'Revalidation failed on the front end (500).', ResultText::sentence( $cut ) );
+		$this->assertSame( 'Revalidation failed on the front end (500).', ResultText::sentence( $cut ), 'A record without the flag says nothing extra.' );
+	}
+
+	/**
+	 * A 400 or 500 whose body was cut before a message could be read says the reply was too long to
+	 * show, rather than nothing. A message that survives the cut is still quoted, a stored error wins,
+	 * and an outcome that quotes nothing (a 401) is unchanged.
+	 */
+	public function test_sentence_says_a_cut_reply_was_too_long(): void {
+		$note = 'The front end\'s reply was too long to show (over 1 KB).';
+		$this->assertSame( $note, ResultText::sentences()[ ResultText::BODY_TOO_LONG ] );
+
+		$cut = '{"error":"' . str_repeat( 'x', Result::BODY_LIMIT - 10 );
+		$this->assertSame(
+			'Revalidation failed on the front end (500). ' . $note,
+			ResultText::sentence(
+				self::record(
+					array(
+						'body'      => $cut,
+						'truncated' => true,
+					)
+				)
+			)
+		);
+		$this->assertSame(
+			'Revalidation rejected: the front end could not read the request (400). ' . $note . ' It was sent with 2 other changes.',
+			ResultText::sentence(
+				self::record(
+					array(
+						'outcome'   => Result::BAD_REQUEST,
+						'code'      => 400,
+						'body'      => $cut,
+						'truncated' => true,
+						'others'    => 2,
+					)
+				)
+			)
+		);
+
+		// JSON padded with whitespace past the limit still parses after the cut, so its message is quoted.
+		$padded = self::record(
+			array(
+				'body'      => substr( '{"error":"readable"}' . str_repeat( ' ', Result::BODY_LIMIT ), 0, Result::BODY_LIMIT ),
+				'truncated' => true,
+			)
+		);
+		$this->assertSame( 'Revalidation failed on the front end (500). readable', ResultText::sentence( $padded ) );
+
+		$stored = self::record(
+			array(
+				'body'      => $cut,
+				'truncated' => true,
+				'error'     => 'A stored message.',
+			)
+		);
+		$this->assertSame( 'Revalidation failed on the front end (500). A stored message.', ResultText::sentence( $stored ) );
+
+		$unauthorized = self::record(
+			array(
+				'outcome'   => Result::UNAUTHORIZED,
+				'code'      => 401,
+				'body'      => $cut,
+				'truncated' => true,
+			)
+		);
+		$this->assertSame( 'Revalidation rejected: the secret does not match (401).', ResultText::sentence( $unauthorized ) );
 	}
 
 	/**

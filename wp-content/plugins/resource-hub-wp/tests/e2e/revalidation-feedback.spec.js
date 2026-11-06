@@ -17,6 +17,8 @@ const NOT_CONFIGURED =
 const INVALID_SECRET =
 	'Revalidation skipped: the front-end URL or the secret is not configured; the secret is set but not valid, so check Settings > Resource Hub.';
 const ACCEPTED = 'The front end accepted the revalidation (200).';
+const CUT_REPLY =
+	"Revalidation failed on the front end (500). The front end's reply was too long to show (over 1 KB).";
 const NOTICE_ID = 'resource-hub-revalidation';
 
 /**
@@ -44,6 +46,7 @@ function storedRecord( fields ) {
 		event: 'update',
 		others: 0,
 		body: '',
+		truncated: false,
 		error: null,
 		duration_ms: 0,
 		...fields,
@@ -457,6 +460,58 @@ test.describe( 'Revalidation feedback', () => {
 			page
 				.getByRole( 'region', { name: 'Editor content' } )
 				.getByText( INVALID_SECRET )
+		).toBeVisible();
+	} );
+
+	test( "a 500 whose reply was cut before its message says the reply was too long, in PHP's words", async ( {
+		admin,
+		page,
+	} ) => {
+		await admin.createNewPost( {
+			postType: 'resource',
+			title: `E2E cut reply ${ Date.now() }`,
+		} );
+
+		// What the sender stores for a JSON reply over 1 KB: its start, which
+		// no longer parses, and the flag that says it was cut.
+		const cutBody = `{"error":"${ 'x'.repeat( 1014 ) }`;
+		let stubbing = false;
+
+		await stubRecord( page, {
+			onPoll: ( date ) =>
+				stubbing
+					? storedRecord( {
+							status: 'failed',
+							outcome: 'server_error',
+							code: 500,
+							body: cutBody,
+							truncated: true,
+							batch_id: 'stub-batch',
+							time: serverStamp( date ),
+						} )
+					: undefined,
+		} );
+		await collectNotices( page );
+
+		stubbing = true;
+		const postId = await page.evaluate( async ( typeId ) => {
+			const { dispatch, select } = window.wp.data;
+			dispatch( 'core/editor' ).editPost( {
+				status: 'publish',
+				resource_type: [ typeId ],
+			} );
+			await dispatch( 'core/editor' ).savePost();
+			return select( 'core/editor' ).getCurrentPostId();
+		}, type.id );
+		createdIds.push( postId );
+
+		await expect
+			.poll( () => shownNotices( page ), { timeout: 15000 } )
+			.toEqual( [ { status: 'error', content: CUT_REPLY } ] );
+		await expect(
+			page
+				.getByRole( 'region', { name: 'Editor content' } )
+				.getByText( CUT_REPLY )
 		).toBeVisible();
 	} );
 

@@ -58,11 +58,12 @@ const NOTICE_ID = 'resource-hub-revalidation';
 const POLL_INTERVAL_MS = 1000;
 const POLL_ATTEMPTS = 10;
 
-// Mirrors ResultText::STALE_PENDING_SECONDS, ResultText::WITH_ERROR and
-// ResultText::INVALID_SECRET in PHP.
+// Mirrors ResultText::STALE_PENDING_SECONDS, ResultText::WITH_ERROR,
+// ResultText::INVALID_SECRET and ResultText::BODY_TOO_LONG in PHP.
 const STALE_PENDING_MS = 5 * 60 * 1000;
 const WITH_ERROR = [ 'bad_request', 'server_error', 'transport_error' ];
 const INVALID_SECRET = 'not_configured_invalid_secret';
+const BODY_TOO_LONG = 'body_too_long';
 
 // Handed over by RevalidationAssets through wp_localize_script().
 const SENTENCES = window.resourceHubRevalidation?.sentences ?? {};
@@ -148,7 +149,8 @@ function serverTime( value ) {
 /**
  * The front end's `error` string from a stored 400 or 500 body, or an empty
  * string. The body is cut to about 1 KB, so the JSON may be truncated; then
- * there is no message to quote. Mirrors ResultText::error_from_body().
+ * there is no message to quote, and the record's `truncated` flag says why.
+ * Mirrors ResultText::error_from_body().
  *
  * @param {Object} record The stored record.
  * @return {string} The message, if any.
@@ -208,9 +210,13 @@ function describe( record, serverNow ) {
 
 	const known =
 		typeof record.outcome === 'string' &&
-		! [ 'stale', 'failed', 'no_answer', INVALID_SECRET ].includes(
-			record.outcome
-		) &&
+		! [
+			'stale',
+			'failed',
+			'no_answer',
+			INVALID_SECRET,
+			BODY_TOO_LONG,
+		].includes( record.outcome ) &&
 		SENTENCES[ record.outcome ];
 	let message = known ? sentence( record.outcome ) : sentence( 'failed' );
 
@@ -229,12 +235,18 @@ function describe( record, serverNow ) {
 		message = sprintf( message, Number( record.code ) || 0 );
 	}
 
+	// Mirrors ResultText::with_error(): the stored error, else the body's
+	// `error` string, else a note that the reply was cut before one could be read.
 	if ( WITH_ERROR.includes( record.outcome ) ) {
-		const detail = (
+		let detail = (
 			typeof record.error === 'string' && record.error.trim() !== ''
 				? record.error
 				: errorFromBody( record )
 		).trim();
+
+		if ( ! detail && record.truncated === true ) {
+			detail = sentence( BODY_TOO_LONG ).trim();
+		}
 
 		if ( detail ) {
 			message += ` ${ detail }`;

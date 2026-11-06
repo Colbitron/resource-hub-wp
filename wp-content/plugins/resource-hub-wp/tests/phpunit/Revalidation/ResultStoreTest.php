@@ -61,6 +61,7 @@ final class ResultStoreTest extends RevalidationTestCase {
 		$this->assertSame( 'update', $pending['event'] );
 		$this->assertSame( 'batch-1', $pending['batch_id'] );
 		$this->assertSame( 2, $pending['others'] );
+		$this->assertFalse( $pending['truncated'] );
 		$this->assertSame( ResultStore::PENDING, ResultStore::read_post( $second )['status'] );
 		$this->assertSame( ResultStore::PENDING, ResultStore::read_term( $topic )['status'] );
 
@@ -68,7 +69,7 @@ final class ResultStoreTest extends RevalidationTestCase {
 
 		$record = ResultStore::read_post( $first );
 		$this->assertSame(
-			array( 'status', 'outcome', 'code', 'event', 'time', 'batch_id', 'others', 'body', 'error', 'duration_ms' ),
+			array( 'status', 'outcome', 'code', 'event', 'time', 'batch_id', 'others', 'body', 'truncated', 'error', 'duration_ms' ),
 			array_keys( $record )
 		);
 		$this->assertSame( Result::SENT, $record['status'] );
@@ -79,6 +80,7 @@ final class ResultStoreTest extends RevalidationTestCase {
 		$this->assertSame( 'batch-1', $record['batch_id'] );
 		$this->assertSame( 2, $record['others'] );
 		$this->assertSame( '{"revalidated":["/resources/"]}', $record['body'] );
+		$this->assertFalse( $record['truncated'] );
 		$this->assertNull( $record['error'] );
 		$this->assertSame( 42, $record['duration_ms'] );
 
@@ -117,6 +119,20 @@ final class ResultStoreTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * A result whose body was cut is stored with `truncated` true on every object in the batch, so the
+	 * admin screens can say the reply was too long to show.
+	 */
+	public function test_truncated_flag_is_stored(): void {
+		list( $events, $first, , $topic ) = $this->batch();
+		$cut                              = '{"error":"' . str_repeat( 'x', Result::BODY_LIMIT - 10 );
+
+		( new ResultStore() )->record( 'batch-14', $events, new Result( Result::FAILED, Result::SERVER_ERROR, 500, $cut, null, 5, true ) );
+
+		$this->assertTrue( ResultStore::read_post( $first )['truncated'] );
+		$this->assertTrue( ResultStore::read_term( $topic )['truncated'] );
+	}
+
+	/**
 	 * A response body that is not valid UTF-8 still leaves a finished record, not `pending`: the sender
 	 * makes it valid before it reaches meta.
 	 */
@@ -150,7 +166,7 @@ final class ResultStoreTest extends RevalidationTestCase {
 		};
 		add_filter( 'update_post_metadata', $refuse_bodies, 10, 4 );
 
-		$store->record( 'batch-10', $events, new Result( Result::SENT, Result::OK, 200, '{"revalidated":[]}', null, 7 ) );
+		$store->record( 'batch-10', $events, new Result( Result::SENT, Result::OK, 200, '{"revalidated":[]}', null, 7, true ) );
 
 		remove_filter( 'update_post_metadata', $refuse_bodies, 10 );
 
@@ -158,6 +174,7 @@ final class ResultStoreTest extends RevalidationTestCase {
 		$this->assertSame( Result::SENT, $record['status'] );
 		$this->assertSame( 'batch-10', $record['batch_id'] );
 		$this->assertSame( '', $record['body'] );
+		$this->assertFalse( $record['truncated'], 'No body is kept, so none was cut.' );
 		$this->assertSame( ResultStore::BODY_NOT_STORED, $record['error'] );
 	}
 
