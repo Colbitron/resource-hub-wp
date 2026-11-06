@@ -10,25 +10,26 @@ import localFont from "next/font/local";
  *
  * - `weight: "300 900"`: the file's whole weight axis, so body text and the
  *   heavier headings come from the one request.
- * - `display: "optional"`: the browser gives the preloaded file a very
- *   short block period and, if it has not landed by then, keeps the fallback
- *   face for the rest of that page view and uses Figtree from the cache on
- *   the next one. Nothing can move after the first paint. `swap` was tried
- *   first and measured with the file held back two seconds
- *   (`e2e/font-swap.spec.ts`): the resource page's title kept its lines, but
- *   on a listing at 360 px two card titles re-wrapped from one line to two
- *   when Figtree arrived, because the fallback is calibrated on the regular
- *   weight and titles are bold. A bold fallback face hand-tuned to Figtree's
- *   heading width would narrow the gap without closing it, since any width
- *   difference can move a word across a line end. In the lab the two values
- *   gave the same LCP (the file is preloaded and lands before the first
- *   paint), so `optional` costs only the face on a slow first visit; the
- *   numbers are in the change's pull request, not here, so they cannot go
- *   stale.
+ * - `display: "swap"`: the page is drawn in the fallback face until the
+ *   file lands and in Figtree from then on, on the first visit as on every
+ *   other. The preloaded file normally lands just before the first paint,
+ *   which is the race `optional` loses: under `optional` a file that misses
+ *   the browser's short block period leaves the fallback in place for the
+ *   whole document, and an App Router navigation keeps that document, so a
+ *   slow first visit can stay in the fallback until a full reload. Measured
+ *   on slow mobile profiles, `swap` showed Figtree on the first paint of
+ *   almost every cold load, where `optional` dropped it on most cold loads
+ *   over 3G, with the same LCP and no measured layout shift (`packages/ui/DESIGN.md`,
+ *   Consumers and loading, has the table). The cost is a file that arrives
+ *   after the first paint: titles are bold and the fallback is calibrated on
+ *   the regular weight, so a title can re-wrap when Figtree replaces it.
+ *   `e2e/font-swap.spec.ts` holds the file back two seconds and keeps the
+ *   layout shift that causes within budget. Provisional: the owner may
+ *   revisit it.
  * - `adjustFontFallback: "Arial"`: a second `@font-face` for the fallback,
  *   Arial with size, ascent, descent and line-gap overrides matched to
- *   Figtree's metrics, so a page that keeps the fallback looks as close to
- *   Figtree as Arial can.
+ *   Figtree's metrics, so the fallback text takes nearly the space Figtree
+ *   will, and a page drawn in it looks as close to Figtree as Arial can.
  * - `variable`: the loader sets `--rh-font-figtree` on the element that
  *   carries its class to the two generated family names (Figtree, then the
  *   adjusted fallback), and `tokens.css` puts that variable first in
@@ -38,7 +39,7 @@ export const figtree = localFont({
   src: "../../../packages/ui/fonts/figtree-latin-wght-normal.woff2",
   weight: "300 900",
   style: "normal",
-  display: "optional",
+  display: "swap",
   preload: true,
   adjustFontFallback: "Arial",
   variable: "--rh-font-figtree",
