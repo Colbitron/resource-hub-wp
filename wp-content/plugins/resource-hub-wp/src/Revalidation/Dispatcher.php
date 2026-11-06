@@ -17,7 +17,7 @@ namespace ResourceHub\Revalidation;
  * (ADRs 0012, 0014). The cron callback sends, records and logs; it never reads the post again.
  *
  * Before batching, each `publish` and `update` event is refreshed from its post, so it carries the
- * state the request left behind ({@see ResourceEvents::refresh()}), and every event has its slugs
+ * state the request left behind ({@see ResourceEvents::refresh()}, {@see PageEvents::refresh()}), and every event has its slugs
  * decoded ({@see Payload::decode_slugs()}), because one slug the front end refuses would fail the
  * whole batch with a 400 (ADR 0024). Then a resource event whose top-level `types` is not exactly
  * one element is held back: the schema requires one, so sending it would fail the whole batch with
@@ -90,6 +90,8 @@ final class Dispatcher {
 		foreach ( $events as $event ) {
 			if ( 'resource' === $event['type'] ) {
 				$event = ResourceEvents::refresh( $event );
+			} elseif ( 'page' === $event['type'] ) {
+				$event = PageEvents::refresh( $event );
 			}
 
 			$event  = Payload::decode_slugs( $event );
@@ -195,7 +197,7 @@ final class Dispatcher {
 	/**
 	 * Why an event, its slugs already decoded, cannot be sent, or null when it can: a resource event
 	 * without exactly one type, or a `resource_type` term event whose slug is reserved. Either would
-	 * fail the schema, and with it the whole batch.
+	 * fail the schema, and with it the whole batch. A page event has nothing to hold back.
 	 *
 	 * @param array<string, mixed> $event The event.
 	 */
@@ -204,7 +206,11 @@ final class Dispatcher {
 			return ResourceState::has_one_type( $event ) ? null : Result::no_single_type();
 		}
 
-		return Payload::is_reserved_type_term( $event ) ? Result::reserved_type() : null;
+		if ( 'term' === $event['type'] ) {
+			return Payload::is_reserved_type_term( $event ) ? Result::reserved_type() : null;
+		}
+
+		return null;
 	}
 
 	/**

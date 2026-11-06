@@ -10,12 +10,13 @@ declare(strict_types=1);
 namespace ResourceHub\Revalidation;
 
 use ResourceHub\ContentModel\PostType;
+use ResourceHub\Pages\PagePath;
 use WP_Post;
 use WP_REST_Request;
 use WP_Term;
 
 /**
- * Writes `_rh_last_revalidation` on every resource and term in a batch and exposes it over REST (ADR 0018).
+ * Writes `_rh_last_revalidation` on every resource, term and page in a batch and exposes it over REST (ADR 0018).
  *
  * A batch gets one result, written to every object it carried, each copy noting how many other
  * changes travelled with it. The status moves from `pending`, written when the batch is scheduled,
@@ -36,7 +37,7 @@ final class ResultStore {
 	public const META_KEY = '_rh_last_revalidation';
 
 	/**
-	 * REST field name on `resource`, `resource_topic` and `resource_type` objects.
+	 * REST field name on `resource`, `page`, `resource_topic` and `resource_type` objects.
 	 */
 	public const REST_FIELD = 'rh_last_revalidation';
 
@@ -109,17 +110,21 @@ final class ResultStore {
 	}
 
 	/**
-	 * Registers the read-only `edit`-context REST field on the post type and both taxonomies. Hooked to `rest_api_init`.
+	 * Registers the read-only `edit`-context REST field on the post type, on pages and on both taxonomies.
+	 * Hooked to `rest_api_init`. The block editor's notice reads it for resources only (ADR 0018); a
+	 * page's record is stored and exposed, and read by nothing in the admin yet.
 	 */
 	public function register_rest_fields(): void {
-		register_rest_field(
-			PostType::NAME,
-			self::REST_FIELD,
-			array(
-				'get_callback' => array( $this, 'rest_post_value' ),
-				'schema'       => self::rest_schema(),
-			)
-		);
+		foreach ( array( PostType::NAME, PagePath::POST_TYPE ) as $post_type ) {
+			register_rest_field(
+				$post_type,
+				self::REST_FIELD,
+				array(
+					'get_callback' => array( $this, 'rest_post_value' ),
+					'schema'       => self::rest_schema(),
+				)
+			);
+		}
 
 		foreach ( TermEvents::TAXONOMIES as $taxonomy ) {
 			register_rest_field(
@@ -231,7 +236,7 @@ final class ResultStore {
 
 	/**
 	 * The meta type and ID an event's record goes to, or null when the object no longer exists or is
-	 * not a resource.
+	 * not a resource (for a resource event) or a page (for a page event).
 	 *
 	 * @param array<string, mixed> $event The event.
 	 * @return array{0: string, 1: int}|null
@@ -243,9 +248,10 @@ final class ResultStore {
 			return $term instanceof WP_Term ? array( 'term', $term->term_id ) : null;
 		}
 
-		$post = get_post( (int) $event['id'] );
+		$post      = get_post( (int) $event['id'] );
+		$post_type = 'page' === $event['type'] ? PagePath::POST_TYPE : PostType::NAME;
 
-		return $post instanceof WP_Post && PostType::NAME === $post->post_type ? array( 'post', $post->ID ) : null;
+		return $post instanceof WP_Post && $post_type === $post->post_type ? array( 'post', $post->ID ) : null;
 	}
 
 	/**

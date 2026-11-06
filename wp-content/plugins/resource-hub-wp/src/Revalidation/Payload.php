@@ -42,8 +42,9 @@ final class Payload {
 
 	/**
 	 * One event with every slug field in the form a save would store it now: a resource event's
-	 * `slug`, `types`, `topics`, `previous.slug`, `previous.types` and `previous.topics`, and a term
-	 * event's `slug` and `previous.slug`, each through {@see SlugEscapes::decode_stored()}.
+	 * `slug`, `types`, `topics`, `previous.slug`, `previous.types` and `previous.topics`, a term
+	 * event's `slug` and `previous.slug`, and each segment of a page event's `path` and
+	 * `previous.path`, each through {@see SlugEscapes::decode_stored()}.
 	 *
 	 * Events read stored slugs, and a slug stored before the save-time rule can still carry an escape
 	 * such as `%2d`: `previous` on the save that decodes it (`$post_before`, the term snapshot), a
@@ -71,10 +72,24 @@ final class Payload {
 	 * Call this before {@see ResourceState::has_one_type()} and {@see Payload::is_reserved_type_term()},
 	 * so those checks see the event as sent. Every other slug is returned exactly as stored.
 	 *
-	 * @param array<string, mixed> $event A resource or term event.
+	 * A page path's segment that decodes to nothing is kept as stored: the schema's `pagePath` asks
+	 * only for a non-empty segment, so the stored escape is still sent, and the front end, which
+	 * refuses such a segment, answers the whole batch with a 400 that names it.
+	 *
+	 * @param array<string, mixed> $event A resource, term or page event.
 	 * @return array<string, mixed>
 	 */
 	public static function decode_slugs( array $event ): array {
+		if ( 'page' === $event['type'] ) {
+			$event['path'] = self::decoded_path( (string) $event['path'] );
+
+			if ( is_array( $event['previous'] ?? null ) ) {
+				$event['previous']['path'] = self::decoded_path( (string) $event['previous']['path'] );
+			}
+
+			return $event;
+		}
+
 		$is_resource   = 'resource' === $event['type'];
 		$event['slug'] = self::decoded_slug( (string) $event['slug'], (string) $event['id'] );
 
@@ -141,6 +156,23 @@ final class Payload {
 		$decoded = SlugEscapes::decode_stored( $slug );
 
 		return '' === $decoded ? $fallback : $decoded;
+	}
+
+	/**
+	 * A page path with each segment decoded as a stored slug; a segment that decodes to nothing is kept.
+	 *
+	 * @param string $path A page path, `/` or `/a/b/`.
+	 */
+	private static function decoded_path( string $path ): string {
+		$segments = array_filter( explode( '/', $path ), static fn( string $segment ): bool => '' !== $segment );
+
+		if ( array() === $segments ) {
+			return '/';
+		}
+
+		$decoded = array_map( static fn( string $segment ): string => self::decoded_slug( $segment, $segment ), $segments );
+
+		return '/' . implode( '/', $decoded ) . '/';
 	}
 
 	/**

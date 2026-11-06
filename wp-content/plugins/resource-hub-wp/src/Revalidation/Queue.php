@@ -13,8 +13,8 @@ namespace ResourceHub\Revalidation;
  * Collects the events raised during a request and deduplicates them (ADR 0014). {@see Dispatcher} splits
  * them into batches of at most {@see Queue::BATCH_SIZE} after checking each one.
  *
- * Deduplication is per resource ID for resource events and per (taxonomy, term ID) for term events,
- * so a post and a term that share a numeric ID never merge. A group becomes one event that carries
+ * Deduplication is per resource ID for resource events, per (taxonomy, term ID) for term events and
+ * per page ID for page events (ADR 0052), so a post and a term that share a numeric ID never merge. A group becomes one event that carries
  * the earliest `previous` and the latest current state: the event is a change from the state before
  * the first save to the state after the last one. A group that ends in a removal reports the state
  * from before the first save at the top level, when there was one. Events keep the position of their
@@ -78,7 +78,7 @@ final class Queue {
 	}
 
 	/**
-	 * The deduplication key: `resource:{id}` or `term:{taxonomy}:{id}`.
+	 * The deduplication key: `resource:{id}`, `term:{taxonomy}:{id}` or `page:{id}`.
 	 *
 	 * @param array<string, mixed> $event The event.
 	 */
@@ -87,7 +87,7 @@ final class Queue {
 			return 'term:' . $event['taxonomy'] . ':' . $event['id'];
 		}
 
-		return 'resource:' . $event['id'];
+		return $event['type'] . ':' . $event['id'];
 	}
 
 	/**
@@ -128,21 +128,24 @@ final class Queue {
 	 *   that fixed its type. The removal then takes `types` from the latest event when that is exactly
 	 *   one type, as {@see ResourceState::with_valid_previous_types()} does for an `update`, so it is
 	 *   sent; otherwise the dispatcher holds it back.
+	 * - A page's state is its path alone, so the same rules give a page trashed in the request that
+	 *   also unset it as the front page a `trash` under `/`, the path readers used.
 	 *
 	 * @param array<string, mixed>|null $before The state before the earliest event in the group.
 	 * @param array<string, mixed>      $latest The latest event.
 	 * @return array<string, mixed>
 	 */
 	private static function merge( ?array $before, array $latest ): array {
-		$merged  = $latest;
-		$is_term = 'term' === $latest['type'];
-		$exists  = in_array( $latest['event'], array( 'publish', 'create', 'update' ), true );
+		$merged      = $latest;
+		$is_term     = 'term' === $latest['type'];
+		$is_resource = 'resource' === $latest['type'];
+		$exists      = in_array( $latest['event'], array( 'publish', 'create', 'update' ), true );
 
 		if ( ! $exists ) {
 			if ( null !== $before ) {
 				$merged = array_merge( $merged, $before );
 
-				if ( ! $is_term && 1 !== count( $before['types'] ) && 1 === count( $latest['types'] ) ) {
+				if ( $is_resource && 1 !== count( $before['types'] ) && 1 === count( $latest['types'] ) ) {
 					$merged['types'] = $latest['types'];
 				}
 			}
@@ -177,6 +180,10 @@ final class Queue {
 				'slug' => $event['slug'],
 				'name' => $event['name'],
 			);
+		}
+
+		if ( 'page' === $event['type'] ) {
+			return array( 'path' => $event['path'] );
 		}
 
 		return array(

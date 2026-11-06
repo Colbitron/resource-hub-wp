@@ -37,7 +37,7 @@ Scaffold complete; features in progress. Everything below the line exists and is
 | Revalidation hook and admin notice | pending |
 | Next.js front end scaffold in `apps/web` | done |
 | Front-end production deploy through a Vercel deploy hook ([ADR 0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md)) | built; awaiting the first-deploy check |
-| The CMS's pages on the front end: the static front page at `/`, every published page at its path, `GET /resource-hub/v1/page` and page events ([ADR 0052](docs/adr/0052-the-front-end-renders-the-cms-pages.md)) | route and front end done; the plugin's page events in the stacked pull request |
+| The CMS's pages on the front end: the static front page at `/`, every published page at its path, `GET /resource-hub/v1/page` and page events ([ADR 0052](docs/adr/0052-the-front-end-renders-the-cms-pages.md)) | done |
 | CMS block theme | planned |
 
 ## Architecture
