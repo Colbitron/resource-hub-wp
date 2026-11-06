@@ -38,6 +38,29 @@ concurrency:
 permissions:
   contents: read
 
+# Caches are restored everywhere and saved only from main. A cache entry
+# belongs to the ref that saved it: a pull request's run saves under
+# refs/pull/N/merge, which only that pull request can read, while every
+# run can also read what its base branch, main, saved. So entries saved on
+# main serve every pull request, and an entry a pull request saved serves
+# that pull request alone. On 2026-11-06 the repository's Actions cache was
+# at its 10 GB limit, where GitHub evicts the least recently used entries,
+# main's included: 18 of its 24 entries, about 8.2 GB, were per-PR copies
+# of the ~460 MB pnpm store that actions/setup-node's `cache: pnpm` saved.
+#
+# So every cache below is an actions/cache/restore step and a separate
+# actions/cache/save step (actions/cache@v6 has no input that turns its own
+# save off), and each save runs only when SAVE_CACHES is true and its
+# restore missed: cache-hit is 'true' only for an exact match of the key,
+# so main never uploads an identical entry again. Each save runs straight
+# after the step that fills the directory, so a later failure does not lose
+# it. A manual dispatch on main saves too: it runs in main's scope, which
+# pull requests read, so it can re-fill an evicted entry without waiting
+# for a merge. A dispatch on a tag, which is how a rollback deploys, does
+# not, since only that tag could read what it saved.
+env:
+  SAVE_CACHES: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+
 jobs:
   gate:
     name: Lint, build, and test
@@ -56,10 +79,51 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: pnpm
+
+      # The pnpm store is cached by hand rather than with setup-node's
+      # `cache: pnpm`, which saves on every run (see the comment above jobs).
+      # The path comes from `pnpm store path --silent`, the command setup-node
+      # runs, and the key is the one setup-node v7 builds (src/cache-restore.ts:
+      # node-cache-<RUNNER_OS>-<os.arch()>-pnpm-<hash of pnpm-lock.yaml>, where
+      # os.arch() is Node's process.arch), so the entries setup-node saved on
+      # main still hit. actions/cache also versions an entry by its path
+      # string, so a different path, even to the same directory, would miss.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: |
+          store=$(pnpm store path --silent)
+          arch=$(node -p process.arch)
+          if [[ "$store" != /* ]] || [ -z "$arch" ]; then
+            echo "::error::Could not read the pnpm store path (got: $store) or Node's architecture (got: $arch)."
+            exit 1
+          fi
+          {
+            echo "path=$store"
+            echo "key-prefix=node-cache-$RUNNER_OS-$arch-pnpm-"
+          } >> "$GITHUB_OUTPUT"
+
+      # A pull request that changes the lockfile misses the key and falls back
+      # to main's latest store, so pnpm downloads only what changed. main gets
+      # no fallback: after a lockfile change it installs into an empty store
+      # and saves that, so main's entry holds the current lockfile's packages
+      # and never piles up the ones it dropped.
+      - name: Restore the pnpm store
+        id: pnpm-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-store.outputs.key-prefix }}${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ env.SAVE_CACHES != 'true' && steps.pnpm-store.outputs.key-prefix || '' }}
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Save the pnpm store
+        if: env.SAVE_CACHES == 'true' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
 
       # The JSON Schema contract with the front end (ADR 0010): compiles every
       # schema in strict mode and checks every fixture. Pure Node, so it runs
@@ -106,9 +170,12 @@ jobs:
       # wp-env downloads WordPress core and the core test library into
       # WP_ENV_HOME and reuses them when its config checksum matches. The weekly
       # suffix keeps the unpinned "latest" core from freezing at whatever was
-      # cached first.
-      - name: Cache wp-env downloads
-        uses: actions/cache@v6
+      # cached first, so there are no restore keys: a fallback to last week's
+      # entry would be saved again under this week's key and never refresh.
+      # Until main runs in a new week, pull requests miss and download.
+      - name: Restore wp-env downloads
+        id: wp-env-cache
+        uses: actions/cache/restore@v6
         with:
           path: ${{ steps.keys.outputs.wp_env_home }}
           key: wp-env-${{ runner.os }}-${{ hashFiles('.wp-env.json') }}-${{ steps.keys.outputs.week }}
@@ -116,14 +183,29 @@ jobs:
       - name: Start wp-env
         run: pnpm env:start
 
-      - name: Cache Composer vendor directory
-        uses: actions/cache@v6
+      - name: Save wp-env downloads
+        if: env.SAVE_CACHES == 'true' && steps.wp-env-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.keys.outputs.wp_env_home }}
+          key: ${{ steps.wp-env-cache.outputs.cache-primary-key }}
+
+      - name: Restore Composer vendor directory
+        id: composer-cache
+        uses: actions/cache/restore@v6
         with:
           path: wp-content/plugins/resource-hub-wp/vendor
           key: composer-${{ runner.os }}-${{ hashFiles('wp-content/plugins/resource-hub-wp/composer.lock') }}
 
       - name: Install PHP dependencies
         run: pnpm composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Save Composer vendor directory
+        if: env.SAVE_CACHES == 'true' && steps.composer-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: wp-content/plugins/resource-hub-wp/vendor
+          key: ${{ steps.composer-cache.outputs.cache-primary-key }}
 
       - name: Lint PHP
         run: pnpm lint
@@ -133,9 +215,9 @@ jobs:
 
       # The key holds the resolved Playwright version, so an upgrade misses and
       # downloads the new browser.
-      - name: Cache Playwright browser
+      - name: Restore Playwright browser
         id: playwright-cache
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.keys.outputs.playwright }}
@@ -212,11 +294,18 @@ jobs:
       # failure does not throw away a slow download. Nothing is saved when apt
       # downloaded nothing, so an empty entry never hides a later download.
       - name: Save Playwright's apt packages
-        if: steps.install-browser.outputs.save-apt == 'true'
+        if: env.SAVE_CACHES == 'true' && steps.install-browser.outputs.save-apt == 'true'
         uses: actions/cache/save@v6
         with:
           path: ${{ steps.keys.outputs.apt_dir }}
           key: ${{ steps.apt-cache.outputs.cache-primary-key }}
+
+      - name: Save Playwright browser
+        if: env.SAVE_CACHES == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.playwright-cache.outputs.cache-primary-key }}
 
       - name: Run Playwright
         run: pnpm test:e2e
@@ -259,10 +348,39 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: pnpm
+
+      # The same store, key and rule as the gate's; see the comments there.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: |
+          store=$(pnpm store path --silent)
+          arch=$(node -p process.arch)
+          if [[ "$store" != /* ]] || [ -z "$arch" ]; then
+            echo "::error::Could not read the pnpm store path (got: $store) or Node's architecture (got: $arch)."
+            exit 1
+          fi
+          {
+            echo "path=$store"
+            echo "key-prefix=node-cache-$RUNNER_OS-$arch-pnpm-"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pnpm store
+        id: pnpm-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-store.outputs.key-prefix }}${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ env.SAVE_CACHES != 'true' && steps.pnpm-store.outputs.key-prefix || '' }}
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Save the pnpm store
+        if: env.SAVE_CACHES == 'true' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
 
       - name: Lint the front end
         run: pnpm web:lint
@@ -356,7 +474,7 @@ jobs:
 
       # Saved straight after the install; see the gate's save step.
       - name: Save Playwright's apt packages
-        if: steps.install-browser.outputs.save-apt == 'true'
+        if: env.SAVE_CACHES == 'true' && steps.install-browser.outputs.save-apt == 'true'
         uses: actions/cache/save@v6
         with:
           path: ${{ steps.playwright.outputs.apt_dir }}
@@ -473,10 +591,41 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: pnpm
+
+      # The same store, key and rule as the gate's; see the comments there.
+      # On main this job runs after the gate, which has usually saved this key
+      # already, so it hits and saves nothing; on a tag nothing is saved.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: |
+          store=$(pnpm store path --silent)
+          arch=$(node -p process.arch)
+          if [[ "$store" != /* ]] || [ -z "$arch" ]; then
+            echo "::error::Could not read the pnpm store path (got: $store) or Node's architecture (got: $arch)."
+            exit 1
+          fi
+          {
+            echo "path=$store"
+            echo "key-prefix=node-cache-$RUNNER_OS-$arch-pnpm-"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pnpm store
+        id: pnpm-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-store.outputs.key-prefix }}${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ env.SAVE_CACHES != 'true' && steps.pnpm-store.outputs.key-prefix || '' }}
 
       - name: Install JavaScript dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Save the pnpm store
+        if: env.SAVE_CACHES == 'true' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
 
       - name: Build the block
         run: pnpm build
