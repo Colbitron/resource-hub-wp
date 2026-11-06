@@ -1,14 +1,22 @@
 /**
- * One representative URL per page template, from the mock CMS's seed
- * (`mock-cms/seed.mts`): the list the axe scan (`a11y.spec.ts`) and
- * Lighthouse CI (`lighthouserc.cjs`) both read, so the two gates always
- * measure the same pages.
+ * The URLs the axe scan (`a11y.spec.ts`) and Lighthouse CI
+ * (`lighthouserc.cjs`) both read, from the mock CMS's seed
+ * (`mock-cms/seed.mts`), so the two gates always measure the same pages.
  *
- * Sampling per template is deliberate: every listing renders through
- * `ListingPage`, every resource through `ResourceArticle` and every CMS page
- * through `PageArticle`, so a second resource or a third listing adds run
- * time and no coverage. The list grows when a template is added, not when
- * content is. Add the new template's URL here when you add a route.
+ * What is sampled, exactly: the welcome page at `/`, one CMS page, the
+ * library, a type listing, a topic listing, a type-within-topic listing with
+ * resources and one without (the empty state), the library's page 2, one
+ * resource (the long-form one), and an unmatched URL's 404. Not sampled: a
+ * CMS page set as the static front page, a paginated filtered listing, a
+ * listing's or resource's own `notFound()`, a resource without an image or
+ * without a body, and every fixture page; their markup is the same
+ * components with other data, which the specs for each route check.
+ *
+ * Sampling is deliberate: every listing renders through `ListingPage`, every
+ * resource through `ResourceArticle` and every CMS page through
+ * `PageArticle`, so a second resource or a third listing like the others
+ * adds run time and little coverage. The list grows when a route or a state
+ * that renders differently is added, not when content is.
  *
  * Plain data in an `.mts` module with no imports, so `lighthouserc.cjs` can
  * `require()` it under Node 24 as well as the specs importing it.
@@ -37,9 +45,18 @@ export const SAMPLED_URLS: readonly SampledUrl[] = [
   { template: "CMS page", path: "/welcome/", status: 200, lighthouse: true },
   { template: "library", path: "/resources/", status: 200, lighthouse: true },
   { template: "type listing", path: "/resources/webinar/", status: 200, lighthouse: true },
+  { template: "topic listing", path: "/resources/topic/performance/", status: 200, lighthouse: true },
   {
     template: "type within topic listing",
     path: "/resources/article/topic/accessibility/",
+    status: 200,
+    lighthouse: true,
+  },
+  // No podcast has the accessibility topic: a 200 with the empty state and
+  // its link back to the library, and no cards.
+  {
+    template: "empty type within topic listing",
+    path: "/resources/podcast/topic/accessibility/",
     status: 200,
     lighthouse: true,
   },

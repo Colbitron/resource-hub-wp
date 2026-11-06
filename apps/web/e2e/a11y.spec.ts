@@ -6,10 +6,11 @@ import { mockCms } from "./mock-cms/client.mts";
 import { SAMPLED_URLS } from "./sampled-urls.mts";
 
 /**
- * The accessibility gate: a full axe scan of one URL per page template
- * (`sampled-urls.mts`, shared with Lighthouse CI), in the light and the dark
- * colour scheme, with every WCAG 2.0, 2.1 and 2.2 level A and AA rule axe
- * has. Zero violations, in both schemes, on every template.
+ * The accessibility gate: a full axe scan of the sampled URLs
+ * (`sampled-urls.mts`, shared with Lighthouse CI, which says what is and is
+ * not sampled), in the light and the dark colour scheme, with every WCAG
+ * 2.0, 2.1 and 2.2 level A and AA rule axe has. Zero violations, in both
+ * schemes, on every sampled URL.
  *
  * Both schemes, because the shared tokens switch on `prefers-color-scheme`
  * and a contrast failure in one says nothing about the other. Each scheme is
@@ -18,7 +19,7 @@ import { SAMPLED_URLS } from "./sampled-urls.mts";
  * axe sees what a browser renders: it checks contrast against computed
  * colours, so it covers the tokens as the pages use them. It cannot judge
  * reading order, meaningful alt text or focus order end to end; the specs
- * for each template keep those checks (`card.spec.ts`, `listings.spec.ts`,
+ * for each route keep those checks (`card.spec.ts`, `listings.spec.ts`,
  * `resource-page.spec.ts`).
  */
 
@@ -42,7 +43,7 @@ for (const { template, path, status } of SAMPLED_URLS) {
         expect(response?.status(), path).toBe(status);
         // Next.js 16.4.5 sends a data-dependent `notFound()` as its empty error
         // document and renders the site's 404 page on hydration (errors.spec.ts),
-        // so wait for a heading, which every template has, before scanning.
+        // so wait for a heading, which every sampled page has, before scanning.
         await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
         await page.waitForLoadState("load");
         expect(await wcagViolations(page)).toEqual([]);

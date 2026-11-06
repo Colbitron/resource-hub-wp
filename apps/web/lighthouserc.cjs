@@ -5,7 +5,7 @@
  * (`e2e/lighthouse.mts`); `lhci` alone expects them running.
  *
  * - The URLs are `e2e/sampled-urls.mts`, the list the axe scan reads too:
- *   one per template, except the 404, which Lighthouse refuses to score.
+ *   every sampled URL except the 404, which Lighthouse refuses to score.
  * - Lighthouse's default config is the mobile preset: a Moto G Power-sized
  *   screen and simulated slow 4G with a 4x CPU slowdown. No preset is named,
  *   because LHCI's presets are `desktop`, `perf` and `experimental`.
