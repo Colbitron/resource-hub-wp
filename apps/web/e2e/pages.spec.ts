@@ -200,6 +200,9 @@ test.describe("pages at their paths", () => {
     expect(html).toContain(`<link rel="canonical" href="${appSiteOrigin()}${path}"`);
     expect(html).toContain('<meta name="description" content="Who writes the resources."');
     expect(html).toContain('<meta property="og:type" content="website"');
+    // Pages carry no image, so the summary card, never the large one.
+    expect(html).toContain('<meta name="twitter:card" content="summary"/>');
+    expect(html).not.toContain("summary_large_image");
     await expectPage(await get(request, `/${ABOUT.slug}/`), "About", `/${ABOUT.slug}/`);
   });
 

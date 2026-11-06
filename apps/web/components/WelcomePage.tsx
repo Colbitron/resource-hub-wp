@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { shareMetadata } from "@/lib/share-metadata";
+
 import "./page.css";
 
 /**
@@ -19,7 +21,7 @@ export const WELCOME_TITLE = "Resource Hub";
 export const welcomeMetadata: Metadata = {
   title: { absolute: WELCOME_TITLE },
   alternates: { canonical: "/" },
-  openGraph: { type: "website", title: WELCOME_TITLE, url: "/" },
+  ...shareMetadata({ type: "website", title: WELCOME_TITLE, url: "/" }),
 };
 
 export function WelcomePage() {

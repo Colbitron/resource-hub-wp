@@ -10,7 +10,10 @@ import { siteUrl } from "@/lib/env";
  * the public domain (see `apps/web/README.md`). Unset, as in local work, they
  * stay relative; a Vercel build refuses to run without it (`next.config.ts`). A
  * function rather than a constant so the variable is read when a page renders,
- * not when the module is imported.
+ * not when the module is imported. It sets no `openGraph` or `twitter`:
+ * segments merge shallowly, so either would reach every page that sets none,
+ * and an inherited `twitter.card` would outlive a page's image
+ * (`lib/share-metadata.ts`).
  */
 export function generateMetadata(): Metadata {
   const base = siteUrl();
