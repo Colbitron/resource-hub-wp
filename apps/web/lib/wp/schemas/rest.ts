@@ -196,7 +196,7 @@ export const wpResourceSchema = z.object({
 });
 
 /**
- * A page from `/wp/v2/pages/{id}` (ADR 0051): what the page route renders.
+ * A page from `/wp/v2/pages/{id}` (ADR 0052): what the page route renders.
  * `parent` is 0 for a top-level page; the path is not here, because core
  * gives only `link`, an absolute CMS URL that depends on the permalink
  * structure, and the plugin's page route answers the path instead.

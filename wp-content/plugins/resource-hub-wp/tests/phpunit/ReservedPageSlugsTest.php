@@ -1,6 +1,6 @@
 <?php
 /**
- * Top-level pages never take the front end's own first path segments (ADR 0051).
+ * Top-level pages never take the front end's own first path segments (ADR 0052).
  *
  * @package ResourceHub
  */

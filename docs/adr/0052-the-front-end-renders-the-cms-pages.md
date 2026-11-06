@@ -36,6 +36,13 @@ A new event `type` is not additive under the CMS-first deploy order ([ADR 0010](
 - **Refusing a reserved page slug on save with an error, as a reserved type slug is refused.** A type slug is a URL segment the editor is asked to choose and has few of; a page slug is generated from the title, and core's own answer to a slug it cannot serve is a suffix. The suffix was chosen.
 - **A redirect from `/` to `/resources/` while no front page is set.** A permanent redirect from the root is hard to take back once browsers hold it, and a crawler should find a 200 at the root. The welcome page was chosen.
 
+## Amended 2026-11-06, after review
+
+- A segment that sanitizes to nothing (`-`, `!!!`) is a miss on the plugin's side, never a 400, and the front end treats the plugin's 400 (an over-long path, which it also refuses before asking) and core's 404 `rest_no_route` as misses: no visitor's URL and no CMS a deploy behind can make the page route answer a 500.
+- A password-protected page is never served, as the owner rules: `PagePath::is_served()` requires an empty `post_password`, so the route, the front-page check and the events agree, and the front end refuses a page whose `content.protected` is set.
+- A redirect is sent only after the target path has been looked up as well and has answered the same page at that path, so two Data Cache entries that disagree, one from before a move and one after, give a 404 rather than a loop.
+- `page_for_posts` counts only while `show_on_front` is `page`, as core reads it.
+
 ## Consequences
 
 - `/` and every page path render on every request (`force-dynamic`, `connection()` first), for the reasons measured for the resource page in ADR 0035's amendment: a computed 308 must not be stored, and a route with no dynamic segment would otherwise be prerendered at build from a CMS the build must not need ([ADR 0050](0050-listings-are-isr-that-render-on-first-request.md)). The Data Cache sits behind the render.

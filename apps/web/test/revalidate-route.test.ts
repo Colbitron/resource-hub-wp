@@ -727,7 +727,7 @@ describe("a good batch", () => {
     expect(revalidatePath.mock.calls).toEqual(paths.map((path) => [path]));
   });
 
-  it("revalidates pages and the two paths of a page event (ADR 0051)", async () => {
+  it("revalidates pages and the two paths of a page event (ADR 0052)", async () => {
     const event = { type: "page", event: "update", id: 14, path: "/company/team/", previous: { path: "/about/team/" } };
     const body = await okBody(await POST(request({ body: batch([event]) })));
     expect(body).toEqual({ revalidated: ["/about/team/", "/company/team/"] });

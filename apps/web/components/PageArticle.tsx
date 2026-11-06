@@ -10,7 +10,7 @@ import "./page.css";
 import "./prose.css";
 
 /**
- * A WordPress page as the front end shows it (ADR 0051): one `<article>` with
+ * A WordPress page as the front end shows it (ADR 0052): one `<article>` with
  * the title and the body, at `/` for the static front page and at its own
  * path otherwise. The route hands over a `RenderedPage` from
  * `pageForRequest` (`lib/page-request.ts`), so by the time this renders the
@@ -20,10 +20,11 @@ import "./prose.css";
  * The body is `content.rendered` through the one server-side pass
  * (`renderContent`, ADR 0047), which sanitises it and rewrites its URLs, with
  * `postId` so a related-resources block in the page excludes the page's own
- * ID whatever its HTML says. A password-protected page has an empty body
- * for an anonymous reader, and that is what shows. Pages carry no featured
- * image here: the content model gives pages no meta of their own and the
- * front end shows what core's pages endpoint gives.
+ * ID whatever its HTML says. A password-protected page is never served: the
+ * plugin answers none, and the decision refuses one whose `content.protected`
+ * is set. Pages carry no featured image here: the content model gives pages
+ * no meta of their own and the front end shows what core's pages endpoint
+ * gives.
  */
 
 /** The page's view, computed once per render and shared by the component and the metadata. */

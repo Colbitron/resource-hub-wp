@@ -5,7 +5,7 @@ import { idSchema } from "./common";
 
 /**
  * The `200` body of `GET {WP_API_URL}/resource-hub/v1/page?path=…`, mirroring
- * `packages/ui/schemas/page-response.schema.json` (ADR 0051): the published
+ * `packages/ui/schemas/page-response.schema.json` (ADR 0052): the published
  * page the front end serves at a public path, with the page's canonical path
  * now, or `page: null` for none. A miss is a 200, so the Data Cache keeps it.
  *

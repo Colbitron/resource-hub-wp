@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /resource-hub/v1/page?path=…` (ADR 0051).
+ * `GET /resource-hub/v1/page?path=…` (ADR 0052).
  *
  * @package ResourceHub
  */
@@ -298,6 +298,7 @@ final class PageRouteTest extends WP_UnitTestCase {
 	 */
 	public function test_posts_page_is_null(): void {
 		$news = $this->page( 'news' );
+		update_option( 'show_on_front', 'page' );
 		update_option( 'page_for_posts', $news );
 
 		$this->assert_page( null, $this->lookup( '/news/' ) );
@@ -325,15 +326,59 @@ final class PageRouteTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * A segment that sanitizes to nothing, a path too long, and a non-string are 400s in core's error shape.
+	 * A segment that sanitizes to nothing names no page and is a miss, never an error, so a visitor's URL
+	 * can never make the front end fail; a path too long and a non-string are 400s in core's error shape.
 	 */
-	public function test_malformed_paths_are_400(): void {
-		foreach ( array( '/about//team/', '/about/%/', '/-/' ) as $path ) {
-			$this->assert_error( $this->lookup( $path ), $path );
+	public function test_unsanitizable_segments_are_misses_and_malformed_paths_are_400(): void {
+		$this->page( 'about' );
+
+		foreach ( array( '/about//team/', '/about/%/', '/-/', '/~/', "/'/", '/(/', '/!!!/', '/&/', '//' ) as $path ) {
+			$this->assert_page( null, $this->lookup( $path ) );
 		}
 
 		$this->assert_error( $this->lookup( str_repeat( 'a', PageRoute::MAX_PATH_LENGTH + 1 ) ), 'too long' );
 		$this->assert_error( $this->lookup( array( 'about' ) ), 'an array' );
+	}
+
+	/**
+	 * A password-protected page is never answered: not at its path, not as the front page, not by a guess.
+	 */
+	public function test_protected_pages_are_null(): void {
+		$about  = $this->page( 'about' );
+		$secret = self::factory()->post->create(
+			array(
+				'post_type'     => PagePath::POST_TYPE,
+				'post_status'   => 'publish',
+				'post_name'     => 'secret',
+				'post_password' => 'hunter2',
+				'post_parent'   => $about,
+			)
+		);
+		$this->assert_page( null, $this->lookup( '/about/secret/' ) );
+		$this->assert_page( null, $this->lookup( '/secret/' ) );
+
+		$this->set_front_page( $secret );
+		$this->assert_page( null, $this->lookup( '/' ) );
+		$this->assertSame( 0, PagePath::front_page_id() );
+	}
+
+	/**
+	 * `page_for_posts` means something only while `show_on_front` is `page`, as core reads it.
+	 */
+	public function test_posts_page_counts_only_with_show_on_front_page(): void {
+		$news = $this->page( 'news' );
+		update_option( 'page_for_posts', $news );
+
+		$this->assert_page(
+			array(
+				'id'   => $news,
+				'path' => '/news/',
+			),
+			$this->lookup( '/news/' )
+		);
+
+		update_option( 'show_on_front', 'page' );
+		$this->assert_page( null, $this->lookup( '/news/' ) );
 	}
 
 	/**

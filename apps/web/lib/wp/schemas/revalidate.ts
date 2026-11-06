@@ -204,7 +204,7 @@ function buildRequestSchemas(unknownKeys: UnknownKeys) {
   });
 
   /**
-   * `$defs/pageEvent` (ADR 0051): the five event names of a resource event,
+   * `$defs/pageEvent` (ADR 0052): the five event names of a resource event,
    * the page's ID and public path, and `previous` on `update` only, as for the
    * other two shapes.
    */

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { decidePageRequest, type PageRequestOptions } from "../lib/page-request";
-import { canonicalSlug, isPageSegment, pagePath } from "../lib/routes";
+import { canonicalSlug, isPageSegment, MAX_PAGE_PATH_LENGTH, pagePath } from "../lib/routes";
 import type { PageLookup } from "../lib/wp/schemas/page";
 import type { WpPage } from "../lib/wp/schemas/rest";
 
 /**
- * The decision for `/` and `/{segments}/` (ADR 0051) without Next.js: which
+ * The decision for `/` and `/{segments}/` (ADR 0052) without Next.js: which
  * requests never reach the CMS, when a request renders, redirects or is a
  * 404, and that a redirect's target is a fixed point.
  */
@@ -104,6 +104,46 @@ describe("decidePageRequest", () => {
       expect(await decidePageRequest(segments, cms(SITE, lookups)), segments.join("/")).toEqual({ kind: "not-found" });
     }
     expect(lookups).toEqual([]);
+  });
+
+  it("is a 404 without a request for a path over the plugin's cap, and a 404 after one lookup for a segment the CMS sanitizes to nothing", async () => {
+    const lookups: string[] = [];
+    const segment = "a".repeat(200);
+    const tooLong = Array.from({ length: Math.ceil(MAX_PAGE_PATH_LENGTH / 201) + 1 }, () => segment);
+    expect(pagePath(tooLong).length).toBeGreaterThan(MAX_PAGE_PATH_LENGTH);
+    expect(await decidePageRequest(tooLong, cms(SITE, lookups))).toEqual({ kind: "not-found" });
+    expect(lookups).toEqual([]);
+    // `-` is a slug to the front end but sanitizes to nothing on the CMS, which answers null.
+    expect(await decidePageRequest(["-"], cms(SITE, lookups))).toEqual({ kind: "not-found" });
+    expect(lookups).toEqual(["/-/"]);
+  });
+
+  it("never serves a password-protected page: a 404, or the welcome page at the root", async () => {
+    const options: PageRequestOptions = {
+      lookupPage: async (path) => (path === "/" ? { id: 12, path: "/" } : { id: 13, path: "/about/" }),
+      getPageById: async (id) => ({ ...page(id, "x"), content: { rendered: "", protected: true } }),
+    };
+    expect(await decidePageRequest([], options)).toEqual({ kind: "welcome" });
+    expect(await decidePageRequest(["about"], options)).toEqual({ kind: "not-found" });
+  });
+
+  it("redirects only when the target answers the same page at that path, so two cache entries that disagree cannot loop", async () => {
+    // One entry written before a move and one after: A says the page is at B, B says it is at A.
+    const inconsistent: Record<string, PageLookup> = {
+      "/a/": { id: 20, path: "/b/" },
+      "/b/": { id: 20, path: "/a/" },
+      // The target names another page.
+      "/c/": { id: 21, path: "/d/" },
+      "/d/": { id: 22, path: "/d/" },
+      // The target is a miss.
+      "/e/": { id: 23, path: "/f/" },
+    };
+    for (const segments of [["a"], ["b"], ["c"], ["e"]]) {
+      expect(await decidePageRequest(segments, cms(inconsistent)), segments[0]).toEqual({ kind: "not-found" });
+    }
+    const lookups: string[] = [];
+    expect(await decidePageRequest(["about", "contact"], cms(SITE, lookups))).toEqual({ kind: "redirect", path: "/company/contact/" });
+    expect(lookups).toEqual(["/about/contact/", "/company/contact/"]);
   });
 
   it("is a 404, or the welcome page at the root, when the page is gone between the lookup and the read", async () => {

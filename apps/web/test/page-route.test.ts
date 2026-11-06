@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * The page route (ADR 0051) keeps the segment config its redirects rest on,
+ * The page route (ADR 0052) keeps the segment config its redirects rest on,
  * the same as the resource route (ADR 0035's 2026-11-05 amendment): it
  * renders on every request, so a computed 308 is sent with `no-store` and
  * never stored, and the build never renders `/` from the CMS. There is no

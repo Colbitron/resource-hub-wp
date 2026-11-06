@@ -619,8 +619,10 @@ const MAX_PAGE_PATH_LENGTH = 2010;
 
 /**
  * The plugin's page route: `path` defaults to `/`; its segments, split on `/`
- * with the ends trimmed, are each sanitized as a slug, and an empty one is a
- * 400 `rest_invalid_param` as the plugin's `validate_callback` words it.
+ * with the ends trimmed, are each sanitized as a slug, and one empty once
+ * sanitized is a miss (`page: null`). Only a path over the cap, or not a
+ * string, is a 400 `rest_invalid_param`, as the plugin's `validate_callback`
+ * words it.
  */
 function pageLookup(state: MockState, url: URL): MockResponse {
   const raw = phpParam(url.searchParams, "path") ?? "/";
@@ -633,7 +635,7 @@ function pageLookup(state: MockState, url: URL): MockResponse {
   const trimmed = raw.replace(/^\/+|\/+$/g, "");
   const segments = trimmed === "" ? [] : trimmed.split("/").map(slugify);
   if (segments.some((segment) => segment === "")) {
-    return invalidParams([{ param: "path", code: "rest_invalid_param", message: "path has a segment that is empty once sanitized.", data: null }]);
+    return { status: 200, headers: { ...JSON_HEADERS }, body: { page: null } };
   }
   return { status: 200, headers: { ...JSON_HEADERS }, body: { page: state.lookupPage(segments) } };
 }

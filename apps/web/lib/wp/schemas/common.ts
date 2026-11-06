@@ -127,7 +127,7 @@ export const pathSchema = z
 
 /**
  * `$defs/pagePath`: a WordPress page's public path, `/` or `/a/b/` with
- * non-empty segments holding no slash and no whitespace (ADR 0051). Exactly
+ * non-empty segments holding no slash and no whitespace (ADR 0052). Exactly
  * the schema's rule, through `pagePathSegments`; the page reader
  * (`lib/wp/schemas/page.ts`) is stricter, since it builds a route from it.
  */

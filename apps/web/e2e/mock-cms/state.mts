@@ -267,9 +267,9 @@ export class MockState {
     return page !== undefined && page.status === "publish" ? page : undefined;
   }
 
-  /** A page the front end serves: published and not the posts page, as the plugin's `PagePath::is_served()`. */
+  /** A page the front end serves: published and not the posts page, which counts only while `show_on_front` is `page`, as the plugin's `PagePath::is_served()`. */
   isServedPage(page: PageRecord): boolean {
-    return page.status === "publish" && page.id !== this.pageForPosts;
+    return page.status === "publish" && !(this.frontPage.showOnFront === "page" && page.id === this.pageForPosts);
   }
 
   /** The page's parent chain and slug, as `get_page_uri()` gives it: `about/team`. */

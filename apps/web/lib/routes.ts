@@ -9,7 +9,7 @@
  *   page has one URL.
  * - `/resources/{type}/{slug}/` is a single resource.
  * - `/` is the CMS's static front page, and `/{segment}/…/` any other published
- *   WordPress page at its parent chain (ADR 0051). The first segment is never
+ *   WordPress page at its parent chain (ADR 0052). The first segment is never
  *   one of `RESERVED_ROOT_SEGMENTS`, the front end's own routes.
  * - Every path ends with a slash (`trailingSlash: true`), as on the CMS.
  * - `topic` and `page` are route segments, so they are never a type slug.
@@ -298,7 +298,7 @@ export function resourcePath(type: string, slug: string): string {
 }
 
 /*
- * Pages (ADR 0051): the root and every published WordPress page at its path.
+ * Pages (ADR 0052): the root and every published WordPress page at its path.
  */
 
 /** The site's root: the CMS's static front page, or the welcome page when none is set. */
@@ -313,6 +313,13 @@ export const ROOT_PATH = "/";
  * decided without a request.
  */
 export const RESERVED_ROOT_SEGMENTS = ["resources", "api", "media", "_next"] as const;
+
+/**
+ * The longest page path, in characters of its canonical form, that is looked
+ * up: the plugin's own cap on the `path` parameter, which it answers past
+ * with a 400. A longer request is a 404 before any request.
+ */
+export const MAX_PAGE_PATH_LENGTH = 2010;
 
 /** True for a canonical first segment the front end's routes own, so no page is served under it. */
 export function isReservedRootSegment(value: string): boolean {

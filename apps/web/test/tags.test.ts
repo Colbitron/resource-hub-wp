@@ -403,7 +403,7 @@ describe("eventsToInvalidations", () => {
     expect(eventsToInvalidations([])).toEqual({ tags: [], paths: [] });
   });
 
-  it("clears pages and the paths of both states for a page event, and nothing of the library's (ADR 0051)", () => {
+  it("clears pages and the paths of both states for a page event, and nothing of the library's (ADR 0052)", () => {
     expect(
       eventsToInvalidations([
         pageEvent({ event: "update", path: "/company/team/", previous: { path: "/about/team/" } }),
@@ -618,7 +618,7 @@ describe("fetch tags (ADR 0046)", () => {
     expect(taxonomyListTags()).toEqual(["resources", "terms"]);
   });
 
-  it("tag a page lookup and a page read with pages only (ADR 0051)", () => {
+  it("tag a page lookup and a page read with pages only (ADR 0052)", () => {
     expect(pageTags()).toEqual(["pages"]);
   });
 });

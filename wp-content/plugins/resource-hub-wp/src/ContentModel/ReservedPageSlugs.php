@@ -12,7 +12,7 @@ namespace ResourceHub\ContentModel;
 use ResourceHub\Pages\PagePath;
 
 /**
- * The front end serves every published page at its path (ADR 0051), but its own routes come first:
+ * The front end serves every published page at its path (ADR 0052), but its own routes come first:
  * `/resources/…` is the library, `/api/…` its route handlers, `/media/…` the uploads rewrite and
  * `/_next/…` the framework's. A top-level page slugged `resources`, `api`, `media` or `_next` could
  * never be reached there, so WordPress is told the slug is taken, the way core already treats

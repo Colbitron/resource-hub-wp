@@ -4,7 +4,7 @@ import { CmsError } from "../lib/wp/fetch";
 import { getPageById, lookupPage } from "../lib/wp/pages";
 
 /**
- * The page fetchers (ADR 0051) with `fetch` stubbed: the lookup's URL, query
+ * The page fetchers (ADR 0052) with `fetch` stubbed: the lookup's URL, query
  * and tag, what a miss and a hit come back as, what a bad answer does, and
  * the read by ID with its misses. The tag is `pages` on both.
  */
@@ -82,18 +82,23 @@ describe("lookupPage", () => {
     expect(await lookupPage("/about/team/")).toEqual({ id: 14, path: "/about/team/" });
   });
 
-  it("throws a CmsError on a path it could not serve, and on a 404, without naming the CMS", async () => {
+  it("is null for the plugin's 400 on an over-long path and for a CMS without the route, and throws on anything else, never naming the CMS", async () => {
+    handler = () => wpError(400, "rest_invalid_param");
+    expect(await lookupPage(`/${"a".repeat(2011)}/`)).toBeNull();
+    // A CMS a deploy behind, with no page route: the welcome page and 404s, not 500s.
+    handler = () => wpError(404, "rest_no_route");
+    expect(await lookupPage("/")).toBeNull();
+
     handler = () => json({ page: { id: 14, path: "/about/team.html/" } });
     const bad = await lookupPage("/about/").catch((error: unknown) => error);
     expect(bad).toBeInstanceOf(CmsError);
     expect((bad as CmsError).reason).toBe("schema");
     expect((bad as CmsError).message).not.toContain("cms.example");
 
-    handler = () => wpError(404, "rest_no_route");
-    const missing = await lookupPage("/about/").catch((error: unknown) => error);
-    expect(missing).toBeInstanceOf(CmsError);
-    expect((missing as CmsError).reason).toBe("status");
-    expect((missing as CmsError).message).not.toContain("cms.example");
+    handler = () => wpError(500, "internal");
+    const down = await lookupPage("/about/").catch((error: unknown) => error);
+    expect(down).toBeInstanceOf(CmsError);
+    expect((down as CmsError).message).not.toContain("cms.example");
   });
 });
 

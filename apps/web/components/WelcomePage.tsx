@@ -6,7 +6,7 @@ import "./page.css";
 /**
  * What `/` shows when the CMS has no static front page (Settings > Reading
  * on `posts`, or `page_on_front` naming no published page), which is the
- * hosted CMS's state today (ADR 0051): the site's name, one sentence saying
+ * hosted CMS's state today (ADR 0052): the site's name, one sentence saying
  * what it is, and a link into the library. A page rather than a redirect,
  * because a redirect from `/` would be a permanent answer to a question an
  * editor can change by setting a front page, and because the root of a site

@@ -6,6 +6,7 @@ import {
   isCanonicalSegment,
   isPageSegment,
   isReservedRootSegment,
+  MAX_PAGE_PATH_LENGTH,
   pagePath,
   pagePathSegments,
   ROOT_PATH,
@@ -15,33 +16,40 @@ import type { PageLookup } from "./wp/schemas/page";
 import type { WpPage } from "./wp/schemas/rest";
 
 /**
- * What a request for `/` or `/{segments}/` gets (ADR 0051): the WordPress
+ * What a request for `/` or `/{segments}/` gets (ADR 0052): the WordPress
  * page to render, the welcome page when the root has no front page, a
  * computed single-hop 308 to the page's canonical path, or a 404. The same
  * rules as the resource page's decision (`lib/redirects.ts`; ADRs 0025, 0035):
  *
  * - A segment that cannot be part of a page path (`isPageSegment`: not a slug,
- *   or holding a dot, as `favicon.ico` does) or a first segment the front
- *   end's own routes use (`RESERVED_ROOT_SEGMENTS`) is a 404 without a request.
+ *   or holding a dot, as `favicon.ico` does), a first segment the front
+ *   end's own routes use (`RESERVED_ROOT_SEGMENTS`) or a path longer than the
+ *   plugin's cap (`MAX_PAGE_PATH_LENGTH`) is a 404 without a request.
  *   `/resources/…` never arrives here, since a static sibling wins over the
  *   catch-all; `/api/other/` and `/media/x/` with no rewrite configured do.
  * - The path is looked up in canonical form through the plugin's page route,
  *   which answers from the current state: the front page for `/`, the page
  *   whose parent chain is the path, or the one page that has the last
  *   segment as its slug now (a page moved under another parent). A miss is a
- *   404, or the welcome page for `/`.
+ *   404, or the welcome page for `/`; a segment the CMS sanitizes to nothing
+ *   (`-`, `!!!`) is a miss on the CMS's side, as is a CMS without the route.
  * - The answer carries the page's canonical path now. When it differs from
  *   what was asked (a wrong parent, the front page at its own slug, an
- *   upper-case letter in a segment), the request redirects to it in one hop;
- *   otherwise the page is read by ID and rendered. A page that is gone
- *   between the two reads is a 404.
+ *   upper-case letter in a segment), that path is looked up too, from the
+ *   same cache, and the request redirects to it in one hop only when it
+ *   answers the same page at that path; anything else is a 404. Otherwise
+ *   the page is read by ID and rendered. A page that is gone, or has a
+ *   password, between the two reads is a 404.
  *
  * Why a redirect cannot loop: the target is built from the CMS's canonical
  * segments through `canonicalSlug`, so a request for it is canonical, and the
  * plugin answers a canonical path with itself, since each segment is a stored
  * slug under its stored parent. Across changes the target is computed from
- * the current answer and never stored (ADR 0025), and `test/page-request.test.ts`
- * checks the fixed point over generated paths.
+ * the current answer and never stored (ADR 0025). And two cache entries that
+ * disagree, one written before a move and one after, cannot bounce a reader
+ * between two paths, because a redirect is sent only after the target's own
+ * entry has answered the same page at that path; `test/page-request.test.ts`
+ * checks both over generated paths and an inconsistent CMS.
  *
  * `pageForRequest` runs it with Next.js: the route is dynamic
  * (`force-dynamic`, `connection()` first, no `loading.tsx`), so a 308 goes out
@@ -87,6 +95,9 @@ export async function decidePageRequest(
     return NOT_FOUND;
   }
   const requested = pagePath(segments);
+  if (requested.length > MAX_PAGE_PATH_LENGTH) {
+    return NOT_FOUND;
+  }
 
   const found = await lookup(requested);
   if (found === null) {
@@ -104,11 +115,16 @@ export async function decidePageRequest(
     segments.length === foundSegments.length &&
     segments.every((segment, index) => isCanonicalSegment(segment, foundSegments[index]));
   if (!requestIsCanonical) {
+    // The target must answer for itself before anyone is sent there.
+    const target = await lookup(canonical);
+    if (target === null || target.id !== found.id || target.path !== found.path) {
+      return NOT_FOUND;
+    }
     return { kind: "redirect", path: canonical };
   }
 
   const page = await byId(found.id);
-  if (page === null) {
+  if (page === null || page.content.protected) {
     return requested === ROOT_PATH ? WELCOME : NOT_FOUND;
   }
   return { kind: "render", page, path: canonical };

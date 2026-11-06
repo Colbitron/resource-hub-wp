@@ -1060,6 +1060,9 @@ describe("pages and the page route (ADR 0052)", () => {
     expect((await lookup("/team/")).body).toEqual({ page: null });
     expect((await lookup("/contact/")).body).toEqual({ page: { id: 64, path: "/about/contact/" } });
     expect((await lookup("/about/history/")).body).toEqual({ page: null });
+    // The posts page counts only while show_on_front is page.
+    expect((await lookup("/news/")).body).toEqual({ page: { id: 68, path: "/news/" } });
+    await cms.setFrontPage(60);
     expect((await lookup("/news/")).body).toEqual({ page: null });
     expect((await lookup("/api/")).body).toEqual({ page: { id: 67, path: "/api/" } });
   });
@@ -1074,12 +1077,13 @@ describe("pages and the page route (ADR 0052)", () => {
     expect(state.pages.find((page) => page.id === 62)?.path).toBe("/about-us/team/");
   });
 
-  it("answers a malformed path with core's 400", async () => {
-    for (const path of ["/about//team/", "/about/%/"]) {
-      const response = await lookup(path);
-      expect(response.status, path).toBe(400);
-      expect(wpErrorSchema.parse(response.body).code).toBe("rest_invalid_param");
+  it("answers a segment that sanitizes to nothing with null, and only an over-long path with core's 400", async () => {
+    for (const path of ["/about//team/", "/about/%/", "/-/", "/!!!/"]) {
+      expect((await lookup(path)).body, path).toEqual({ page: null });
     }
+    const response = await lookup(`/${"a".repeat(2011)}/`);
+    expect(response.status).toBe(400);
+    expect(wpErrorSchema.parse(response.body).code).toBe("rest_invalid_param");
   });
 
   it("creates, changes and deletes pages through the control endpoints, refusing a duplicate slug under one parent", async () => {

@@ -19,7 +19,7 @@ use WP_REST_Server;
 
 /**
  * Answers `{ "page": { "id", "path" } | null }` (`page-response.schema.json`) for the public path the
- * front end was asked for (ADR 0051). Core REST exposes neither `page_on_front` to anonymous readers
+ * front end was asked for (ADR 0052). Core REST exposes neither `page_on_front` to anonymous readers
  * nor a lookup by full path, so the plugin does both in one route, from the current state:
  *
  * 1. `/` is the static front page, when one is set and published.
@@ -34,12 +34,15 @@ use WP_REST_Server;
  *
  * A page found by any step is answered with its canonical path now; the front end redirects when that
  * differs from what it asked for (ADRs 0025, 0035). The static front page's own path is therefore
- * answered as `/`, so `/home/` redirects to `/`. Unpublished pages and the posts page (`page_for_posts`)
- * are never answered.
+ * answered as `/`, so `/home/` redirects to `/`. Unpublished and password-protected pages and the posts
+ * page (`page_for_posts`) are never answered ({@see PagePath::is_served()}).
  *
  * A miss is a 200 with `page` null rather than a 404: the front end's Data Cache stores only 200s, and
  * the site's root with no front page set, or any path a crawler tries, would otherwise reach the CMS
- * on every request. A malformed `path` is a 400 in core's `WP_Error` shape.
+ * on every request. A segment that is empty once sanitized (`-`, `!!!`, a doubled slash) can name no
+ * page and is a miss too, so a visitor's URL can never make the front end fail. Only a `path` that is
+ * not a string or is longer than the cap is a 400 in core's `WP_Error` shape, and the front end treats
+ * that as a miss as well.
  */
 final class PageRoute {
 	/**
@@ -85,8 +88,9 @@ final class PageRoute {
 	}
 
 	/**
-	 * Validates `path`: a string of at most {@see self::MAX_PATH_LENGTH} bytes whose segments, split on
-	 * `/`, are each non-empty once sanitized. Core turns a `WP_Error` here into a 400 `rest_invalid_param`.
+	 * Validates `path`: a string of at most {@see self::MAX_PATH_LENGTH} bytes. Core turns a `WP_Error`
+	 * here into a 400 `rest_invalid_param`. What the segments hold is not judged here: one that is
+	 * empty once sanitized names no page, and {@see PageRoute::respond()} answers it as a miss.
 	 *
 	 * @param mixed $value The raw parameter.
 	 * @return true|WP_Error
@@ -99,12 +103,6 @@ final class PageRoute {
 		if ( strlen( $value ) > self::MAX_PATH_LENGTH ) {
 			/* translators: %d: the maximum path length in bytes. */
 			return new WP_Error( 'rest_invalid_param', sprintf( __( 'path is longer than %d bytes.', 'resource-hub' ), self::MAX_PATH_LENGTH ) );
-		}
-
-		foreach ( self::segments( $value ) as $segment ) {
-			if ( '' === $segment ) {
-				return new WP_Error( 'rest_invalid_param', __( 'path has a segment that is empty once sanitized.', 'resource-hub' ) );
-			}
 		}
 
 		return true;
@@ -128,7 +126,15 @@ final class PageRoute {
 	 */
 	public function respond( WP_REST_Request $request ): WP_REST_Response {
 		$path = (string) $request->get_param( 'path' );
-		$page = '' === $path ? self::front_page() : self::by_path( $path );
+
+		if ( '' === $path ) {
+			$page = self::front_page();
+		} elseif ( in_array( '', explode( '/', $path ), true ) ) {
+			// A segment that sanitized to nothing names no page.
+			$page = null;
+		} else {
+			$page = self::by_path( $path );
+		}
 
 		return new WP_REST_Response(
 			array(

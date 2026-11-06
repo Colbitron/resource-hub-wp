@@ -148,6 +148,10 @@ test.describe("pages at their paths", () => {
   });
 
   test("a draft, the posts page, a page whose slug two pages share under a wrong parent, and a missing path are 404s", async ({ request }) => {
+    // The posts page counts only while a front page is set, as core reads page_for_posts.
+    await expectPage(await get(request, `/${NEWS.slug}/`), "News", `/${NEWS.slug}/`);
+    await cms.setFrontPage(WELCOME.id);
+    await revalidate(request, [pageEvent("update", WELCOME.id, "/", `/${WELCOME.slug}/`), pageEvent("update", NEWS.id, `/${NEWS.slug}/`, `/${NEWS.slug}/`)]);
     for (const path of [`/${ABOUT.slug}/history/`, `/${NEWS.slug}/`, `/${TEAM.slug}/`, `/elsewhere/${TEAM.slug}/`, `/no-such-page-${Date.now()}/`]) {
       const response = await get(request, path);
       expect(response.status(), path).toBe(404);
@@ -158,13 +162,22 @@ test.describe("pages at their paths", () => {
     }
   });
 
-  test("a reserved first segment or a dotted segment is a 404 without a request to the CMS", async ({ request }) => {
+  test("a reserved first segment, a dotted segment or an over-long path is a 404 without a request to the CMS", async ({ request }) => {
     await cms.resetRequests();
-    for (const path of ["/api/", "/api/other/", "/media/", "/_next/", "/robots.txt", "/sitemap.xml", "/Resources/"]) {
+    const tooLong = `/${Array.from({ length: 11 }, () => "a".repeat(200)).join("/")}/`;
+    for (const path of ["/api/", "/api/other/", "/media/", "/_next/", "/robots.txt", "/sitemap.xml", "/Resources/", tooLong]) {
       expect((await get(request, path)).status(), path).toBe(404);
     }
     const { byPath } = await cms.requests();
     expect(Object.keys(byPath).filter((path) => path.includes("resource-hub/v1/page"))).toEqual([]);
+  });
+
+  test("a segment the CMS sanitizes to nothing is a 404, never a 500", async ({ request }) => {
+    for (const path of ["/-/", "/about/!!!/", "/~/"]) {
+      const response = await get(request, path);
+      expect(response.status(), path).toBe(404);
+      expectNoCms(await response.text(), path);
+    }
   });
 
   test("a page slugged api on the CMS is not served, and a page slugged api-2 is", async ({ request }) => {

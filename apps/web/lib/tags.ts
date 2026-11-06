@@ -37,7 +37,7 @@
  *   which the event can name. `resources` stays because the resolve route
  *   answers with the resource's type slug, which a type rename changes.
  *
- * - A page event (ADR 0051): `pages` and the path named at the top level and in
+ * - A page event (ADR 0052): `pages` and the path named at the top level and in
  *   `previous`. `pages` is on every page lookup and every page read: a
  *   parent's move or rename changes the paths of every page below it without an
  *   event for each, so one tag for every page is what reaches them, and the
@@ -96,7 +96,7 @@ export const RESOURCES_TAG = "resources";
 /** The tag only term events clear: on every fetch that embeds or lists terms. */
 export const TERMS_TAG = "terms";
 
-/** The tag only page events clear: on every page lookup and every page read (ADR 0051). */
+/** The tag only page events clear: on every page lookup and every page read (ADR 0052). */
 export const PAGES_TAG = "pages";
 
 /** `resource:{slug}`, on the fetches for one resource. Throws a `RangeError` on a bad slug. */

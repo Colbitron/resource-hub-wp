@@ -1,12 +1,12 @@
 import "server-only";
 
 import { pageTags } from "../tags";
-import { CmsError, cmsGet, cmsGetOk } from "./fetch";
+import { CmsError, cmsGet } from "./fetch";
 import { pageResponseSchema, type PageLookup } from "./schemas/page";
 import { wpPageSchema, type WpPage } from "./schemas/rest";
 
 /**
- * WordPress pages (ADR 0051): which published page a public path names,
+ * WordPress pages (ADR 0052): which published page a public path names,
  * through the plugin's `GET /resource-hub/v1/page?path=…`, and one page by
  * ID from core's `/wp/v2/pages/{id}`. Both are tagged `pages`, the one tag
  * every page event clears.
@@ -24,15 +24,35 @@ function isPostId(id: number): boolean {
  * miss is a 200 with `page: null`, which the Data Cache keeps under `pages`,
  * so the root with no front page and the paths crawlers try cost the CMS one
  * request until the next page event.
+ *
+ * Two errors are misses too, neither cached since the Data Cache stores
+ * only 200s: the plugin's 400 `rest_invalid_param`, which it sends only for
+ * a path over its length cap, so a visitor's URL can never make the page
+ * fail; and core's 404 `rest_no_route`, which a CMS without the plugin's
+ * route answers, so a front end a deploy ahead of the CMS (a preview against
+ * the hosted CMS, a CMS rollback) shows the welcome page at `/` and a 404
+ * elsewhere rather than a 500. That is the one place a missing route is not
+ * an error (ADR 0049 names the rule it bends).
  */
 export async function lookupPage(path: string): Promise<PageLookup | null> {
-  const { data } = await cmsGetOk({
-    path: "/resource-hub/v1/page",
+  const requestPath = "/resource-hub/v1/page";
+  const result = await cmsGet({
+    path: requestPath,
     query: new URLSearchParams({ path }).toString(),
     tags: pageTags(),
     schema: pageResponseSchema,
+    misses: [
+      { status: 400, code: "rest_invalid_param" },
+      { status: 404, code: "rest_no_route" },
+    ],
   });
-  return data.page;
+  if (result.kind === "miss") {
+    return null;
+  }
+  if (result.kind !== "ok") {
+    throw new CmsError(requestPath, "status", "an answer the request did not expect");
+  }
+  return result.data.page;
 }
 
 /**

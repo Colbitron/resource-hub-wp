@@ -8,7 +8,7 @@ import { pageForRequest } from "@/lib/page-request";
 /**
  * `/` and `/{segments}/`: the CMS's static front page at the root, every other
  * published WordPress page at its parent chain, and the welcome page when no
- * front page is set (root `CLAUDE.md`, "Pages"; ADR 0051). An optional
+ * front page is set (root `CLAUDE.md`, "Pages"; ADR 0052). An optional
  * catch-all at the root, so every path no other route claims comes here:
  * `pageForRequest` returns the page to render, sends a computed single-hop
  * 308 to its canonical path, or answers a 404, with the same rules as the
