@@ -76,7 +76,7 @@
 	flex-wrap: wrap;
 	align-items: flex-end;
 	gap: var(--rh-space-5);
-	margin: 0;
+	margin: 0 0 var(--rh-space-5);
 	padding: 0;
 	list-style: none;
 }
@@ -95,6 +95,7 @@
  */
 .rh-specimen__lockup {
 	display: inline-block;
+	margin-bottom: var(--rh-space-5);
 	padding: calc(0.625 * var(--rh-text-lg));
 	border: var(--rh-border-width) dashed var(--rh-color-border);
 }
