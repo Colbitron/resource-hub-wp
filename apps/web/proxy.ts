@@ -37,8 +37,8 @@ import { REVALIDATE_EACH_TIME } from "./lib/route-headers";
  *
  * - Under `next start`, `/404` is the pathname the server treats as its
  *   404 page: it answers with the prerendered not-found page, status 404
- *   and `noindex` set by the server, the RSC payload for a client-side
- *   navigation, and one route-cache entry shared by every junk URL (an
+ *   and `noindex` set by the server, and one route-cache entry shared by
+ *   every junk URL (an
  *   `x-nextjs-cache: HIT` on a URL never asked for before, where the
  *   catch-all's `notFound()` stored one entry per URL). The response's own
  *   header would be `s-maxage=31536000` alone, hence the one set here. The
@@ -48,9 +48,8 @@ import { REVALIDATE_EACH_TIME } from "./lib/route-headers";
  *   from the same prerender and serves for its own 404s. The CDN serves it
  *   for every junk URL from one cached copy (`x-matched-path: /404`,
  *   `x-vercel-cache: HIT` on the first request for a new URL), with no
- *   function invocation and no entry per URL; a client-side navigation
- *   gets that HTML too, which the router then loads as a full document,
- *   landing on the page at the junk URL. Vercel serves a rewritten
+ *   page render and no entry per URL (the proxy itself still runs as a
+ *   function on every junk request). Vercel serves a rewritten
  *   response with the status the proxy's response carries, and a static
  *   file has no status of its own, so without `status: 404` the body is
  *   right and the status is 200: a soft 404. A rewrite to `/_not-found`
@@ -59,6 +58,12 @@ import { REVALIDATE_EACH_TIME } from "./lib/route-headers";
  *   URL), with the proxy's 200 unless the status is set, which is why
  *   the target changed. Under `next start` the status is the route's and
  *   the one set here agrees with it.
+ *
+ * A client-side navigation to a junk URL is the same on both servers: its
+ * RSC request gets the 404, the router treats any non-ok response as a
+ * full document load (`fetchServerResponse` in Next.js's
+ * `router-reducer/fetch-server-response.js`), and that load gets the
+ * not-found page's HTML with status 404 at the junk URL.
  *
  * This proxy never reads the data layer: its `fetch` is not the Data Cache's,
  * so a CMS request here would reach the CMS on every matched request. What
