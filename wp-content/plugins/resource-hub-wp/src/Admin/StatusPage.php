@@ -346,10 +346,12 @@ final class StatusPage {
 		}
 
 		// The option keeps the result this send returned, never a re-read of the resource's meta, which
-		// another send may have written since. It drops the body, which no screen shows, and adds when
-		// the test ran and which resource it was.
-		$record = $result->to_array();
-		unset( $record['body'] );
+		// another send may have written since, and adds when the test ran and which resource it was. It
+		// keeps the body and its `truncated` flag, as the meta does, so ResultText words the test the
+		// way the editor words a save, quoting the front end's `error` string. Storing only that
+		// message was rejected: it would need a field the meta lacks, or a second extractor here, for
+		// a body already capped at Result::BODY_LIMIT in an option that is not autoloaded.
+		$record                = $result->to_array();
 		$record['time']        = gmdate( 'Y-m-d\TH:i:s\Z' );
 		$record['resource_id'] = $resource->ID;
 
