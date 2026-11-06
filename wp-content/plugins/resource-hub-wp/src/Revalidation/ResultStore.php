@@ -73,6 +73,7 @@ final class ResultStore {
 			'outcome'     => self::PENDING,
 			'code'        => null,
 			'body'        => '',
+			'truncated'   => false,
 			'error'       => null,
 			'duration_ms' => 0,
 		);
@@ -187,8 +188,8 @@ final class ResultStore {
 	 * Writes one record per event, skipping objects that no longer exist, and, for a batch that wrote
 	 * its own `pending`, skipping an object whose stored record is another batch's `pending`
 	 * ({@see ResultStore::is_pending_for_another_batch()}). The free-text fields, `body` and `error`, are made valid UTF-8 first, since the database refuses
-	 * a value that is not. Should a record still fail to write, it is written again without its body,
-	 * so the status never stays `pending`.
+	 * a value that is not. Should a record still fail to write, it is written again without its body
+	 * (and so with `truncated` false, since no body is kept to be cut), so the status never stays `pending`.
 	 *
 	 * @param string                           $batch_id          The batch.
 	 * @param array<int, array<string, mixed>> $events            Its events.
@@ -209,6 +210,7 @@ final class ResultStore {
 				'batch_id'    => $batch_id,
 				'others'      => $others,
 				'body'        => self::scrub( $result['body'] ),
+				'truncated'   => (bool) ( $result['truncated'] ?? false ),
 				'error'       => null === $result['error'] ? null : self::scrub( $result['error'] ),
 				'duration_ms' => $result['duration_ms'],
 			);
@@ -224,8 +226,9 @@ final class ResultStore {
 			}
 
 			if ( ! self::write( $object[0], $object[1], $record ) ) {
-				$record['body']  = '';
-				$record['error'] = $record['error'] ?? self::BODY_NOT_STORED;
+				$record['body']      = '';
+				$record['truncated'] = false;
+				$record['error']     = $record['error'] ?? self::BODY_NOT_STORED;
 
 				self::write( $object[0], $object[1], $record );
 			}
@@ -344,6 +347,7 @@ final class ResultStore {
 				'batch_id'    => array( 'type' => 'string' ),
 				'others'      => array( 'type' => 'integer' ),
 				'body'        => array( 'type' => 'string' ),
+				'truncated'   => array( 'type' => 'boolean' ),
 				'error'       => array( 'type' => array( 'string', 'null' ) ),
 				'duration_ms' => array( 'type' => 'integer' ),
 			),

@@ -86,22 +86,23 @@ final class Sender {
 		$code = (int) wp_remote_retrieve_response_code( $response );
 		$raw  = (string) wp_remote_retrieve_body( $response );
 		$body = self::cut( $raw );
+		$cut  = strlen( $raw ) > Result::BODY_LIMIT;
 
 		switch ( $code ) {
 			case 200:
 				if ( ! self::is_ok_body( $raw ) ) {
-					return new Result( Result::FAILED, Result::BAD_BODY, $code, $body, Result::BAD_BODY_MESSAGE, $duration );
+					return new Result( Result::FAILED, Result::BAD_BODY, $code, $body, Result::BAD_BODY_MESSAGE, $duration, $cut );
 				}
 
-				return new Result( Result::SENT, Result::OK, $code, $body, null, $duration );
+				return new Result( Result::SENT, Result::OK, $code, $body, null, $duration, $cut );
 			case 400:
-				return new Result( Result::FAILED, Result::BAD_REQUEST, $code, $body, null, $duration );
+				return new Result( Result::FAILED, Result::BAD_REQUEST, $code, $body, null, $duration, $cut );
 			case 401:
-				return new Result( Result::FAILED, Result::UNAUTHORIZED, $code, $body, null, $duration );
+				return new Result( Result::FAILED, Result::UNAUTHORIZED, $code, $body, null, $duration, $cut );
 			case 500:
-				return new Result( Result::FAILED, Result::SERVER_ERROR, $code, $body, null, $duration );
+				return new Result( Result::FAILED, Result::SERVER_ERROR, $code, $body, null, $duration, $cut );
 			default:
-				return new Result( Result::FAILED, Result::UNEXPECTED_CODE, $code, $body, null, $duration );
+				return new Result( Result::FAILED, Result::UNEXPECTED_CODE, $code, $body, null, $duration, $cut );
 		}
 	}
 
@@ -124,8 +125,10 @@ final class Sender {
 	 * The first {@see Result::BODY_LIMIT} bytes of a body, made valid UTF-8, because core refuses to
 	 * store a meta value that is not, and the result would stay `pending`. The cut is by bytes; core's
 	 * `wp_scrub_utf8()` then replaces each invalid sequence, a character split at the limit among them,
-	 * with U+FFFD, so the stored body may run a few bytes past the limit. Core polyfills the scrub where
-	 * mbstring is missing, so the plugin does not need the extension.
+	 * with U+FFFD, which is three bytes, so a body of invalid bytes can grow to about three times the
+	 * limit (about 3 KB). Core polyfills the scrub where
+	 * mbstring is missing, so the plugin does not need the extension. Whether anything was cut is
+	 * recorded on the result as `truncated`, by {@see Sender::send()}.
 	 *
 	 * @param string $body Response body.
 	 */

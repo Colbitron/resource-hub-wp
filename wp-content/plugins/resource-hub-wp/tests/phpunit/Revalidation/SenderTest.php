@@ -114,6 +114,7 @@ final class SenderTest extends RevalidationTestCase {
 		$this->assertSame( $outcome, $result->outcome );
 		$this->assertSame( $code, $result->code );
 		$this->assertSame( '{"revalidated":["/resources/"]}', $result->body );
+		$this->assertFalse( $result->truncated );
 		$this->assertNull( $result->error );
 		$this->assertGreaterThanOrEqual( 0, $result->duration_ms );
 	}
@@ -262,7 +263,8 @@ final class SenderTest extends RevalidationTestCase {
 	}
 
 	/**
-	 * The stored body is cut to about 1 KB; a cut that falls between characters keeps them all whole.
+	 * The stored body is cut to about 1 KB, and the result says it was cut; a cut that falls between
+	 * characters keeps them all whole.
 	 */
 	public function test_body_is_cut_to_about_one_kilobyte(): void {
 		$this->configure();
@@ -274,7 +276,29 @@ final class SenderTest extends RevalidationTestCase {
 		$this->assertSame( Result::BODY_LIMIT, strlen( $result->body ) );
 		$this->assertSame( 512, mb_strlen( $result->body ) );
 		$this->assertSame( str_repeat( 'é', 512 ), $result->body );
+		$this->assertTrue( $result->truncated );
+		$this->assertTrue( $result->to_array()['truncated'] );
 		$this->assertSame( 'short', Sender::cut( 'short' ) );
+	}
+
+	/**
+	 * A body of exactly {@see Result::BODY_LIMIT} bytes is kept whole and is not marked as cut; one
+	 * byte more is.
+	 */
+	public function test_truncated_only_past_the_limit(): void {
+		$this->configure();
+		$exact           = str_repeat( 'a', Result::BODY_LIMIT );
+		$this->responder = static fn(): array => self::http_response( 400, $exact );
+
+		$result = ( new Sender() )->send( self::payload() );
+		$this->assertSame( $exact, $result->body );
+		$this->assertFalse( $result->truncated );
+
+		$this->responder = static fn(): array => self::http_response( 400, $exact . 'b' );
+
+		$result = ( new Sender() )->send( self::payload() );
+		$this->assertSame( $exact, $result->body );
+		$this->assertTrue( $result->truncated );
 	}
 
 	/**
@@ -307,6 +331,23 @@ final class SenderTest extends RevalidationTestCase {
 		$this->assertSame( Result::SERVER_ERROR, $result->outcome );
 		$this->assertTrue( wp_is_valid_utf8( $result->body ) );
 		$this->assertStringContainsString( ' bin ', $result->body );
+	}
+
+	/**
+	 * A body within the limit is never marked as cut, even when scrubbing its invalid bytes makes the
+	 * stored copy longer than the limit: each invalid byte becomes a three-byte U+FFFD.
+	 */
+	public function test_scrubbing_grows_a_body_without_marking_it_cut(): void {
+		$this->configure();
+		$raw             = str_repeat( "\xff", Result::BODY_LIMIT );
+		$this->responder = static fn(): array => self::http_response( 500, $raw );
+
+		$result = ( new Sender() )->send( self::payload() );
+
+		$this->assertTrue( wp_is_valid_utf8( $result->body ) );
+		$this->assertSame( str_repeat( "\u{FFFD}", Result::BODY_LIMIT ), $result->body );
+		$this->assertSame( 3 * Result::BODY_LIMIT, strlen( $result->body ) );
+		$this->assertFalse( $result->truncated );
 	}
 
 	/**

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace ResourceHub\Tests\Admin;
 
+use ResourceHub\Admin\ResultText;
 use ResourceHub\Admin\StatusPage;
 use ResourceHub\Revalidation\Config;
 use ResourceHub\Revalidation\Payload;
@@ -29,6 +30,12 @@ final class StatusPageTest extends RevalidationTestCase {
 	 * A secret that meets the rule: 32 printable ASCII characters or more, no whitespace.
 	 */
 	private const STORED_SECRET = 'stored-secret-0123456789abcdefghijk';
+
+	/**
+	 * How the "Last test" cell and the notice's paragraph open: with the style that wraps a long message.
+	 */
+	private const CELL   = '<td style="overflow-wrap:anywhere">';
+	private const NOTICE = '<p style="overflow-wrap:anywhere">';
 
 	/**
 	 * The page under test.
@@ -138,8 +145,8 @@ final class StatusPageTest extends RevalidationTestCase {
 
 	/**
 	 * With nothing chosen, the button sends a real `update` for the most recently modified published
-	 * resource, and the result lands in that resource's meta and in the non-autoloaded option, without
-	 * the body.
+	 * resource, and the result lands in that resource's meta and in the non-autoloaded option, body
+	 * included, so the page can word it as the editor does.
 	 */
 	public function test_handler_sends_for_the_most_recently_modified_resource(): void {
 		$this->configure();
@@ -171,7 +178,8 @@ final class StatusPageTest extends RevalidationTestCase {
 		$this->assertSame( Result::OK, $option['outcome'] );
 		$this->assertSame( 200, $option['code'] );
 		$this->assertMatchesRegularExpression( '/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $option['time'] );
-		$this->assertArrayNotHasKey( 'body', $option );
+		$this->assertSame( '{"revalidated":["/resources/"]}', $option['body'] );
+		$this->assertFalse( $option['truncated'] );
 
 		wp_cache_delete( 'alloptions', 'options' );
 		$this->assertArrayNotHasKey( StatusPage::LAST_TEST_OPTION, wp_load_alloptions(), 'The last test must not be autoloaded.' );
@@ -255,6 +263,151 @@ final class StatusPageTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * A test that gets a 400 or 500 with an `error` string shows that message on the status page, in
+	 * the "Last test" cell and in the notice after the redirect, in the sentence the block editor shows.
+	 *
+	 * @dataProvider front_end_errors
+	 *
+	 * @param int    $code     The front end's status.
+	 * @param string $expected The sentence the page shows.
+	 */
+	public function test_test_shows_the_front_ends_error_message( int $code, string $expected ): void {
+		$this->configure();
+		$post_id         = $this->make_resource( 'publish', 'quoted' );
+		$this->responder = static fn(): array => self::http_response( $code, '{"error":"Revalidation failed: fetch to the CMS timed out"}' );
+		$this->submit( $post_id );
+
+		$this->assertSame( 'sent', $this->handle() );
+
+		$this->assertSame( $expected, ResultText::sentence( ResultStore::read_post( $post_id ) ), 'The editor reads the same sentence from the meta.' );
+		$this->assertStringContainsString( self::CELL . esc_html( $expected ) . ' <time', StatusPage::html() );
+		$this->assertStringContainsString( self::NOTICE . esc_html( $expected ) . '</p>', StatusPage::test_notice_html( 'sent' ) );
+	}
+
+	/**
+	 * Cases for test_test_shows_the_front_ends_error_message().
+	 *
+	 * @return array<string, array{0: int, 1: string}>
+	 */
+	public function front_end_errors(): array {
+		return array(
+			'500 with an error' => array( 500, 'Revalidation failed on the front end (500). Revalidation failed: fetch to the CMS timed out' ),
+			'400 with an error' => array( 400, 'Revalidation rejected: the front end could not read the request (400). Revalidation failed: fetch to the CMS timed out' ),
+		);
+	}
+
+	/**
+	 * A front end's message that holds markup is printed as text, in the cell and in the notice.
+	 */
+	public function test_test_escapes_the_front_ends_message(): void {
+		$this->configure();
+		$this->make_resource( 'publish', 'markup' );
+		$this->responder = static fn(): array => self::http_response( 500, '{"error":"<script>alert(1)</script> & <b>bold</b>"}' );
+		$this->submit();
+
+		$this->assertSame( 'sent', $this->handle() );
+
+		$escaped = 'Revalidation failed on the front end (500). &lt;script&gt;alert(1)&lt;/script&gt; &amp; &lt;b&gt;bold&lt;/b&gt;';
+
+		foreach ( array( StatusPage::html(), StatusPage::test_notice_html( 'sent' ) ) as $html ) {
+			$this->assertStringContainsString( $escaped, $html );
+			$this->assertStringNotContainsString( '<script>alert', $html );
+			$this->assertStringNotContainsString( '<b>bold', $html );
+		}
+	}
+
+	/**
+	 * A test whose 500 body was over 1 KB, so cut before its message could be read, says the reply was
+	 * too long to show, in the cell and in the notice.
+	 */
+	public function test_test_says_a_cut_reply_was_too_long(): void {
+		$this->configure();
+		$this->make_resource( 'publish', 'long-reply' );
+		$this->responder = static fn(): array => self::http_response( 500, '{"error":"' . str_repeat( 'x', 2 * Result::BODY_LIMIT ) . '"}' );
+		$this->submit();
+
+		$this->assertSame( 'sent', $this->handle() );
+		$this->assertTrue( StatusPage::last_test()['truncated'] );
+
+		$expected = esc_html( 'Revalidation failed on the front end (500). The front end\'s reply was too long to show (over 1 KB).' );
+		$this->assertStringContainsString( self::CELL . $expected . ' <time', StatusPage::html() );
+		$this->assertStringContainsString( self::NOTICE . $expected . '</p>', StatusPage::test_notice_html( 'sent' ) );
+	}
+
+	/**
+	 * A 500 whose body is a proxy's HTML page over 1 KB is cut, but it never held a message, so the page
+	 * shows the plain sentence with no too-long note, as for a short HTML page.
+	 */
+	public function test_test_with_a_long_html_page_has_no_note(): void {
+		$this->configure();
+		$this->make_resource( 'publish', 'long-html' );
+		$this->responder = static fn(): array => self::http_response( 500, '<!doctype html><title>502 Bad Gateway</title>' . str_repeat( '<p>proxy</p>', 200 ) );
+		$this->submit();
+
+		$this->assertSame( 'sent', $this->handle() );
+		$this->assertTrue( StatusPage::last_test()['truncated'] );
+
+		$expected = 'Revalidation failed on the front end (500).';
+		$this->assertStringContainsString( self::CELL . $expected . ' <time', StatusPage::html() );
+		$this->assertStringContainsString( self::NOTICE . $expected . '</p>', StatusPage::test_notice_html( 'sent' ) );
+	}
+
+	/**
+	 * A front end's message of about 1 KB with no space in it wraps in the cell and the notice, rather
+	 * than stretching the table past the screen.
+	 */
+	public function test_long_unbroken_message_wraps(): void {
+		$this->configure();
+		$this->make_resource( 'publish', 'unbroken' );
+		$message         = str_repeat( 'x', 1000 );
+		$this->responder = static fn(): array => self::http_response( 500, '{"error":"' . $message . '"}' );
+		$this->submit();
+
+		$this->assertSame( 'sent', $this->handle() );
+		$this->assertFalse( StatusPage::last_test()['truncated'] );
+		$this->assertSame( 'overflow-wrap:anywhere', StatusPage::WRAP_STYLE );
+		$this->assertStringContainsString( self::CELL . 'Revalidation failed on the front end (500). ' . $message . ' <time', StatusPage::html() );
+		$this->assertStringContainsString( self::NOTICE . 'Revalidation failed on the front end (500). ' . $message . '</p>', StatusPage::test_notice_html( 'sent' ) );
+	}
+
+	/**
+	 * What quoted nothing before still quotes nothing: a 401, which never quotes its body, and a 400 or
+	 * 500 whose short body is not the contract's JSON.
+	 *
+	 * @dataProvider unquoted_replies
+	 *
+	 * @param int    $code     The front end's status.
+	 * @param string $body     Its body.
+	 * @param string $expected The sentence the page shows, whole.
+	 */
+	public function test_test_without_a_message_is_unchanged( int $code, string $body, string $expected ): void {
+		$this->configure();
+		$this->make_resource( 'publish', 'unquoted' );
+		$this->responder = static fn(): array => self::http_response( $code, $body );
+		$this->submit();
+
+		$this->assertSame( 'sent', $this->handle() );
+		$this->assertFalse( StatusPage::last_test()['truncated'] );
+		$this->assertStringContainsString( self::CELL . esc_html( $expected ) . ' <time', StatusPage::html() );
+		$this->assertStringContainsString( self::NOTICE . esc_html( $expected ) . '</p>', StatusPage::test_notice_html( 'sent' ) );
+	}
+
+	/**
+	 * Cases for test_test_without_a_message_is_unchanged().
+	 *
+	 * @return array<string, array{0: int, 1: string, 2: string}>
+	 */
+	public function unquoted_replies(): array {
+		return array(
+			'401 unauthorized'   => array( 401, '{"error":"unauthorized"}', 'Revalidation rejected: the secret does not match (401).' ),
+			'500 HTML page'      => array( 500, '<html><body>Internal Server Error</body></html>', 'Revalidation failed on the front end (500).' ),
+			'500 plain text'     => array( 500, 'Internal Server Error', 'Revalidation failed on the front end (500).' ),
+			'400 JSON, no error' => array( 400, '{"message":"bad"}', 'Revalidation rejected: the front end could not read the request (400).' ),
+			'500 error not text' => array( 500, '{"error":{"path":"events"}}', 'Revalidation failed on the front end (500).' ),
+		);
+	}
+
+	/**
 	 * With no published resource there is nothing real to send: the handler redirects with `none`.
 	 */
 	public function test_handler_with_nothing_published(): void {
@@ -334,7 +487,7 @@ final class StatusPageTest extends RevalidationTestCase {
 		$this->assertStringContainsString( 'id="rh-test-search-help"', $html );
 		$this->assertStringContainsString( 'id="rh-test-search-status" role="status" aria-live="polite"', $html );
 		$this->assertStringNotContainsString( 'aria-disabled', $html );
-		$this->assertStringNotContainsString( 'style=', $html );
+		$this->assertSame( substr_count( $html, 'style=' ), substr_count( $html, 'style="' . StatusPage::WRAP_STYLE . '"' ), 'The only inline style is the one that wraps a long message.' );
 	}
 
 	/**

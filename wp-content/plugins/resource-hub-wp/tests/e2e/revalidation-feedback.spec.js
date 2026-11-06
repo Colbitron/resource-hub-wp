@@ -17,6 +17,8 @@ const NOT_CONFIGURED =
 const INVALID_SECRET =
 	'Revalidation skipped: the front-end URL or the secret is not configured; the secret is set but not valid, so check Settings > Resource Hub.';
 const ACCEPTED = 'The front end accepted the revalidation (200).';
+const SERVER_ERROR = 'Revalidation failed on the front end (500).';
+const CUT_REPLY = `${ SERVER_ERROR } The front end's reply was too long to show (over 1 KB).`;
 const NOTICE_ID = 'resource-hub-revalidation';
 
 /**
@@ -44,6 +46,7 @@ function storedRecord( fields ) {
 		event: 'update',
 		others: 0,
 		body: '',
+		truncated: false,
 		error: null,
 		duration_ms: 0,
 		...fields,
@@ -459,6 +462,87 @@ test.describe( 'Revalidation feedback', () => {
 				.getByText( INVALID_SECRET )
 		).toBeVisible();
 	} );
+
+	// What the sender stores for a reply over 1 KB: its start, which no
+	// longer parses. Only a cut JSON reply gets the too-long note; a cut HTML
+	// page never held a message, and a record from before the `truncated`
+	// flag has no key at all, so both read like a short reply with no message.
+	const cutJson = `{"error":"${ 'x'.repeat( 1014 ) }`;
+	const cutHtml = `<!doctype html><title>Bad Gateway</title>${ '<p>proxy</p>'.repeat( 82 ) }`;
+	const cutReplies = [
+		{
+			name: "a 500 whose JSON reply was cut before its message says the reply was too long, in PHP's words",
+			fields: { body: cutJson, truncated: true },
+			expected: CUT_REPLY,
+		},
+		{
+			name: 'a 500 whose cut reply is an HTML page gets no note, as for a short one',
+			fields: { body: cutHtml, truncated: true },
+			expected: SERVER_ERROR,
+		},
+		{
+			name: 'a record stored before the truncated flag, with a cut body, gets no note',
+			fields: { body: cutJson },
+			withoutFlag: true,
+			expected: SERVER_ERROR,
+		},
+	];
+
+	for ( const { name, fields, withoutFlag, expected } of cutReplies ) {
+		test( name, async ( { admin, page } ) => {
+			await admin.createNewPost( {
+				postType: 'resource',
+				title: `E2E cut reply ${ Date.now() }`,
+			} );
+
+			let stubbing = false;
+
+			await stubRecord( page, {
+				onPoll: ( date ) => {
+					if ( ! stubbing ) {
+						return undefined;
+					}
+
+					const record = storedRecord( {
+						status: 'failed',
+						outcome: 'server_error',
+						code: 500,
+						batch_id: 'stub-batch',
+						time: serverStamp( date ),
+						...fields,
+					} );
+
+					if ( withoutFlag ) {
+						delete record.truncated;
+					}
+
+					return record;
+				},
+			} );
+			await collectNotices( page );
+
+			stubbing = true;
+			const postId = await page.evaluate( async ( typeId ) => {
+				const { dispatch, select } = window.wp.data;
+				dispatch( 'core/editor' ).editPost( {
+					status: 'publish',
+					resource_type: [ typeId ],
+				} );
+				await dispatch( 'core/editor' ).savePost();
+				return select( 'core/editor' ).getCurrentPostId();
+			}, type.id );
+			createdIds.push( postId );
+
+			await expect
+				.poll( () => shownNotices( page ), { timeout: 15000 } )
+				.toEqual( [ { status: 'error', content: expected } ] );
+			await expect(
+				page
+					.getByRole( 'region', { name: 'Editor content' } )
+					.getByText( expected, { exact: true } )
+			).toBeVisible();
+		} );
+	}
 
 	test( "a second save shows its own result, never the first save's late one", async ( {
 		admin,

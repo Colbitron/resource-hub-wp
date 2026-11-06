@@ -70,6 +70,14 @@ final class StatusPage {
 	public const RESULTS = array( 'sent', 'none', 'not_published' );
 
 	/**
+	 * Inline style on the two places the last test's sentence is printed, the "Last test" cell and the
+	 * notice after the button. A quoted front-end message can be up to about 1 KB with no space in it,
+	 * which would otherwise stretch the table and the notice past the screen. Inline, because the page
+	 * has no stylesheet and one declaration does not justify enqueuing one.
+	 */
+	public const WRAP_STYLE = 'overflow-wrap:anywhere';
+
+	/**
 	 * How many recently modified published resources the picker lists before a search.
 	 */
 	public const PICKER_LIMIT = 20;
@@ -346,10 +354,12 @@ final class StatusPage {
 		}
 
 		// The option keeps the result this send returned, never a re-read of the resource's meta, which
-		// another send may have written since. It drops the body, which no screen shows, and adds when
-		// the test ran and which resource it was.
-		$record = $result->to_array();
-		unset( $record['body'] );
+		// another send may have written since, and adds when the test ran and which resource it was. It
+		// keeps the body and its `truncated` flag, as the meta does, so ResultText words the test the
+		// way the editor words a save, quoting the front end's `error` string. Storing only that
+		// message was rejected: it would need a field the meta lacks, or a second extractor here, for
+		// a body already capped at Result::BODY_LIMIT in an option that is not autoloaded.
+		$record                = $result->to_array();
 		$record['time']        = gmdate( 'Y-m-d\TH:i:s\Z' );
 		$record['resource_id'] = $resource->ID;
 
@@ -474,7 +484,7 @@ final class StatusPage {
 				return '';
 			}
 
-			return '<div class="notice notice-' . esc_attr( ResultText::level( $record ) ) . ' is-dismissible"><p>' . esc_html( ResultText::sentence( $record, $now ) ) . '</p></div>';
+			return '<div class="notice notice-' . esc_attr( ResultText::level( $record ) ) . ' is-dismissible"><p style="' . esc_attr( self::WRAP_STYLE ) . '">' . esc_html( ResultText::sentence( $record, $now ) ) . '</p></div>';
 		}
 
 		$message = 'not_published' === $what
@@ -561,7 +571,7 @@ final class StatusPage {
 			. '<tr><th scope="row">' . esc_html__( 'Front-end URL', 'resource-hub' ) . '</th><td>' . $url_cell . '</td></tr>'
 			. '<tr><th scope="row">' . esc_html__( 'Revalidation secret', 'resource-hub' ) . '</th><td>' . $secret_cell . '</td></tr>'
 			. '<tr><th scope="row">' . esc_html__( 'PostHog logging', 'resource-hub' ) . '</th><td>' . $posthog_cell . '</td></tr>'
-			. '<tr><th scope="row">' . esc_html__( 'Last test', 'resource-hub' ) . '</th><td>' . self::last_test_cell( $now ) . '</td></tr>'
+			. '<tr><th scope="row">' . esc_html__( 'Last test', 'resource-hub' ) . '</th><td style="' . esc_attr( self::WRAP_STYLE ) . '">' . self::last_test_cell( $now ) . '</td></tr>'
 			. '</tbody></table>';
 	}
 
