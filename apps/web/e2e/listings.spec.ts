@@ -395,10 +395,12 @@ test.describe("non-canonical URLs", () => {
     }
   });
 
-  test("a capitalised /Resources/ prefix is not matched by the proxy and is a 404, by design", async ({ request }) => {
-    for (const path of ["/Resources/", "/RESOURCES/webinar/", "/Resources/page/1/"]) {
-      await expectNotFound(request, path);
-    }
+  test("a capitalised /Resources/ prefix gets the proxy's 308 to the library, in one hop with both rules applied", async ({ request }) => {
+    // The proxy covers every path since the pages catch-all became ISR (ADR 0035's
+    // 2026-11-06 amendment), so the prefix is lower-cased like any other segment.
+    await expectCanonicalRedirect(request, "/Resources/", "/resources/");
+    await expectCanonicalRedirect(request, "/RESOURCES/webinar/", "/resources/webinar/");
+    await expectCanonicalRedirect(request, "/Resources/Webinar/page/1/", "/resources/webinar/");
   });
 
   test("a malformed escape is left as sent: no redirect, never a chain", async ({ request }) => {

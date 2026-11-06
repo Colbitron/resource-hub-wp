@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { canonicalResourcesPath, isResourcesPath } from "../lib/canonical-path";
-import { canonicalSlug, listingPath, resourcePath, slugProblem } from "../lib/routes";
+import { canonicalPath, canonicalResourcesPath, isResourcesPath } from "../lib/canonical-path";
+import { canonicalSlug, listingPath, pagePath, RESERVED_ROOT_SEGMENTS, resourcePath, slugProblem } from "../lib/routes";
 
 describe("isResourcesPath", () => {
   it("is /resources and anything under it", () => {
@@ -10,7 +10,7 @@ describe("isResourcesPath", () => {
     expect(isResourcesPath("/resources/webinar/")).toBe(true);
   });
 
-  it("is lower case only, as the proxy's case-sensitive matcher is: /Resources/ is a 404 by design", () => {
+  it("is lower case only, the one form the library's routes match", () => {
     expect(isResourcesPath("/Resources/")).toBe(false);
     expect(isResourcesPath("/RESOURCES")).toBe(false);
   });
@@ -24,7 +24,7 @@ describe("isResourcesPath", () => {
 });
 
 describe("canonicalResourcesPath", () => {
-  it("is null for a path outside /resources", () => {
+  it("is null for a path outside /resources: the library's rule on its own, canonicalPath covers the rest", () => {
     expect(canonicalResourcesPath("/")).toBeNull();
     expect(canonicalResourcesPath("/About/page/1/")).toBeNull();
     expect(canonicalResourcesPath("/resourcesX/")).toBeNull();
@@ -225,6 +225,73 @@ describe("canonicalResourcesPath", () => {
       const canonical = canonicalResourcesPath(path) ?? path;
       // Hex case is left alone by the proxy and ignored by the page, so compare without it.
       expect(canonical.toLowerCase()).toBe(expected);
+    }
+  });
+});
+
+describe("canonicalPath", () => {
+  it("is null for the root and for a canonical page path", () => {
+    expect(canonicalPath("/")).toBeNull();
+    for (const segments of [["about"], ["about", "team"], ["%e6%97%a5"], ["a-b_c~e"], ["resourcesx"], ["apiary"]]) {
+      expect(canonicalPath(pagePath(segments)), segments.join("/")).toBeNull();
+    }
+    expect(canonicalPath("/favicon.ico")).toBeNull();
+    expect(canonicalPath("/robots.txt")).toBeNull();
+  });
+
+  it("lower-cases ASCII letters in every segment of a page path, and decodes the escapes Next.js decodes", () => {
+    expect(canonicalPath("/About/")).toBe("/about/");
+    expect(canonicalPath("/About/Team/")).toBe("/about/team/");
+    expect(canonicalPath("/%41bout/")).toBe("/about/");
+    expect(canonicalPath("/about/%54eam")).toBe("/about/team");
+    expect(canonicalPath("/About/%E6%97%A5/")).toBe("/about/%E6%97%A5/");
+    expect(canonicalPath("/About/%4%41/")).toBe("/about/%4%41/");
+  });
+
+  it("gives a /resources/** path both rules, and brings a capitalised /Resources/ to the library in one hop", () => {
+    expect(canonicalPath("/resources/Webinar/Page/1/")).toBe("/resources/webinar/");
+    expect(canonicalPath("/Resources/")).toBe("/resources/");
+    expect(canonicalPath("/RESOURCES/webinar/")).toBe("/resources/webinar/");
+    expect(canonicalPath("/Resources/page/1/")).toBe("/resources/");
+    expect(canonicalPath("/Resources/Webinar/Alt-Text/")).toBe("/resources/webinar/alt-text/");
+    for (const path of ["/resources/", "/resources/webinar/alt-text-at-scale/", "/resources/topic/a11y/page/2/"]) {
+      expect(canonicalPath(path), path).toBe(canonicalResourcesPath(path));
+    }
+  });
+
+  it("drops /page/1/ only under /resources/, where page is a reserved segment", () => {
+    expect(canonicalPath("/about/page/1/")).toBeNull();
+    expect(canonicalPath("/About/page/1/")).toBe("/about/page/1/");
+  });
+
+  it("leaves the front end's other first segments alone in any case, as the catch-all answers them without a request", () => {
+    for (const segment of RESERVED_ROOT_SEGMENTS) {
+      if (segment === "resources") continue;
+      for (const prefix of [segment, segment.toUpperCase(), segment[0].toUpperCase() + segment.slice(1)]) {
+        for (const path of [`/${prefix}/`, `/${prefix}/Revalidate/`, `/${prefix}/2026/11/Diagram.PNG`, `/${prefix}/static/Chunk-A.js`]) {
+          expect(canonicalPath(path), path).toBeNull();
+        }
+      }
+    }
+  });
+
+  it("is a fixed point: a canonical result is canonical, for every escaped byte in a page path", () => {
+    const templates = [(x: string) => `/${x}/`, (x: string) => `/About/${x}/`, (x: string) => `/${x}/Team/`, (x: string) => `/${x}`];
+    const pieces = ["A", "api", "API", "%2e", "%2E%2e", "%2541", "%E6%97%a5", "%", "%4", "%zz", "A%", "%4%41", "%%34%31"];
+    for (let byte = 0x20; byte <= 0x7e; byte += 1) {
+      for (const hex of [byte.toString(16).toUpperCase(), byte.toString(16).toLowerCase()]) {
+        pieces.push(`%${hex}`, `x%${hex}Y`);
+      }
+    }
+    for (const template of templates) {
+      for (const piece of pieces) {
+        const path = new URL(template(piece), "http://localhost").pathname;
+        const canonical = canonicalPath(path);
+        if (canonical === null) continue;
+        expect(canonical, path).not.toBe(path);
+        expect(new URL(canonical, "http://localhost").pathname, path).toBe(canonical);
+        expect(canonicalPath(canonical), `${path} -> ${canonical}`).toBeNull();
+      }
     }
   });
 });

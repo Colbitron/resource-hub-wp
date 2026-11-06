@@ -45,17 +45,25 @@ import type { WpPage } from "./wp/schemas/rest";
  * segments through `canonicalSlug`, so a request for it is canonical, and the
  * plugin answers a canonical path with itself, since each segment is a stored
  * slug under its stored parent. Across changes the target is computed from
- * the current answer and never stored (ADR 0025). And two cache entries that
+ * the current answer, and the stored copy of a decision lives only until the
+ * page event that names the path it concerns (ADR 0025, amended). And two cache entries that
  * disagree, one written before a move and one after, cannot bounce a reader
  * between two paths, because a redirect is sent only after the target's own
  * entry has answered the same page at that path; `test/page-request.test.ts`
  * checks both over generated paths and an inconsistent CMS.
  *
- * `pageForRequest` runs it with Next.js: the route is dynamic
- * (`force-dynamic`, `connection()` first, no `loading.tsx`), so a 308 goes out
- * with `Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate`
- * and is never stored (ADR 0035's 2026-11-05 amendment). `decidePageRequest`
- * is the decision without Next.js, for the unit tests.
+ * `pageForRequest` runs it with Next.js from an ISR route (`revalidate =
+ * 3600`, a `generateStaticParams` returning `[]`, no `loading.tsx`): the
+ * answer, a page, the welcome page, a 308 or a 404, is stored under the
+ * `pages` tag and cleared by the next page event, which names the paths it
+ * changes, and every response carries the `headers()` rule's
+ * `public, max-age=0, must-revalidate` so a browser never keeps a stored
+ * 308 (ADR 0052's and ADR 0035's 2026-11-06 amendments). A mixed-case
+ * request never reaches the route: `proxy.ts` sends its `no-store` 308
+ * first, since Next.js keys a stored entry by the decoded path and a
+ * case-insensitive file system shares the key between `/About/` and
+ * `/about/`; the case check in the decision is a second line.
+ * `decidePageRequest` is the decision without Next.js, for the unit tests.
  */
 
 export type PageRequestDecision =
@@ -132,8 +140,8 @@ export async function decidePageRequest(
 
 /**
  * The page for the request, or no return: a redirect sends Next.js's 308 and
- * a miss renders the not-found page. For a page that renders on every
- * request; see the module comment for why, and call it first.
+ * a miss renders the not-found page. For an ISR page that stores the
+ * answer; see the module comment for how, and call it first.
  */
 export async function pageForRequest(
   segments: readonly string[],
