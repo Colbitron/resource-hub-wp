@@ -2,16 +2,19 @@ import { tryToParsePath } from "next/dist/lib/try-to-parse-path";
 import { getMiddlewareRouteMatcher } from "next/dist/shared/lib/router/utils/middleware-route-matcher";
 import { describe, expect, it } from "vitest";
 
-import { canonicalPath } from "../lib/canonical-path";
-import { pagePath, resourcePath, ROOT_PATH } from "../lib/routes";
+import { decidePath } from "../lib/path-decision";
+import { MAX_PAGE_PATH_LENGTH, OWN_ROUTE_PATHS, pagePath, resourcePath, ROOT_PATH } from "../lib/routes";
 import { config } from "../proxy";
 
 /**
  * The proxy's matcher, compiled as Next.js compiles it for the build
  * manifest (`tryToParsePath`) and tested as the router tests it at runtime
  * (`getMiddlewareRouteMatcher`, a flagless `RegExp`): it must reach every
- * request `lib/canonical-path.ts` could redirect and no canonical page
- * path, so an ISR hit for a page never pays for the proxy.
+ * request `lib/path-decision.ts` could redirect or answer with a 404, and
+ * no ASCII canonical page path, so an ISR hit for such a page never pays
+ * for the proxy, nor does the favicon every browser asks for, the
+ * revalidate route or a framework asset. A percent-encoded canonical page
+ * path does run it, through the `%` clause.
  */
 
 const matchers = (config.matcher as string[]).map((source) => {
@@ -22,48 +25,104 @@ const matchers = (config.matcher as string[]).map((source) => {
 const matches = getMiddlewareRouteMatcher(matchers);
 const proxied = (path: string): boolean => matches(path, {} as never, {});
 
+/** The matcher reaches `path` whenever the decision would act on it. */
+function expectReached(path: string): void {
+  if (decidePath(path) !== null) {
+    expect(proxied(path), `${path} is decided by the proxy, so the matcher must reach it`).toBe(true);
+  }
+}
+
 describe("the proxy's matcher", () => {
-  it("never matches a canonical page path, the root included", () => {
-    for (const segments of [[], ["about"], ["about", "team"], ["company", "contact"], ["resourcesx"], ["a-b_c~e", "x1"]]) {
+  it("never matches an ASCII canonical page path, the root included", () => {
+    for (const segments of [[], ["about"], ["about", "team"], ["company", "contact"], ["resourcesx"], ["apiary"], ["a-b_c~e", "x1"], ["a".repeat(200)]]) {
       const path = pagePath(segments);
-      expect(canonicalPath(path), path).toBeNull();
-      expect(proxied(path), path).toBe(false);
-    }
-    expect(proxied("/favicon.ico")).toBe(false);
-    expect(proxied("/robots.txt")).toBe(false);
-  });
-
-  it("matches every /resources/** path, canonical or not, for the page/1 rule", () => {
-    for (const path of [ROOT_PATH + "resources/", "/resources/page/1/", resourcePath("webinar", "example"), "/resources/Webinar/", "/resources/topic/%e6%97%a5/"]) {
-      expect(proxied(path), path).toBe(true);
-    }
-  });
-
-  it("matches every other path with an upper-case letter, a percent escape or a repeated slash", () => {
-    for (const path of ["/About/", "/about/Team/", "/%41bout/", "/x%E6%97%A5/", "/%D0%94%D0%BE%D0%BC/", "/about//team/", "/Resources/", "/RESOURCES/webinar/"]) {
-      expect(canonicalPath(path), path).not.toBeNull();
-      expect(proxied(path), path).toBe(true);
-    }
-  });
-
-  it("never matches the front end's own first segments, whatever follows", () => {
-    for (const path of ["/_next/static/chunks/Abc.js", "/_next/image", "/api/revalidate/", "/api/Revalidate/", "/media/2026/11/Diagram.PNG", "/media/x%20y.png"]) {
+      expect(decidePath(path), path).toBeNull();
       expect(proxied(path), path).toBe(false);
     }
   });
 
-  it("matches every path canonicalPath would redirect, over the characters a path can hold", () => {
+  it("matches a percent-encoded canonical page path, which the decision then leaves alone", () => {
+    // The `%` clause cannot tell a canonical escape (`%e6%97%a5`, lower-case
+    // hex, as WordPress stores it) from one the decision redirects (upper-case
+    // hex, an escape of a character Next.js decodes, NFD form) without
+    // decoding it, which a matcher cannot do, so every path with a `%` runs
+    // the proxy, and for a canonical one the proxy answers nothing.
+    for (const path of [pagePath(["%e6%97%a5"]), pagePath(["about", "%d0%b4%d0%be%d0%bc"])]) {
+      expect(decidePath(path), path).toBeNull();
+      expect(proxied(path), path).toBe(true);
+    }
+  });
+
+  it("never matches the front end's own routes outside the library: the favicon and the revalidate route", () => {
+    for (const path of [...OWN_ROUTE_PATHS, "/api/revalidate"]) {
+      expect(decidePath(path), path).toBeNull();
+      expect(proxied(path), path).toBe(false);
+    }
+  });
+
+  it("matches every /resources/** path, canonical or not, for the page/1 rule and the library's shapes", () => {
+    for (const path of [ROOT_PATH + "resources/", "/resources/page/1/", resourcePath("webinar", "example"), "/resources/Webinar/", "/resources/topic/%e6%97%a5/", "/resources/topic/", "/resources/page/x/", "/resources/a/b/c/"]) {
+      expect(proxied(path), path).toBe(true);
+    }
+  });
+
+  it("matches every other path with an upper-case letter, a percent escape or a repeated slash: the redirects", () => {
+    for (const path of ["/About/", "/about/Team/", "/%41bout/", "/x%E6%97%A5/", "/%D0%94%D0%BE%D0%BC/", "/about//team/", "/Resources/", "/RESOURCES/webinar/", "/Favicon.ICO"]) {
+      expect(decidePath(path), path).not.toBeNull();
+      expect(proxied(path), path).toBe(true);
+    }
+  });
+
+  it("matches every path the catch-all would answer with a 404 without a request: a dot, a long segment, a reserved segment, the cap", () => {
+    for (const path of ["/robots.txt", "/wp-login.php", "/.env", "/wp-admin/install.php", "/favicon.icox", "/favicon.ico.bak", "/about/team.html", "/api/", "/api/other/", "/api/Revalidate/", "/api/revalidate/x/", "/api/revalidatex/", `/${"a".repeat(201)}/`, `/about/${"b".repeat(201)}/x/`]) {
+      expect(decidePath(path), path).toEqual({ kind: "not-found" });
+      expect(proxied(path), path).toBe(true);
+    }
+    const segment = "a".repeat(200);
+    const tooLong = pagePath(Array.from({ length: Math.ceil(MAX_PAGE_PATH_LENGTH / 201) + 1 }, () => segment));
+    expect(decidePath(tooLong)).toEqual({ kind: "not-found" });
+    expect(proxied(tooLong)).toBe(true);
+    // Exactly at the cap, in segments a page could have: a lookup, and no proxy.
+    const atCap = pagePath([...Array.from({ length: 9 }, () => segment), "b".repeat(199)]);
+    expect(atCap.length).toBe(MAX_PAGE_PATH_LENGTH);
+    expect(decidePath(atCap)).toBeNull();
+    expect(proxied(atCap)).toBe(false);
+    // One over: the decision says 404, and the matcher reaches it on length alone.
+    const overCap = pagePath(Array.from({ length: 10 }, () => segment));
+    expect(overCap.length).toBe(MAX_PAGE_PATH_LENGTH + 1);
+    expect(decidePath(overCap)).toEqual({ kind: "not-found" });
+    expect(proxied(overCap)).toBe(true);
+  });
+
+  it("never matches the framework's assets or the uploads rewrite, whatever follows", () => {
+    for (const path of ["/_next/static/chunks/Abc.js", "/_next/image", "/_next/junk/", "/media/2026/11/Diagram.PNG", "/media/x%20y.png", "/media/x/"]) {
+      expect(decidePath(path), path).toBeNull();
+      expect(proxied(path), path).toBe(false);
+    }
+  });
+
+  it("matches every path the decision would act on, over the characters a path can hold", () => {
     for (let code = 0x20; code <= 0x7e; code += 1) {
       const character = String.fromCharCode(code);
-      for (const path of [`/a${character}b/`, `/a${encodeURIComponent(character)}b/`]) {
-        let canonical: string | null;
+      for (const raw of [`/a${character}b/`, `/a${encodeURIComponent(character)}b/`, `/x/a${character}b/`]) {
+        let path: string;
         try {
-          canonical = canonicalPath(new URL(path, "http://localhost").pathname);
+          path = new URL(raw, "http://localhost").pathname;
         } catch {
           continue;
         }
-        if (canonical !== null) {
-          expect(proxied(new URL(path, "http://localhost").pathname), path).toBe(true);
+        expectReached(path);
+      }
+    }
+  });
+
+  it("matches every path the decision would act on, over the shapes a library path can take", () => {
+    const parts = ["webinar", "topic", "page", "2", "x", "a.b", "A", "%e6%97%a5", "a".repeat(201)];
+    for (const a of parts) {
+      for (const b of parts) {
+        for (const c of ["", "page/2/", "x/", "topic/x/"]) {
+          expectReached(`/resources/${a}/${b}/${c}`);
+          expectReached(`/${a}/${b}/${c}`);
         }
       }
     }

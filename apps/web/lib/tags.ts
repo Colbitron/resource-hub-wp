@@ -59,7 +59,7 @@
  * Remove (`unpublish`, `trash`, `delete`) and refresh (`publish`, `update`)
  * produce the same invalidations, and so do the three term events. The
  * refetch after invalidation decides what is shown: a removed resource's
- * refetch returns nothing and its page becomes `notFound()`.
+ * refetch returns nothing and its page becomes a 404.
  *
  * Pure: no Next.js, `server-only` or Zod import at run time. The event types
  * are the ones the revalidate route's reader schema infers
@@ -122,8 +122,8 @@ export function typeTag(slug: string): string {
 /*
  * Fetch tags: the data-layer tagging rule (ADR 0043). Each function names the
  * tags one kind of fetch carries. They throw a `RangeError` on a bad slug, so
- * a page checks its parameters with `isSlug` and `isTypeSlug` first and calls
- * `notFound()` on a bad one.
+ * a page checks its parameters with `isSlug` and `isTypeSlug` first and
+ * answers a bad one with a 404.
  */
 
 /**

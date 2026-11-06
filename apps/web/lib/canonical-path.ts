@@ -81,7 +81,7 @@
  *
  * Everything else about a path, a type or topic that does not exist, a page
  * past the end, a wrong type segment on a resource, a wrong parent on a page,
- * needs data and is decided by the route (`notFound()`, `lib/redirects.ts`
+ * needs data and is decided by the route (`DataNotFound`, `lib/redirects.ts`
  * or `lib/page-request.ts`). The proxy never reads the data layer.
  *
  * Pure: no Next.js import (and `lib/routes.ts` has none either), so

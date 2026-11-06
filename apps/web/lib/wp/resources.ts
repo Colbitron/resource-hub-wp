@@ -61,8 +61,8 @@ function unique(values: readonly string[]): string[] {
  * or none, newest first. Each slug is resolved to its term ID through
  * `getTermBySlug` first, because the REST filters take IDs.
  *
- * - `null` when a slug cannot be one or names no term: the page calls
- *   `notFound()`.
+ * - `null` when a slug cannot be one or names no term: the page answers a
+ *   404 through `DataNotFound`.
  * - `NO_SUCH_PAGE` when `page` is not a page number, or is past the last
  *   page: core's 400 `rest_post_invalid_page_number` when there is anything
  *   to page through, and an empty page past the first when there is not.

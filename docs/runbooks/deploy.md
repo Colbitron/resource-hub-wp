@@ -76,6 +76,8 @@ What has not been measured on Vercel's CDN, to check on a preview deployment of 
 - That `/About/Team/` gets the proxy's `no-store` 308 and not a stored entry.
 - `curl -I` on a listing, the resource page, its 308 and its 404 for the status and the header on the second request.
 
+Whenever `proxy.ts`, its matcher, `components/DataNotFound.tsx` or the Next.js version changes, check the 404s too, since the e2e suite runs under `next start` only ([Not-found pages](../architecture/caching.md#not-found-pages)): `curl` the paths in `PATH_DECIDED` in `apps/web/e2e/errors.spec.ts` for status 404, `x-matched-path: /404` and the not-found heading in the body, and one unknown resource slug, twice, for status 404, `<h1>Page not found</h1>` in the body, no `__next_error__`, and `x-vercel-cache: HIT` the second time.
+
 ## Host notes
 
 - **Cloudways Flexible on a DigitalOcean 2 GB server, PHP 8.4**, with Redis and Object Cache Pro live (connected, drop-in valid, checked 2026-11-04). wp-env has no persistent object cache, so PHPUnit cannot exercise persistence; that gets checked against the host.

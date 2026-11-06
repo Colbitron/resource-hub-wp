@@ -13,7 +13,8 @@ import { describe, expect, it } from "vitest";
  * no dynamic segment would be prerendered at build, and would claim `/` from
  * the catch-all. Measured on Next.js 16.4.5: a request-time API or a
  * `no-store` fetch in an ISR route with no prerendered params is a runtime
- * 500.
+ * 500. A not-found decision renders `DataNotFound`, as on the resource route,
+ * so the 404's HTML is the not-found page (issue #46).
  */
 
 const APP_DIR = new URL("../app/", import.meta.url);
@@ -66,5 +67,11 @@ describe("the page route", () => {
     for (const [body] of functions) {
       expect(body).toMatch(/await pageForRequest\(path \?\? \[\]\)/);
     }
+  });
+
+  it("answers a not-found decision with DataNotFound and the not-found metadata, never a notFound() of its own", () => {
+    expect(code).toMatch(/<DataNotFound \/>/);
+    expect(code).toMatch(/NOT_FOUND_METADATA/);
+    expect(code).not.toMatch(/\bnotFound\(\)/);
   });
 });

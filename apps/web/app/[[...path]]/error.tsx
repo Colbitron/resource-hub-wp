@@ -8,9 +8,10 @@ import "@/components/resource.css";
  * fails the reader schema). As measured for the resource route on Next.js
  * 16.4.5: the response is a 500 with Next.js's `no-store` header, which ISR
  * never stores (`docs/architecture/caching.md` has the 500's headers), a
- * `permanentRedirect()` or `notFound()` never reaches this boundary, and the
- * fallback renders only after hydration, so what it changes is what a hydrated
- * reader sees in place of Next.js's bare "Application error" page.
+ * `permanentRedirect()` thrown by the page, or the `notFound()` its
+ * `DataNotFound` throws, never reaches this boundary, and the fallback renders
+ * only after hydration, so what it changes is what a hydrated reader sees in
+ * place of Next.js's bare "Application error" page.
  *
  * It takes no `error` prop on purpose, so no message or digest, and so no CMS
  * detail, can reach the page. The server log has the error.

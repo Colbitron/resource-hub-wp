@@ -17,7 +17,7 @@
  * Builders throw a `RangeError` on a segment the contract does not allow
  * rather than emit a path that routes somewhere else. Callers check untrusted
  * input with `isSlug`, `isTypeSlug` and `parsePageSegment` first: a page turns
- * a bad parameter into `notFound()`, never a throw.
+ * a bad parameter into a 404 (`components/DataNotFound.tsx`), never a throw.
  *
  * Every builder, and every tag builder in `lib/tags.ts`, puts a slug through
  * `canonicalSlug` first, so a slug has one form in paths and tags whether it
@@ -315,6 +315,22 @@ export const ROOT_PATH = "/";
 export const RESERVED_ROOT_SEGMENTS = ["resources", "api", "media", "_next"] as const;
 
 /**
+ * The front end's own routes under a reserved first segment, or outside the
+ * page catch-all altogether, that answer for themselves: the revalidate
+ * route (`app/api/revalidate/route.ts`) and the favicon (`app/favicon.ico`,
+ * a metadata file route). Every other `/api/…` path, and every other path
+ * with a dot, falls through to the page catch-all and is a 404 decided from
+ * the path alone, which `lib/path-decision.ts` answers before any route
+ * runs; these two it leaves alone, by their exact, case-sensitive path, as
+ * Next.js matches a route. `/media/…` and `/_next/…` are not listed: the
+ * uploads rewrite and the framework own everything under them.
+ * `test/routes.test.ts` walks `app/` and `public/`, so a new route handler,
+ * metadata file or public file the proxy would answer fails there until it
+ * is listed here.
+ */
+export const OWN_ROUTE_PATHS = ["/api/revalidate/", "/favicon.ico"] as const;
+
+/**
  * The longest page path, in characters of its canonical form, that is looked
  * up: the plugin's own cap on the `path` parameter, which it answers past
  * with a 400. A longer request is a 404 before any request.
@@ -343,6 +359,35 @@ export function pageSegmentProblem(value: string): string | null {
 /** True for a segment that can be part of a page's path: see `pageSegmentProblem`. */
 export function isPageSegment(value: string): boolean {
   return pageSegmentProblem(value) === null;
+}
+
+/**
+ * Why `/{segments.join("/")}/` cannot be any page's path, or `null` when it
+ * can be one: a segment that cannot be part of a page path
+ * (`pageSegmentProblem`: not a slug, or holding a dot, as `favicon.ico`
+ * does), a first segment the front end's own routes use
+ * (`RESERVED_ROOT_SEGMENTS`, in any case), or a path longer in its canonical
+ * form than the plugin's cap (`MAX_PAGE_PATH_LENGTH`). The root, no
+ * segments, is always a page path. This is the one definition of the 404s
+ * the page catch-all decides without a request (`lib/page-request.ts`), and
+ * the proxy answers the same paths with the not-found page's HTML before
+ * the route runs (`lib/path-decision.ts`); both call this, so they cannot
+ * disagree.
+ */
+export function pagePathProblem(segments: readonly string[]): string | null {
+  for (const segment of segments) {
+    const problem = pageSegmentProblem(segment);
+    if (problem !== null) {
+      return `segment ${JSON.stringify(segment)} ${problem}`;
+    }
+  }
+  if (segments.length > 0 && isReservedRootSegment(segments[0])) {
+    return `first segment ${JSON.stringify(segments[0])} is one the front end's own routes use`;
+  }
+  if (pagePath(segments).length > MAX_PAGE_PATH_LENGTH) {
+    return `the path is longer than ${MAX_PAGE_PATH_LENGTH} characters, the plugin's cap`;
+  }
+  return null;
 }
 
 /**
@@ -404,4 +449,105 @@ function outsideEscapes(segment: string): string {
  */
 export function isCanonicalSegment(segment: string, canonical: string): boolean {
   return !/[A-Z]/.test(outsideEscapes(segment)) && canonicalSlug(segment) === canonical;
+}
+
+/*
+ * The library's routes read back from a path: what `/resources/{segments}/`
+ * can be, so a request that no listing or resource route can answer is
+ * known from the path alone.
+ */
+
+/** The segments of a listing route, as Next.js hands them to the page. */
+export interface ListingRequest {
+  readonly type?: string;
+  readonly topic?: string;
+  /** The `[n]` of `…/page/[n]/`, or none for the first page. */
+  readonly pageSegment?: string;
+}
+
+/** A listing request whose segments passed the checks: the filter and the page number. */
+export interface ValidListing {
+  readonly filter: ListingFilter;
+  readonly page: number;
+}
+
+/**
+ * The validated filter and page of a listing request, or `null` when a
+ * segment can only be a 404: a type segment that cannot be a type slug
+ * (`topic`, `page`, or not a slug), a topic segment that cannot be a slug,
+ * or a page segment that is not a canonical page number 2 or more (`0`,
+ * `01`, `1.5`, `x`, and `1`, whose URL is the listing's own and which
+ * `proxy.ts` redirects before the route runs). The one definition for
+ * `components/ListingPage.tsx`, which answers `null` with `DataNotFound`, and
+ * for `lib/path-decision.ts`, which answers the same segments with the
+ * not-found page's HTML before the route runs.
+ */
+export function validListing(request: ListingRequest): ValidListing | null {
+  if (request.type !== undefined && !isTypeSlug(request.type)) {
+    return null;
+  }
+  if (request.topic !== undefined && !isSlug(request.topic)) {
+    return null;
+  }
+  let page = 1;
+  if (request.pageSegment !== undefined) {
+    const parsed = parsePageSegment(request.pageSegment);
+    if (parsed === null) {
+      return null;
+    }
+    page = parsed;
+  }
+  const filter: ListingFilter = {
+    ...(request.type === undefined ? {} : { type: request.type }),
+    ...(request.topic === undefined ? {} : { topic: request.topic }),
+  };
+  return { filter, page };
+}
+
+/** What a `/resources/{segments}/` path asks for, before its segments are checked. */
+export type ResourcesRequest =
+  | { readonly kind: "listing"; readonly request: ListingRequest }
+  | { readonly kind: "resource"; readonly type: string; readonly slug: string };
+
+/**
+ * The route under `app/resources/` that `/resources/{segments}/` reaches,
+ * read off the segments the way the App Router routes them, or `null` when
+ * no listing or resource route has that shape and the optional catch-all
+ * `[[...rest]]` would answer it with a 404. The table is the route
+ * tree: a static `topic/` or `page/` segment wins over `[type]` at its
+ * level, so `/resources/topic/x/` is the topic listing and
+ * `/resources/page/2/` page 2 of the library, never a resource, and a
+ * reserved word that lands in `[type]` all the same (`/resources/topic/`,
+ * `/resources/topic/topic/x/`) comes back as a listing whose type segment
+ * `validListing` then refuses, as the route does. The segments are not
+ * checked here: a shape that exists is returned as the route would see it,
+ * so the two callers apply the routes' own checks (`validListing`,
+ * `isTypeSlug` and `isSlug`) and agree with the routes. The
+ * `test/routes.test.ts` pin reads the route directories, so a new route
+ * under `app/resources/` fails the test until the table knows it.
+ */
+export function parseResourcesSegments(segments: readonly string[]): ResourcesRequest | null {
+  const [a, b, c, d, e] = segments;
+  switch (segments.length) {
+    case 0:
+      return { kind: "listing", request: {} };
+    case 1:
+      return { kind: "listing", request: { type: a } };
+    case 2:
+      if (a === "topic") return { kind: "listing", request: { topic: b } };
+      if (a === "page") return { kind: "listing", request: { pageSegment: b } };
+      return { kind: "resource", type: a, slug: b };
+    case 3:
+      if (b === "topic") return { kind: "listing", request: { type: a, topic: c } };
+      if (b === "page") return { kind: "listing", request: { type: a, pageSegment: c } };
+      return null;
+    case 4:
+      if (a === "topic" && c === "page") return { kind: "listing", request: { topic: b, pageSegment: d } };
+      return null;
+    case 5:
+      if (b === "topic" && d === "page") return { kind: "listing", request: { type: a, topic: c, pageSegment: e } };
+      return null;
+    default:
+      return null;
+  }
 }

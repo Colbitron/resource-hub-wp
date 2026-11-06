@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { DataNotFound, NOT_FOUND_METADATA } from "@/components/DataNotFound";
 import { PageArticle, pageMetadata } from "@/components/PageArticle";
 import { WelcomePage, welcomeMetadata } from "@/components/WelcomePage";
 import { pageForRequest } from "@/lib/page-request";
@@ -9,12 +10,12 @@ import { pageForRequest } from "@/lib/page-request";
  * published WordPress page at its parent chain, and the welcome page when no
  * front page is set (ADR 0052; the page lookup is in `packages/ui/README.md`).
  * An optional catch-all at the root, so every path no other route claims comes
- * here: `pageForRequest` returns the page to render, sends a computed
- * single-hop 308 to its canonical path, or answers a 404, with the same rules
- * as the resource page (`lib/page-request.ts`). Static and dynamic siblings win
- * over the catch-all, so `/resources/…` and `/api/revalidate/` never arrive,
- * and the `/media/` rewrite runs before dynamic routes; a first segment the
- * front end's routes own is a 404 here without a request.
+ * here: `pageForRequest` returns the page to render or the not-found decision,
+ * or sends a computed single-hop 308 to its canonical path itself, with the
+ * same rules as the resource page (`lib/page-request.ts`). Static and dynamic
+ * siblings win over the catch-all, so `/resources/…` and `/api/revalidate/`
+ * never arrive, and the `/media/` rewrite runs before dynamic routes; a first
+ * segment the front end's routes own is a 404 here without a request.
  *
  * The route is ISR, like the resource page and the listings
  * (ADRs 0043 and 0052; see `docs/architecture/caching.md`):
@@ -37,11 +38,15 @@ import { pageForRequest } from "@/lib/page-request";
  * `docs/architecture/caching.md`): call `connection()`, read `headers()` or
  * `cookies()`, or fetch with `cache: "no-store"`, since a dynamic bail-out in
  * an ISR route with no prerendered params is a runtime 500; have a
- * `loading.tsx` or put the decision under a Suspense boundary, since once
- * streaming has begun a redirect is a 200 with a meta refresh. The decision
- * runs first, in the page and in `generateMetadata` alike, and the per-render
- * memoization in `lib/wp/fetch.ts` means the two make one set of requests
- * between them.
+ * `loading.tsx` or put the decision under a Suspense boundary. The decision
+ * runs first, before anything renders, so a redirect is thrown outside every
+ * boundary, and a not-found decision renders `DataNotFound`, whose boundary
+ * puts the not-found page in the 404's HTML (issue #46; the mechanism is in
+ * `components/DataNotFound.tsx` and `docs/architecture/caching.md`). It runs
+ * in the page and in `generateMetadata` alike, and the per-render memoization
+ * in `lib/wp/fetch.ts` means the two make one set of requests between them;
+ * `generateMetadata` returns `NOT_FOUND_METADATA` on a not-found decision and
+ * never throws `notFound()`, for the reason given there.
  *
  * A `CmsError` from the data layer is a 500, which ISR never stores;
  * `error.tsx` beside this file is the segment's error boundary, as for the
@@ -57,12 +62,18 @@ export function generateStaticParams(): { path: string[] }[] {
 
 export async function generateMetadata({ params }: PageProps<"/[[...path]]">): Promise<Metadata> {
   const { path } = await params;
-  const rendered = await pageForRequest(path ?? []);
-  return rendered.kind === "welcome" ? welcomeMetadata : pageMetadata(rendered);
+  const decision = await pageForRequest(path ?? []);
+  if (decision.kind === "not-found") {
+    return NOT_FOUND_METADATA;
+  }
+  return decision.kind === "welcome" ? welcomeMetadata : pageMetadata(decision);
 }
 
 export default async function CmsPage({ params }: PageProps<"/[[...path]]">) {
   const { path } = await params;
-  const rendered = await pageForRequest(path ?? []);
-  return rendered.kind === "welcome" ? <WelcomePage /> : <PageArticle rendered={rendered} />;
+  const decision = await pageForRequest(path ?? []);
+  if (decision.kind === "not-found") {
+    return <DataNotFound />;
+  }
+  return decision.kind === "welcome" ? <WelcomePage /> : <PageArticle rendered={decision} />;
 }

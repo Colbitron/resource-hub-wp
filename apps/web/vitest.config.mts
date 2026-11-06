@@ -18,6 +18,6 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["**/*.test.{ts,tsx}"],
-    exclude: ["node_modules/**", ".next/**", "e2e/**"],
+    exclude: ["node_modules/**", ".next/**", ".vercel/**", "e2e/**"],
   },
 });

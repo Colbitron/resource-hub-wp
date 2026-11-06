@@ -1,16 +1,8 @@
 import "server-only";
 
-import { notFound, permanentRedirect } from "next/navigation";
+import { permanentRedirect } from "next/navigation";
 
-import {
-  isCanonicalSegment,
-  isPageSegment,
-  isReservedRootSegment,
-  MAX_PAGE_PATH_LENGTH,
-  pagePath,
-  pagePathSegments,
-  ROOT_PATH,
-} from "./routes";
+import { isCanonicalSegment, isPageSegment, pagePath, pagePathProblem, pagePathSegments, ROOT_PATH } from "./routes";
 import { getPageById, lookupPage } from "./wp/pages";
 import type { PageLookup } from "./wp/schemas/page";
 import type { WpPage } from "./wp/schemas/rest";
@@ -24,7 +16,11 @@ import type { WpPage } from "./wp/schemas/rest";
  * - A segment that cannot be part of a page path (`isPageSegment`: not a slug,
  *   or holding a dot, as `favicon.ico` does), a first segment the front
  *   end's own routes use (`RESERVED_ROOT_SEGMENTS`) or a path longer than the
- *   plugin's cap (`MAX_PAGE_PATH_LENGTH`) is a 404 without a request.
+ *   plugin's cap (`MAX_PAGE_PATH_LENGTH`) is a 404 without a request: one
+ *   definition, `pagePathProblem` in `lib/routes.ts`, shared with
+ *   `lib/path-decision.ts`, which has `proxy.ts` answer the same paths with
+ *   the not-found page's HTML before this route runs (issue #46), so the
+ *   check here is a second line for a request the proxy's matcher missed.
  *   `/resources/…` never arrives here, since a static sibling wins over the
  *   catch-all; `/api/other/` and `/media/x/` with no rewrite configured do.
  * - The path is looked up in canonical form through the plugin's page route,
@@ -74,6 +70,8 @@ export type PageRequestDecision =
 
 export type RenderedPage = Extract<PageRequestDecision, { kind: "render" | "welcome" }>;
 
+export type NotFoundDecision = Extract<PageRequestDecision, { kind: "not-found" }>;
+
 export interface PageRequestOptions {
   /** The path lookup; the data layer's `lookupPage` by default. */
   readonly lookupPage?: (path: string) => Promise<PageLookup | null>;
@@ -96,16 +94,10 @@ export async function decidePageRequest(
 ): Promise<PageRequestDecision> {
   const { lookupPage: lookup = lookupPage, getPageById: byId = getPageById } = options;
 
-  if (segments.some((segment) => !isPageSegment(segment))) {
-    return NOT_FOUND;
-  }
-  if (segments.length > 0 && isReservedRootSegment(segments[0])) {
+  if (pagePathProblem(segments) !== null) {
     return NOT_FOUND;
   }
   const requested = pagePath(segments);
-  if (requested.length > MAX_PAGE_PATH_LENGTH) {
-    return NOT_FOUND;
-  }
 
   const found = await lookup(requested);
   if (found === null) {
@@ -139,20 +131,21 @@ export async function decidePageRequest(
 }
 
 /**
- * The page for the request, or no return: a redirect sends Next.js's 308 and
- * a miss renders the not-found page. For an ISR page that stores the
- * answer; see the module comment for how, and call it first.
+ * The page for the request, the welcome page, or the not-found decision, or
+ * no return: a redirect sends Next.js's 308 from here, before anything is
+ * rendered. A not-found decision is returned rather than thrown, so the
+ * route can render `DataNotFound` (`components/DataNotFound.tsx`), which
+ * puts the not-found page in the 404's HTML, and `generateMetadata` can
+ * return the not-found title without throwing. For an ISR page that stores
+ * the answer; see the module comment for how, and call it first.
  */
 export async function pageForRequest(
   segments: readonly string[],
   options?: PageRequestOptions,
-): Promise<RenderedPage> {
+): Promise<RenderedPage | NotFoundDecision> {
   const decision = await decidePageRequest(segments, options);
   if (decision.kind === "redirect") {
     permanentRedirect(decision.path);
-  }
-  if (decision.kind === "not-found") {
-    notFound();
   }
   return decision;
 }

@@ -1,6 +1,15 @@
+import { existsSync, readdirSync } from "node:fs";
+import { join, parse } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { isMetadataRouteFile } from "next/dist/lib/metadata/is-metadata-route";
 import { describe, expect, it } from "vitest";
 
+import { decidePath } from "../lib/path-decision";
 import {
+  MAX_PAGE_PATH_LENGTH,
+  OWN_ROUTE_PATHS,
+  RESERVED_ROOT_SEGMENTS,
   RESERVED_TYPE_SLUGS,
   canonicalSlug,
   isPageNumber,
@@ -9,14 +18,65 @@ import {
   isTypeSlug,
   libraryPath,
   listingPath,
+  pagePath,
+  pagePathProblem,
   parsePageSegment,
+  parseResourcesSegments,
   resourcePath,
   slugProblem,
   topicListingPath,
   typeListingPath,
   typeSlugProblem,
   typeTopicListingPath,
+  validListing,
 } from "../lib/routes";
+
+const APP_DIR = fileURLToPath(new URL("../app", import.meta.url));
+
+/** `pageExtensions` in `next.config.ts`, with the fixtures' on, as Playwright builds the app. */
+const PAGE_EXTENSIONS = ["fixture.tsx", "tsx", "ts"];
+
+/** A generated metadata route's served name, where it is not the file's own name. */
+const GENERATED_METADATA_NAMES: Record<string, string> = { robots: "robots.txt", manifest: "manifest.webmanifest", sitemap: "sitemap.xml" };
+
+type ServedFile = { readonly file: string; readonly kind: "page" | "route" | "metadata"; readonly segments: readonly string[] };
+
+/**
+ * Every file under `dir` (a directory of `app/`) that answers requests
+ * itself, with the URL segments it is served at, relative to `dir`: a page,
+ * a route handler, or a metadata file in any of its forms, as Next.js's own
+ * `isMetadataRouteFile` recognises them (`favicon.ico`, `robots`, `sitemap`,
+ * `manifest`, `icon`, `apple-icon`, `opengraph-image`, `twitter-image`,
+ * static or generated). A static metadata file is served under its own
+ * name, a generated one under its bare name or the name Next.js gives it
+ * (`robots.ts` at `robots.txt`). A route group or a parallel-route slot adds
+ * no segment, a private folder (`_x`) is not routed, and a dynamic segment
+ * comes back as written (`[type]`). `appPath` is `dir`'s own path under
+ * `app/` (`/resources`), which Next.js reads to tell a root-only metadata
+ * file (`robots`, `manifest`, `favicon.ico`) from a file of that name
+ * elsewhere; `skip` names directories of `dir` left out.
+ */
+function servedFiles(dir: string, skip: readonly string[] = [], appPath = "", segments: readonly string[] = []): ServedFile[] {
+  const found: ServedFile[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const relative = `${appPath}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (skip.includes(entry.name) || entry.name.startsWith("_")) {
+        continue;
+      }
+      const routed = /^\(.*\)$|^@/.test(entry.name) ? segments : [...segments, entry.name];
+      found.push(...servedFiles(join(dir, entry.name), [], relative, routed));
+    } else if (new RegExp(`^(page|route)\\.(${PAGE_EXTENSIONS.join("|").replaceAll(".", "\\.")})$`).test(entry.name)) {
+      found.push({ file: relative, kind: entry.name.startsWith("page") ? "page" : "route", segments });
+    } else if (isMetadataRouteFile(relative, PAGE_EXTENSIONS, true)) {
+      const { name, ext } = parse(entry.name);
+      const generated = PAGE_EXTENSIONS.some((extension) => entry.name.endsWith(`.${extension}`));
+      const served = generated ? (GENERATED_METADATA_NAMES[name] ?? name) : `${name}${ext}`;
+      found.push({ file: relative, kind: "metadata", segments: [...segments, served] });
+    }
+  }
+  return found;
+}
 
 describe("reserved type slugs", () => {
   it("are topic and page", () => {
@@ -385,6 +445,182 @@ describe("slugProblem", () => {
       for (const hex of [byte.toString(16).padStart(2, "0"), byte.toString(16).toUpperCase().padStart(2, "0")]) {
         const value = `a%${hex}b`;
         expect(slugProblem(value) === null, value).toBe(!decoded);
+      }
+    }
+  });
+});
+
+describe("pagePathProblem", () => {
+  it("is null for the root and for segments a page path can have", () => {
+    for (const segments of [[], ["about"], ["about", "team"], ["resourcesx"], ["apiary"], ["%e6%97%a5"], ["a%20b"], ["-"]]) {
+      expect(pagePathProblem(segments), segments.join("/")).toBeNull();
+    }
+  });
+
+  it("names a segment that cannot be one, in the words of pageSegmentProblem", () => {
+    expect(pagePathProblem(["about", "team.html"])).toContain("must not contain a dot");
+    expect(pagePathProblem(["favicon.ico"])).toContain('"favicon.ico"');
+    expect(pagePathProblem(["a".repeat(201)])).toContain("at most 200 characters");
+    expect(pagePathProblem(["case%2dstudy"])).toContain("percent-encode");
+    expect(pagePathProblem([".."])).toContain("URL parsers collapse");
+    expect(pagePathProblem(["a b"])).toContain("whitespace");
+    expect(pagePathProblem([""])).toContain("empty");
+  });
+
+  it("names a reserved first segment, in any case, and only as the first", () => {
+    for (const segment of RESERVED_ROOT_SEGMENTS) {
+      expect(pagePathProblem([segment]), segment).toContain("front end's own routes");
+      expect(pagePathProblem([segment.toUpperCase(), "x"]), segment).toContain("front end's own routes");
+      expect(pagePathProblem(["about", segment]), segment).toBeNull();
+    }
+  });
+
+  it("names a path over the plugin's cap, and not one at it", () => {
+    const segment = "a".repeat(200);
+    const over = Array.from({ length: 10 }, () => segment);
+    expect(pagePath(over).length).toBe(MAX_PAGE_PATH_LENGTH + 1);
+    expect(pagePathProblem(over)).toContain(`${MAX_PAGE_PATH_LENGTH}`);
+    const at = [...over.slice(0, 9), "b".repeat(199)];
+    expect(pagePath(at).length).toBe(MAX_PAGE_PATH_LENGTH);
+    expect(pagePathProblem(at)).toBeNull();
+  });
+
+  it("checks the segments before the reserved word and the cap, so the builders only ever see valid segments", () => {
+    expect(pagePathProblem(["api", "x.y"])).toContain("dot");
+    expect(() => pagePathProblem([".."])).not.toThrow();
+    expect(() => pagePathProblem(["api", ".."])).not.toThrow();
+  });
+});
+
+describe("OWN_ROUTE_PATHS", () => {
+  it("are the revalidate route and the favicon, with the trailing slash every route path has and the file path has not", () => {
+    expect(OWN_ROUTE_PATHS).toEqual(["/api/revalidate/", "/favicon.ico"]);
+  });
+
+  // The proxy runs before every route and before `public/`, so a route or a
+  // file it decides as a 404 (a dot in its name, a reserved first segment
+  // such as `api`) is never reached, and one it redirects is reached only at
+  // another path. This walks what is actually there, so a new
+  // `app/robots.ts`, `app/api/health/route.ts` or `public/logo.svg` fails
+  // here until `OWN_ROUTE_PATHS` lists it. The two catch-alls are left out:
+  // the page catch-all is what the proxy's page rules mirror, and the
+  // library's routes are pinned to `parseResourcesSegments` below.
+  it("cover every route and metadata file outside the catch-alls, and every public file, so the proxy leaves each one alone", () => {
+    const served = servedFiles(APP_DIR, ["[[...path]]", "resources"]).map(({ file, kind, segments }) => {
+      const routed = segments.map((segment) => (/^\[.*\]$/.test(segment) ? "sample" : segment));
+      // Pages and route handlers end in the slash `trailingSlash: true` gives them; a metadata file is served under its file name.
+      return { file, path: kind === "metadata" ? `/${routed.join("/")}` : `/${routed.map((segment) => `${segment}/`).join("")}` };
+    });
+    const publicDir = fileURLToPath(new URL("../public", import.meta.url));
+    if (existsSync(publicDir)) {
+      for (const entry of readdirSync(publicDir, { recursive: true, withFileTypes: true })) {
+        if (entry.isFile()) {
+          const path = `${entry.parentPath}/${entry.name}`.slice(publicDir.length).split("\\").join("/");
+          served.push({ file: `public${path}`, path });
+        }
+      }
+    }
+    for (const { file, path } of served) {
+      expect(decidePath(path), `${file} is served at ${path}, which the proxy must leave alone: add it to OWN_ROUTE_PATHS, or teach lib/path-decision.ts its shape`).toBeNull();
+    }
+    const paths = served.map(({ path }) => path);
+    for (const path of OWN_ROUTE_PATHS) {
+      expect(paths, `${path} is in OWN_ROUTE_PATHS but nothing under app/ serves it`).toContain(path);
+    }
+  });
+});
+
+describe("validListing", () => {
+  it("is the filter and the page for segments the listing accepts, page 1 with no page segment", () => {
+    expect(validListing({})).toEqual({ filter: {}, page: 1 });
+    expect(validListing({ type: "webinar" })).toEqual({ filter: { type: "webinar" }, page: 1 });
+    expect(validListing({ topic: "a11y", pageSegment: "12" })).toEqual({ filter: { topic: "a11y" }, page: 12 });
+    expect(validListing({ type: "webinar", topic: "%e6%97%a5", pageSegment: "2" })).toEqual({ filter: { type: "webinar", topic: "%e6%97%a5" }, page: 2 });
+  });
+
+  it("is null for a type that is reserved or not a slug, a topic that is not a slug, or a page segment that is not a number 2 or more", () => {
+    for (const request of [
+      { type: "topic" },
+      { type: "page" },
+      { type: "Topic" },
+      { type: "a".repeat(201) },
+      { type: "case%2dstudy" },
+      { topic: "a".repeat(201) },
+      { topic: "case%2dstudy" },
+      { pageSegment: "1" },
+      { pageSegment: "0" },
+      { pageSegment: "01" },
+      { pageSegment: "1.5" },
+      { pageSegment: "x" },
+      { pageSegment: "" },
+      { type: "webinar", topic: "a11y", pageSegment: "-2" },
+    ]) {
+      expect(validListing(request), JSON.stringify(request)).toBeNull();
+    }
+  });
+});
+
+describe("parseResourcesSegments", () => {
+  it("reads every listing shape back as the route sees it, and a two-segment path as a resource", () => {
+    expect(parseResourcesSegments([])).toEqual({ kind: "listing", request: {} });
+    expect(parseResourcesSegments(["webinar"])).toEqual({ kind: "listing", request: { type: "webinar" } });
+    expect(parseResourcesSegments(["topic", "a11y"])).toEqual({ kind: "listing", request: { topic: "a11y" } });
+    expect(parseResourcesSegments(["page", "2"])).toEqual({ kind: "listing", request: { pageSegment: "2" } });
+    expect(parseResourcesSegments(["webinar", "example"])).toEqual({ kind: "resource", type: "webinar", slug: "example" });
+    expect(parseResourcesSegments(["webinar", "topic", "a11y"])).toEqual({ kind: "listing", request: { type: "webinar", topic: "a11y" } });
+    expect(parseResourcesSegments(["webinar", "page", "2"])).toEqual({ kind: "listing", request: { type: "webinar", pageSegment: "2" } });
+    expect(parseResourcesSegments(["topic", "a11y", "page", "2"])).toEqual({ kind: "listing", request: { topic: "a11y", pageSegment: "2" } });
+    expect(parseResourcesSegments(["webinar", "topic", "a11y", "page", "2"])).toEqual({ kind: "listing", request: { type: "webinar", topic: "a11y", pageSegment: "2" } });
+  });
+
+  it("lets a static topic/ or page/ segment win over [type], and hands a reserved word that lands in [type] to the validation", () => {
+    expect(parseResourcesSegments(["topic", "x"])).toEqual({ kind: "listing", request: { topic: "x" } });
+    expect(parseResourcesSegments(["page", "x"])).toEqual({ kind: "listing", request: { pageSegment: "x" } });
+    expect(parseResourcesSegments(["topic"])).toEqual({ kind: "listing", request: { type: "topic" } });
+    expect(parseResourcesSegments(["topic", "topic", "x"])).toEqual({ kind: "listing", request: { type: "topic", topic: "x" } });
+    expect(parseResourcesSegments(["page", "page", "2"])).toEqual({ kind: "listing", request: { type: "page", pageSegment: "2" } });
+    expect(parseResourcesSegments(["webinar", "topic"])).toEqual({ kind: "resource", type: "webinar", slug: "topic" });
+  });
+
+  it("is null for a shape no route has", () => {
+    for (const segments of [["a", "b", "c"], ["a", "topic", "b", "c"], ["topic", "a", "b", "c"], ["a", "page", "2", "x"], ["a", "topic", "b", "page"], ["a", "b", "c", "d", "e"], ["a", "topic", "b", "page", "2", "x"], ["a", "b", "c", "d", "e", "f", "g"]]) {
+      expect(parseResourcesSegments(segments), segments.join("/")).toBeNull();
+    }
+  });
+
+  it("round-trips every path the builders make", () => {
+    for (const type of ["webinar", "%e6%97%a5", "a-b_c~e"]) {
+      for (const topic of ["a11y", "%d0%b4%d0%be%d0%bc"]) {
+        for (const page of [1, 2, 12]) {
+          for (const path of [listingPath({}, page), listingPath({ type }, page), listingPath({ topic }, page), listingPath({ type, topic }, page)]) {
+            const parsed = parseResourcesSegments(path.slice("/resources/".length).split("/").filter((segment) => segment !== ""));
+            expect(parsed?.kind, path).toBe("listing");
+            const valid = parsed?.kind === "listing" ? validListing(parsed.request) : null;
+            expect(valid, path).not.toBeNull();
+            expect(listingPath(valid!.filter, valid!.page), path).toBe(path);
+          }
+        }
+        const path = resourcePath(type, topic);
+        expect(parseResourcesSegments(path.slice("/resources/".length).split("/").filter((segment) => segment !== ""))).toEqual({ kind: "resource", type, slug: topic });
+      }
+    }
+  });
+
+  it("knows every route under app/resources/, a route handler or a metadata file as much as a page, so a new one fails here until the table does", () => {
+    const patterns = servedFiles(join(APP_DIR, "resources"), [], "/resources").map(({ segments }) => segments);
+    expect(patterns.length, "the nine pages under app/resources/ and nothing else that answers requests: a new route handler or metadata file needs its served path checked against the table").toBe(9);
+    const sample: Record<string, string> = { "[type]": "webinar", "[topic]": "a11y", "[slug]": "example", "[n]": "2" };
+    for (const pattern of patterns) {
+      const segments = pattern.filter((segment) => segment !== "[[...rest]]").map((segment) => sample[segment] ?? segment);
+      for (const segment of segments) {
+        expect(segment, `${pattern.join("/")}: every dynamic segment of a route under app/resources/ has a sample here`).not.toMatch(/^\[/);
+      }
+      const parsed = parseResourcesSegments(segments);
+      expect(parsed, pattern.join("/")).not.toBeNull();
+      if (parsed?.kind === "listing") {
+        expect(validListing(parsed.request), pattern.join("/")).not.toBeNull();
+      } else if (parsed?.kind === "resource") {
+        expect(isTypeSlug(parsed.type) && isSlug(parsed.slug), pattern.join("/")).toBe(true);
       }
     }
   });

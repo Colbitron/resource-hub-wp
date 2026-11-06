@@ -9,13 +9,13 @@ import "@/components/resource.css";
  * the response is a 500 with Next.js's `no-store` header, which ISR never
  * stores (`docs/architecture/caching.md` has the 500's headers), so nothing
  * caches or indexes it and the next request renders again; and a
- * `permanentRedirect()` or `notFound()` thrown by the page never reaches this
- * boundary, so the 308 and the 404 are untouched. The 500's body is Next.js's
- * empty `__next_error__` document, not the site's shell: this fallback, inside
- * the root layout, renders only after hydration, so a reader without JavaScript
- * gets an empty page. What the boundary changes is what a hydrated reader sees:
- * a plain sentence and a way to try again, in place of Next.js's bare
- * "Application error" page.
+ * `permanentRedirect()` thrown by the page, or the `notFound()` its
+ * `DataNotFound` throws, never reaches this boundary, so the 308 and the 404
+ * are untouched. The 500's body is Next.js's empty `__next_error__` document,
+ * not the site's shell: this fallback, inside the root layout, renders only
+ * after hydration, so a reader without JavaScript gets an empty page. What the
+ * boundary changes is what a hydrated reader sees: a plain sentence and a way
+ * to try again, in place of Next.js's bare "Application error" page.
  *
  * It takes no `error` prop on purpose: in production the message is a generic
  * one with a digest, and the `CmsError` message is scrubbed of the CMS host
