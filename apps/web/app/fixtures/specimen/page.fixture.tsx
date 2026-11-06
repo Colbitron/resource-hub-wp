@@ -140,9 +140,9 @@ const CARDS: ResourceCardProps[] = [
 
 /**
  * A body as an editor writes it, through the same server-side pass as a
- * resource's or a page's (`renderContent`, ADR 0047), so the table gets its
- * labelled scrolling region and the links their rewrites, as on the real
- * pages.
+ * resource's or a page's (`renderContent` in `lib/content/render.tsx`), so
+ * the table gets its labelled scrolling region and the links their
+ * rewrites, as on the real pages.
  */
 /** The CMS's site origin and uploads directory under test, so the fixtures' URLs are rewritten as the CMS's are. */
 function cms() {
