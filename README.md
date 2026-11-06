@@ -36,7 +36,7 @@ Scaffold complete; features in progress. Everything below the line exists and is
 | `resource-hub/related-resources` block | pending |
 | Revalidation hook and admin notice | pending |
 | Next.js front end scaffold in `apps/web` | done |
-| Front-end production deploy through a Vercel deploy hook | pending |
+| Front-end production deploy through a Vercel deploy hook ([ADR 0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md)) | built; awaiting the first-deploy check |
 | CMS block theme | planned |
 
 ## Architecture
@@ -139,7 +139,7 @@ The `deploy` job in `.github/workflows/ci.yml` publishes the plugin to the Cloud
 
 From a fresh checkout it builds the block, runs `composer install --no-dev` in `wp-content/plugins/resource-hub-wp/`, and rsyncs that directory over SSH into the plugin directory on the host with `--delete-delay --delay-updates`, so changed files are swapped in together at the end and stale ones are removed after that. The rsync is an allowlist, so the host receives only what WordPress loads: `resource-hub.php`, `src/`, `build/`, and `vendor/`. Everything else stays behind by default: the block source in `blocks/`, tests, docs, toolchain config, lockfiles, and manifests. A new runtime file or directory has to be added to the allowlist in the workflow. It then activates the plugin with WP-CLI if it is not already active, reads the site's `home` URL over SSH, and requests `{home}/wp-json/` to check that the REST API answers. WP-CLI runs from the WordPress root, not the plugin directory, because the host's `wp-config.php` requires `wp-salt.php` by a relative path, which resolves against the working directory.
 
-Five repository secrets feed it:
+Five repository secrets feed it, and a sixth feeds `deploy-web`:
 
 | Secret | Holds |
 |---|---|
@@ -148,10 +148,11 @@ Five repository secrets feed it:
 | `DEPLOY_USER` | SSH user |
 | `DEPLOY_PATH` | Absolute path of the plugin directory itself, ending in `wp-content/plugins/resource-hub-wp` |
 | `DEPLOY_KNOWN_HOSTS` | The server's pinned host key line or lines, so the runner never trusts on first use |
+| `VERCEL_DEPLOY_HOOK_URL` | The Vercel project's deploy hook for `main`, used by `deploy-web`; the URL is the credential |
 
-The front end deploys after the CMS. The CMS deploy needs only the CMS gate, so a front-end failure never blocks a CMS deploy or a rollback. A later job (slice 3) will deploy `apps/web` to Vercel production through a deploy hook once the CMS deploy and the `web` job have both passed; on Vercel the Root Directory is `apps/web`, automatic production deploys from Git are off, and pull requests still get preview deploys. The Vercel project sets `WP_API_URL`, `REVALIDATE_SECRET` and `SITE_URL` (the public origin, also on Preview) and keeps "Automatically expose System Environment Variables" on; without `SITE_URL` or a CMS base a Vercel build fails (`apps/web/README.md`). Contract changes are additive, so the front end never depends on something the live CMS does not have yet.
+The front end deploys after the CMS. The CMS deploy needs only the CMS gate, so a front-end failure never blocks a CMS deploy or a rollback. The `deploy-web` job then starts the front end's Vercel production deploy through a deploy hook, the repository secret `VERCEL_DEPLOY_HOOK_URL`, once the CMS deploy and the `web` job have both passed on `main`, and only while `main` still points at the commit it tested; it queues the build and does not wait for it ([ADR 0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md)). On Vercel the Root Directory is `apps/web`; `apps/web/vercel.json` turns off Git-triggered deploys of `main`, and pull requests still get preview deploys. The Vercel project sets `WP_API_URL`, `REVALIDATE_SECRET` and `SITE_URL` (the public origin, also on Preview) and keeps "Automatically expose System Environment Variables" on; without `SITE_URL` or a CMS base a Vercel build fails (`apps/web/README.md`). Contract changes are additive, so the front end never depends on something the live CMS does not have yet.
 
-**Rolling back** means redeploying an earlier commit from a tag. Tag the good commit, push the tag, then dispatch the workflow on it: `git tag rollback-<date> <sha> && git push origin rollback-<date>`, then `gh workflow run ci.yml --ref rollback-<date>`. Pushing a tag does not start CI, because the push trigger covers only `main`, so a tag deploy always takes that manual dispatch. The run goes through the gate before deploying. The tagged commit must contain this deploy job, so commits from before it was added cannot be redeployed this way.
+**Rolling back** the CMS means redeploying an earlier commit from a tag. Tag the good commit, push the tag, then dispatch the workflow on it: `git tag rollback-<date> <sha> && git push origin rollback-<date>`, then `gh workflow run ci.yml --ref rollback-<date>`. Pushing a tag does not start CI, because the push trigger covers only `main`, so a tag deploy always takes that manual dispatch. The run goes through the gate before deploying. The tagged commit must contain this deploy job, so commits from before it was added cannot be redeployed this way. A tag dispatch redeploys only the CMS: `deploy-web` runs only on `main`, because a deploy hook always builds `main`, never the tagged commit. The front end is rolled back separately, on Vercel, by promoting an earlier production deployment (Instant Rollback). After that, Vercel stops assigning the production domain to new deployments, so the deploys `deploy-web` starts still build but are not served until someone undoes the rollback or promotes a deployment on Vercel.
 
 ## Decisions
 
@@ -207,6 +208,7 @@ Each real decision has a record under [`docs/adr/`](docs/adr/). One sentence eac
 - [0048](docs/adr/0048-the-revalidate-route.md) The revalidate route compares SHA-256 digests of the bearer and the secret with `timingSafeEqual` before reading the body, caps the body at 64 KB, parses with the reader schema and answers every body problem with a `400` that names the first issue's path and never a value, clears every tag with `revalidateTag(tag, { expire: 0 })` so a removal never serves one more stale render and every path with `revalidatePath`, and fetches nothing from the CMS.
 - [0049](docs/adr/0049-data-layer-fetch-policy.md) (proposed) Every CMS fetch revalidates hourly as the ISR safety net, because failed sends are never retried, and times out after ten seconds; errors become `null`, "no such page" or a `CmsError` that never names the CMS origin; and the data layer only normalises slugs, leaving a no-store 308 for non-canonical URLs to the pages.
 - [0050](docs/adr/0050-listings-are-isr-that-render-on-first-request.md) The listing routes are ISR with `revalidate = 3600` and a `generateStaticParams` returning `[]`, so the build never needs the CMS and each listing renders on its first request; the library is an optional catch-all for that reason; a listing never reads request data or redirects, answers unknown terms and pages past the end with a stored 404, and an empty filter combination with a 200; the canonical-form 308s come from `proxy.ts` (ADR 0035's listings amendment).
+- [0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md) The front end's production deploy is a fire-and-forget Vercel deploy hook fired by CI after the CMS deploy and the `web` job, only while `main` still points at the tested commit, with Git-triggered deploys of `main` turned off in `apps/web/vercel.json` and pull-request previews kept.
 
 ## Contract with the front end
 
