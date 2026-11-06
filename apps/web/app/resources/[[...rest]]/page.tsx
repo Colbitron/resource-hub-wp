@@ -12,7 +12,10 @@ import { ListingPage, listingMetadata } from "@/components/ListingPage";
  * `[]` is rendered on its first request instead, like every other listing,
  * and stored by ISR from then on (ADR 0050). Static and dynamic siblings win
  * over a catch-all, so this page serves `/resources/` only: `rest` is empty
- * there, and any path that fell through to it is a 404.
+ * there, and any path that fell through to it is a 404. Such a shape is
+ * known from the path alone, so `proxy.ts` answers it first with the
+ * not-found page's HTML (`lib/path-decision.ts`, issue #46); the
+ * `notFound()` here is the second line.
  */
 
 // The data layer's interval, as a literal: Next.js reads segment config statically (ADR 0049).

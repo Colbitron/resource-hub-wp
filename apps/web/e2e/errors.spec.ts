@@ -5,14 +5,17 @@ import { mockCmsOrigin, mockCmsPort } from "./mock-cms/config.mts";
 
 /**
  * What a reader gets when there is nothing to show: the site's own 404 page
- * (`app/not-found.tsx`), in the shell, from `notFound()` in a listing, in
- * the resource page and in the page route, which every URL no other route
- * claims reaches (ADR 0052), so each of them after hydration on Next.js
- * 16.4.5, as measured below, and none in the HTML; and the
- * resource page's 500 when its CMS read fails, which the mock's fault
- * control (`/__mock/faults`, `mock-cms/faults.mts`) brings about. The
- * redirect contract, which neither may disturb, is checked once here and in
- * full in `resource-page.spec.ts` and `redirects.spec.ts`.
+ * (`app/not-found.tsx`), in the shell. A 404 decided from the path alone is
+ * answered by `proxy.ts` with a rewrite to the prerendered not-found route
+ * (`lib/path-decision.ts`, issue #46), so the page is in the HTML, with no
+ * JavaScript and no CMS request. A 404 decided by data comes from
+ * `notFound()` in a listing, in the resource page and in the page route,
+ * which every URL no other route claims reaches (ADR 0052), and on Next.js
+ * 16.4.5 each of those shows the page after hydration only, as measured and
+ * pinned below. And the resource page's 500 when its CMS read fails, which
+ * the mock's fault control (`/__mock/faults`, `mock-cms/faults.mts`) brings
+ * about. The redirect contract, which none of them may disturb, is checked
+ * once here and in full in `resource-page.spec.ts` and `redirects.spec.ts`.
  */
 
 const cms = mockCms();
@@ -67,6 +70,29 @@ function expectNoCms(html: string, path: string): void {
 }
 
 test.describe("the 404 page", () => {
+  /**
+   * Paths no route could answer with anything but a 404, decided from the
+   * path alone by the routes' own checks (`lib/path-decision.ts`): a dot in
+   * a segment, a reserved first segment, a segment too long to be a slug, a
+   * path over the plugin's cap, and under the library a shape no route has,
+   * a page segment that is not a number and a reserved word as the type.
+   */
+  const PATH_DECIDED = [
+    "/robots.txt",
+    "/wp-login.php",
+    "/.env",
+    "/wp-admin/install.php",
+    "/about/team.html",
+    "/api/other/",
+    "/api/Revalidate/",
+    `/${"a".repeat(201)}/`,
+    `/${Array.from({ length: 10 }, () => "a".repeat(200)).join("/")}/`,
+    "/resources/topic/",
+    "/resources/page/x/",
+    "/resources/webinar/x/y/",
+    "/resources/topic/topic/x/",
+    "/Robots.TXT",
+  ];
   /** `notFound()` from the resource page (no resource has this slug, current or old) and from the listings (an unknown type, an unknown topic, a page past the end). */
   const FROM_NOT_FOUND = [
     `/resources/webinar/${unique("no-such-resource")}/`,
@@ -90,6 +116,54 @@ test.describe("the 404 page", () => {
     expectNoCms(html, path);
     return html;
   }
+
+  test("a 404 decided from the path alone has the site's page in its HTML, asks the CMS nothing, and tells a browser to ask again", async ({ request }) => {
+    for (const path of PATH_DECIDED) {
+      await cms.resetRequests();
+      const response = await get(request, path);
+      const html = await expectNotFoundResponse(response, path);
+      expect(html, path).toContain("<h1>Page not found</h1>");
+      expect(html, path).toContain("There is no page at this address.");
+      expect(html, path).not.toContain('id="__next_error__"');
+      // The proxy's rewrite is internal: no redirect, and the browser keeps the URL it asked for.
+      expect(location(response), path).toBeUndefined();
+      // The routes' own 404s carry this header (lib/route-headers.ts); the
+      // rewrite puts the same one on, so no browser keeps a 404 and nothing
+      // outlives a deploy that adds a route.
+      expect(cacheDirectives(response), path).toContain("max-age=0");
+      expect(cacheDirectives(response), path).toContain("must-revalidate");
+      const { byPath } = await cms.requests();
+      expect(Object.keys(byPath), path).toEqual([]);
+    }
+  });
+
+  test("a 404 decided from the path alone shows the site's page with JavaScript off, and the shell with it on", async ({ browser, page }) => {
+    const noScript = await browser.newContext({ javaScriptEnabled: false });
+    try {
+      const plain = await noScript.newPage();
+      const response = await plain.goto("/wp-login.php");
+      expect(response?.status()).toBe(404);
+      await expect(plain.getByRole("heading", { level: 1 })).toHaveText("Page not found");
+      await expect(plain.getByRole("main")).toContainText("There is no page at this address.");
+    } finally {
+      await noScript.close();
+    }
+    const response = await page.goto("/resources/page/x/");
+    expect(response?.status()).toBe(404);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Page not found");
+    await expect(page.getByRole("banner")).toHaveCount(1);
+    await expect(page.getByRole("main").getByRole("link", { name: "Browse all resources" })).toHaveAttribute("href", "/resources/");
+    // A client-side navigation to such a path gets the not-found page too: the rewrite answers the RSC request.
+    await page.goto("/resources/");
+    await page.evaluate(() => {
+      const link = document.createElement("a");
+      link.href = "/api/other/";
+      link.textContent = "junk";
+      document.querySelector("main")?.append(link);
+    });
+    await page.getByRole("link", { name: "junk" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Page not found");
+  });
 
   test("an unmatched URL is the page route's 404, decided by one CMS lookup, showing the site's page in the shell after hydration", async ({ page, request }) => {
     await cms.resetRequests();
@@ -116,7 +190,7 @@ test.describe("the 404 page", () => {
     }
   });
 
-  test("measured on Next.js 16.4.5: a notFound() 404's HTML is the framework's empty error document, and the page arrives with the RSC payload", async ({ request }) => {
+  test("measured on Next.js 16.4.5: a data-decided notFound() 404's HTML is the framework's empty error document, and the page arrives with the RSC payload", async ({ request }) => {
     // A notFound() thrown before the shell is flushed, which is where every
     // one here is thrown, makes Next.js send the 404 as `<html
     // id="__next_error__">` with an empty body and the not-found page only in
@@ -124,9 +198,14 @@ test.describe("the 404 page", () => {
     // no server-side fallback to the prerendered not-found page (ADR 0050's
     // 2026-11-05 amendment). The same document is what ISR stores for the
     // resource page's and the catch-all's 404s (measured 2026-11-06), so
-    // storing changed nothing here. If this starts failing after an upgrade,
-    // the HTML carries the page: fold these paths into the unmatched URL's
-    // tests and amend the ADR.
+    // storing changed nothing here. Upstream this is vercel/next.js#62228
+    // ("404 page isn't server rendered when using notFound()", open since
+    // 2024) and #99287, with no fix in a release as of 2026-11-06 (stable
+    // 16.4.5, canary 16.5.0-canary.42: `getErrorRSCPayload` still attaches
+    // the empty shell as the root's render output). If this starts failing
+    // after an upgrade, the HTML carries the page: fold these paths into
+    // the path-decided tests above, drop the proxy's rewrite if the routes'
+    // own 404s now carry the page, and amend ADR 0050.
     for (const path of [...FROM_NOT_FOUND, UNMATCHED]) {
       const html = await (await get(request, path)).text();
       expect(html, path).toContain('id="__next_error__"');

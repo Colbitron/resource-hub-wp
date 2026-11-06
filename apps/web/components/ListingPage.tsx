@@ -6,7 +6,7 @@ import { FilterNav, type FilterTerm } from "@/components/FilterNav";
 import { ListingFocus } from "@/components/ListingFocus";
 import { Pagination } from "@/components/Pagination";
 import { ResourceCard } from "@/components/ResourceCard";
-import { isSlug, isTypeSlug, listingPath, parsePageSegment, type ListingFilter } from "@/lib/routes";
+import { listingPath, validListing, type ListingFilter, type ListingRequest } from "@/lib/routes";
 import { plainText, toCard } from "@/lib/wp/cards";
 import { NO_SUCH_PAGE } from "@/lib/wp/fetch";
 import { listResources, type ResourceListing } from "@/lib/wp/resources";
@@ -28,9 +28,12 @@ import "./listing.css";
  * - A type segment that cannot be a type slug (`topic`, `page`, or not a
  *   slug), a topic segment that cannot be a slug, or a page segment that is
  *   not a canonical page number 2 or more (`0`, `01`, `1.5`, `x`, and `1`,
- *   whose URL is the listing's own) is `notFound()` before any request.
- *   Mixed case and `/page/1/` never reach a route: `proxy.ts` has already
- *   redirected them to the canonical path.
+ *   whose URL is the listing's own) is `notFound()` before any request
+ *   (`validListing` in `lib/routes.ts`). Mixed case and `/page/1/` never
+ *   reach a route, and nor, in the usual case, do those segments:
+ *   `proxy.ts` has already redirected the first to the canonical path and
+ *   answered the second with the not-found page's HTML
+ *   (`lib/path-decision.ts`, issue #46), so the check here is a second line.
  * - A type or topic that names no term, or a page past the last, is
  *   `notFound()`: the data layer answers `null` or `NO_SUCH_PAGE`.
  * - A page with no resources is a 200 with the empty state, when both terms
@@ -59,41 +62,8 @@ import "./listing.css";
  * stores `&` as `&amp;` in a term name.
  */
 
-/** The segments of a listing route, as Next.js hands them to the page. */
-export interface ListingRequest {
-  readonly type?: string;
-  readonly topic?: string;
-  /** The `[n]` of `…/page/[n]/`, or none for the first page. */
-  readonly pageSegment?: string;
-}
-
-interface ValidListing {
-  readonly filter: ListingFilter;
-  readonly page: number;
-}
-
-/** The validated filter and page, or `null` when any segment can only be a 404. */
-function validate(request: ListingRequest): ValidListing | null {
-  if (request.type !== undefined && !isTypeSlug(request.type)) {
-    return null;
-  }
-  if (request.topic !== undefined && !isSlug(request.topic)) {
-    return null;
-  }
-  let page = 1;
-  if (request.pageSegment !== undefined) {
-    const parsed = parsePageSegment(request.pageSegment);
-    if (parsed === null) {
-      return null;
-    }
-    page = parsed;
-  }
-  const filter: ListingFilter = {
-    ...(request.type === undefined ? {} : { type: request.type }),
-    ...(request.topic === undefined ? {} : { topic: request.topic }),
-  };
-  return { filter, page };
-}
+/** The segments of a listing route, as Next.js hands them to the page: `ListingRequest` in `lib/routes.ts`. */
+export type { ListingRequest };
 
 /** The terms a filter names, or `null` when one of them does not exist. */
 async function filterTerms(filter: ListingFilter): Promise<{ type?: WpTerm; topic?: WpTerm } | null> {
@@ -150,7 +120,7 @@ function noneShowable(listing: ResourceListing, cardCount: number): boolean {
  * Data Cache answer once.
  */
 export async function listingMetadata(request: ListingRequest): Promise<Metadata> {
-  const valid = validate(request);
+  const valid = validListing(request);
   if (valid === null) {
     notFound();
   }
@@ -180,7 +150,7 @@ const HEADING_ID = "rh-listing-heading";
 const FIRST_ROW = 3;
 
 export async function ListingPage({ request }: { request: ListingRequest }) {
-  const valid = validate(request);
+  const valid = validListing(request);
   if (valid === null) {
     notFound();
   }
