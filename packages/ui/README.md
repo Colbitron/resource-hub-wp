@@ -133,7 +133,7 @@ The package also holds the stylesheets the CMS and the front end render with, an
 | `card.css` | The resource card: `.rh-card` and its parts (`__media`, `__body`, `__meta`, `__type`, `__title`, `__link`, `__summary`, `__topics`, `__topic`) and the `.rh-card-grid` that lays cards out. The markup it expects is in the file's header comment. |
 | `fonts/` | Figtree, one variable `woff2` on the weight axis (latin subset, the official Google Fonts release via `@fontsource-variable/figtree`), with its SIL Open Font License beside it. Each consumer loads it its own way, as `DESIGN.md` describes; no visitor's browser ever asks Google for it. |
 
-`tokens.css` must be loaded before the others. Adding a component stylesheet means a new `exports` entry in `package.json`, a line in `files`, and a header comment with the markup it expects; `related.css` arrives with the related list (issue #50). Import by file name:
+`tokens.css` must be loaded before the others; how each consumer loads them is in `DESIGN.md` (Consumers and loading), and the block's `block.json` does not load them yet. Adding a component stylesheet means a new `exports` entry in `package.json`, a line in `files`, and a header comment with the markup it expects; `related.css` arrives with the related list (issue #50). Import by file name:
 
 ```js
 import '@colbitron/resource-hub-ui/tokens.css';
