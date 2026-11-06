@@ -1,11 +1,20 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Metadata } from "next";
+import Link from "next/link";
 
+import NotFound from "@/app/not-found";
 import { FilterNav, type FilterTerm } from "@/components/FilterNav";
+import { PageArticle } from "@/components/PageArticle";
 import { Pagination } from "@/components/Pagination";
+import { ResourceArticle } from "@/components/ResourceArticle";
 import { ResourceCard, type ResourceCardProps } from "@/components/ResourceCard";
+import { WelcomePage } from "@/components/WelcomePage";
 import { renderContent } from "@/lib/content/render";
 import { cmsUrls } from "@/lib/env";
+import type { RenderedPage } from "@/lib/page-request";
+import type { RenderedResource } from "@/lib/redirects";
+import { listingPath } from "@/lib/routes";
+import { wpPageSchema, wpResourceSchema } from "@/lib/wp/schemas/rest";
 
 import {
   COLOR_TOKENS,
@@ -18,9 +27,11 @@ import {
   TEXT_SIZE_TOKENS,
 } from "./tokens";
 
-// The listing's own styles (filters, pagination), which ListingPage imports
-// for the real routes; the card and prose styles come with ResourceCard and
-// the prose class below, as on the real pages.
+// The listing's own styles (filters, pagination, the empty state), which
+// ListingPage imports for the real routes; every other component brings its
+// own stylesheet, as on the real pages (ResourceArticle `resource.css` and
+// `prose.css`, PageArticle and WelcomePage `page.css`, the 404 page
+// `not-found.css`, ResourceCard the shared `card.css`).
 import "@/components/listing.css";
 import "@/components/prose.css";
 import "./specimen.css";
@@ -38,9 +49,21 @@ import "./specimen.css";
  * footer) is the real one. Everything here is static: no CMS request, no
  * client JavaScript of its own. The card images are the mock CMS's uploads
  * through `/media/`, loaded eagerly so a full-page screenshot never catches
- * one half-loaded. Specimen-only layout (swatch grids, bars) lives in
- * `specimen.css`, built on the same tokens; no component style is
- * overridden.
+ * one half-loaded. Specimen-only layout (swatch grids, bars, the frame
+ * around each whole-page component) lives in `specimen.css`, built on the
+ * same tokens; no component style is overridden.
+ *
+ * The whole-page components (a resource, a CMS page, the welcome page, the
+ * 404 page) are rendered with fixture data shaped as the CMS sends it, parsed
+ * with the data layer's own schemas, so they meet the same types the routes
+ * hand them. Each brings its own `<h1>`, as on its route; here they are
+ * samples under the specimen's sections.
+ *
+ * The states section shows what the other sections cannot: the focus ring
+ * (the screenshot test focuses `#specimen-focus` before the capture), both
+ * filter rows with a term selected, pagination at its first and last pages,
+ * where Previous and Next are left out rather than disabled (the
+ * component's rule), and a listing's empty state.
  */
 
 export const metadata: Metadata = {
@@ -118,6 +141,88 @@ const CARDS: ResourceCardProps[] = [
  * labelled scrolling region and the links their rewrites, as on the real
  * pages.
  */
+/** The CMS's site origin and uploads directory under test, so the fixtures' URLs are rewritten as the CMS's are. */
+function cms() {
+  const urls = cmsUrls();
+  return { site: urls.cmsOrigins[0], uploads: urls.uploadsBase };
+}
+
+/**
+ * The long-form resource's shape (the seed's ID 30) with a short body: a
+ * paragraph, a list, and the related-resources block marker as the CMS
+ * renders it, whose links point at the CMS. The default `renderBlock`
+ * renders the marker's fallback, the CMS's own heading and list, as the
+ * resource page does until slice 4 plugs in `<RelatedResources>`.
+ */
+function resourceFixture(): RenderedResource {
+  const { site, uploads } = cms();
+  const resource = wpResourceSchema.parse({
+    id: 30,
+    slug: "taxonomies-versus-meta",
+    link: `${site}/resources/article/taxonomies-versus-meta/`,
+    date: "2026-10-28T09:00:00",
+    date_gmt: "2026-10-28T09:00:00",
+    modified: "2026-10-28T09:00:00",
+    title: { rendered: "Taxonomies versus meta" },
+    content: {
+      rendered: `
+<p>A value an editor filters by is a term; a value that belongs to one resource alone is a field. The rest of this resource is the reasoning, with <a href="${site}/resources/topic/content-modelling/">more on content modelling</a> in the library.</p>
+<ul><li>Terms are shared and listed.</li><li>Fields are private to their post.</li></ul>
+<div data-rh-block="related-resources" data-count="3" data-topic="content-modelling" data-topic-id="8" data-exclude="30"><h2>More on content modelling</h2><ul><li><a href="${site}/resources/case-study/one-content-model-five-channels/">One content model, five channels</a></li><li><a href="${site}/resources/webinar/the-anatomy-of-a-resource/">The anatomy of a resource</a></li></ul></div>
+`,
+    },
+    excerpt: { rendered: "" },
+    meta: {
+      summary: "When a value is a term and when it is a field, with the REST and query consequences of each.",
+      source_url: "https://example.com/downloads/taxonomies-versus-meta",
+    },
+    resource_type: [3],
+    resource_topic: [8, 11],
+    resource_flag: [],
+    _embedded: {
+      "wp:term": [
+        [{ id: 3, slug: "article", name: "Article", taxonomy: "resource_type" }],
+        [
+          { id: 8, slug: "content-modelling", name: "Content modelling", taxonomy: "resource_topic" },
+          { id: 11, slug: "performance", name: "Performance", taxonomy: "resource_topic" },
+        ],
+      ],
+      "wp:featuredmedia": [
+        {
+          source_url: `${uploads}/2026/11/taxonomies-versus-meta.png`,
+          alt_text: "",
+          media_details: { width: 1600, height: 900, sizes: {} },
+        },
+      ],
+    },
+  });
+  return { kind: "render", resource, type: "article", slug: resource.slug };
+}
+
+/** A published CMS page (the seed's `welcome`) with a short body: a CMS link and an external one. */
+function pageFixture(): Extract<RenderedPage, { kind: "render" }> {
+  const { site } = cms();
+  const page = wpPageSchema.parse({
+    id: 60,
+    slug: "welcome",
+    link: `${site}/welcome/`,
+    parent: 0,
+    date_gmt: "2026-11-01T09:00:00",
+    modified_gmt: "2026-11-01T09:00:00",
+    title: { rendered: "Welcome to the hub" },
+    content: {
+      rendered: `
+<p>This library collects what the team has written about running a headless site: <a href="${site}/resources/">the whole library</a>, sorted by type and topic.</p>
+<h2>Who it is for</h2>
+<p>Editors and developers who share one content model. The <a href="https://www.w3.org/WAI/standards-guidelines/wcag/">accessibility guidelines</a> it follows are public.</p>
+`,
+      protected: false,
+    },
+    excerpt: { rendered: "<p>What this library is for.</p>" },
+  });
+  return { kind: "render", page, path: "/welcome/" };
+}
+
 const PROSE = `
 <p>A paragraph of body text with <a href="/resources/">a link to the library</a>, some <strong>strong</strong> and <em>emphasised</em> words, and <code>inline code</code>. Body text sits at the reading measure, so a line never runs much past sixty-five characters.</p>
 <h2>A second-level heading</h2>
@@ -244,17 +349,23 @@ export default function SpecimenFixturePage() {
       </Section>
 
       <Section id="specimen-measure" title="Measure">
+        <p>Each bar is drawn at a quarter of its measure, so both fit a phone&rsquo;s screen in proportion.</p>
         <ul className="rh-specimen__list" role="list">
           {MEASURE_TOKENS.map((token) => (
             <TokenRow key={token} token={token}>
-              <span className="rh-specimen__bar" style={{ width: `min(100%, ${cssVar(token)})` }} aria-hidden="true" />
+              <span
+                className="rh-specimen__bar"
+                style={{ width: `min(100%, calc(${cssVar(token)} / 4))` }}
+                aria-hidden="true"
+              />
             </TokenRow>
           ))}
         </ul>
       </Section>
 
       <Section id="specimen-filters" title="Filters">
-        <FilterNav types={TYPES} topics={TOPICS} current={{ type: "webinar" }} />
+        <p>A type and a topic selected, each marked with <code>aria-current</code>.</p>
+        <FilterNav types={TYPES} topics={TOPICS} current={{ type: "webinar", topic: "performance" }} />
       </Section>
 
       <Section id="specimen-cards" title="Cards">
@@ -273,6 +384,63 @@ export default function SpecimenFixturePage() {
 
       <Section id="specimen-prose" title="Prose">
         <div className="rh-prose">{renderContent(PROSE, cmsUrls())}</div>
+      </Section>
+
+      <Section id="specimen-states" title="States">
+        <div className="rh-specimen__state">
+          <h3>Focus</h3>
+          <p>
+            {/* The screenshot test focuses this link, so the baselines show the focus ring. */}
+            <Link id="specimen-focus" href="/resources/">
+              A link with keyboard focus
+            </Link>
+          </p>
+        </div>
+        <div className="rh-specimen__state">
+          <h3>Pagination at its ends</h3>
+          <p>On the first page there is no Previous, and on the last no Next.</p>
+          <Pagination filter={{}} current={1} total={3} />
+          <Pagination filter={{}} current={3} total={3} />
+        </div>
+        <div className="rh-specimen__state">
+          <h3>An empty listing</h3>
+          {/*
+           * The empty state is markup inside ListingPage, not a component of
+           * its own, so it is written out here as ListingPage renders it for a
+           * type and topic with nothing in them; e2e/specimen.spec.ts checks it
+           * against the real route's HTML, so the two cannot drift apart.
+           */}
+          <div className="rh-listing__empty">
+            <p>No resources match this type and topic yet.</p>
+            <p>
+              <Link href={listingPath()}>Show all resources</Link>
+            </p>
+          </div>
+        </div>
+      </Section>
+
+      <Section id="specimen-resource" title="Resource">
+        <div className="rh-specimen__frame">
+          <ResourceArticle rendered={resourceFixture()} />
+        </div>
+      </Section>
+
+      <Section id="specimen-page" title="CMS page">
+        <div className="rh-specimen__frame">
+          <PageArticle rendered={pageFixture()} />
+        </div>
+      </Section>
+
+      <Section id="specimen-welcome" title="Welcome page">
+        <div className="rh-specimen__frame">
+          <WelcomePage />
+        </div>
+      </Section>
+
+      <Section id="specimen-not-found" title="Not found">
+        <div className="rh-specimen__frame">
+          <NotFound />
+        </div>
       </Section>
     </div>
   );

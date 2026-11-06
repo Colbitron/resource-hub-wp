@@ -2,7 +2,9 @@ import { expect, test } from "@playwright/test";
 
 /**
  * Pixel baselines of the design specimen (`app/fixtures/specimen/`), the page
- * that shows every shared token and every component: at 360 and 1280 px, in
+ * that shows every shared token, every component and the states between
+ * them (focus, selected filters, pagination's ends, an empty listing): at
+ * 360 and 1280 px, in
  * the light and the dark scheme, with reduced motion. A change to a token,
  * a component's markup or its CSS moves pixels here, so every design change
  * shows its cost as a diff in review.
@@ -38,6 +40,12 @@ for (const width of WIDTHS) {
           )
           .toBe(true);
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
+        // The states section's link, focused as a keyboard would, so the
+        // baseline shows the focus ring (`:focus-visible`).
+        const focused = page.locator("#specimen-focus");
+        await focused.focus();
+        await expect(focused).toBeFocused();
+        expect(await focused.evaluate((node) => node.matches(":focus-visible"))).toBe(true);
         // In the Docker image Chromium resolves the generic `monospace` to
         // WenQuanYi Zen Hei Mono for the first layout and to Liberation Mono
         // once a screenshot has re-applied the page's emulation, which rewraps

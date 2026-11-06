@@ -1,36 +1,103 @@
 import { expect, test } from "@playwright/test";
 
-import { SPECIMEN_TOKENS } from "../app/fixtures/specimen/tokens.ts";
+import { clearAppCache } from "./app-cache.mts";
 import { wcagViolations } from "./axe.mts";
+import { mockCms } from "./mock-cms/client.mts";
 
 /**
  * The design specimen (`app/fixtures/specimen/`), the reference page for the
- * design work and the screenshot target (`specimen.screenshot.ts`): that it
- * renders an entry for every shared token and each component, that it holds
- * at phone width, and that it passes the same axe scan as the sampled pages
- * (`a11y.spec.ts`), so the reference is itself accessible. A route only
- * under RH_FIXTURES=1, which playwright.config.ts sets.
+ * design work and the screenshot target (`specimen.screenshot.ts`): that
+ * every token it shows has a value on the page, that it renders each
+ * component and state, that its copy of the listing's empty state matches
+ * the real route's, that it holds at phone width, and that it passes the
+ * same axe scan as the sampled pages (`a11y.spec.ts`), so the reference is
+ * itself accessible. Which tokens it shows is checked against `tokens.css`
+ * by the unit test `test/specimen-tokens.test.ts`. A route only under
+ * RH_FIXTURES=1, which playwright.config.ts sets.
  */
 
 const SPECIMEN_PATH = "/fixtures/specimen/";
 
-test("shows an entry for every shared token", async ({ page }) => {
+test("every token it shows has a value on the page", async ({ page }) => {
   await page.goto(SPECIMEN_PATH);
-  const rendered = await page.locator("[data-token]").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-token")));
-  expect(rendered).toEqual([...SPECIMEN_TOKENS]);
+  const unset = await page.locator("[data-token]").evaluateAll((nodes) => {
+    const root = getComputedStyle(document.documentElement);
+    return nodes
+      .map((node) => node.getAttribute("data-token") ?? "")
+      .filter((token) => root.getPropertyValue(token).trim() === "");
+  });
+  expect(unset).toEqual([]);
 });
 
 test("shows the shell, the filters, a card of each type, pagination and prose", async ({ page }) => {
   await page.goto(SPECIMEN_PATH);
   await expect(page.getByRole("banner")).toHaveCount(1);
   await expect(page.getByRole("contentinfo")).toHaveCount(1);
-  await expect(page.getByRole("navigation", { name: "Filter resources" })).toBeVisible();
+  const filters = page.getByRole("navigation", { name: "Filter resources" });
+  await expect(filters).toBeVisible();
+  await expect(filters.locator("[aria-current]")).toHaveText(["Webinar", "Performance"]);
   await expect(page.locator(".rh-card__type")).toHaveText(["Article", "Case study", "Ebook", "Podcast", "Webinar"]);
-  await expect(page.getByRole("navigation", { name: "Pagination" })).toBeVisible();
-  const prose = page.locator(".rh-prose");
+  const prose = page.locator("section[aria-labelledby='specimen-prose'] .rh-prose");
   for (const selector of ["h2", "h3", "ul", "ol", "blockquote", "table", "a"]) {
     await expect(prose.locator(selector).first(), selector).toBeVisible();
   }
+});
+
+test("shows pagination in the middle and at both ends", async ({ page }) => {
+  await page.goto(SPECIMEN_PATH);
+  const navs = page.getByRole("navigation", { name: "Pagination" });
+  await expect(navs).toHaveCount(3);
+  await expect(navs.nth(0).locator('[aria-current="page"]')).toHaveText("4");
+  await expect(navs.nth(1).getByRole("link", { name: "Previous" })).toHaveCount(0);
+  await expect(navs.nth(1).getByRole("link", { name: "Next" })).toBeVisible();
+  await expect(navs.nth(2).getByRole("link", { name: "Previous" })).toBeVisible();
+  await expect(navs.nth(2).getByRole("link", { name: "Next" })).toHaveCount(0);
+});
+
+test("shows a resource, a CMS page, the welcome page and the 404 page", async ({ page }) => {
+  await page.goto(SPECIMEN_PATH);
+  const resource = page.locator(".rh-resource");
+  await expect(resource.getByRole("heading", { level: 1 })).toHaveText("Taxonomies versus meta");
+  const meta = resource.locator(".rh-resource__meta");
+  await expect(meta.getByRole("link", { name: "Article" })).toHaveAttribute("href", "/resources/article/");
+  await expect(meta.locator("time")).toBeVisible();
+  await expect(meta.getByRole("list", { name: "Topics" }).getByRole("link")).toHaveText(["Content modelling", "Performance"]);
+  await expect(resource.locator(".rh-resource__media img")).toBeVisible();
+  await expect(resource.locator(".rh-resource__summary")).toBeVisible();
+  // The related-resources block's fallback, with the CMS's links made root-relative.
+  const body = resource.locator(".rh-resource__body.rh-prose");
+  await expect(body.getByRole("heading", { level: 2, name: "More on content modelling" })).toBeVisible();
+  await expect(body.getByRole("link", { name: "One content model, five channels" })).toHaveAttribute(
+    "href",
+    "/resources/case-study/one-content-model-five-channels/",
+  );
+  await expect(resource.locator(".rh-resource__source a")).toBeVisible();
+
+  const cmsPage = page.locator(".rh-page:not(.rh-welcome)");
+  await expect(cmsPage.getByRole("heading", { level: 1 })).toHaveText("Welcome to the hub");
+  await expect(cmsPage.locator(".rh-page__body.rh-prose a").first()).toHaveAttribute("href", "/resources/");
+  await expect(page.locator(".rh-welcome").getByRole("heading", { level: 1 })).toHaveText("Resource Hub");
+  await expect(page.locator(".rh-not-found").getByRole("heading", { level: 1 })).toHaveText("Page not found");
+  expect(await page.content()).not.toContain("127.0.0.1:");
+});
+
+test.describe("the empty listing state", () => {
+  const cms = mockCms();
+
+  test.beforeEach(async ({ request }) => {
+    await cms.reset();
+    // Listings outlive a reset in the app's cache (e2e/README.md).
+    await clearAppCache(request);
+  });
+
+  test("is the same markup as on a listing with nothing in it", async ({ page }) => {
+    const response = await page.goto("/resources/podcast/topic/accessibility/");
+    expect(response?.status()).toBe(200);
+    const real = await page.locator(".rh-listing__empty").evaluate((node) => node.outerHTML);
+    await page.goto(SPECIMEN_PATH);
+    const copy = await page.locator(".rh-listing__empty").evaluate((node) => node.outerHTML);
+    expect(copy).toBe(real);
+  });
 });
 
 test("every card image loads", async ({ page }) => {

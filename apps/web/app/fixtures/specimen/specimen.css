@@ -69,3 +69,19 @@
 	background: var(--rh-color-surface-raised);
 	border: var(--rh-border-width) solid var(--rh-color-text-muted);
 }
+
+/* One state in the states section, set apart from the next. */
+.rh-specimen__state + .rh-specimen__state {
+	margin-top: var(--rh-space-7);
+}
+
+/*
+ * A whole-page component (a resource, a CMS page, the welcome page, the 404
+ * page) sits in a frame, so where one ends and the next section begins is
+ * visible; the frame only draws a line around it.
+ */
+.rh-specimen__frame {
+	padding: var(--rh-space-4);
+	border: var(--rh-border-width) dashed var(--rh-color-border);
+	border-radius: var(--rh-radius);
+}
