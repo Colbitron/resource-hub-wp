@@ -200,9 +200,13 @@ test.describe("pages at their paths", () => {
     expect(html).toContain(`<link rel="canonical" href="${appSiteOrigin()}${path}"`);
     expect(html).toContain('<meta name="description" content="Who writes the resources."');
     expect(html).toContain('<meta property="og:type" content="website"');
-    // Pages carry no image, so the summary card, never the large one.
-    expect(html).toContain('<meta name="twitter:card" content="summary"/>');
-    expect(html).not.toContain("summary_large_image");
+    // Pages carry the site's default share image, their one og:image, so the large card, and Next.js's copy of the image.
+    expect(html.match(/<meta property="og:image"/g)).toHaveLength(1);
+    const image = /<meta property="og:image" content="([^"]+)"/.exec(html)?.[1];
+    expect(image).toMatch(/\/_next\/static\/media\/opengraph-image\.[^./]+\.png$/);
+    expect(html).toContain('<meta name="twitter:card" content="summary_large_image"/>');
+    expect(html).not.toContain('<meta name="twitter:card" content="summary"/>');
+    expect(html).toContain(`<meta name="twitter:image" content="${image}"/>`);
     await expectPage(await get(request, `/${ABOUT.slug}/`), "About", `/${ABOUT.slug}/`);
   });
 

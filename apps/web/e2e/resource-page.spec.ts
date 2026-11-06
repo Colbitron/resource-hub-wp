@@ -353,6 +353,7 @@ test.describe("metadata", () => {
   test("a resource with a featured image gets the large X card, with Next.js's twitter:* copies of its og:* fields", async ({ page }) => {
     // ID 30 has a 1600×900 featured image. Only the card type is set by the app; Next.js copies the rest from og:*.
     await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
+    await expect(page.locator('meta[property="og:image"]')).toHaveCount(1);
     await expect(page.locator('meta[name="twitter:card"]')).toHaveCount(1);
     await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute("content", "summary_large_image");
     const og = async (property: string) => (await page.locator(`meta[property="og:${property}"]`).getAttribute("content")) as string;
@@ -361,21 +362,33 @@ test.describe("metadata", () => {
     await expect(page.locator('meta[name="twitter:image:alt"]')).toHaveAttribute("content", await og("image:alt"));
   });
 
-  test("a resource with no featured image gets the summary X card and no twitter:image", async ({ page }) => {
+  test("a resource with no featured image gets the default share image and so the large X card, with Next.js's twitter:* copies", async ({ page }) => {
+    // The default is named by the route itself (lib/share-image.ts); the card type is still the app's, the rest Next.js's copy.
     const slug = unique("no-image-card");
     await cms.createResource({ title: "No image card", type: "article", slug });
     await page.goto(resourcePath("article", slug));
     await expect(page.locator('meta[property="og:title"]')).toHaveAttribute("content", "No image card");
-    await expect(page.locator('meta[property="og:image"]')).toHaveCount(0);
+    await expect(page.locator('meta[property="og:image"]')).toHaveCount(1);
+    await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", /\/_next\/static\/media\/opengraph-image\.[^./]+\.png$/);
     await expect(page.locator('meta[name="twitter:card"]')).toHaveCount(1);
-    await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute("content", "summary");
-    await expect(page.locator('meta[name="twitter:image"]')).toHaveCount(0);
+    await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute("content", "summary_large_image");
+    const og = async (property: string) => (await page.locator(`meta[property="og:${property}"]`).getAttribute("content")) as string;
+    await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute("content", await og("image"));
+    await expect(page.locator('meta[name="twitter:image:alt"]')).toHaveAttribute("content", await og("image:alt"));
   });
 
-  test("a listing sets no Open Graph and so no X card: X has nothing to build one from", async ({ page }) => {
-    await page.goto("/resources/");
-    await expect(page.locator('meta[property^="og:"]')).toHaveCount(0);
-    await expect(page.locator('meta[name^="twitter:"]')).toHaveCount(0);
+  test("a listing and both kinds of 404 write no Open Graph of their own: the file-based share image is their one og:image, and Next.js derives the large X card from it", async ({ page }) => {
+    // A listing; a path decided from data (an unknown resource, components/DataNotFound.tsx); a path decided from its shape (the proxy's /404).
+    // Next.js fills og:title and the twitter:* copies around the image itself; the app writes none of it.
+    for (const path of ["/resources/", resourcePath("article", unique("no-such-resource")), "/robots.txt"]) {
+      await page.goto(path);
+      await expect(page.locator('meta[property="og:image"]'), path).toHaveCount(1);
+      await expect(page.locator('meta[property="og:image"]'), path).toHaveAttribute("content", /\/opengraph-image\.png\?opengraph-image\.[^./]+\.png$/);
+      await expect(page.locator('meta[name="twitter:card"]'), path).toHaveCount(1);
+      await expect(page.locator('meta[name="twitter:card"]'), path).toHaveAttribute("content", "summary_large_image");
+      const image = (await page.locator('meta[property="og:image"]').getAttribute("content")) as string;
+      await expect(page.locator('meta[name="twitter:image"]'), path).toHaveAttribute("content", image);
+    }
   });
 
   test("with SITE_URL set, the canonical, og:url, og:image and twitter:image are absolute on the site's origin and never name the CMS", async ({ page }) => {

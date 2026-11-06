@@ -5,8 +5,17 @@ import type { Metadata } from "next";
  * that goes with them, built in one place so no route sets one without the
  * other. The rule: a page whose Open Graph names an image gets
  * `twitter:card` `summary_large_image`; one that names none gets `summary`,
- * so a large card is never advertised with nothing to fill it. A route that
- * sets no Open Graph (the listings, the 404) sets no card either.
+ * so a large card is never advertised with nothing to fill it.
+ *
+ * Every route that calls this names an image, so every one gets the large
+ * card: a resource its trusted featured image, and the welcome page, a CMS
+ * page and a resource without one the site's default share image
+ * (`lib/share-image.ts`), which a route that writes its own `openGraph`
+ * must name itself. The `summary` branch is kept for a route that ever
+ * writes Open Graph with no image. A route that writes no Open Graph (a
+ * listing, the 404) does not call this: Next.js gives it the file-based
+ * `app/opengraph-image.png` and, from that image, the large card and
+ * `twitter:image` itself.
  *
  * This helper adds only the card type, and Next.js fills in the rest. X's
  * cards markup reference (its "OpenGraph" column, read from the 2025-01-01

@@ -267,7 +267,7 @@ test.describe("the share image", () => {
       expect(await meta(page, 'property="og:image:height"'), path).toBe("630");
       expect(await meta(page, 'property="og:image:type"'), path).toBe("image/png");
       expect(await meta(page, 'property="og:image:alt"'), path).toBe("Resource Hub, published by Colbination");
-      // Next.js derives the Twitter card from the Open Graph fields; nothing is written for it.
+      // The card type is `shareMetadata`'s where the route writes its own `openGraph` and Next.js's on a listing; twitter:image is always Next.js's copy.
       expect(await meta(page, 'name="twitter:card"'), path).toBe("summary_large_image");
       expect(await meta(page, 'name="twitter:image"'), path).toBe(content);
       const response = await request.get(content);
