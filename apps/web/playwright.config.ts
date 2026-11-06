@@ -72,6 +72,12 @@ export default defineConfig({
           {
             name: "screenshots",
             testMatch: "**/*.screenshot.ts",
+            // Its own output directory: Playwright empties a project's
+            // outputDir when a run of that project starts, and in CI this run
+            // follows the end-to-end run, whose failure traces in
+            // test-results/ must survive for the upload. Gitignored, and
+            // uploaded beside test-results/ on a failure.
+            outputDir: "./test-results-screenshots",
             // threshold 0: any change in a pixel's colour counts that pixel as
             // different. The default 0.2 let the accent move from #1f4f8f to
             // #2a5a9a unnoticed, which is the kind of change this gate exists

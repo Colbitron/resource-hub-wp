@@ -561,14 +561,20 @@ jobs:
           RH_E2E_PREBUILT: '1'
         run: pnpm web:test:lighthouse
 
-      # Traces are kept only for failed tests (trace: retain-on-failure), in
-      # Playwright's default output directory, with the screenshot diffs.
+      # Traces are kept only for failed tests (trace: retain-on-failure): the
+      # end-to-end run's in Playwright's default output directory, and the
+      # screenshot run's, with its actual and diff images, in a directory of
+      # its own (playwright.config.ts), so the screenshot run, which follows,
+      # never empties the end-to-end run's before this upload.
       - name: Upload the front end's Playwright traces
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: web-playwright-traces
-          path: apps/web/test-results/
+          path: |
+            apps/web/test-results/
+            apps/web/test-results-screenshots/
+          if-no-files-found: ignore
           retention-days: 7
 
       # Every Lighthouse report, pass or fail, from LHCI's filesystem target.

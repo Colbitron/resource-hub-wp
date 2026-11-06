@@ -18,6 +18,7 @@ vendor/
 # testing
 /coverage
 /test-results/
+/test-results-screenshots/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
