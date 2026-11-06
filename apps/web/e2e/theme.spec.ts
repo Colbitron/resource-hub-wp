@@ -1,0 +1,364 @@
+import { expect, test, type Page } from "@playwright/test";
+
+import { wcagViolations } from "./axe.mts";
+import { appSiteOrigin } from "./mock-cms/config.mts";
+
+/**
+ * The theme control (`components/ThemeToggle.tsx`, `lib/theme.ts`): the
+ * System / Light / Dark radios in the site header, the stored choice, the
+ * head script that themes the first paint, and what each kind of reader
+ * gets. Every check here is on the welcome page at `/`, since the control
+ * is in the shell on every page; `specimen.spec.ts` checks the specimen's
+ * still copies.
+ *
+ * The values are never written down here: the dark and the light surface
+ * are read from a page that follows the emulated system scheme, and every
+ * other page's colour is compared with those.
+ */
+
+const STORAGE_KEY = "rh-theme";
+
+const NAMES = { system: "System theme", light: "Light theme", dark: "Dark theme" } as const;
+type Choice = keyof typeof NAMES;
+
+function group(page: Page) {
+  return page.getByRole("group", { name: "Theme" });
+}
+
+function radio(page: Page, choice: Choice) {
+  return page.getByRole("radio", { name: NAMES[choice], exact: true });
+}
+
+/** Stores a choice before any page script runs, as a reader's earlier visit would have. */
+async function store(page: Page, value: "light" | "dark" | null) {
+  await page.addInitScript(
+    ({ key, value }) => {
+      if (value === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, value);
+    },
+    { key: STORAGE_KEY, value },
+  );
+}
+
+async function surface(page: Page): Promise<string> {
+  return page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+}
+
+async function colorScheme(page: Page): Promise<string> {
+  return page.evaluate(() => getComputedStyle(document.documentElement).colorScheme);
+}
+
+async function stored(page: Page): Promise<string | null> {
+  return page.evaluate((key) => localStorage.getItem(key), STORAGE_KEY);
+}
+
+const html = (page: Page) => page.locator("html");
+
+test.describe("System", () => {
+  test("is the default: nothing stored, nothing on <html>, and the page follows the system scheme live", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.goto("/");
+    await expect(group(page)).toBeVisible();
+    await expect(radio(page, "system")).toBeChecked();
+    await expect(html(page)).not.toHaveAttribute("data-theme");
+    expect(await colorScheme(page)).toBe("light dark");
+    expect(await stored(page)).toBeNull();
+    const dark = await surface(page);
+    // The system preference changes while the page is open: the tokens
+    // re-resolve with no script and no reload.
+    await page.emulateMedia({ colorScheme: "light" });
+    const light = await surface(page);
+    expect(light).not.toBe(dark);
+    await expect(radio(page, "system")).toBeChecked();
+  });
+
+  test("renders no option checked on the server, and the group invisible until hydration", async ({ request }) => {
+    const body = await (await request.get("/")).text();
+    const fieldset = body.match(/<fieldset class="rh-theme[^"]*"[\s\S]*?<\/fieldset>/)?.[0];
+    expect(fieldset).toBeDefined();
+    expect(fieldset).toContain("rh-theme--pending");
+    expect(fieldset).not.toMatch(/\schecked/);
+    expect(fieldset?.match(/type="radio"/g)).toHaveLength(3);
+  });
+});
+
+test.describe("choosing", () => {
+  test("Dark applies at once, is stored, survives a reload, and System removes the key", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.goto("/");
+    await expect(group(page)).toBeVisible();
+    const light = await surface(page);
+
+    await radio(page, "dark").check();
+    await expect(html(page)).toHaveAttribute("data-theme", "dark");
+    expect(await colorScheme(page)).toBe("dark");
+    expect(await stored(page)).toBe("dark");
+    const dark = await surface(page);
+    expect(dark).not.toBe(light);
+
+    await page.reload();
+    await expect(group(page)).toBeVisible();
+    await expect(radio(page, "dark")).toBeChecked();
+    await expect(html(page)).toHaveAttribute("data-theme", "dark");
+    expect(await surface(page)).toBe(dark);
+
+    await radio(page, "light").check();
+    await expect(html(page)).toHaveAttribute("data-theme", "light");
+    expect(await stored(page)).toBe("light");
+    expect(await surface(page)).toBe(light);
+
+    await radio(page, "system").check();
+    await expect(html(page)).not.toHaveAttribute("data-theme");
+    expect(await stored(page)).toBeNull();
+    expect(await colorScheme(page)).toBe("light dark");
+  });
+
+  test("a stored choice beats the system scheme on load", async ({ page }) => {
+    await store(page, "light");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.goto("/");
+    await expect(group(page)).toBeVisible();
+    await expect(radio(page, "light")).toBeChecked();
+    expect(await colorScheme(page)).toBe("light");
+  });
+});
+
+test.describe("first paint", () => {
+  test("is themed by the head script alone, with every script bundle blocked", async ({ page }) => {
+    // The surfaces, from a page that follows the emulated scheme.
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.goto("/");
+    const dark = await surface(page);
+    await page.emulateMedia({ colorScheme: "light" });
+    const light = await surface(page);
+    expect(dark).not.toBe(light);
+
+    // Now Dark is stored, the system scheme is light, and no bundle loads:
+    // the stylesheets and the font still do (the build puts them under
+    // `/_next/static/` too), every JavaScript file does not, so React never
+    // runs. The inline script in <head> is all there is.
+    await page.evaluate((key) => localStorage.setItem(key, "dark"), STORAGE_KEY);
+    await page.route(
+      (url) => url.pathname.startsWith("/_next/static/") && url.pathname.endsWith(".js"),
+      (route) => route.abort(),
+    );
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await expect(html(page)).toHaveAttribute("data-theme", "dark");
+    await page.waitForLoadState("load");
+    expect(await colorScheme(page)).toBe("dark");
+    expect(await surface(page)).toBe(dark);
+    // Without hydration the control stays invisible: nothing it shows could be trusted.
+    await expect(page.locator("fieldset.rh-theme")).toHaveClass(/rh-theme--pending/);
+    await expect(group(page)).toHaveCount(0);
+    await expect(page.getByRole("radio")).toHaveCount(0);
+  });
+
+  for (const choice of ["system", "light", "dark"] as const) {
+    test(`logs no error and no hydration warning with ${choice} stored`, async ({ page }) => {
+      const messages: string[] = [];
+      page.on("console", (message) => {
+        if (message.type() === "error" || message.type() === "warning") messages.push(message.text());
+      });
+      page.on("pageerror", (error) => messages.push(error.message));
+      await store(page, choice === "system" ? null : choice);
+      await page.goto("/");
+      await expect(group(page)).toBeVisible();
+      await expect(radio(page, choice)).toBeChecked();
+      await page.waitForLoadState("load");
+      expect(messages).toEqual([]);
+    });
+  }
+});
+
+test.describe("keyboard", () => {
+  test("is one Tab stop; the arrows move the choice and wrap, applying each at once", async ({ page }) => {
+    await page.goto("/");
+    await expect(group(page)).toBeVisible();
+
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("link", { name: "Resource Hub" })).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(radio(page, "system")).toBeFocused();
+
+    // One more Tab leaves the group: Light and Dark are not stops of their own.
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.closest("fieldset.rh-theme") === null)).toBe(true);
+    await page.keyboard.press("Shift+Tab");
+    await expect(radio(page, "system")).toBeFocused();
+
+    await page.keyboard.press("ArrowRight");
+    await expect(radio(page, "light")).toBeFocused();
+    await expect(radio(page, "light")).toBeChecked();
+    await expect(html(page)).toHaveAttribute("data-theme", "light");
+    expect(await stored(page)).toBe("light");
+
+    await page.keyboard.press("ArrowDown");
+    await expect(radio(page, "dark")).toBeChecked();
+    await expect(html(page)).toHaveAttribute("data-theme", "dark");
+
+    await page.keyboard.press("ArrowRight");
+    await expect(radio(page, "system")).toBeChecked();
+    await expect(html(page)).not.toHaveAttribute("data-theme");
+    expect(await stored(page)).toBeNull();
+
+    await page.keyboard.press("ArrowLeft");
+    await expect(radio(page, "dark")).toBeChecked();
+    await expect(html(page)).toHaveAttribute("data-theme", "dark");
+
+    // Tab again from the group lands on the checked option on the way back.
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(radio(page, "dark")).toBeFocused();
+  });
+
+  test("the focused segment shows a focus ring", async ({ page }) => {
+    await page.goto("/");
+    await expect(group(page)).toBeVisible();
+    for (let i = 0; i < 3; i += 1) await page.keyboard.press("Tab");
+    await expect(radio(page, "system")).toBeFocused();
+    const label = page.locator("label[for]", { hasText: "System" });
+    const outline = await label.evaluate((node) => {
+      const style = getComputedStyle(node);
+      return { style: style.outlineStyle, width: style.outlineWidth };
+    });
+    expect(outline.style).toBe("solid");
+    expect(outline.width).not.toBe("0px");
+  });
+});
+
+test.describe("names and sizes", () => {
+  for (const width of [320, 1280]) {
+    test(`has the same group and option names at ${width}px, with the words visible`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/");
+      await expect(group(page)).toBeVisible();
+      await expect(page.getByRole("radio")).toHaveCount(3);
+      for (const choice of ["system", "light", "dark"] as const) {
+        await expect(radio(page, choice)).toBeVisible();
+        // The word is in the page, not only in the name.
+        await expect(group(page).locator("label", { hasText: NAMES[choice].split(" ")[0] })).toBeVisible();
+      }
+      const widths = await page.evaluate(() => ({
+        scroll: document.documentElement.scrollWidth,
+        client: document.documentElement.clientWidth,
+      }));
+      expect(widths.scroll).toBeLessThanOrEqual(widths.client);
+    });
+  }
+
+  test("each segment is at least 24px both ways at 320×256, and the input covers it", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 256 });
+    await page.goto("/");
+    await expect(group(page)).toBeVisible();
+    for (const choice of ["system", "light", "dark"] as const) {
+      const input = radio(page, choice);
+      const label = page.locator(`label[for="${await input.getAttribute("id")}"]`);
+      const inputBox = await input.boundingBox();
+      const labelBox = await label.boundingBox();
+      expect(inputBox, choice).not.toBeNull();
+      expect(labelBox, choice).not.toBeNull();
+      expect(inputBox!.width, choice).toBeGreaterThanOrEqual(24);
+      expect(inputBox!.height, choice).toBeGreaterThanOrEqual(24);
+      // The real input sits where the segment is drawn, so a finger finds it.
+      for (const side of ["x", "y", "width", "height"] as const) {
+        expect(Math.abs(inputBox![side] - labelBox![side]), `${choice} ${side}`).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+});
+
+test.describe("without JavaScript", () => {
+  for (const scheme of ["dark", "light"] as const) {
+    test(`the control is absent and the page follows the ${scheme} system scheme`, async ({ browser, page }) => {
+      // The reference surface, from a page with JavaScript.
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.goto("/");
+      const reference = await surface(page);
+
+      const context = await browser.newContext({ javaScriptEnabled: false, colorScheme: scheme, baseURL: appSiteOrigin() });
+      const plain = await context.newPage();
+      await plain.goto("/");
+      await expect(plain.getByRole("heading", { level: 1 })).toBeVisible();
+      await expect(plain.getByRole("radio")).toHaveCount(0);
+      await expect(group(plain)).toHaveCount(0);
+      await expect(plain.locator("fieldset.rh-theme")).toBeHidden();
+      await expect(html(plain)).not.toHaveAttribute("data-theme");
+      expect(await surface(plain)).toBe(reference);
+      await context.close();
+    });
+  }
+});
+
+test.describe("forced colours", () => {
+  test("the checked segment and the focus ring are still shown", async ({ page }) => {
+    await page.emulateMedia({ forcedColors: "active" });
+    await page.goto("/");
+    await expect(group(page)).toBeVisible();
+    await expect(radio(page, "system")).toBeChecked();
+    const read = (choice: Choice) =>
+      page.locator("label", { hasText: NAMES[choice].split(" ")[0] }).evaluate((node) => {
+        const style = getComputedStyle(node);
+        return { fill: style.backgroundColor, bar: style.borderBottomColor, barWidth: style.borderBottomWidth, outline: style.outlineStyle };
+      });
+    const checked = await read("system");
+    const unchecked = await read("light");
+    expect(checked.fill).not.toBe(unchecked.fill);
+    expect(checked.bar).not.toBe(unchecked.bar);
+    expect(checked.barWidth).not.toBe("0px");
+    for (let i = 0; i < 3; i += 1) await page.keyboard.press("Tab");
+    await expect(radio(page, "system")).toBeFocused();
+    expect((await read("system")).outline).toBe("solid");
+  });
+});
+
+test.describe("motion", () => {
+  for (const reducedMotion of ["reduce", "no-preference"] as const) {
+    test(`nothing transitions on a theme change (reduced motion: ${reducedMotion})`, async ({ page }) => {
+      await page.emulateMedia({ reducedMotion });
+      await page.goto("/");
+      await expect(group(page)).toBeVisible();
+      const durations = await page.evaluate(() =>
+        ["body", ".rh-header", ".rh-header__name", ".rh-theme", ".rh-theme__label", "main", "footer"].map((selector) => [
+          selector,
+          getComputedStyle(document.querySelector(selector)!).transitionDuration,
+        ]),
+      );
+      for (const [selector, duration] of durations) {
+        expect(duration, selector).toBe("0s");
+      }
+    });
+  }
+});
+
+test.describe("other tabs", () => {
+  test("follow a choice made in one tab", async ({ context }) => {
+    const first = await context.newPage();
+    const second = await context.newPage();
+    await first.goto("/");
+    await second.goto("/");
+    await expect(group(first)).toBeVisible();
+    await expect(group(second)).toBeVisible();
+
+    await radio(first, "dark").check();
+    await expect(html(second)).toHaveAttribute("data-theme", "dark");
+    await expect(radio(second, "dark")).toBeChecked();
+
+    await radio(second, "system").check();
+    await expect(html(first)).not.toHaveAttribute("data-theme");
+    await expect(radio(first, "system")).toBeChecked();
+  });
+});
+
+test.describe("axe", () => {
+  for (const choice of ["system", "light", "dark"] as const) {
+    test(`finds no WCAG A or AA violation with ${choice} chosen`, async ({ page }) => {
+      await store(page, choice === "system" ? null : choice);
+      await page.goto("/");
+      await expect(group(page)).toBeVisible();
+      await expect(radio(page, choice)).toBeChecked();
+      expect(await wcagViolations(page)).toEqual([]);
+    });
+  }
+});

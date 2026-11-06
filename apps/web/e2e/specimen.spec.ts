@@ -8,7 +8,8 @@ import { mockCms } from "./mock-cms/client.mts";
  * The design specimen (`app/fixtures/specimen/`), the reference page for the
  * design work and the screenshot target (`specimen.screenshot.ts`): that
  * every token it shows has a value on the page, that it renders each
- * component and state, that its copy of the listing's empty state matches
+ * component and state (the theme control's three states among them, beside
+ * the header's live one), that its copy of the listing's empty state matches
  * the real route's, that it holds at phone width, and that it passes the
  * same axe scan as the sampled pages (`a11y.spec.ts`), so the reference is
  * itself accessible. Which tokens it shows is checked against `tokens.css`
@@ -41,6 +42,25 @@ test("shows the shell, the filters, a card of each type, pagination and prose", 
   for (const selector of ["h2", "h3", "ul", "ol", "blockquote", "table", "a"]) {
     await expect(prose.locator(selector).first(), selector).toBeVisible();
   }
+});
+
+test("shows the theme control with each option checked, and the header's live one", async ({ page }) => {
+  await page.goto(SPECIMEN_PATH);
+  const states = page.locator("section[aria-labelledby='specimen-states']").getByRole("group", { name: "Theme" });
+  await expect(states).toHaveCount(3);
+  for (const [index, name] of ["System theme", "Light theme", "Dark theme"].entries()) {
+    const copy = states.nth(index);
+    await expect(copy.getByRole("radio")).toHaveCount(3);
+    await expect(copy.getByRole("radio", { name, exact: true })).toBeChecked();
+    await expect(copy.getByRole("radio", { checked: true })).toHaveCount(1);
+  }
+  // The three copies are three groups: a copy's radios share a name with no other copy's.
+  const names = await states.locator("input").evaluateAll((inputs) => new Set(inputs.map((input) => (input as HTMLInputElement).name)).size);
+  expect(names).toBe(3);
+  // The header's own control is live and separate: System, nothing stored.
+  const live = page.getByRole("banner").getByRole("group", { name: "Theme" });
+  await expect(live).toBeVisible();
+  await expect(live.getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
 });
 
 test("shows pagination in the middle and at both ends", async ({ page }) => {
