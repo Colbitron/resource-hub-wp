@@ -63,15 +63,15 @@ Three gates, all run by `.github/workflows/ci.yml` on every pull request and pus
 | Command | Runs |
 |---|---|
 | `pnpm lint` / `pnpm lint:fix` | PHPCS / PHPCBF on WordPress Coding Standards as the base, the WordPress VIP Minimum ruleset on top, and the PSR-12 sniffs that do not conflict. Where WordPress and PSR-12 disagree, WordPress wins, and each exclusion in `phpcs.xml.dist` names the conflict. Warnings fail the gate: fix, do not silence. |
-| `pnpm test:php` | PHPUnit 9.6 inside the WordPress core test library that wp-env provides. The pin follows that library: as of WordPress 7.1 it depends on `yoast/phpunit-polyfills` 1.x, whose ceiling is PHPUnit 9. Tests are written against polyfills 4.x, so when core raises its ceiling only the constraint changes. |
+| `pnpm test:php` | PHPUnit 9.6 inside the WordPress core test library that wp-env provides. The pin follows that library: as of WordPress 7.1 it depends on `yoast/phpunit-polyfills` 1.x, whose ceiling is PHPUnit 9. Tests are written against polyfills 4.x, but `phpunit.xml.dist` uses PHPUnit 9 names (`convertDeprecationsToExceptions`, `<coverage>`), so when core raises its ceiling, moving the pin also needs the PHPUnit 10+ configuration migration. |
 | `pnpm test:e2e` / `test:e2e:debug` | Playwright against the tests site on port 8889, with the WordPress e2e utilities. |
 | `pnpm lint:js` / `pnpm format` | ESLint and Prettier with the WordPress presets on `admin/`, `blocks/`, `editor/` and `tests/e2e/`. |
-| `pnpm test:schemas` | The contract's own test in `packages/ui`, which PHPUnit's schema test mirrors. |
+| `pnpm test:schemas` | The contract's own test in `packages/ui`: Ajv compiles every schema in strict mode and checks every fixture. |
 
 Things to know:
 
 - **PHPUnit reinstalls the tests site.** The bootstrap drops and reinstalls the tests database, which deactivates every plugin there. CI runs PHPUnit before Playwright, and every Playwright spec imports `test` from `tests/e2e/fixtures.js`, a worker-scoped fixture that activates the plugin before any spec runs. The dev site on 8888 is untouched.
-- **Payloads are validated against the shared schemas.** `tests/phpunit/Revalidation/SchemaValidator.php` registers every schema in `packages/ui/schemas/` under its `$id` with `opis/json-schema` (draft 2020-12, cross-file `$ref`s) and checks every payload a test builds. One test runs the package's own fixtures through the PHP validator, so a green PHPUnit means the same thing as a green `pnpm test:schemas`. `opis/json-schema` is a dev dependency and is never shipped.
+- **Payloads are validated against the shared schemas.** `tests/phpunit/Revalidation/SchemaValidator.php` registers every schema in `packages/ui/schemas/` under its `$id` with `opis/json-schema` (draft 2020-12, cross-file `$ref`s) and checks every payload a test builds. `SchemaTest` runs the package's `revalidate-request.*.json` fixtures through the PHP validator, so the two validators agree on the request schema. No PHP test runs the other schemas' fixtures, and Ajv's strict compile runs only under `pnpm test:schemas`. `opis/json-schema` is a dev dependency and is never shipped.
 - **`build/` is not committed.** CI builds it before the gate runs; locally, run `pnpm build` (or `pnpm start` to watch) after `pnpm env:start`. `webpack.config.js` extends the `@wordpress/scripts` config with the non-block entries under `editor/` and `admin/`.
 - **PHP 8.4 in wp-env, CI and on the host.** The declared floor (`Requires PHP`, `composer.json`, PHPCS `testVersion`) stays at 8.2 and is not exercised by CI.
 - **WordPress 6.9 or newer** (`Requires at least`). The salted object-cache helpers the planned related route will use arrived in 6.9.
@@ -79,3 +79,11 @@ Things to know:
 ## What is not built yet
 
 The related route (`GET /resource-hub/v1/related/{id}`), the `related_picks` meta, the block's render callback and its marker are slice 4. The block directory holds an editor scaffold only. The CMS block theme is slice 5. The spec for both is in the slice-4 issue linked from the root README's status table.
+
+## Possible next steps
+
+Only once the core is green, in this order:
+
+1. WPGraphQL alongside REST on the same types, so the choice between them has a live comparison.
+2. Draft preview: a signed, expiring preview token the front end can exchange for draft content.
+3. A second block using InnerBlocks.

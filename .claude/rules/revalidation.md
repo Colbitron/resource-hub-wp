@@ -12,13 +12,17 @@ paths:
   - "apps/web/lib/tags.ts"
   - "apps/web/test/revalidate-route.test.ts"
   - "apps/web/test/tags.test.ts"
+  - "apps/web/lib/wp/schemas/revalidate.ts"
+  - "apps/web/e2e/revalidate.spec.ts"
+  - "wp-content/plugins/resource-hub-wp/tests/e2e/revalidation*.spec.js"
 ---
 
 # Revalidation
 
 - The editor never waits on the front end: events are queued per request, batched at `shutdown` (at most 25 per batch, deduplicated per object), and sent once from a WP-Cron single event with the payload built at schedule time. Never send during the save, never retry; the editor retries by saving again.
-- Never send an event the shared schema would reject. The whole batch is one request, and the front end answers an unreadable body with a 400 that loses every event in it. Decode slugs, hold back a resource without exactly one type or a reserved type term event, and record why on that object.
-- The secret travels only in the `Authorization` header of the send. It never appears in a result, in meta, in PostHog, in WP-CLI output or in any message; the status page says it is set, never what it is.
+- The sender posts to `Sender::PATH` (`/api/revalidate/`, trailing slash included) with `Sender::TIMEOUT` (3 s, the VIP sniff's cap) and a bounded response. Don't raise the timeout: slow work on the front end belongs after it answers.
+- Never send an event the shared schema would reject. The whole batch is one request, and the front end answers an unreadable body with a 400 that loses every event in it. Decode slugs, hold back a resource without exactly one type or a reserved type term event, and record why on that object. Every payload a PHPUnit test builds is validated against `packages/ui/schemas/` with HTTP mocked.
+- The secret travels only in the `Authorization` header of the send. It never appears in a result, in meta, in PostHog, in WP-CLI output or in any message; the status page says which source is in force, never what the secret is. Its test button sends a real `update` event, never a synthetic ping.
 - Every result is stored on every object in the batch and shown where the editor is. Keep the wording in `ResultText::sentences()` as the one source. A 400 or 500 message from the front end is shown to the editor, so the route's messages name the first issue's path and never a value.
 - On the front end: check the secret, then auth, then a capped body; clear every tag with `revalidateTag(tag, { expire: 0 })` and every path with `revalidatePath`, for the union of each event's current and previous state; fetch nothing. Tags come from the functions in `lib/tags.ts`, never built by hand.
 - `Dispatcher.php`, `Sender.php`, `StatusPage.php` and `route.ts` are critical paths: read line by line before merge.

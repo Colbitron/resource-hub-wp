@@ -29,7 +29,7 @@ pnpm web:build       # next build
 | Variable | Purpose |
 | --- | --- |
 | `WP_API_URL` | Base URL of the CMS's REST API, ending in `/wp-json`, with no query, fragment or credentials. Locally, wp-env serves it at `http://localhost:8888/wp-json`. |
-| `REVALIDATE_SECRET` | Shared secret the CMS sends as a bearer token to `POST /api/revalidate/`: 32 to 256 printable ASCII characters, no whitespace, no trailing newline. |
+| `REVALIDATE_SECRET` | Shared secret the CMS sends as a bearer token to `POST /api/revalidate/`. It must meet [the secret's rule](../../packages/ui/README.md#configuration) in the contract. |
 | `WP_MEDIA_ORIGIN` | Optional. The site base `/media/…` is rewritten under, as `{base}/wp-content/uploads/…`: an origin, optionally with the path WordPress is installed in (`https://example.com/blog`). Defaults to `WP_API_URL` without `/wp-json`. |
 | `SITE_URL` | The site's public origin (`https://resources.example`): `https:`, or `http:` only for localhost, with no path, query, fragment or credentials, and never the CMS's origin. The root layout sets it as `metadataBase`, so every page's canonical link, `og:url` and `og:image` are absolute on the public domain. Optional locally, where they stay relative; a Vercel build fails without it. |
 
@@ -52,3 +52,11 @@ Images are served through the same-origin `/media/…` rewrite and rendered with
 ## Status
 
 The listings, the single resource, the CMS's pages, the data layer, the content renderer and the revalidation route are in, all ISR. The related section that swaps the block marker for a `<RelatedResources>` component is slice 4 ([issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50)). CI lints, typechecks, builds and runs the unit and end-to-end tests.
+
+## Possible next steps
+
+Only once the core is green, in this order:
+
+1. A GraphQL data path beside REST, once the plugin adds WPGraphQL, with a short written comparison.
+2. Draft preview through the signed token from the plugin.
+3. Lighthouse CI budgets and an axe check inside the Playwright run, so the pipeline produces the numbers.
