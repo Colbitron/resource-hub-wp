@@ -11,7 +11,8 @@ import { slugify, slugifyForQuery } from "../e2e/mock-cms/sanitize.mts";
 import { startMockCms, type MockCms } from "../e2e/mock-cms/server.mts";
 import { parsePaginationHeaders } from "../lib/wp/schemas/pagination";
 import { resolveResponseSchemaStrict } from "../lib/wp/schemas/resolve";
-import { wpMediaSchema, wpResourceListSchema, wpResourceSchema, wpTermListSchema } from "../lib/wp/schemas/rest";
+import { pageResponseSchemaStrict } from "../lib/wp/schemas/page";
+import { wpMediaSchema, wpPageSchema, wpResourceListSchema, wpResourceSchema, wpTermListSchema } from "../lib/wp/schemas/rest";
 import { wpErrorSchema } from "../lib/wp/schemas/wp-error";
 
 /**
@@ -1009,5 +1010,91 @@ describe("faults (/__mock/faults)", () => {
     ]) {
       await expect(cms.addFault(fault), JSON.stringify(fault)).rejects.toMatchObject({ status: 422 });
     }
+  });
+});
+
+describe("pages and the page route (ADR 0052)", () => {
+  /** `cms.lookupPage()`, with every 200 checked against the contract's `page-response` schema and the app's strict reader. */
+  async function lookup(path: string) {
+    const response = await cms.lookupPage(path);
+    if (response.status === 200) {
+      expectContract("page-response", response.body);
+      expect(pageResponseSchemaStrict.safeParse(response.body).success).toBe(true);
+    }
+    return response;
+  }
+
+  it("serves a published page the reader schema accepts, with the no-cache header, and refuses a draft and an unknown ID as core does", async () => {
+    const team = await cms.get("/wp-json/wp/v2/pages/62");
+    expect(team.status).toBe(200);
+    expect(team.headers.get("cache-control")).toBe(NO_CACHE);
+    const page = wpPageSchema.parse(team.body);
+    expect(page).toMatchObject({ id: 62, slug: "team", parent: 61 });
+    expect(page.link).toBe(`${server.origin}/about/team/`);
+
+    const draft = await cms.get("/wp-json/wp/v2/pages/63");
+    expect(draft.status).toBe(401);
+    expect(wpErrorSchema.parse(draft.body).code).toBe("rest_forbidden");
+    const missing = await cms.get("/wp-json/wp/v2/pages/999");
+    expect(missing.status).toBe(404);
+    expect(wpErrorSchema.parse(missing.body).code).toBe("rest_post_invalid_id");
+  });
+
+  it("answers the root with null until a front page is set, then with that page at /, and its own slug as /", async () => {
+    expect((await lookup("/")).body).toEqual({ page: null });
+    expect((await lookup("/welcome/")).body).toEqual({ page: { id: 60, path: "/welcome/" } });
+    await cms.setFrontPage(60);
+    expect((await lookup("/")).body).toEqual({ page: { id: 60, path: "/" } });
+    expect((await lookup("welcome")).body).toEqual({ page: { id: 60, path: "/" } });
+    expect((await lookup("")).body).toEqual({ page: { id: 60, path: "/" } });
+    await cms.setPageStatus(60, "draft");
+    expect((await lookup("/")).body).toEqual({ page: null });
+    await cms.setFrontPage(null);
+    expect((await lookup("/")).body).toEqual({ page: null });
+  });
+
+  it("finds a page by its whole chain, guesses a unique slug under a wrong parent, and answers null for an ambiguous one, a draft and the posts page", async () => {
+    expect((await lookup("/about/team/")).body).toEqual({ page: { id: 62, path: "/about/team/" } });
+    expect((await lookup("/About/Team")).body).toEqual({ page: { id: 62, path: "/about/team/" } });
+    expect((await lookup("/company/team/")).body).toEqual({ page: { id: 66, path: "/company/team/" } });
+    expect((await lookup("/team/")).body).toEqual({ page: null });
+    expect((await lookup("/contact/")).body).toEqual({ page: { id: 64, path: "/about/contact/" } });
+    expect((await lookup("/about/history/")).body).toEqual({ page: null });
+    // The posts page counts only while show_on_front is page.
+    expect((await lookup("/news/")).body).toEqual({ page: { id: 68, path: "/news/" } });
+    await cms.setFrontPage(60);
+    expect((await lookup("/news/")).body).toEqual({ page: null });
+    expect((await lookup("/api/")).body).toEqual({ page: { id: 67, path: "/api/" } });
+  });
+
+  it("follows a parent move and a rename, as core's pages do", async () => {
+    await cms.setPageParent(64, 65);
+    expect((await lookup("/about/contact/")).body).toEqual({ page: { id: 64, path: "/company/contact/" } });
+    await cms.setPageSlug(61, "about-us");
+    expect((await lookup("/about/")).body).toEqual({ page: null });
+    expect((await lookup("/about-us/team/")).body).toEqual({ page: { id: 62, path: "/about-us/team/" } });
+    const state = await cms.state();
+    expect(state.pages.find((page) => page.id === 62)?.path).toBe("/about-us/team/");
+  });
+
+  it("answers a segment that sanitizes to nothing with null, and only an over-long path with core's 400", async () => {
+    for (const path of ["/about//team/", "/about/%/", "/-/", "/!!!/"]) {
+      expect((await lookup(path)).body, path).toEqual({ page: null });
+    }
+    const response = await lookup(`/${"a".repeat(2011)}/`);
+    expect(response.status).toBe(400);
+    expect(wpErrorSchema.parse(response.body).code).toBe("rest_invalid_param");
+  });
+
+  it("creates, changes and deletes pages through the control endpoints, refusing a duplicate slug under one parent", async () => {
+    const created = await cms.createPage({ title: "New page", parent: 61, excerpt: "Fresh." });
+    expect(created).toMatchObject({ slug: "new-page", parent: 61, status: "publish", path: "/about/new-page/" });
+    expect((await lookup("/about/new-page/")).body).toEqual({ page: { id: created.id, path: "/about/new-page/" } });
+    await expect(cms.createPage({ title: "Team", slug: "team", parent: 61 })).rejects.toMatchObject({ status: 409 });
+    await cms.setPageContent(created.id, "<p>{{origin}}</p>");
+    expect(wpPageSchema.parse((await cms.get(`/wp-json/wp/v2/pages/${created.id}`)).body).content.rendered).toBe(`<p>${server.origin}</p>`);
+    await cms.deletePage(created.id);
+    expect((await cms.get(`/wp-json/wp/v2/pages/${created.id}`)).status).toBe(404);
+    await expect(cms.setFrontPage(created.id)).rejects.toMatchObject({ status: 404 });
   });
 });

@@ -196,6 +196,26 @@ export const wpResourceSchema = z.object({
 });
 
 /**
+ * A page from `/wp/v2/pages/{id}` (ADR 0052): what the page route renders.
+ * `parent` is 0 for a top-level page; the path is not here, because core
+ * gives only `link`, an absolute CMS URL that depends on the permalink
+ * structure, and the plugin's page route answers the path instead.
+ * `content.protected` is true for a password-protected page, whose
+ * `content.rendered` core sends empty to an anonymous reader.
+ */
+export const wpPageSchema = z.object({
+  id: idSchema,
+  slug: slugSchema,
+  link: httpUrlSchema,
+  parent: z.int().min(0),
+  date_gmt: wpDateTimeSchema,
+  modified_gmt: wpDateTimeSchema,
+  title: renderedSchema,
+  content: renderedSchema.extend({ protected: z.boolean().default(false) }),
+  excerpt: renderedSchema,
+});
+
+/**
  * A whole resource list, for the tests and fixtures. The data layer does not
  * parse a list with it: `cmsGetList` parses each resource with
  * `wpResourceSchema`, so one bad resource is skipped rather than failing the
@@ -209,3 +229,4 @@ export type WpEmbeddedTerm = z.infer<typeof wpEmbeddedTermSchema>;
 export type WpMedia = z.infer<typeof wpMediaSchema>;
 export type WpFeaturedMedia = z.infer<typeof wpFeaturedMediaSchema>;
 export type WpResource = z.infer<typeof wpResourceSchema>;
+export type WpPage = z.infer<typeof wpPageSchema>;

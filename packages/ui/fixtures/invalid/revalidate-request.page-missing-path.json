@@ -1,0 +1,11 @@
+{
+	"version": 1,
+	"events": [
+		{
+			"type": "page",
+			"event": "delete",
+			"id": 15,
+			"previous": null
+		}
+	]
+}

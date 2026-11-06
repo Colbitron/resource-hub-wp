@@ -1,4 +1,4 @@
-import type { ResourceStatus, Taxonomy } from "./types.mts";
+import type { PageStatus, ResourceStatus, Taxonomy } from "./types.mts";
 
 /**
  * The dataset the mock starts from and resets to. The shapes are compact
@@ -305,3 +305,48 @@ export const RESOURCES: ResourceSeed[] = [
     status: "draft",
   },
 ];
+
+/**
+ * Pages (ADR 0052). What the rows guarantee, because `pages.spec.ts` relies
+ * on it: a published top-level page (60, `welcome`) a spec can make the front
+ * page, whose body holds a CMS link, an external link and an upload; a
+ * parent (61, `about`) with a published child (62, `team`), a draft child (63,
+ * `history`) and a published child whose slug no other page has (64,
+ * `contact`); a second parent (65, `company`) with a child slugged `team` too
+ * (66), so `team` alone is ambiguous; a top-level page slugged `api` (67), a
+ * first segment the front end's routes own, as a page saved before the
+ * plugin's rule would be; and the posts page (68, `news`). The front page is
+ * unset at the start, as on the hosted CMS.
+ */
+export interface PageSeed {
+  id: number;
+  slug: string;
+  parent: number;
+  status: PageStatus;
+  title: string;
+  content: string | null;
+  excerpt: string;
+}
+
+const WELCOME_CONTENT = `
+<p class="wp-block-paragraph">Welcome to the hub. Start with <a href="{{origin}}/resources/ebook/a-field-guide-to-revalidation/">A field guide to revalidation</a>, browse <a href="{{origin}}/resources/">the whole library</a>, or read <a href="https://example.com/elsewhere/">a write-up on another site</a>.</p>
+
+
+
+<figure class="wp-block-image size-full"><img src="{{origin}}/wp-content/uploads/2026/11/content-model.png" alt="A content model diagram" class="wp-image-101" width="240" height="160" /></figure>
+`;
+
+export const PAGES: PageSeed[] = [
+  { id: 60, slug: "welcome", parent: 0, status: "publish", title: "Welcome to the hub", content: WELCOME_CONTENT, excerpt: "What this library is for." },
+  { id: 61, slug: "about", parent: 0, status: "publish", title: "About", content: null, excerpt: "" },
+  { id: 62, slug: "team", parent: 61, status: "publish", title: "The team", content: null, excerpt: "Who writes the resources." },
+  { id: 63, slug: "history", parent: 61, status: "draft", title: "History", content: null, excerpt: "" },
+  { id: 64, slug: "contact", parent: 61, status: "publish", title: "Contact", content: null, excerpt: "" },
+  { id: 65, slug: "company", parent: 0, status: "publish", title: "Company", content: null, excerpt: "" },
+  { id: 66, slug: "team", parent: 65, status: "publish", title: "The company team", content: null, excerpt: "" },
+  { id: 67, slug: "api", parent: 0, status: "publish", title: "A page slugged api", content: null, excerpt: "" },
+  { id: 68, slug: "news", parent: 0, status: "publish", title: "News", content: null, excerpt: "" },
+];
+
+/** `page_for_posts` at the start: the `news` page. */
+export const SEED_PAGE_FOR_POSTS = 68;

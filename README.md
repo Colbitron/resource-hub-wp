@@ -2,7 +2,7 @@
 
 A headless WordPress demo in one repository ([ADR 0033](docs/adr/0033-one-repository-for-the-plugin-the-front-end-and-the-contract.md)): a WordPress plugin, `resource-hub`, with the `wp-env` environment it runs in; a Next.js front end on Vercel that reads the site over REST and is told when to revalidate; and the contract package both share. It is a demonstration of a pattern, written fresh, not production code.
 
-The plugin models a filterable resources library: a `resource` post type with `resource_topic`, `resource_type`, and `resource_flag` taxonomies, REST-exposed meta (`summary`, `source_url`, `related_picks`), two custom REST routes (related items and old-slug resolution), one server-rendered Gutenberg block, and a hook that notifies the front end in batches whenever a public resource or one of its terms changes. The front end renders that library from its own server and rebuilds pages on demand.
+The plugin models a filterable resources library: a `resource` post type with `resource_topic`, `resource_type`, and `resource_flag` taxonomies, REST-exposed meta (`summary`, `source_url`, `related_picks`), three custom REST routes (related items, old-slug resolution and a page lookup by path), one server-rendered Gutenberg block, and a hook that notifies the front end in batches whenever a public resource, one of its terms or a page changes. The front end renders that library, the CMS's static front page at `/` and every other published page at its path from its own server, and rebuilds pages on demand.
 
 ## Layout
 
@@ -37,6 +37,7 @@ Scaffold complete; features in progress. Everything below the line exists and is
 | Revalidation hook and admin notice | pending |
 | Next.js front end scaffold in `apps/web` | done |
 | Front-end production deploy through a Vercel deploy hook ([ADR 0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md)) | built; awaiting the first-deploy check |
+| The CMS's pages on the front end: the static front page at `/`, every published page at its path, `GET /resource-hub/v1/page` and page events ([ADR 0052](docs/adr/0052-the-front-end-renders-the-cms-pages.md)) | route and front end done; the plugin's page events in the stacked pull request |
 | CMS block theme | planned |
 
 ## Architecture
@@ -47,7 +48,7 @@ flowchart LR
         subgraph wp["WordPress on Cloudways: wp-content/"]
             editor["Editor saves a resource"]
             cpt["resource post type<br/>resource_topic, resource_type, resource_flag<br/>meta: summary, source_url, related_picks"]
-            rest["REST<br/>/wp/v2/resources<br/>/resource-hub/v1/related/{id}<br/>/resource-hub/v1/resolve"]
+            rest["REST<br/>/wp/v2/resources, /wp/v2/pages<br/>/resource-hub/v1/related/{id}<br/>/resource-hub/v1/resolve<br/>/resource-hub/v1/page"]
             block["related-resources block<br/>server-rendered marker + fallback"]
             hook["Revalidation hook<br/>wp_after_insert_post, before_delete_post,<br/>term hooks; sent from WP-Cron"]
             theme["Block theme (planned)<br/>logged-in users only;<br/>404 for anonymous visitors"]
@@ -62,7 +63,7 @@ flowchart LR
 
         subgraph next["Next.js on Vercel: apps/web/"]
             api["POST /api/revalidate/<br/>Bearer secret"]
-            pages["/resources/<br/>/resources/{type}/{slug}/"]
+            pages["/ (the static front page)<br/>/{page}/…/<br/>/resources/<br/>/resources/{type}/{slug}/"]
             api --> pages
         end
     end
@@ -70,7 +71,7 @@ flowchart LR
     posthog["PostHog<br/>server-side result events"]
 
     rest -->|"content read,<br/>server side only"| pages
-    hook -->|"batch of resource and term events<br/>3 s timeout, result stored in meta"| api
+    hook -->|"batch of resource, term and page events<br/>3 s timeout, result stored in meta"| api
     hook -->|"every result, 3 s,<br/>failures ignored"| posthog
     ui -.->|"workspace:*"| block
     ui -.->|"workspace:*"| theme
@@ -209,14 +210,15 @@ Each real decision has a record under [`docs/adr/`](docs/adr/). One sentence eac
 - [0049](docs/adr/0049-data-layer-fetch-policy.md) (proposed) Every CMS fetch revalidates hourly as the ISR safety net, because failed sends are never retried, and times out after ten seconds; errors become `null`, "no such page" or a `CmsError` that never names the CMS origin; and the data layer only normalises slugs, leaving a no-store 308 for non-canonical URLs to the pages.
 - [0050](docs/adr/0050-listings-are-isr-that-render-on-first-request.md) The listing routes are ISR with `revalidate = 3600` and a `generateStaticParams` returning `[]`, so the build never needs the CMS and each listing renders on its first request; the library is an optional catch-all for that reason; a listing never reads request data or redirects, answers unknown terms and pages past the end with a stored 404, and an empty filter combination with a 200; the canonical-form 308s come from `proxy.ts` (ADR 0035's listings amendment).
 - [0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md) The front end's production deploy is a fire-and-forget Vercel deploy hook fired by CI after the CMS deploy and the `web` job, only while `main` still points at the tested commit, with Git-triggered deploys of `main` turned off in `apps/web/vercel.json` and pull-request previews kept.
+- [0052](docs/adr/0052-the-front-end-renders-the-cms-pages.md) The front end renders the CMS's pages, the static front page at `/` and every published page at its path from a root catch-all, learning the tree through one plugin route by path that answers a miss with a 200, keeping its own first segments reserved on both sides, and hearing of changes through a `page` event that clears one `pages` tag, landed front end first because a new event type is not additive.
 
 ## Contract with the front end
 
 A contract change lands in one pull request that touches both sides and the schemas, and stays additive, so the front end never breaks against a CMS one deploy behind. The source of truth is the JSON Schema package in [`packages/ui/schemas/`](packages/ui/schemas/) ([ADR 0010](docs/adr/0010-contract-as-json-schema-in-a-shared-package.md)), with the semantics a schema cannot express in [`packages/ui/README.md`](packages/ui/README.md). In summary:
 
-- **Read:** the core collection `GET /wp-json/wp/v2/resources?_embed&…` filtered by `resource_topic`, `resource_type` and `resource_flag`, single resources, and the three taxonomy endpoints. Meta is `summary` and `source_url`; `related_picks` is in the REST `edit` context only, for the editor's picker. Every read happens on the Next.js server, never in the browser. Two custom routes: `GET /wp-json/resource-hub/v1/related/{id}?count=n` returns `{ "items": [ { "id", "source": "pick" | "topic" } ] }`, already merged, and `GET /wp-json/resource-hub/v1/resolve?slug=…` maps a current or old slug to `{ "id", "type", "slug" }`. Both answer errors in core's `WP_Error` shape.
-- **Revalidate:** `POST {FRONTEND_URL}/api/revalidate/` with `Authorization: Bearer {secret}` and a batch `{ "version": 1, "events": [ … ] }` of 1 to 25 events. Resource events are `publish`, `update`, `unpublish`, `trash` or `delete`, with `id`, `slug`, `rest_url`, `types` (exactly one), `topics` and `previous` (set only on `update`). Term events cover `create`, `update` and `delete` of `resource_topic` and `resource_type` terms. The front end answers `200 { "revalidated": [ … ] }`, or `400`, `401` (`unauthorized`) or `500` with `{ "error": "…" }`. The plugin stores the status and body in `_rh_last_revalidation` and shows them to the editor.
-- **URLs:** both sites serve `/resources/`, `/resources/[type]/`, `/resources/topic/[topic]/`, `/resources/[type]/topic/[topic]/` and `/resources/[type]/[slug]/`, with a trailing slash and `…/page/[n]/` pagination; `topic` and `page` are never type slugs, and WordPress refuses them. Only the front end is public: the CMS's theme pages answer anonymous visitors with a 404 and never redirect. WordPress emits absolute CMS URLs; the front end strips the domain from links and rewrites images, in `content.rendered` too, to `/media/…`, a Next.js rewrite to the CMS's uploads.
+- **Read:** the core collection `GET /wp-json/wp/v2/resources?_embed&…` filtered by `resource_topic`, `resource_type` and `resource_flag`, single resources, and the three taxonomy endpoints. Meta is `summary` and `source_url`; `related_picks` is in the REST `edit` context only, for the editor's picker. Every read happens on the Next.js server, never in the browser. Three custom routes: `GET /wp-json/resource-hub/v1/related/{id}?count=n` returns `{ "items": [ { "id", "source": "pick" | "topic" } ] }`, already merged; `GET /wp-json/resource-hub/v1/resolve?slug=…` maps a current or old slug to `{ "id", "type", "slug" }`; and `GET /wp-json/resource-hub/v1/page?path=…` answers `{ "page": { "id", "path" } | null }`, the published page the front end serves at a public path (the static front page for `/`) with its canonical path, which the front end then reads from `/wp-json/wp/v2/pages/{id}`. All answer errors in core's `WP_Error` shape.
+- **Revalidate:** `POST {FRONTEND_URL}/api/revalidate/` with `Authorization: Bearer {secret}` and a batch `{ "version": 1, "events": [ … ] }` of 1 to 25 events. Resource events are `publish`, `update`, `unpublish`, `trash` or `delete`, with `id`, `slug`, `rest_url`, `types` (exactly one), `topics` and `previous` (set only on `update`). Term events cover `create`, `update` and `delete` of `resource_topic` and `resource_type` terms. Page events carry the five resource event names, `id`, `path` and `previous` for a WordPress page the front end serves, `/` for the static front page. The front end answers `200 { "revalidated": [ … ] }`, or `400`, `401` (`unauthorized`) or `500` with `{ "error": "…" }`. The plugin stores the status and body in `_rh_last_revalidation` and shows them to the editor.
+- **URLs:** both sites serve `/` (the static front page), every published page at its parent chain, `/resources/`, `/resources/[type]/`, `/resources/topic/[topic]/`, `/resources/[type]/topic/[topic]/` and `/resources/[type]/[slug]/`, with a trailing slash and `…/page/[n]/` pagination; `topic` and `page` are never type slugs, and WordPress refuses them; a top-level page is never slugged `resources`, `api`, `media` or `_next`, and WordPress adds a suffix. Only the front end is public: the CMS's theme pages answer anonymous visitors with a 404 and never redirect. WordPress emits absolute CMS URLs; the front end strips the domain from links and rewrites images, in `content.rendered` too, to `/media/…`, a Next.js rewrite to the CMS's uploads.
 - **Block and styles:** the related-resources block renders `<div data-rh-block="related-resources">` with `data-count`, `data-topic`, `data-topic-id` and `data-exclude` around a fallback list, which the front end swaps for its own component on its server; the class names and `tokens.css` come from `@colbitron/resource-hub-ui`, which both sides take through the workspace.
 
 ## License

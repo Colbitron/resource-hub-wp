@@ -8,6 +8,7 @@ import type { z } from "zod";
 import { isSlug, isTypeSlug } from "../lib/routes";
 import { slugSchema, typeSlugSchema } from "../lib/wp/schemas/common";
 import { parsePaginationHeaders } from "../lib/wp/schemas/pagination";
+import { pageResponseSchema, pageResponseSchemaStrict } from "../lib/wp/schemas/page";
 import { resolveResponseSchema, resolveResponseSchemaStrict } from "../lib/wp/schemas/resolve";
 import {
   hasWpTaxonomy,
@@ -44,6 +45,7 @@ const contractSchemas: Record<string, z.ZodType> = {
   "revalidate-response-ok": revalidateResponseOkSchema,
   "revalidate-response-error": revalidateResponseErrorSchema,
   "resolve-response": resolveResponseSchemaStrict,
+  "page-response": pageResponseSchemaStrict,
   "wp-error": wpErrorSchema,
 };
 
@@ -55,6 +57,15 @@ const contractSchemas: Record<string, z.ZodType> = {
 const expectedIssuePaths: Record<string, (string | number)[][]> = {
   "resolve-response.extra-top-level-property.json": [[]],
   "resolve-response.reserved-type.json": [["type"]],
+  "page-response.missing-page.json": [["page"]],
+  "page-response.string-id.json": [["page", "id"]],
+  "page-response.path-without-trailing-slash.json": [["page", "path"]],
+  "page-response.path-with-empty-segment.json": [["page", "path"]],
+  "page-response.extra-property.json": [["page"]],
+  "revalidate-request.page-null-previous-on-update.json": [["events", 0, "previous"]],
+  "revalidate-request.page-previous-on-publish.json": [["events", 0, "previous"]],
+  "revalidate-request.page-path-without-slash.json": [["events", 0, "path"]],
+  "revalidate-request.page-missing-path.json": [["events", 0, "path"]],
   "revalidate-request.duplicate-topics.json": [["events", 0, "topics"]],
   "revalidate-request.extra-key-in-previous.json": [["events", 0, "previous"]],
   "revalidate-request.previous-on-publish.json": [["events", 0, "previous"]],
@@ -365,6 +376,21 @@ describe("readers drop unknown keys; strict mirrors reject them", () => {
     const extended = { ...(renamed as object), added: 1 };
     expect(resolveResponseSchema.parse(extended)).toEqual(resolveResponseSchema.parse(renamed));
     expect(issuePaths(resolveResponseSchemaStrict.safeParse(extended))).toEqual([[]]);
+  });
+
+  it("an extra key on the page response, at either level", () => {
+    const nested = readJson(path.join(contractFixtures, "valid/page-response.nested.json")) as { page: object };
+    const extended = { ...nested, page: { ...nested.page, slug: "team" }, added: 1 };
+    expect(pageResponseSchema.parse(extended)).toEqual(pageResponseSchema.parse(nested));
+    expect(issuePaths(pageResponseSchemaStrict.safeParse(extended))).toEqual([["page"], []]);
+  });
+
+  it("the page reader refuses a path the front end could not serve, which the schema allows", () => {
+    for (const path of ["/about/team.html/", "/case%2dstudy/", "/a b/"]) {
+      expect(pageResponseSchema.safeParse({ page: { id: 1, path } }).success, path).toBe(false);
+    }
+    expect(pageResponseSchema.safeParse({ page: { id: 1, path: "/%e6%97%a5/" } }).success).toBe(true);
+    expect(pageResponseSchema.safeParse({ page: null }).success).toBe(true);
   });
 });
 

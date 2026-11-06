@@ -1,0 +1,217 @@
+/*
+ * A body of editor-written HTML after the sanitiser in lib/content/render.tsx
+ * (ADR 0047), styled by element: a resource's body (ResourceArticle) and a
+ * page's (PageArticle) share it, so the two read the same. WordPress's block
+ * classes are kept on the markup but nothing here depends on them. A body
+ * never renders an `h1`: when it has one, the pass shows every heading one
+ * level down, so the levels here start at `h2`. Built on the shared tokens
+ * (ADR 0045); the class is the front end's own, not part of the contract.
+ *
+ * `anywhere` is kept for the places where an unbreakable token must not
+ * widen the page: `pre`, and links and code inside table cells.
+ */
+
+.rh-prose h2,
+.rh-prose h3,
+.rh-prose h4,
+.rh-prose h5,
+.rh-prose h6 {
+	margin: var(--rh-space-6) 0 var(--rh-space-3);
+	font-family: var(--rh-font-serif);
+	font-weight: 600;
+	line-height: var(--rh-leading-tight);
+}
+
+.rh-prose h2 {
+	font-size: var(--rh-text-xl);
+}
+
+.rh-prose h3 {
+	font-size: var(--rh-text-lg);
+}
+
+.rh-prose h4,
+.rh-prose h5,
+.rh-prose h6 {
+	font-size: var(--rh-text-md);
+}
+
+.rh-prose p,
+.rh-prose ul,
+.rh-prose ol,
+.rh-prose dl {
+	margin: 0 0 var(--rh-space-4);
+}
+
+.rh-prose ul,
+.rh-prose ol {
+	padding-left: var(--rh-space-5);
+}
+
+.rh-prose li {
+	margin-bottom: var(--rh-space-1);
+}
+
+.rh-prose dt {
+	font-weight: 600;
+}
+
+.rh-prose dd {
+	margin: 0 0 var(--rh-space-2) var(--rh-space-5);
+}
+
+.rh-prose hr {
+	margin: var(--rh-space-6) 0;
+	border: 0;
+	border-top: var(--rh-border-width) solid var(--rh-color-border);
+}
+
+.rh-prose blockquote {
+	margin: 0 0 var(--rh-space-4);
+	padding: var(--rh-space-1) 0 var(--rh-space-1) var(--rh-space-4);
+	border-left: 3px solid var(--rh-color-border);
+	color: var(--rh-color-text-muted);
+}
+
+.rh-prose blockquote p:last-child {
+	margin-bottom: 0;
+}
+
+.rh-prose blockquote cite {
+	display: block;
+	margin-top: var(--rh-space-2);
+	font-size: var(--rh-text-sm);
+	font-style: normal;
+}
+
+/*
+ * Code wraps rather than scrolls: a scrollable region would need keyboard
+ * focus to be reachable, and the sanitiser cannot give a `<pre>` a tabindex.
+ */
+.rh-prose pre {
+	margin: 0 0 var(--rh-space-4);
+	padding: var(--rh-space-3) var(--rh-space-4);
+	border: var(--rh-border-width) solid var(--rh-color-border);
+	border-radius: var(--rh-radius);
+	background: var(--rh-color-surface-raised);
+	font-size: var(--rh-text-sm);
+	line-height: var(--rh-leading-body);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.rh-prose code,
+.rh-prose kbd,
+.rh-prose samp {
+	padding: 0 0.2em;
+	border-radius: var(--rh-radius-sm);
+	background: var(--rh-color-surface-raised);
+	font-size: 0.9em;
+}
+
+.rh-prose pre code {
+	padding: 0;
+	background: none;
+	font-size: inherit;
+}
+
+/*
+ * Every table sits in the pass's scroll region (`tableRegion` in
+ * lib/content/render.tsx): a focusable, labelled box that scrolls sideways,
+ * so a table wider than the column scrolls inside it and the page never
+ * does. The region is a tab stop, so it shows the focus ring; its margin is
+ * the table's.
+ */
+.rh-prose .rh-table-scroll {
+	margin: 0 0 var(--rh-space-4);
+	overflow-x: auto;
+}
+
+.rh-prose .rh-table-scroll:focus-visible {
+	outline: var(--rh-focus-width) solid var(--rh-color-focus);
+	outline-offset: 2px;
+}
+
+/*
+ * Tables stay tables (their semantics go with `display`); cells wrap their
+ * words, and a table whose words alone are wider than the column scrolls in
+ * its region.
+ */
+.rh-prose table {
+	width: 100%;
+	margin: 0;
+	border-collapse: collapse;
+	font-size: var(--rh-text-sm);
+}
+
+.rh-prose caption {
+	margin-bottom: var(--rh-space-2);
+	color: var(--rh-color-text-muted);
+	text-align: left;
+}
+
+.rh-prose th,
+.rh-prose td {
+	padding: var(--rh-space-2) var(--rh-space-3);
+	border-bottom: var(--rh-border-width) solid var(--rh-color-border);
+	text-align: left;
+	vertical-align: top;
+}
+
+.rh-prose th {
+	font-weight: 600;
+}
+
+.rh-prose thead th {
+	border-bottom-width: 2px;
+}
+
+/*
+ * A long URL or identifier in a cell would otherwise set the column's
+ * min-content width and push the table past the column.
+ */
+.rh-prose td a,
+.rh-prose td code,
+.rh-prose th code {
+	overflow-wrap: anywhere;
+}
+
+.rh-prose figure {
+	margin: 0 0 var(--rh-space-5);
+}
+
+.rh-prose figure img {
+	display: block;
+	max-width: 100%;
+	height: auto;
+}
+
+.rh-prose figcaption {
+	margin-top: var(--rh-space-2);
+	color: var(--rh-color-text-muted);
+	font-size: var(--rh-text-sm);
+}
+
+.rh-prose img {
+	max-width: 100%;
+	height: auto;
+}
+
+.rh-prose details {
+	margin: 0 0 var(--rh-space-4);
+	padding: var(--rh-space-3) var(--rh-space-4);
+	border: var(--rh-border-width) solid var(--rh-color-border);
+	border-radius: var(--rh-radius);
+}
+
+.rh-prose summary {
+	cursor: pointer;
+	font-weight: 600;
+}
+
+.rh-prose mark {
+	background: var(--rh-color-surface-raised);
+	color: inherit;
+	text-decoration: underline;
+	text-decoration-color: var(--rh-color-accent);
+}

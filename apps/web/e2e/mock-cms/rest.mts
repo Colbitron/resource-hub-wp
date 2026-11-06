@@ -1,4 +1,4 @@
-import { renderResource, renderTerm } from "./render.mts";
+import { renderPage, renderResource, renderTerm } from "./render.mts";
 import { slugify, slugifyForQuery } from "./sanitize.mts";
 import { isTaxonomy, MAX_RELATED, type MockState, type ResourceRecord, type TermRecord } from "./state.mts";
 import type { Taxonomy } from "./types.mts";
@@ -606,6 +606,40 @@ function related(state: MockState, id: number, url: URL): MockResponse {
   return { status: 200, headers: { ...JSON_HEADERS }, body: { items: state.related(source, count) } };
 }
 
+// --- /wp/v2/pages/{id} and /resource-hub/v1/page (ADR 0052) -----------------------------
+
+function pageItem(state: MockState, id: number, origin: string): MockResponse {
+  const page = state.page(id);
+  if (!page) return wpError(404, "rest_post_invalid_id", "Invalid post ID.");
+  if (page.status !== "publish") return wpError(401, "rest_forbidden", "Sorry, you are not allowed to do that.");
+  return allowGet({ status: 200, headers: { ...JSON_HEADERS }, body: renderPage(state, page, origin) });
+}
+
+const MAX_PAGE_PATH_LENGTH = 2010;
+
+/**
+ * The plugin's page route: `path` defaults to `/`; its segments, split on `/`
+ * with the ends trimmed, are each sanitized as a slug, and one empty once
+ * sanitized is a miss (`page: null`). Only a path over the cap, or not a
+ * string, is a 400 `rest_invalid_param`, as the plugin's `validate_callback`
+ * words it.
+ */
+function pageLookup(state: MockState, url: URL): MockResponse {
+  const raw = phpParam(url.searchParams, "path") ?? "/";
+  if (Array.isArray(raw)) {
+    return invalidParams([{ param: "path", code: "rest_invalid_type", message: "path must be a string.", data: null }]);
+  }
+  if (Buffer.byteLength(raw) > MAX_PAGE_PATH_LENGTH) {
+    return invalidParams([{ param: "path", code: "rest_invalid_param", message: `path is longer than ${MAX_PAGE_PATH_LENGTH} bytes.`, data: null }]);
+  }
+  const trimmed = raw.replace(/^\/+|\/+$/g, "");
+  const segments = trimmed === "" ? [] : trimmed.split("/").map(slugify);
+  if (segments.some((segment) => segment === "")) {
+    return { status: 200, headers: { ...JSON_HEADERS }, body: { page: null } };
+  }
+  return { status: 200, headers: { ...JSON_HEADERS }, body: { page: state.lookupPage(segments) } };
+}
+
 // --- Routing -----------------------------------------------------------------------
 
 /**
@@ -641,6 +675,11 @@ export function handleRest(state: MockState, method: string, url: URL, origin: s
         : termItem(state, match[1], Number(match[2]), origin),
     );
   }
+
+  match = /^\/wp\/v2\/pages\/(\d+)$/.exec(path);
+  if (match) return covered(pageItem(state, Number(match[1]), origin));
+
+  if (path === "/resource-hub/v1/page") return covered(allowGet(pageLookup(state, url)));
 
   if (path === "/resource-hub/v1/resolve") return covered(allowGet(resolve(state, url)));
 

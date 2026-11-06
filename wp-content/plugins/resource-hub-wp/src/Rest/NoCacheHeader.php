@@ -11,14 +11,15 @@ namespace ResourceHub\Rest;
 
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\Taxonomies;
+use ResourceHub\Pages\PagePath;
 use WP_HTTP_Response;
 use WP_REST_Request;
 use WP_REST_Response;
 
 /**
  * Adds `Cache-Control: no-cache, must-revalidate, max-age=0` to anonymous responses from the
- * routes the front end reads: `/wp/v2/resources`, the three taxonomy endpoints, and everything
- * under `/resource-hub/v1/`.
+ * routes the front end reads: `/wp/v2/resources`, `/wp/v2/pages` (ADR 0052), the three taxonomy
+ * endpoints, and everything under `/resource-hub/v1/`.
  *
  * Varnish and Cloudflare sit between the front end and WordPress. A copy cached there would
  * survive a revalidation, because Next.js would refetch and get the stale copy, so the front
@@ -148,10 +149,12 @@ final class NoCacheHeader {
 	private function bases(): array {
 		$bases = array( '/' . self::NAMESPACE );
 
-		$resources = rest_get_route_for_post_type_items( PostType::NAME );
+		foreach ( array( PostType::NAME, PagePath::POST_TYPE ) as $post_type ) {
+			$items = rest_get_route_for_post_type_items( $post_type );
 
-		if ( '' !== $resources ) {
-			$bases[] = $resources;
+			if ( '' !== $items ) {
+				$bases[] = $items;
+			}
 		}
 
 		foreach ( array( Taxonomies::TOPIC, Taxonomies::TYPE, Taxonomies::FLAG ) as $taxonomy ) {

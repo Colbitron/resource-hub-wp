@@ -9,7 +9,7 @@ On-demand revalidation works only if the tags the revalidate route clears are th
 
 ## The tags
 
-`resources`, `terms`, `resource:{slug}`, `topic:{slug}` and `type:{slug}`.
+`resources`, `terms`, `resource:{slug}`, `topic:{slug}` and `type:{slug}`. (Since 2026-11-06 also `pages`, on the page lookups and reads of [ADR 0052](0052-the-front-end-renders-the-cms-pages.md), cleared by page events only.)
 
 ## The union rule
 

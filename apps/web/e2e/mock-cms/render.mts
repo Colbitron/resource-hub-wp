@@ -1,4 +1,4 @@
-import type { MediaRecord, MockState, ResourceRecord, TermRecord } from "./state.mts";
+import type { MediaRecord, MockState, PageRecord, ResourceRecord, TermRecord } from "./state.mts";
 import type { Taxonomy } from "./types.mts";
 
 /**
@@ -236,4 +236,42 @@ export function renderResource(
   }
 
   return body;
+}
+
+/** A page as `/wp/v2/pages/{id}` returns it, field for field as core's pages controller does; no `_embed` is served. */
+export function renderPage(state: MockState, page: PageRecord, origin: string): Json {
+  const link = `${origin}${state.pagePath(page)}`;
+  const rest = `${origin}/wp-json/wp/v2/pages/${page.id}`;
+  const content = (page.content ?? `\n<p class="wp-block-paragraph">${escapeHtml(page.title)} is a page of the Resource Hub mock CMS.</p>\n`).replaceAll("{{origin}}", origin);
+  return {
+    id: page.id,
+    date: page.date,
+    date_gmt: page.date,
+    guid: { rendered: `${origin}/?page_id=${page.id}` },
+    modified: page.modified,
+    modified_gmt: page.modified,
+    slug: page.slug,
+    status: page.status,
+    type: "page",
+    link,
+    title: { rendered: page.title.replace(/&/g, "&#038;").replace(/'/g, "&#8217;") },
+    content: { rendered: content, protected: false },
+    excerpt: { rendered: page.excerpt === "" ? "" : `<p>${escapeHtml(page.excerpt)}</p>\n`, protected: false },
+    author: 1,
+    featured_media: 0,
+    parent: page.parent,
+    menu_order: 0,
+    comment_status: "closed",
+    ping_status: "closed",
+    template: "",
+    meta: { footnotes: "" },
+    class_list: [`post-${page.id}`, "page", "type-page", `status-${page.status}`, "hentry"],
+    _links: {
+      self: [{ href: rest, targetHints: { allow: ["GET"] } }],
+      collection: [{ href: `${origin}/wp-json/wp/v2/pages` }],
+      about: [{ href: `${origin}/wp-json/wp/v2/types/page` }],
+      ...(page.parent === 0 ? {} : { up: [{ embeddable: true, href: `${origin}/wp-json/wp/v2/pages/${page.parent}` }] }),
+      curies: CURIES,
+    },
+  };
 }

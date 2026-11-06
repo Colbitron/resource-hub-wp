@@ -1,0 +1,36 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://raw.githubusercontent.com/Colbitron/resource-hub-wp/main/packages/ui/schemas/page-response.schema.json",
+	"title": "Page lookup response",
+	"description": "The 200 body of GET /wp-json/resource-hub/v1/page?path={path}: which published WordPress page, if any, the front end should serve at a public path. path is / for the site's root, else the requested segments (/about/team/, slashes optional). The plugin answers from the current state: the static front page for / (Settings > Reading, show_on_front=page and page_on_front), the page whose parent chain matches the path, or the one published page that has the last segment as its slug now (a page whose parent moved); WordPress keeps no old slugs for pages. Never answered: a page that is not published or has a password, and the posts page (page_for_posts, read only while show_on_front is page). A miss is a 200 with page null, not a 404, so the front end's Data Cache, which stores only 200s, keeps it under the pages tag until a page event clears it; the site's root and every path a crawler tries would otherwise reach the CMS on every request. A segment that is empty once sanitized is a miss too. Only a path that is not a string or is over the plugin's length cap is a WordPress REST 400 (wp-error.schema.json), which the front end also treats as a miss.",
+	"type": "object",
+	"properties": {
+		"page": {
+			"description": "The page to serve, or null when no published page answers the path.",
+			"oneOf": [
+				{ "type": "null" },
+				{ "$ref": "#/$defs/page" }
+			]
+		}
+	},
+	"required": [ "page" ],
+	"additionalProperties": false,
+	"$defs": {
+		"page": {
+			"description": "A published page and its one canonical public path. When path differs from what was asked for, the front end redirects to it with a computed single-hop 308 and Cache-Control: no-store; when it is the same, the front end reads the page with GET /wp-json/wp/v2/pages/{id}.",
+			"type": "object",
+			"properties": {
+				"id": {
+					"description": "The page's post ID, to read it from the core pages endpoint.",
+					"$ref": "common.schema.json#/$defs/id"
+				},
+				"path": {
+					"description": "The page's canonical public path now: / when it is the static front page, else its parent chain and slug (/about/team/). Always with a trailing slash.",
+					"$ref": "common.schema.json#/$defs/pagePath"
+				}
+			},
+			"required": [ "id", "path" ],
+			"additionalProperties": false
+		}
+	}
+}

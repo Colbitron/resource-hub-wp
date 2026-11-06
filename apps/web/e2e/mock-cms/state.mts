@@ -1,9 +1,13 @@
 import { Faults } from "./faults.mts";
 import { slugify } from "./sanitize.mts";
-import { MEDIA, RESOURCES, SEED_DATE, TERMS, type MediaSeed, type ResourceSeed } from "./seed.mts";
+import { MEDIA, PAGES, RESOURCES, SEED_DATE, SEED_PAGE_FOR_POSTS, TERMS, type MediaSeed, type PageSeed, type ResourceSeed } from "./seed.mts";
 import type {
+  CreatePageInput,
   CreateResourceInput,
+  FrontPageSetting,
   MediaSummary,
+  PageStatus,
+  PageSummary,
   RenameTermInput,
   RequestCounts,
   ResourceStatus,
@@ -63,6 +67,26 @@ export interface TermRecord {
 
 export type MediaRecord = MediaSeed;
 
+/** A WordPress page (ADR 0052). */
+export interface PageRecord {
+  id: number;
+  slug: string;
+  parent: number;
+  status: PageStatus;
+  title: string;
+  /** `content.rendered` with `{{origin}}` still in it, or `null` for the default paragraph. */
+  content: string | null;
+  excerpt: string;
+  date: string;
+  modified: string;
+}
+
+/** What the plugin's page route answers: the page and its canonical path now. */
+export interface PageLookupResult {
+  id: number;
+  path: string;
+}
+
 export class MockError extends Error {
   readonly status: number;
 
@@ -94,6 +118,9 @@ export class MockState {
   resources: ResourceRecord[] = [];
   terms: TermRecord[] = [];
   media: MediaRecord[] = [];
+  pages: PageRecord[] = [];
+  frontPage: FrontPageSetting = { showOnFront: "posts", pageOnFront: 0 };
+  pageForPosts = 0;
   /** The faults in force (`faults.mts`); a reset clears them. */
   readonly faults = new Faults();
   private counts = new Map<string, number>();
@@ -108,7 +135,14 @@ export class MockState {
     this.terms = TERMS.map((term) => ({ ...term }));
     this.media = MEDIA.map((item) => ({ ...item, sizes: { ...item.sizes } }));
     this.resources = RESOURCES.map((seed, index) => this.fromSeed(seed, daysBefore(SEED_DATE, index)));
+    this.pages = PAGES.map((seed, index) => this.pageFromSeed(seed, daysBefore(SEED_DATE, index)));
+    this.frontPage = { showOnFront: "posts", pageOnFront: 0 };
+    this.pageForPosts = SEED_PAGE_FOR_POSTS;
     this.resetRequests();
+  }
+
+  private pageFromSeed(seed: PageSeed, date: string): PageRecord {
+    return { ...seed, date, modified: date };
   }
 
   private fromSeed(seed: ResourceSeed, date: string): ResourceRecord {
@@ -218,6 +252,164 @@ export class MockState {
       }
     }
     return items;
+  }
+
+  // --- Pages (ADR 0052) --------------------------------------------------------
+
+  page(id: number): PageRecord | undefined {
+    return this.pages.find((page) => page.id === id);
+  }
+
+  /** The published page set as the static front page, or `undefined`: `show_on_front=page` and `page_on_front` naming a published page. */
+  frontPageRecord(): PageRecord | undefined {
+    if (this.frontPage.showOnFront !== "page") return undefined;
+    const page = this.page(this.frontPage.pageOnFront);
+    return page !== undefined && page.status === "publish" ? page : undefined;
+  }
+
+  /** A page the front end serves: published and not the posts page, which counts only while `show_on_front` is `page`, as the plugin's `PagePath::is_served()`. */
+  isServedPage(page: PageRecord): boolean {
+    return page.status === "publish" && !(this.frontPage.showOnFront === "page" && page.id === this.pageForPosts);
+  }
+
+  /** The page's parent chain and slug, as `get_page_uri()` gives it: `about/team`. */
+  pageUri(page: PageRecord): string {
+    const parts = [page.slug];
+    const seen = new Set([page.id]);
+    let current = page;
+    while (current.parent !== 0) {
+      const parent = this.page(current.parent);
+      if (parent === undefined || seen.has(parent.id)) break;
+      seen.add(parent.id);
+      parts.unshift(parent.slug);
+      current = parent;
+    }
+    return parts.join("/");
+  }
+
+  /** The page's public path now: `/` for the front page, else `/{uri}/`, as the plugin's `PagePath::of_post()`. */
+  pagePath(page: PageRecord): string {
+    return this.frontPageRecord()?.id === page.id ? "/" : `/${this.pageUri(page)}/`;
+  }
+
+  /**
+   * The plugin's page route: the front page for the root; else the page whose
+   * parent chain is the path (core's `get_page_by_path()`, which does not
+   * filter by status, so a draft at the exact path falls through); else the
+   * one served page with the last segment as its slug now. Segments arrive
+   * sanitized.
+   */
+  lookupPage(segments: readonly string[]): PageLookupResult | null {
+    const found = segments.length === 0 ? this.frontPageRecord() : this.pageByChain(segments) ?? this.pageByUniqueSlug(segments[segments.length - 1]);
+    if (found === undefined || !this.isServedPage(found)) return null;
+    return { id: found.id, path: this.pagePath(found) };
+  }
+
+  private pageByChain(segments: readonly string[]): PageRecord | undefined {
+    const exact = this.pages.find((page) => this.pageUri(page) === segments.join("/"));
+    return exact !== undefined && this.isServedPage(exact) ? exact : undefined;
+  }
+
+  private pageByUniqueSlug(slug: string): PageRecord | undefined {
+    const matches = this.pages.filter((page) => page.slug === slug && this.isServedPage(page));
+    return matches.length === 1 ? matches[0] : undefined;
+  }
+
+  private requirePage(id: number): PageRecord {
+    const page = this.page(id);
+    if (!page) throw new MockError(404, `No page has the ID ${id}.`);
+    return page;
+  }
+
+  private assertPageSlugFree(slug: string, parent: number, except?: number): void {
+    if (slug === "") throw new MockError(422, "The slug must not be empty.");
+    if (slug !== slugify(slug)) throw new MockError(422, `"${slug}" is not a sanitized slug; use "${slugify(slug)}".`);
+    const taken = this.pages.find((page) => page.slug === slug && page.parent === parent && page.id !== except);
+    if (taken) throw new MockError(409, `The slug "${slug}" belongs to page ${taken.id} under the same parent.`);
+  }
+
+  private touchPage(page: PageRecord): void {
+    const now = siteTime();
+    page.modified = now > page.modified ? now : siteTime(new Date(new Date(`${page.modified}Z`).getTime() + 1000));
+  }
+
+  createPage(input: CreatePageInput): PageRecord {
+    if (typeof input.title !== "string" || input.title.trim() === "") throw new MockError(422, "A title is needed.");
+    const parent = input.parent ?? 0;
+    if (parent !== 0) this.requirePage(parent);
+    const slug = input.slug ?? slugify(input.title);
+    this.assertPageSlugFree(slug, parent);
+    const now = siteTime();
+    const page: PageRecord = {
+      id: this.nextId(),
+      slug,
+      parent,
+      status: input.status ?? "publish",
+      title: input.title,
+      content: input.content ?? null,
+      excerpt: input.excerpt ?? "",
+      date: now,
+      modified: now,
+    };
+    this.pages.push(page);
+    return page;
+  }
+
+  setPageTitle(id: number, title: string): PageRecord {
+    const page = this.requirePage(id);
+    if (title.trim() === "") throw new MockError(422, "The title must not be empty.");
+    page.title = title;
+    this.touchPage(page);
+    return page;
+  }
+
+  setPageSlug(id: number, slug: string): PageRecord {
+    const page = this.requirePage(id);
+    this.assertPageSlugFree(slug, page.parent, id);
+    page.slug = slug;
+    this.touchPage(page);
+    return page;
+  }
+
+  setPageParent(id: number, parent: number): PageRecord {
+    const page = this.requirePage(id);
+    if (parent !== 0) this.requirePage(parent);
+    if (parent === id) throw new MockError(422, "A page cannot be its own parent.");
+    this.assertPageSlugFree(page.slug, parent, id);
+    page.parent = parent;
+    this.touchPage(page);
+    return page;
+  }
+
+  setPageContent(id: number, content: string): PageRecord {
+    const page = this.requirePage(id);
+    page.content = content;
+    this.touchPage(page);
+    return page;
+  }
+
+  setPageStatus(id: number, status: PageStatus): PageRecord {
+    const page = this.requirePage(id);
+    page.status = status;
+    this.touchPage(page);
+    return page;
+  }
+
+  /** Removes the page; its children keep their `parent`, as `wp_delete_post()` reparents only to the grandparent (not modelled). */
+  deletePage(id: number): void {
+    this.requirePage(id);
+    this.pages = this.pages.filter((page) => page.id !== id);
+  }
+
+  /** Settings > Reading: a page ID sets `show_on_front=page` and `page_on_front`; `null` sets `show_on_front=posts`. */
+  setFrontPage(pageId: number | null): FrontPageSetting {
+    if (pageId === null) {
+      this.frontPage = { showOnFront: "posts", pageOnFront: 0 };
+    } else {
+      this.requirePage(pageId);
+      this.frontPage = { showOnFront: "page", pageOnFront: pageId };
+    }
+    return { ...this.frontPage };
   }
 
   // --- Mutations -----------------------------------------------------------
@@ -338,7 +530,12 @@ export class MockState {
   }
 
   private nextId(): number {
-    const ids = [...this.resources.map((r) => r.id), ...this.terms.map((t) => t.id), ...this.media.map((m) => m.id)];
+    const ids = [
+      ...this.resources.map((r) => r.id),
+      ...this.terms.map((t) => t.id),
+      ...this.media.map((m) => m.id),
+      ...this.pages.map((p) => p.id),
+    ];
     return Math.max(0, ...ids) + 1;
   }
 
@@ -409,6 +606,10 @@ export class MockState {
     };
   }
 
+  summarisePage(page: PageRecord): PageSummary {
+    return { id: page.id, slug: page.slug, parent: page.parent, status: page.status, title: page.title, path: this.pagePath(page) };
+  }
+
   summariseTerm(term: TermRecord): TermSummary {
     return { id: term.id, taxonomy: term.taxonomy, slug: term.slug, name: term.name, count: this.termCount(term) };
   }
@@ -426,6 +627,9 @@ export class MockState {
       resources: this.resources.map((resource) => this.summarise(resource)),
       terms: this.terms.map((term) => this.summariseTerm(term)),
       media,
+      pages: this.pages.map((page) => this.summarisePage(page)),
+      frontPage: { ...this.frontPage },
+      pageForPosts: this.pageForPosts,
     };
   }
 }

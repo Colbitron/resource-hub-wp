@@ -5,9 +5,10 @@ import { mockCmsOrigin, mockCmsPort } from "./mock-cms/config.mts";
 
 /**
  * What a reader gets when there is nothing to show: the site's own 404 page
- * (`app/not-found.tsx`), in the shell, from `notFound()` in a listing and in
- * the resource page and for an unmatched URL (in the HTML for the last; after
- * hydration for the others, on Next.js 16.4.5, as measured below); and the
+ * (`app/not-found.tsx`), in the shell, from `notFound()` in a listing, in
+ * the resource page and in the page route, which every URL no other route
+ * claims reaches (ADR 0052), so each of them after hydration on Next.js
+ * 16.4.5, as measured below, and none in the HTML; and the
  * resource page's 500 when its CMS read fails, which the mock's fault
  * control (`/__mock/faults`, `mock-cms/faults.mts`) brings about. The
  * redirect contract, which neither may disturb, is checked once here and in
@@ -61,7 +62,11 @@ test.describe("the 404 page", () => {
     `/resources/topic/${unique("no-such-topic")}/`,
     "/resources/page/99/",
   ];
-  /** No route at all: Next.js serves the prerendered not-found page. */
+  /**
+   * A path no page has. Since ADR 0052 the root catch-all claims it and asks
+   * the CMS, so it is a `notFound()` like the others, not Next.js's
+   * prerendered not-found page; the trade-off is recorded there.
+   */
   const UNMATCHED = `/${unique("nowhere")}/`;
 
   /** What every 404 response carries in its HTML, whichever way it was reached. */
@@ -74,28 +79,17 @@ test.describe("the 404 page", () => {
     return html;
   }
 
-  test("an unmatched URL's 404 is the site's page in the HTML, in the shell", async ({ request }) => {
-    const html = await expectNotFoundResponse(await get(request, UNMATCHED), UNMATCHED);
-    expect(html).toContain("<h1>Page not found</h1>");
-    expect(html).toContain("There is no page at this address.");
-    expect(html).toMatch(/<a [^>]*href="\/resources\/"[^>]*>Browse all resources<\/a>/);
-    expect(html).toContain("Skip to content");
-  });
-
-  test("an unmatched URL's 404 reads with JavaScript off: one h1, the shell's landmarks and a link to the library", async ({ browser }) => {
-    const context = await browser.newContext({ javaScriptEnabled: false });
-    const page = await context.newPage();
-    try {
-      const response = await page.goto(UNMATCHED);
-      expect(response?.status()).toBe(404);
-      await expect(page.getByRole("heading", { level: 1 })).toHaveText("Page not found");
-      await expect(page.getByRole("main")).toContainText("There is no page at this address.");
-      await expect(page.getByRole("banner")).toHaveCount(1);
-      await expect(page.getByRole("contentinfo")).toHaveCount(1);
-      await expect(page.getByRole("main").getByRole("link", { name: "Browse all resources" })).toHaveAttribute("href", "/resources/");
-    } finally {
-      await context.close();
-    }
+  test("an unmatched URL is the page route's 404, decided by one CMS lookup, showing the site's page in the shell after hydration", async ({ page, request }) => {
+    await cms.resetRequests();
+    await expectNotFoundResponse(await get(request, UNMATCHED), UNMATCHED);
+    const { byPath } = await cms.requests();
+    expect(Object.keys(byPath).filter((path) => path.includes("resource-hub/v1/page"))).toHaveLength(1);
+    const response = await page.goto(UNMATCHED);
+    expect(response?.status()).toBe(404);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Page not found");
+    await expect(page.getByRole("main")).toContainText("There is no page at this address.");
+    await expect(page.getByRole("banner")).toHaveCount(1);
+    await expect(page.getByRole("main").getByRole("link", { name: "Browse all resources" })).toHaveAttribute("href", "/resources/");
   });
 
   test("notFound() from the resource page and from each kind of listing is a 404 that shows the site's page in the shell", async ({ page, request }) => {
@@ -119,7 +113,7 @@ test.describe("the 404 page", () => {
     // 2026-11-05 amendment). If this starts failing after an upgrade, the
     // HTML carries the page: fold these paths into the unmatched URL's tests
     // and amend the ADR.
-    for (const path of FROM_NOT_FOUND) {
+    for (const path of [...FROM_NOT_FOUND, UNMATCHED]) {
       const html = await (await get(request, path)).text();
       expect(html, path).toContain('id="__next_error__"');
       expect(html, path).not.toContain("<h1>Page not found</h1>");
