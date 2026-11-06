@@ -311,4 +311,22 @@ describe("the back/forward cache", () => {
     expect(store.readTheme()).toBe("dark");
     expect(listener).toHaveBeenCalledTimes(1);
   });
+
+  it("drops a choice storage refused, since another tab may have written while the page was frozen", async () => {
+    const store = await load({ writeThrows: true });
+    store.subscribe(vi.fn());
+    store.setTheme("dark");
+    expect(local.values.has(THEME_STORAGE_KEY)).toBe(false);
+    expect(store.readTheme()).toBe("dark");
+
+    // Another tab's write succeeds while this page sits in the cache, so no storage event reaches it.
+    local.writeThrows = false;
+    local.values.set(THEME_STORAGE_KEY, "light");
+    win.dispatch("pageshow", { persisted: false });
+    expect(store.readTheme()).toBe("dark");
+
+    win.dispatch("pageshow", { persisted: true });
+    expect(shown()).toBe("light");
+    expect(store.readTheme()).toBe("light");
+  });
 });

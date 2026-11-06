@@ -24,7 +24,8 @@ import { THEME_ATTRIBUTE, THEME_STORAGE_KEY, type ThemeChoice, themeFromStored }
  *   `localStorage`, re-applies the stored value there and notifies, so every
  *   open tab follows the last choice. A page restored from the back/forward
  *   cache (`pageshow` with `persisted`) missed any such event while it was
- *   frozen, so it re-reads the value the same way.
+ *   frozen, so it re-reads the value the same way, dropping a choice storage
+ *   refused: it cannot tell whether another tab wrote in the meantime.
  *
  * An unpersisted choice lasts only as long as the page: the head script
  * reads storage alone, so after a reload both it and the control fall back
@@ -37,7 +38,10 @@ const listeners = new Set<() => void>();
  * The choice made in this tab that storage did not take, or `null` when
  * storage holds the reader's last choice. Set when a write throws, cleared
  * by the next write that succeeds and by a write in another tab, which is
- * newer.
+ * newer, and when the page comes back from the back/forward cache, which
+ * cannot know whether another tab wrote while it was frozen. Dropping it
+ * there gives what a reload would: the stored value, which the head script
+ * reads too.
  */
 let unpersisted: ThemeChoice | null = null;
 
@@ -122,6 +126,7 @@ function onStorage(event: StorageEvent): void {
 /** The page came back from the back/forward cache, frozen through any `storage` event meanwhile. */
 function onPageShow(event: PageTransitionEvent): void {
   if (event.persisted) {
+    unpersisted = null;
     resync();
   }
 }
