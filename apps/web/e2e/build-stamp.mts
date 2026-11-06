@@ -21,7 +21,10 @@ import { appServerEnv } from "./mock-cms/config.mts";
  * `.next` now, was made at the commit checked out now, and matches what
  * `appServerEnv()` gives this run. The commit catches a build left from
  * before a pull or a checkout; uncommitted edits since the build are not
- * caught, so rebuild after changing files (unset `RH_E2E_PREBUILT`).
+ * caught, so rebuild after changing files (unset `RH_E2E_PREBUILT`). When
+ * git cannot say which commit is checked out, writing fails and the check
+ * reports it, each with git's own error, so the harness needs a git
+ * checkout.
  *
  *   node e2e/build-stamp.mts write   after `next build`, in the build's environment
  *   node e2e/build-stamp.mts check   before `next start` of a prebuilt app
@@ -44,21 +47,26 @@ type Env = Readonly<Record<string, string | undefined>>;
 
 export interface Stamp {
   buildId: string;
-  /** `git rev-parse HEAD` when the build was made, or `null` outside a git checkout. */
+  /** `git rev-parse HEAD` when the build was made; `null` only in a stamp from before commits were recorded. */
   commit: string | null;
   env: Record<string, string | undefined>;
 }
 
-/** Where the stamp is read and written, and how the current commit is found; tests replace both. */
+/** Where the stamp is read and written, and how the current commit is found (it throws when it cannot say); tests replace both. */
 export interface StampOptions {
   nextDir?: string;
-  commit?: () => string | null;
+  commit?: () => string;
 }
 
-/** The commit checked out in the app's repository, or `null` when git cannot say. */
-export function gitCommit(): string | null {
+/** The commit checked out in the app's repository; throws with git's own error when git cannot say. */
+export function gitCommit(): string {
   const result = spawnSync("git", ["rev-parse", "HEAD"], { cwd: APP_DIR, encoding: "utf8" });
-  return result.status === 0 ? result.stdout.trim() : null;
+  if (result.error) throw new Error(`git rev-parse HEAD could not run: ${result.error.message}`);
+  if (result.status !== 0) {
+    const detail = (result.stderr ?? "").trim() || `exit status ${result.status ?? result.signal}`;
+    throw new Error(`git rev-parse HEAD failed: ${detail}`);
+  }
+  return result.stdout.trim();
 }
 
 function buildId(nextDir: string): string | null {
@@ -92,9 +100,14 @@ export function buildStampProblem(env: Env = process.env, options: StampOptions 
   if (stamp.buildId !== id) {
     return `the build in .next (${id}) is newer than the harness's stamp (${stamp.buildId}); something rebuilt it since`;
   }
-  const commit = (options.commit ?? gitCommit)();
+  let commit: string;
+  try {
+    commit = (options.commit ?? gitCommit)();
+  } catch (error) {
+    return `the commit checked out now cannot be read (${error instanceof Error ? error.message : String(error)})`;
+  }
   if ((stamp.commit ?? null) !== commit) {
-    return `the build in .next was made at commit ${stamp.commit ?? "(unknown)"}, but ${commit ?? "(unknown)"} is checked out now`;
+    return `the build in .next was made at commit ${stamp.commit ?? "(unknown)"}, but ${commit} is checked out now`;
   }
   const expected = appServerEnv(env);
   const differences = BUILD_VARIABLES.filter((name) => stamp.env?.[name] !== expected[name]).map(

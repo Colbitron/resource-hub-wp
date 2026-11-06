@@ -16,8 +16,14 @@ const COMMIT = "0123456789abcdef0123456789abcdef01234567";
 const RUN_ENV: Env = { RH_WEB_PORT: "3460", RH_MOCK_CMS_PORT: "4160" };
 
 let nextDir: string;
-let commit: string | null;
-const options = () => ({ nextDir, commit: () => commit });
+let commit: string | Error;
+const options = () => ({
+  nextDir,
+  commit: () => {
+    if (commit instanceof Error) throw commit;
+    return commit;
+  },
+});
 
 /** The environment a harness build for RUN_ENV sees: the shell's plus `appServerEnv`. */
 const buildEnv = (env: Env = RUN_ENV): Env => ({ ...env, ...appServerEnv(env) });
@@ -70,6 +76,19 @@ describe("buildStampProblem", () => {
       JSON.stringify({ buildId: "build-one", env: buildEnv() }),
     );
     expect(buildStampProblem(RUN_ENV, options())).toMatch(/made at commit \(unknown\)/);
+  });
+
+  it("reports git's own error when the current commit cannot be read", () => {
+    writeBuildStamp(buildEnv(), options());
+    commit = new Error("git rev-parse HEAD failed: fatal: not a git repository (or any of the parent directories): .git");
+    expect(buildStampProblem(RUN_ENV, options())).toBe(
+      "the commit checked out now cannot be read (git rev-parse HEAD failed: fatal: not a git repository (or any of the parent directories): .git)",
+    );
+  });
+
+  it("refuses to stamp a build when the commit cannot be read", () => {
+    commit = new Error("git rev-parse HEAD could not run: spawnSync git ENOENT");
+    expect(() => writeBuildStamp(buildEnv(), options())).toThrow(/could not run: spawnSync git ENOENT/);
   });
 
   it("reports a build for other ports, naming each variable that differs", () => {
