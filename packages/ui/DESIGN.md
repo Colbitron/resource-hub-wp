@@ -2,7 +2,7 @@
 
 The one written home of the visual system shared by the Next.js front end (`apps/web/`), the WordPress plugin's block and the planned CMS block theme. Three things are true at once and each lives in one place: the **intent and the rules** are here; the **values** are in [`tokens.css`](tokens.css) beside this file (this document names tokens, and gives a value in prose only where it explains a rule, such as the 4 px spacing step or the 360 px phone width; where the two differ, `tokens.css` is right and this document is fixed); and the **rendered truth** is the front end's specimen page, `apps/web/app/fixtures/specimen/`, which shows every token and every component with fixture content and is captured by the screenshot gate. When the three disagree, fix the one that is wrong and rerun the gates in [Changing the system](#changing-the-system).
 
-The section order follows Google Labs' DESIGN.md convention (Overview, Colors, Typography, Layout, Elevation & Depth, Shapes, Components, Do's and Don'ts), with four sections of our own where that convention has nothing to say: the colour scheme, motion, how each consumer loads the system, and how to change it. A test, `test/design-doc.test.js`, fails when `tokens.css` declares a `--rh-*` token this document does not mention, when this document names one that does not exist, or when the sections drift from that order.
+The section order follows Google Labs' DESIGN.md convention (Overview, Colors, Typography, Layout, Elevation & Depth, Shapes, Components, Do's and Don'ts), with five sections of our own where that convention has nothing to say: the brand, the colour scheme, motion, how each consumer loads the system, and how to change it. A test, `test/design-doc.test.js`, fails when `tokens.css` declares a `--rh-*` token this document does not mention, when this document names one that does not exist, or when the sections drift from that order.
 
 ## Overview
 
@@ -10,7 +10,27 @@ Resource Hub is a filterable library of resources, published by Colbination and 
 
 The tone is editorial and quiet. Text carries the page: hierarchy comes from weight, size and a few hairlines rather than from boxes, shadows or colour fields. Density is reading-first: a prose measure of about sixty-five characters, generous line height, one gutter on a phone and no horizontal scroll at 360 px. Everything is server-rendered HTML with plain CSS; the design never depends on client-side JavaScript except for the theme control described below, which degrades to the system preference without it.
 
-The library's own name stays "Resource Hub"; Colbination is the publisher named in the footer and the metadata, not a second brand in the header.
+The library's own name stays "Resource Hub". Colbination is its publisher: its mark sits beside the wordmark in the header, and its name is in the footer and the share image, never as a second name in the header (see [Brand](#brand)).
+
+## Brand
+
+Colbination publishes the site, and the site keeps its own name. The brand layer is therefore small: one mark, one wordmark, and the files a browser and a share card read.
+
+**The mark** is Colbination's own: a coral rounded square with a "C" cut from it, tilted six degrees over its deep ink shadow square. It has two fixed colours of its own, coral `#ff5a4f` and the shadow's ink `#1b1436`, that are not tokens and do not change with the scheme: it is a logo, the same on paper and on ink, and the one place in the system where a colour is written outside `tokens.css`. The drawing lives in `apps/web/app/icon.svg`, the file the browser is given as the site's icon, and inline in `apps/web/components/Brand.tsx` for the header, where an inline SVG costs no request; `apps/web/test/brand-mark.test.tsx` fails if the two drawings differ. The mark is decorative wherever it appears (`aria-hidden`, `focusable="false"`): the name beside it is the name, and the mark alone is never a link.
+
+**The lockup** is the mark beside the wordmark "Resource Hub", set as a heading at `--rh-text-lg` (`--rh-weight-heading`, `--rh-tracking-heading`, `--rh-leading-tight`), the mark 1.25 em of that size and the gap between them `--rh-space-2`, so the whole lockup is one line, 1.25 em tall, and scales with the reader's text size. It is the header's one home link, to the library, with the accessible name "Resource Hub", at the left of the header with the theme control at the right; on a phone the control wraps under it. The wordmark underlines on hover, as every link does; nothing in the lockup moves.
+
+**Clear space and minimum size.** Keep half the mark's width free on every side of the lockup: no other mark, text or edge inside it (the header's padding and the gutter give it there, and the specimen draws it as a dashed box). The mark alone is never drawn under 16 px, the size at which the favicon still reads as a C; in the lockup it is never under 24 px, so the wordmark beside it stays on the type scale. The share image sets it at 200 px beside a 96 px wordmark.
+
+**Don't** recolour the mark or draw it in a token's colour, set it straight or tilt it further, flip it, stretch it, add a shadow or a halo, place it on a photograph or on coral, use it as a bullet or a type mark, put another logo beside it, or use it alone as a link without the name.
+
+**Icons and the share image.** The files are Next.js's metadata conventions, in `apps/web/app/`:
+
+- `icon.svg`: the mark, served as the site's icon for every browser that reads an SVG one (`sizes="any"`), so the tab shows the same drawing at any size. There is no `favicon.ico`: a browser that still asks for one gets the page route's 404, answered from the path alone with no CMS request.
+- `apple-icon.png`: 180 × 180, the mark on the light paper surface with no transparency, since iOS fills transparent pixels with black; iOS rounds the corners itself.
+- `opengraph-image.png` with `opengraph-image.alt.txt`: 1200 × 630, the lockup at share-card size and "Published by Colbination" under it, on the paper surface, for the light contexts share cards are shown in. It is every page's share image except a resource with a trusted featured image, whose own metadata keeps that image (`components/ResourceArticle.tsx`); Next.js derives the Twitter card fields from the Open Graph ones, so none are written.
+
+The two PNGs are drawn by `apps/web/scripts/render-brand-images.mts` in Playwright's Chromium, from `icon.svg`, the site's own Figtree file and the light side of the colour tokens, and committed. They are not generated at request time with `next/og`, because Satori reads no woff2: a generated image would need a second copy of Figtree, in TTF or OTF beside a second copy of its licence, a rendering bundle of about half a megabyte in the deployment and a route of its own under the trailing-slash rule, for an image whose words never change. The trade-off is that the script is run by hand after a change to the mark, the tokens or the words, and that a share image per resource is not possible this way; the day one is wanted, the TTF and `next/og` are the path.
 
 ## Colors
 
@@ -149,6 +169,7 @@ The risk `swap` accepts is a file that lands after the first paint. Titles are b
 - **Do** underline links; **don't** rely on colour alone for any state.
 - **Do** write every colour as a `light-dark()` pair; **don't** add a `prefers-color-scheme` media query.
 - **Do** keep Figtree the only typeface; **don't** add a web font, and **don't** let a browser request anything from Google.
+- **Do** draw the mark from `icon.svg` or `Brand.tsx`, in its own colours; **don't** recolour it, and **don't** use it alone as a link.
 - **Do** keep motion to short CSS transitions, all off under reduced motion; **don't** animate with JavaScript.
 - **Do** keep plain CSS with BEM-ish class names under the `rh-` prefix; **don't** add a framework, a preprocessor, CSS-in-JS or shared JavaScript. Utility frameworks and CSS Modules generate or rewrite class names at build time, and the markup WordPress renders in PHP could not share them, so the contract's class names stay plain.
 - **Do** treat a token or class rename as a contract change made on both sides in one pull request.

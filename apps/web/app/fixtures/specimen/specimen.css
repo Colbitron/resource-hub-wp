@@ -70,6 +70,49 @@
 	border: var(--rh-border-width) solid var(--rh-color-text-muted);
 }
 
+/* The brand section: the mark at each size on one row, bottom-aligned, with its size under it. */
+.rh-specimen__marks {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: var(--rh-space-5);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.rh-specimen__mark {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--rh-space-2);
+}
+
+/*
+ * The lockup inside its clear space: the mark is 1.25 em of the wordmark
+ * (brand.css), so half its width is 0.625 em at the lockup's size, which the
+ * box's padding draws as a dashed line.
+ */
+.rh-specimen__lockup {
+	display: inline-block;
+	padding: calc(0.625 * var(--rh-text-lg));
+	border: var(--rh-border-width) dashed var(--rh-color-border);
+}
+
+.rh-specimen__images {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: var(--rh-space-5);
+}
+
+/* The share image at a readable size, never wider than the column. */
+.rh-specimen__share {
+	width: min(100%, 37.5rem);
+	height: auto;
+	border: var(--rh-border-width) solid var(--rh-color-border);
+}
+
 /* The three still copies of the theme control, side by side where they fit. */
 .rh-specimen__themes {
 	display: flex;
