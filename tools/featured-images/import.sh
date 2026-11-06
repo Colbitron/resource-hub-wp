@@ -4,9 +4,12 @@
 #
 # Idempotent: a resource that already has a featured image is skipped unless
 # --force is given, in which case a new attachment is set and the old one is
-# left in the media library. A slug with no published resource is reported and
-# the run exits non-zero, so a seeder change never goes unnoticed. Alt text is
-# left empty on purpose: the images are decorative beside a printed title.
+# left in the media library. A slug with no published resource gets a warning
+# and is counted as "skipped (no post)": a site seeded with fewer than the whole
+# catalogue is normal. The run exits non-zero only for a real failure: a WP-CLI
+# or SSH error, an import that fails, or a catalogue slug with no PNG in the
+# directory (checked before anything is staged). Alt text is left empty on
+# purpose: the images are decorative beside a printed title.
 #
 # Targets:
 #   import.sh local [--force] [--dir DIR]
@@ -58,7 +61,7 @@ run_import() {
 	# `command` keeps this from calling itself when the binary is also named wp.
 	wp() { command "$wp_bin" --path="$wp_path" "$@"; }
 
-	local set=0 skipped=0 missing=0 failed=0 file slug id thumb title attachment
+	local set=0 skipped=0 no_post=0 failed=0 file slug id thumb title attachment
 	shopt -s nullglob
 	for file in "$dir"/*.png; do
 		slug="$(basename "$file" .png)"
@@ -66,8 +69,8 @@ run_import() {
 
 		id="$(wp post list --post_type=resource --post_status=publish --name="$slug" --field=ID | head -n 1)"
 		if [ -z "$id" ]; then
-			log "missing  $slug: no published resource with that slug"
-			missing=$((missing + 1))
+			log "warning  $slug: no published resource with that slug, skipped"
+			no_post=$((no_post + 1))
 			continue
 		fi
 
@@ -88,8 +91,24 @@ run_import() {
 		fi
 	done
 
-	log "done: $set set, $skipped skipped, $missing missing, $failed failed"
-	[ "$missing" -eq 0 ] && [ "$failed" -eq 0 ]
+	log "done: $set set, $skipped skipped (already set), $no_post skipped (no post), $failed failed"
+	[ "$failed" -eq 0 ]
+}
+
+# Fails when a slug in the seeder's catalogue has no PNG in the directory, so a
+# generator that was not run, or was run against an older seeder, is caught
+# before anything is copied anywhere.
+check_pngs() {
+	local dir="$1" seeder="$ROOT/wp-content/plugins/resource-hub-wp/src/Seed/Seeder.php" slug missing=0
+	[ -d "$dir" ] || die "no such directory: $dir (run pnpm images:generate)"
+	[ -f "$seeder" ] || die "seeder not found: $seeder"
+	while IFS= read -r slug; do
+		if [ ! -f "$dir/$slug.png" ]; then
+			printf 'error: no PNG for catalogue slug %s in %s\n' "$slug" "$dir" >&2
+			missing=$((missing + 1))
+		fi
+	done < <(sed -n "s/^[[:space:]]*'slug'[[:space:]]*=>[[:space:]]*'\([a-z0-9-]*\)'.*/\1/p" "$seeder")
+	[ "$missing" -eq 0 ] || die "$missing catalogue slug(s) have no PNG; run pnpm images:generate"
 }
 
 # ------------------------------------------------------------------- local
@@ -97,6 +116,7 @@ run_import() {
 run_local() {
 	local dir="$1" force="$2" install stage
 	cd "$ROOT"
+	check_pngs "$dir"
 	install="$(pnpm exec wp-env status --json 2>/dev/null | node -p 'JSON.parse(require("fs").readFileSync(0, "utf8")).installPath')"
 	[ -n "$install" ] && [ -d "$install/WordPress" ] || die "wp-env is not running for this checkout (pnpm env:start)"
 
@@ -119,6 +139,7 @@ run_host() {
 	local dir="$1" force="$2" target="$3" wp_path="$4" tmp
 	[ -n "$target" ] || die "--ssh USER@HOST (or RH_SSH_TARGET) is required for the host target"
 	[ -n "$wp_path" ] || die "--wp-path /abs/wordpress/root (or RH_WP_PATH) is required for the host target"
+	check_pngs "$dir"
 
 	tmp="$(ssh "$target" 'mktemp -d')"
 	[ -n "$tmp" ] || die "could not create a temp directory on $target"
