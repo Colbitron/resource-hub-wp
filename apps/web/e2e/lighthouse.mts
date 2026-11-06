@@ -29,6 +29,7 @@ import { createRequire } from "node:module";
 
 import { assertPrebuilt, writeBuildStamp } from "./build-stamp.mts";
 import { appServerEnv, appSiteOrigin, mockCmsOrigin, mockCmsPort, prebuilt, webPort } from "./mock-cms/config.mts";
+import { medianTable, type Lhr } from "./lighthouse-summary.mts";
 import { SAMPLED_URLS } from "./sampled-urls.mts";
 
 const APP_DIR = new URL("..", import.meta.url).pathname;
@@ -92,47 +93,12 @@ async function waitFor(url: string, server: ChildProcess, timeoutMs: number): Pr
   throw new Error(`${url} did not answer within ${timeoutMs / 1000} s.`);
 }
 
-interface Lhr {
-  requestedUrl: string;
-  categories: Record<string, { score: number | null }>;
-  audits: Record<string, { numericValue?: number }>;
-}
-
-/** The median, or `null` when no run produced the number (an audit that errored in every run). */
-function median(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
-}
-
-/** A median for the table, or "n/a" when there is none. */
-function cell(value: number | null, format: (value: number) => string): string {
-  return value === null ? "n/a" : format(value);
-}
-
 /** The median of each budgeted number per URL, from the raw runs `lhci collect` wrote. */
 function summary(): string {
   const runs = readdirSync(RAW_DIR)
     .filter((name) => /^lhr-.*\.json$/.test(name))
     .map((name) => JSON.parse(readFileSync(join(RAW_DIR, name), "utf8")) as Lhr);
-  const byUrl = new Map<string, Lhr[]>();
-  for (const lhr of runs) {
-    byUrl.set(lhr.requestedUrl, [...(byUrl.get(lhr.requestedUrl) ?? []), lhr]);
-  }
-  const rows = [
-    "| URL | Runs | Performance | Accessibility | LCP (ms) | CLS | TBT (ms) |",
-    "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
-  ];
-  for (const [url, lhrs] of byUrl) {
-    const pick = (read: (lhr: Lhr) => number | null | undefined) =>
-      median(lhrs.map(read).filter((value): value is number => typeof value === "number"));
-    const fixed = (digits: number) => (value: number) => value.toFixed(digits);
-    const whole = (value: number) => String(Math.round(value));
-    rows.push(
-      `| ${new URL(url).pathname} | ${lhrs.length} | ${cell(pick((l) => l.categories.performance?.score), fixed(2))} | ${cell(pick((l) => l.categories.accessibility?.score), fixed(2))} | ${cell(pick((l) => l.audits["largest-contentful-paint"]?.numericValue), whole)} | ${cell(pick((l) => l.audits["cumulative-layout-shift"]?.numericValue), fixed(3))} | ${cell(pick((l) => l.audits["total-blocking-time"]?.numericValue), whole)} |`,
-    );
-  }
-  return `### Lighthouse (mobile, median of ${RUNS})\n\n${rows.join("\n")}\n`;
+  return medianTable(runs, RUNS);
 }
 
 async function main(): Promise<number> {
