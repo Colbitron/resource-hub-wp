@@ -3,9 +3,15 @@
 # laptop (`pnpm web:test:screenshots:update`), in the same pinned Docker image
 # CI compares in, but an Apple-silicon laptop renders under amd64 emulation;
 # if CI then fails on a pixel-level difference that no design change explains,
-# run this workflow on the branch (Actions > Screenshot baselines > Run
-# workflow), download the `screenshot-baselines` artifact, unzip it over
+# run this workflow (Actions > Screenshot baselines > Run workflow, choosing
+# the branch), download the `screenshot-baselines` artifact, unzip it over
 # apps/web/e2e/__screenshots__/, look at the images, and commit them.
+#
+# GitHub offers a manual workflow only once its file is on the default
+# branch, so this can be dispatched only after it has merged to main; from
+# then on it runs against any branch chosen in that menu. Before that, the
+# failed CI run's own actual images (the web-playwright-traces artifact) are
+# the runner's render to compare and, if they are right, commit.
 #
 # Manual only, read-only, and it never commits: the artifact stays in the
 # private repository's run, and the baselines reach a branch only through a
