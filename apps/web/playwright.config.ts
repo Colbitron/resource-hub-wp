@@ -72,13 +72,19 @@ export default defineConfig({
           {
             name: "screenshots",
             testMatch: "**/*.screenshot.ts",
-            // threshold 0: any change in any pixel's colour fails. The default
-            // 0.2 let the accent move from #1f4f8f to #2a5a9a unnoticed, which
-            // is the kind of change this gate exists to show. The renders are
-            // exact from run to run, so no tolerance is needed.
+            // threshold 0: any change in a pixel's colour counts that pixel as
+            // different. The default 0.2 let the accent move from #1f4f8f to
+            // #2a5a9a unnoticed, which is the kind of change this gate exists
+            // to show. maxDiffPixelRatio 0.001: up to one pixel in a thousand
+            // may differ before the shot fails. Baselines are rendered under
+            // amd64 emulation on Apple silicon and compared on CI's native
+            // amd64, where anti-aliasing at a glyph's or a curve's edge can
+            // land a pixel apart; a token or component change moves far more
+            // than that (an accent change fails every shot in the light
+            // scheme, measured when this was set).
             // Under QEMU emulation one full-page shot of the specimen takes a few
             // seconds, and toHaveScreenshot needs two; the default 5 s is too short.
-            expect: { toHaveScreenshot: { timeout: 30_000, threshold: 0 } },
+            expect: { toHaveScreenshot: { timeout: 30_000, threshold: 0, maxDiffPixelRatio: 0.001 } },
             use: {
               ...devices["Desktop Chrome"],
               reducedMotion: "reduce" as const,
