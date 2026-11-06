@@ -97,8 +97,8 @@ export default defineConfig({
             // thousands. Measured then, on the palette before Figtree and
             // Colbination's colours: the accent mutation above differs in
             // 26,093 and 35,741 pixels, and a 3 px focus ring drawn at 2 px
-            // in 732. The focus ring has its
-            // own shot at 10 pixels (specimen.screenshot.ts).
+            // in 732. The focus ring has its own shot at 10 pixels
+            // (specimen.screenshot.ts).
             // Under QEMU emulation one full-page shot of the specimen takes a few
             // seconds, and toHaveScreenshot needs two; the default 5 s is too short.
             expect: { toHaveScreenshot: { timeout: 30_000, threshold: 0, maxDiffPixels: 50 } },
