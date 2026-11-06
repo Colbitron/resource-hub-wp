@@ -36,13 +36,13 @@ The whole batch is one request, and the front end answers a body it cannot read 
 
 - **From cron, not the save.** The editor never waits on the front end, and the result can still be recorded. The payload is built at schedule time because by the time cron runs a trashed post has been renamed `…__trashed` and a deleted one is gone. Each batch carries a fresh batch ID (`wp_generate_uuid4()`) in its cron arguments, because core drops a second single event with the same hook and arguments within ten minutes, and two identical batches (the status page's test button twice) must both run.
 - **Under WP-CLI** the batch is sent synchronously at `shutdown` and the result is printed, since a cron run would never reach the terminal.
-- **Timeout and retries.** `Sender::TIMEOUT` (3 seconds, the VIP sniff's cap) bounds how long a cron request holds a PHP worker; the response is bounded by `Sender::RESPONSE_LIMIT`. Nothing retries. A failed send is recorded and shown to the editor, who retries by saving again, and the front end's hourly ISR interval ([caching.md](caching.md)) is the safety net that brings a page back in step after a send that failed.
+- **Timeout and retries.** `Sender::TIMEOUT` (3 seconds, the VIP sniff's cap) bounds how long a cron request holds a PHP worker; the response is bounded by `Sender::RESPONSE_LIMIT`. Nothing retries, because a retry queue needs its own storage, scheduling and failure display, and the editor is best placed to decide whether a failure matters by saving again. A failed send is recorded and shown to the editor, and the front end's hourly ISR interval ([caching.md](caching.md)) is the safety net that brings a page back in step after a send that failed.
 - **The path has a trailing slash.** The front end runs with `trailingSlash: true`, which answers a POST to `/api/revalidate` with a 308 the sender does not follow (`redirection` is 0), so `Sender::PATH` is `/api/revalidate/`.
 - **A cron run makes up to two requests per batch** (the send, then PostHog), so it holds a worker for at most about six seconds.
 
 ### When WP-Cron does not run
 
-The send depends on WP-Cron spawning: it is a loopback request, not a system cron. Checked on the host on 2026-11-04: `DISABLE_WP_CRON` is unset and there is no system crontab, so `spawn_cron()` sends at once.
+The send depends on WP-Cron spawning: it is a loopback request, not a system cron. How the host runs cron is in the [deploy runbook's host notes](../runbooks/deploy.md#host-notes).
 
 - If WP-Cron is ever disabled in favour of a system cron, sends wait for that cron's interval, and the editor's post-save poll times out before the result arrives. The record stays `pending`, and after five minutes every display shows it as "No answer recorded: the send may not have run".
 - A revalidation raised inside a cron run (a scheduled resource published by core's `publish_future_post`) is scheduled but delivered on the next cron spawn, because `spawn_cron()` does nothing while `DOING_CRON` is set. On a site with traffic that is the next page load.
@@ -58,7 +58,7 @@ Where a result appears:
 - **The Resources and Pages lists**, in a "Revalidation" column hidden by default (Screen Options turns it on), for bulk actions, trash and Quick Edit, which never open the editor. A failed trash stays invisible until someone turns the column on.
 - **The term edit screen**, as an inline notice on its next load, for term events.
 - **Settings > Resource Hub**, for the last test send, from the non-autoloaded option `resource_hub_last_test`.
-- **PostHog**, when `RESOURCE_HUB_POSTHOG_KEY` and `RESOURCE_HUB_POSTHOG_HOST` are defined: one anonymous `revalidation_result` event per batch. It is the only record of a force delete's or a term delete's outcome, because the object that would hold the meta is gone, and the only history, because meta keeps the last result per object. Without PostHog those outcomes are printed under WP-CLI and not recorded at all from the admin. There is no `error_log()`: the VIP ruleset forbids it.
+- **PostHog**, when `RESOURCE_HUB_POSTHOG_KEY` and `RESOURCE_HUB_POSTHOG_HOST` are defined: one anonymous `revalidation_result` event per batch. It is the only record of a force delete's or a term delete's outcome, because the object that would hold the meta is gone, and the only history, because meta keeps the last result per object. Without PostHog those outcomes are printed under WP-CLI and not recorded at all from the admin. There is no `error_log()`: the VIP ruleset forbids it. Sampling and rollups for high volume are tracked in [issue #17](https://github.com/Colbitron/resource-hub-wp/issues/17).
 - **A `pending` older than five minutes** is shown everywhere as "No answer recorded: the send may not have run", display only; the record is never rewritten.
 
 ## Configuration and the status page
@@ -68,8 +68,8 @@ Where a result appears:
 Settings > Resource Hub (`manage_options`) is a status page first. Rules it holds:
 
 - The secret is never displayed, not even in part. Its field is never prefilled, so an empty submission keeps the stored value. A field whose constant is defined is disabled, because the constant wins.
-- The front-end URL must be an origin only: `https://`, or `http://` for localhost and `127.0.0.1`, any port, no path, query, fragment or credentials, stored without a trailing slash. The send appends `/api/revalidate/`, so a path would double it. A configured URL that is not HTTPS, other than the local machine, is flagged.
-- The secret is `Config::SECRET_MIN_LENGTH` to `Config::SECRET_MAX_LENGTH` printable ASCII characters (0x21 to 0x7E), no whitespace, and is never trimmed. Both sides refuse anything else. A secret in force that breaks the rule counts as not configured, with `Result::INVALID_SECRET_MESSAGE` stored as the cause, so the editor's notice can point to the settings page instead of saying only that something is unconfigured.
+- The front-end URL must be an origin only: `https://`, or `http://` for localhost and `127.0.0.1`, any port, no path, query, fragment or credentials, stored without a trailing slash. The send appends `/api/revalidate/`, so a path would double it. A configured URL that is not HTTPS, other than the local machine, is flagged. IP and link-local hosts are accepted by design, because an administrator sets the URL; the check is about carrying the secret safely, not about which hosts may be reached.
+- The secret must meet [the contract's rule](../../packages/ui/README.md#configuration), which `Config::is_valid_secret()` checks. A secret in force that breaks the rule counts as not configured, with `Result::INVALID_SECRET_MESSAGE` stored as the cause, so the editor's notice can point to the settings page instead of saying only that something is unconfigured.
 - Both options are stored with autoload off.
 - "Send test revalidation" sends a real `update` event, never a synthetic ping, for the most recently modified published resource or one chosen in the searchable picker, so a pass proves the whole path a save takes. With nothing published the button is `aria-disabled` and says why. The result is recorded like any other: in that resource's meta, in PostHog, and in `resource_hub_last_test`. It is the quickest check after a deploy or a secret rotation.
 
@@ -81,9 +81,9 @@ Settings > Resource Hub (`manage_options`) is a status page first. Rules it hold
 - Every body problem is a 400 whose message names the first issue's path and never a value, because the plugin stores the body and shows it to the editor.
 - Every tag is cleared with `revalidateTag(tag, { expire: 0 })`, so a removal never serves one more stale render, and every path with `revalidatePath`. `revalidated` in the 200 lists paths only.
 - The route fetches nothing, from the CMS or anywhere. `rest_url` is validated and otherwise ignored.
-- A `topics` array has no `maxItems` in the schema, so an extreme batch could answer a 200 larger than the plugin's response limit; the plugin would record a truncated answer for revalidation that did happen. Not a real case today.
+- A `topics` array has no `maxItems`; what that allows is in the [contract](../../packages/ui/README.md#semantics-the-schemas-assume).
 
-**A cached bad 200 does not heal by itself.** The Data Cache stores a 200 whose body fails the reader schema like any other 200, and fixing the CMS does not clear it. A test revalidation from the status page clears most of them, because every event clears `resources`, which the library listing, the by-ID, resolve and flag reads and the filter bar's term lists carry. Reads tagged only by their own slug or term (another resource by slug, another type's or topic's listing) wait for an event that names them, or for the interval.
+**A cached bad 200 stays until an event or the interval clears it.** The Data Cache stores a 200 whose body fails the reader schema like any other 200, and fixing the CMS does not clear it. A test revalidation from the status page clears most of them, because every event clears `resources`, which the library listing, the by-ID, resolve and flag reads and the filter bar's term lists carry. Reads tagged only by their own slug or term (another resource by slug, another type's or topic's listing) wait for an event that names them, or for the interval.
 
 ## Gaps to know about
 

@@ -148,7 +148,7 @@ Thirteen records under [`docs/adr/`](docs/adr/) hold the decisions that are expe
 
 ## Contract with the front end
 
-[`packages/ui/README.md`](packages/ui/README.md) is the contract's only full statement, with the JSON Schemas in [`packages/ui/schemas/`](packages/ui/schemas/) as the source of truth. In short: the front end reads the core REST API and the custom routes on its server; WordPress POSTs a bearer-authenticated batch of events to `/api/revalidate/`; public URLs are the same on both sites; and a contract change is one additive pull request.
+[`packages/ui/README.md`](packages/ui/README.md) is the contract's only full statement, with the JSON Schemas in [`packages/ui/schemas/`](packages/ui/schemas/) as the source of truth. The front end reads the core REST API and the custom routes on its server; WordPress POSTs a bearer-authenticated batch of events to `/api/revalidate/`; public URLs are the same on both sites; and a contract change is one additive pull request.
 
 ## License
 

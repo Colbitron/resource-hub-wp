@@ -10,19 +10,14 @@ Type paths (ADR 0024) mean a resource's URL changes when its type changes, and a
 
 **The decision.** Every redirect is computed from the CMS's current state, never stored as a rule: a 308 to the canonical URL, which always answers 200, in a single hop, carrying a cache header that keeps a browser from holding it. The slug is looked up first; the CMS's resolve route is asked only on a miss, so renamed resources cost one extra request and current ones none. The CMS sends readers no redirects at all (ADR 0031).
 
-**The evidence**, gathered 2026-11-04 with Playwright across Chromium 156, Firefox 157 and WebKit 27.2: Chromium caches a header-less 308 indefinitely and fails webinar to podcast to webinar with `ERR_TOO_MANY_REDIRECTS`; with `no-store`, `no-cache` or a `max-age`, all three engines asked the server again. Engine source agrees (Chromium gives a 301 or 308 infinite freshness unless a header overrules it), and Google asks for permanent redirects only when the redirect will not be reverted.
+Redirects decidable from the path alone come from `proxy.ts` with `no-store`; redirects that need data come from the ISR pages, stored and cleared by the event that makes them wrong, with the `headers()` rule in `next.config.ts` keeping browsers asking. How each kind is sent is in [`caching.md`, Redirects](../architecture/caching.md#redirects); the browser tests and measurements behind this record are in its [Lab notes](../architecture/caching.md#lab-notes).
 
-**The mechanism on main.** Two kinds of redirect, by what decides them:
-
-- Redirects decidable from the path alone (case and escape canonicalisation, a trailing `/page/1/`) come from `proxy.ts` before any route runs, with `Cache-Control: no-store`, reading no data.
-- Redirects that need data (a wrong type, an old slug, a wrong page parent, the front page's own slug) come from the ISR pages: the decision runs before anything renders and calls `permanentRedirect()`. The 308 is stored like the page and cleared by the same revalidation event that makes it wrong, because every event revalidates the union of its current and previous state (ADR 0043). A stored response leaves Next.js with `s-maxage` alone, which a browser ignores, so a `headers()` rule puts `public, max-age=0, must-revalidate` on every response of those routes, the header Vercel's CDN sends browsers anyway; the 2026-11-04 evidence shows a `max-age` is enough for all three engines to ask again.
-
-The first version of this record required `no-store` on every permanent redirect, and the resource page was first built as a per-request render to send it. That was reversed on 2026-11-06 for what a dynamic page costs on Vercel; the rule is replaced by its purpose, and the measurements are in [`docs/architecture/caching.md`](../architecture/caching.md).
+The first version of this record required `no-store` on every permanent redirect. It was replaced on 2026-11-06 by the purpose behind it, for what a per-request page costs on Vercel, listed under Considered options.
 
 ## Considered options
 
 - **A stored redirect table with plain 301s.** Rejected: the loop above.
-- **A per-request render that sends every redirect with `no-store`.** The contract-literal choice, measured and built first. Reversed: a function invocation and a cold start on every view, no CDN-cacheable HTML, and one uncached resolve request per page view for every unknown slug, to buy something ISR plus the union rule and a `headers()` rule buys anyway.
+- **A per-request render that sends every redirect with `no-store`.** The contract-literal choice, measured and built first. Reversed: a function invocation and a cold start on every view, no CDN-cacheable HTML, and one uncached resolve request per page view for every unknown slug, to buy something ISR plus the union rule and the `headers()` rule buy anyway.
 - **`proxy.ts` with the data layer.** Rejected: its `fetch` is not the Data Cache's, so a CMS request per page view.
 - **A Route Handler at the resource path.** Rejected: cannot share a segment with the page.
 - **Cache Components with the decision in the dynamic part.** Rejected by ADR 0043, and a redirect after the static shell is flushed is a meta refresh.

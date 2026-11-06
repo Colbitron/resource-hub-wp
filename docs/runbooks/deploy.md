@@ -4,7 +4,7 @@ For the maintainer deploying the CMS or the front end, rolling either back, or r
 
 ## How a deploy happens
 
-Nothing is deployed by hand. A push to `main` runs the gate, then the `deploy` job syncs the plugin to the Cloudways host, then the `deploy-web` job starts the front end's Vercel production build. The CMS goes first and the front end second, so the front end never goes live ahead of the CMS it reads; additive contract changes are what make that order safe. Pull requests and other branches never deploy; pull requests get Vercel preview deploys.
+Nothing is deployed by hand. A push to `main` runs the gate, then the `deploy` job syncs the plugin to the Cloudways host, then the `deploy-web` job starts the front end's Vercel production build. The CMS goes first and the front end second, so the front end never goes live ahead of the CMS it reads; additive contract changes make that order safe. The CMS deploy needs only the CMS gate, so a front-end failure never blocks a CMS deploy or a rollback. Pull requests and other branches never deploy; pull requests get Vercel preview deploys.
 
 ## Secrets
 
@@ -35,7 +35,7 @@ If `/resources/` URLs 404 on the host after a change that the deploy did not flu
 
 ## The front-end deploy
 
-The `deploy-web` job needs both `deploy` and `web`, runs only on `main` (a push or a dispatch from `main`, never a tag), reads `main`'s head through the API and fires the hook only if it is still the commit the run tested; otherwise it leaves a notice and the newer run deploys. The hook answers with a queued job, and the step logs its id and state and ends: it does not wait on the build. **A green CI run means the build was queued, not that it succeeded**; a failed Vercel build leaves the previous production deployment serving, and its result is on Vercel.
+The `deploy-web` job needs both `deploy` and `web`, runs only on `main` (a push or a dispatch from `main`, never a tag), reads `main`'s head through the API and fires the hook only if it is still the commit the run tested; otherwise it leaves a notice and the newer run deploys. A failed run that a newer push supersedes deploys nothing, and if the newer run fails, production stays at the last commit whose run fired the hook until the next green run on `main`. The hook answers with a queued job, and the step logs its id and state and ends: it does not wait on the build. **A green CI run means the build was queued, not that it succeeded**; a failed Vercel build leaves the previous production deployment serving, and its result is on Vercel.
 
 On the Vercel project:
 
@@ -64,7 +64,7 @@ A CMS rollback and a front-end rollback are two separate actions. Because contra
 ## Rotating secrets
 
 - **The deploy hook.** Create a new hook for `main` in the Vercel project's Git settings, update `VERCEL_DEPLOY_HOOK_URL`, then delete the old hook.
-- **The revalidation secret.** It is one value on both sides: `RESOURCE_HUB_REVALIDATE_SECRET` in the host's `wp-config.php` and `REVALIDATE_SECRET` in the Vercel project. It must be 32 to 256 printable ASCII characters with no whitespace and no trailing newline; both sides refuse anything else, and the CMS treats an invalid secret as not configured. Change the front end first, redeploy, then the CMS, then press "Send test revalidation" on Settings > Resource Hub, which sends a real event and records the result.
+- **The revalidation secret.** It is one value on both sides: `RESOURCE_HUB_REVALIDATE_SECRET` in the host's `wp-config.php` and `REVALIDATE_SECRET` in the Vercel project. It must meet [the secret's rule](../../packages/ui/README.md#configuration); the CMS treats one that breaks it as not configured. Change the front end first, redeploy, then the CMS, then press "Send test revalidation" on Settings > Resource Hub, which sends a real event and records the result.
 - **The deploy SSH key.** Generate a new key used only for deploys, add its public half on the host, update `DEPLOY_SSH_KEY`, then remove the old public key from the host.
 
 ## Verifying on a Vercel preview

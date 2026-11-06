@@ -24,4 +24,4 @@ The deploy order puts the CMS first and the front end second: the front end goes
 - **A green CI run means the build was queued**, not that it succeeded; the build's failure is visible only on Vercel.
 - A narrow window remains between the head check and Vercel reading `main`, which only a deploy that names the commit would close.
 - Rotating the hook means creating a new one, updating the secret and deleting the old one. The procedure, the project settings and the rollback steps are in [`docs/runbooks/deploy.md`](../runbooks/deploy.md).
-- The first-deploy check closed on 2026-11-06: the merge of #40 produced exactly one production deployment, created by the hook, so Vercel reads `git.deploymentEnabled` from `apps/web/vercel.json` with the Root Directory set to `apps/web`, and the setting does not block deploy hooks.
+- The first-deploy check closed on 2026-11-06: the setting is read from `apps/web/vercel.json` and does not block deploy hooks. The evidence is in the [runbook](../runbooks/deploy.md#the-front-end-deploy).

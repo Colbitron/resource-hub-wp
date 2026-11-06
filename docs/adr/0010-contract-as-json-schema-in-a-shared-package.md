@@ -7,7 +7,7 @@ date: 2026-11-04
 
 The two halves of this demo agree on a handful of payloads: the body WordPress POSTs to `/api/revalidate/`, the front end's replies to it, the custom REST routes' responses, and the error shape WordPress produces. Before this decision the agreement was a contract section in each side's `CLAUDE.md`, maintained by hand, and it drifted at the first real contract change: one file got the new shape, the other kept the old, and nothing failed until the front end quietly ignored a field. We define the contract instead as JSON Schema (draft 2020-12) in a workspace package, `@colbitron/resource-hub-ui` at `packages/ui/`, with valid and invalid fixtures and a test that compiles every schema in strict mode and checks every fixture.
 
-The point is where the schemas are consumed. PHPUnit validates every payload the plugin builds against them, and the front end proves its Zod readers against the same fixtures. Whichever side moves, the schema turns the drift into a red check on that side in the same pull request. Prose can describe intent but cannot fail; the semantics a schema cannot express live in the package README beside it, which is the contract's only full statement.
+The schemas are checked where they are consumed. PHPUnit validates every payload the plugin builds against them, and the front end proves its Zod readers against the same fixtures. Whichever side moves, the schema turns the drift into a red check on that side in the same pull request. Prose cannot fail a test; the semantics a schema cannot express live in the package README beside it, which is the contract's only full statement.
 
 ## Considered options
 

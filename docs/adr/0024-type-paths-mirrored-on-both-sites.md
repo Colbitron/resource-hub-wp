@@ -20,6 +20,9 @@ The same paths exist on both sites. The post type's rewrite slug is `resources/%
 - **Filters and page numbers as query strings.** Rejected: every listing becomes dynamic.
 - **Several topics or types at once.** Rejected: the combinations multiply past what can be prerendered.
 - **A post type per type.** Rejected in ADR 0007.
+- **Repairing slugs that hold a decodable escape automatically, in an upgrade routine.** Rejected: it would save content on a deploy nobody is watching. `wp resource-hub decode-slugs` is run by hand instead.
+- **Rejecting such slugs with an error.** Rejected: the editor meant the decoded character, so the save decodes it.
+- **A global `sanitize_title` filter.** Rejected: it would change every post type and taxonomy on the site.
 
 ## Consequences
 

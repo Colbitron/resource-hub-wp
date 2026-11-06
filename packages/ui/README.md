@@ -25,7 +25,7 @@ The bearer token on the revalidation request is a header and is not part of any 
 
 **Server side only.** The front end makes every CMS request on the Next.js server, with the CMS's `/wp-json` base in `WP_API_URL`, a server-only environment variable (never `NEXT_PUBLIC_`), so the CMS's address never reaches the browser ([ADR 0040](../../docs/adr/0040-the-cms-url-never-reaches-the-browser.md)). WordPress emits absolute CMS URLs everywhere (`get_permalink()`, `content.rendered`, `_embed` media) and does no rewriting; the front end rewrites them while rendering: links lose the CMS domain, and images, including `<img src>` and `srcset` in `content.rendered`, become `/media/…`, which the front end rewrites to the CMS's uploads directory one to one. `/media/` is therefore part of the contract: a path under `wp-content/uploads/` is the same path under `/media/`. This reduces exposure; it is not a security boundary.
 
-**Content reads.** `GET {WP_API_URL}/wp/v2/resources?_embed&per_page=…&page=…&resource_topic=…&resource_type=…&resource_flag=…`, `GET {WP_API_URL}/wp/v2/resources/{id}` and `?slug=`, the taxonomy endpoints `/wp/v2/resource_topic`, `/wp/v2/resource_type` and `/wp/v2/resource_flag`, and `GET {WP_API_URL}/wp/v2/pages/{id}`. Meta is `summary` and `source_url`, under `meta` because of `show_in_rest`. Featured is the `resource_flag` term `featured`, not meta: a featured resource has that term's ID in `resource_flag`. Anonymous responses from these routes and from `/resource-hub/v1/` carry `Cache-Control: no-cache, must-revalidate, max-age=0`, so the front end's Data Cache is the only HTTP cache between the two sides.
+**Content reads.** `GET {WP_API_URL}/wp/v2/resources?_embed&per_page=…&page=…&resource_topic=…&resource_type=…&resource_flag=…`, `GET {WP_API_URL}/wp/v2/resources/{id}` and `?slug=`, the taxonomy endpoints `/wp/v2/resource_topic`, `/wp/v2/resource_type` and `/wp/v2/resource_flag`, and `GET {WP_API_URL}/wp/v2/pages/{id}`. Meta is `summary` and `source_url`, under `meta` because of `show_in_rest`. Featured is the `resource_flag` term `featured`, not meta: a featured resource has that term's ID in `resource_flag`. Anonymous responses from these routes and from `/resource-hub/v1/`, errors included, carry `Cache-Control: no-cache, must-revalidate, max-age=0` (the plugin's `NoCacheHeader`), so the front end's Data Cache is the only HTTP cache between the two sides.
 
 **Custom routes.** `GET {WP_API_URL}/resource-hub/v1/resolve?slug=…` and `GET {WP_API_URL}/resource-hub/v1/page?path=…` exist; `GET {WP_API_URL}/resource-hub/v1/related/{id}?count=…` is specified below and not built. All have a public permission callback and answer errors in core's `WP_Error` shape, `{ "code", "message", "data": { "status" } }`, for 400 and 404.
 
@@ -61,7 +61,7 @@ The bearer token on the revalidation request is a header and is not part of any 
 
 **A resource has exactly one type.** `types` is a one-element array because the type is a URL segment and a resource has one canonical URL. The array form keeps the field the same shape as `topics`.
 
-**Reserved type slugs.** A `resource_type` slug is never `topic` or `page`, because the front end's routes `/resources/topic/[topic]/` and `/resources/[type]/page/[n]/` would collide with a type of that name. WordPress refuses them on save; the schemas enforce it wherever a type slug appears: a resource event's `types` and `previous.types`, a term event's `slug` and `previous.slug` when its taxonomy is `resource_type`, and the resolve response's `type`. The front end's readers are deliberately stricter than these schemas on slugs that cannot be stored or put in a path: they also reject a dot segment (one or two dots, raw or percent-encoded), a lone surrogate, a slug longer than 200 characters once percent-encoded, a percent escape of a character Next.js decodes before a page sees the segment, which is `encodeURIComponent`'s unescaped set `A-Z a-z 0-9 - _ . ! ~ * ' ( )` (`case%2dstudy`, `%41bc`, `x%7ey`, `arti%27cle`, `a%2ab`), so the slug's own URL could never be served, and a type slug that is `topic` or `page` in any case. The CMS never stores such an escape in a `resource` post slug or in a term slug of the three taxonomies: it decodes them on save.
+**Reserved type slugs.** A `resource_type` slug is never `topic` or `page`, because the front end's routes `/resources/topic/[topic]/` and `/resources/[type]/page/[n]/` would collide with a type of that name. WordPress refuses them on save; the schemas enforce it wherever a type slug appears: a resource event's `types` and `previous.types`, a term event's `slug` and `previous.slug` when its taxonomy is `resource_type`, and the resolve response's `type`. The front end's readers are stricter than these schemas on slugs that cannot be stored or put in a path: they also reject a dot segment (one or two dots, raw or percent-encoded), a lone surrogate, a slug longer than 200 characters once percent-encoded, a percent escape of a character Next.js decodes before a page sees the segment, which is `encodeURIComponent`'s unescaped set `A-Z a-z 0-9 - _ . ! ~ * ' ( )` (`case%2dstudy`, `%41bc`, `x%7ey`, `arti%27cle`, `a%2ab`), so the slug's own URL could never be served, and a type slug that is `topic` or `page` in any case. The CMS never stores such an escape in a `resource` post slug or in a term slug of the three taxonomies: it decodes them on save.
 
 **`rest_url` is fetched, so the front end checks its host.** The schema pins its scheme to `http` or `https`, which rejects `javascript:`, `mailto:` and the like, but it cannot know the WordPress origin. Before fetching `rest_url` the front end must check that its host matches the WordPress origin it is configured with, and refuse it otherwise. That check is the guard against server-side request forgery, and it lives on the front end. Today the revalidate route fetches nothing at all and ignores `rest_url` after validating it.
 
@@ -132,12 +132,26 @@ The package also holds the stylesheets the CMS and the front end render with, so
 | `tokens.css` | Design tokens as custom properties on `:root`, all prefixed `--rh-` and named for their role (`--rh-color-text-muted`, `--rh-space-4`, `--rh-measure`), never for their value: colour (with a dark scheme under `prefers-color-scheme`, and `color-scheme: light dark`), type scale and system font stacks, spacing, radius and measure. Every other stylesheet builds on these and defines no colour or size of its own. |
 | `card.css` | The resource card: `.rh-card` and its parts (`__media`, `__body`, `__meta`, `__type`, `__title`, `__link`, `__summary`, `__topics`, `__topic`) and the `.rh-card-grid` that lays cards out. The markup it expects is in the file's header comment. |
 
-Plain CSS, no framework, no preprocessor, no CSS-in-JS, no web fonts and no shared JavaScript. Class names are BEM-ish under an `rh-` prefix. Each consumer loads a stylesheet only where it is used: the front end imports it from the component that renders the markup, never from `layout.tsx`, and WordPress attaches it through `block.json`. `tokens.css` must be loaded before the others. Adding a component stylesheet means a new `exports` entry in `package.json`, a line in `files`, and a header comment with the markup it expects; `related.css` arrives with the related list (issue #50). Import by file name:
+Plain CSS, no framework, no preprocessor, no CSS-in-JS, no web fonts and no shared JavaScript. Tailwind and CSS Modules were rejected because WordPress renders the same markup from PHP: it cannot use utility classes without its own build step, or hashed class names at all. Class names are BEM-ish under an `rh-` prefix. Each consumer loads a stylesheet only where it is used: the front end imports it from the component that renders the markup, never from `layout.tsx`, and WordPress attaches it through `block.json`. `tokens.css` must be loaded before the others. Adding a component stylesheet means a new `exports` entry in `package.json`, a line in `files`, and a header comment with the markup it expects; `related.css` arrives with the related list (issue #50). Import by file name:
 
 ```js
 import '@colbitron/resource-hub-ui/tokens.css';
 import '@colbitron/resource-hub-ui/card.css';
 ```
+
+**Contrast.** Every text-on-background pair in both schemes meets WCAG AA: 4.5:1 for text, 3:1 for the focus ring. The ratios below were measured on 2026-11-05 and are only as current as the colour tokens in `tokens.css`; measure again after changing one.
+
+| Pair | Light | Dark |
+|---|---|---|
+| text on surface | 16.39 | 14.79 |
+| text on raised surface | 14.86 | 13.12 |
+| muted text on surface | 6.11 | 7.95 |
+| muted text on raised surface | 5.55 | 7.05 |
+| accent (links) on surface | 8.16 | 8.52 |
+| accent on raised surface | 7.40 | 7.56 |
+| accent text on accent | 8.16 | 8.34 |
+| focus ring against surface (non-text, 3:1) | 8.16 | 8.52 |
+| focus ring against raised surface (non-text, 3:1) | 7.40 | 7.56 |
 
 ## Fixtures and test
 
@@ -147,7 +161,7 @@ import '@colbitron/resource-hub-ui/card.css';
 pnpm --filter @colbitron/resource-hub-ui test
 ```
 
-CI runs it in the gate on every pull request and push to `main`. The plugin's PHPUnit runs the `revalidate-request` fixtures through its own validator too, so the two validators are known to agree.
+CI runs it in the gate on every pull request and push to `main`. The plugin's PHPUnit runs the `revalidate-request` fixtures, and only those, through its own validator, so the two validators are known to agree on the request schema.
 
 ## Using the schemas
 

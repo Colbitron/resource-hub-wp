@@ -20,6 +20,7 @@ Until now the front end served the library alone, and `/` was a hard-coded sente
 - **Returning the whole page from the plugin route.** Rejected: duplicates core's pages controller; IDs and paths only.
 - **Several core requests to walk the parent chain from the front end.** Rejected: one request per level on every view, with the chain's rules outside PHPUnit.
 - **A 404 for a miss.** Rejected: every view of `/` without a front page would reach the CMS. The resolve route is unchanged, since changing it is its own contract change.
+- **Never redirecting a wrong-parent request, or always redirecting it.** Never would leave every moved page a 404 and ignore the guess core itself makes; always would have to choose between pages that share a slug under different parents. A wrong parent redirects only when the last slug is unique; the ambiguous case is a 404.
 - **A per-page cache tag.** Rejected: a parent move changes descendants' paths without an event for each.
 - **Page changes as a new top-level key in the batch.** Rejected: the old front end would drop the key silently and record the batch as sent.
 - **Refusing a reserved page slug with an error.** Rejected: a page slug is generated from the title, and core's own answer to a slug it cannot serve is a suffix.

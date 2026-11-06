@@ -24,5 +24,5 @@ WordPress still renders its own pages with its theme: single resources at the mi
 - The 404 is decided before core's canonical and old-slug redirects run, and `wp_redirect()` itself is switched off for that request, so nothing on the site can send an anonymous visitor anywhere. How it is built is in the `src/Lockdown/` docblocks.
 - The uploads directory stays reachable anonymously: the web server serves it without WordPress, and the front end's `/media/` rewrite reads it.
 - `get_permalink()` still returns the absolute CMS URL; the front end strips the domain.
-- A crawler that obeys `robots.txt` never sees the `noindex, nofollow`; the header is for the rest, and the 404 is what keeps the content out either way.
+- A crawler that obeys `robots.txt` never sees the `noindex, nofollow`; the header is for the rest, and the 404 keeps the content out either way.
 - The theme planned for slice 5 must not render navigation that lists pages on its 404 template (issue #50).
