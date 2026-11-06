@@ -32,8 +32,9 @@ import { NotFoundContent } from "./NotFoundContent";
  * and `app/not-found.tsx` takes the place of the same content, with one
  * `<h1>` throughout and no error on the page or in the console beyond the
  * browser's own note of the 404 (measured in Chromium, 2026-11-06). A
- * client-side navigation to such a URL renders `app/not-found.tsx` the same
- * way.
+ * client-side navigation to such a URL gets a 404 for its RSC request, which
+ * the router answers with a full document load (it does that for any non-ok
+ * RSC response), and that load gets the same 404 HTML, with no error.
  *
  * The rules that keep the statuses right:
  *
@@ -46,7 +47,11 @@ import { NotFoundContent } from "./NotFoundContent";
  *   there aborts the shell as before. It returns `NOT_FOUND_METADATA`.
  * - The route stays ISR (no `connection()`, no request-time API): a dynamic
  *   render streams the shell before the boundary fails, and its status would
- *   already be sent as a 200.
+ *   already be sent as a 200. The unit pins that a route "calls nothing
+ *   dynamic" read only the route files; a `connection()` or `headers()` in a
+ *   layout or an imported component is caught only by the e2e suite (one in
+ *   `app/resources/layout.tsx` turned every `/resources/**` request into a
+ *   500, measured).
  */
 export function DataNotFound() {
   return (

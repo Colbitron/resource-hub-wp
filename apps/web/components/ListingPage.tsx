@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+
 import { DataNotFound, NOT_FOUND_METADATA } from "@/components/DataNotFound";
 import { FilterNav, type FilterTerm } from "@/components/FilterNav";
 import { ListingFocus } from "@/components/ListingFocus";

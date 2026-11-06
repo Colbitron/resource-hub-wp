@@ -16,8 +16,8 @@ import { mockCmsOrigin, mockCmsPort } from "./mock-cms/config.mts";
  * renders `DataNotFound` (`components/DataNotFound.tsx`), which throws
  * `notFound()` inside a Suspense boundary whose fallback is the same page,
  * so its HTML has the page too, stored by ISR with the 404, whoever asks
- * first. And the resource page's 500 when its CMS read fails, which
- * the mock's fault control (`/__mock/faults`, `mock-cms/faults.mts`) brings
+ * first. And the 500 of the resource page and of the page route when the
+ * CMS read fails, which the mock's fault control (`/__mock/faults`, `mock-cms/faults.mts`) brings
  * about. The redirect contract, which none of them may disturb, is checked
  * once here and in full in `resource-page.spec.ts` and `redirects.spec.ts`.
  */
@@ -332,5 +332,29 @@ test.describe("when the CMS fails", () => {
     const recovered = await get(request, path);
     expect(recovered.status(), path).toBe(200);
     expect(await recovered.text()).toContain("Read while the CMS is down");
+  });
+
+  test("a page whose CMS lookup fails is a 500 with no-store, and its body names nothing of the CMS", async ({ request }) => {
+    const slug = unique("cms-down-page");
+    const created = await cms.createPage({ title: "Page read while the CMS is down", slug });
+    const path = created.path;
+    // The page catch-all's first read is the plugin's page lookup.
+    await cms.addFault({ path: "/wp-json/resource-hub/v1/page", status: 500 });
+    await cms.resetRequests();
+
+    const response = await get(request, path);
+    expect(response.status(), path).toBe(500);
+    expect(cacheDirectives(response)).toContain("no-store");
+    expect(response.headers()["x-nextjs-cache"]).toBeUndefined();
+    expectNoCms(await response.text(), path);
+    // The 500 came from the injected fault: the front end did ask the CMS.
+    const { byPath } = await cms.requests();
+    expect(Object.keys(byPath).some((requested) => requested.startsWith("/wp-json/resource-hub/v1/page?"))).toBe(true);
+
+    // Nothing of the failure was stored: with the fault cleared, the same URL renders.
+    await cms.clearFaults();
+    const recovered = await get(request, path);
+    expect(recovered.status(), path).toBe(200);
+    expect(await recovered.text()).toContain("Page read while the CMS is down");
   });
 });

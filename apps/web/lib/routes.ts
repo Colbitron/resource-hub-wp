@@ -17,7 +17,7 @@
  * Builders throw a `RangeError` on a segment the contract does not allow
  * rather than emit a path that routes somewhere else. Callers check untrusted
  * input with `isSlug`, `isTypeSlug` and `parsePageSegment` first: a page turns
- * a bad parameter into `notFound()`, never a throw.
+ * a bad parameter into a 404 (`components/DataNotFound.tsx`), never a throw.
  *
  * Every builder, and every tag builder in `lib/tags.ts`, puts a slug through
  * `canonicalSlug` first, so a slug has one form in paths and tags whether it
@@ -478,7 +478,7 @@ export interface ValidListing {
  * or a page segment that is not a canonical page number 2 or more (`0`,
  * `01`, `1.5`, `x`, and `1`, whose URL is the listing's own and which
  * `proxy.ts` redirects before the route runs). The one definition for
- * `components/ListingPage.tsx`, which answers `null` with `notFound()`, and
+ * `components/ListingPage.tsx`, which answers `null` with `DataNotFound`, and
  * for `lib/path-decision.ts`, which answers the same segments with the
  * not-found page's HTML before the route runs.
  */
@@ -513,7 +513,7 @@ export type ResourcesRequest =
  * The route under `app/resources/` that `/resources/{segments}/` reaches,
  * read off the segments the way the App Router routes them, or `null` when
  * no listing or resource route has that shape and the optional catch-all
- * `[[...rest]]` would answer it with `notFound()`. The table is the route
+ * `[[...rest]]` would answer it with a 404. The table is the route
  * tree: a static `topic/` or `page/` segment wins over `[type]` at its
  * level, so `/resources/topic/x/` is the topic listing and
  * `/resources/page/2/` page 2 of the library, never a resource, and a

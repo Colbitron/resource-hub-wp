@@ -18,7 +18,7 @@ import { wpErrorSchema } from "./schemas/wp-error";
  * - `ok`: a 200 whose body the schema accepted.
  * - `miss`: a WordPress error the caller named as "nothing here" (a 404 for
  *   no such post, a 401 for an unpublished one). The fetcher returns `null`
- *   and the page calls `notFound()`.
+ *   and the page answers a 404 through `DataNotFound`.
  * - `no-such-page`: a WordPress error the caller named as a page number past
  *   the end (core's 400 `rest_post_invalid_page_number`).
  *

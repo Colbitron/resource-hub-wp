@@ -9,8 +9,9 @@ import "@/components/resource.css";
  * `next start` (ADR 0035's consequences and its 2026-11-06 amendment): the
  * response is a 500 with Next.js's `no-store` header, which ISR never
  * stores, so nothing caches or indexes it and the next request renders
- * again; and a `permanentRedirect()` or `notFound()` thrown by the page never
- * reaches this boundary, so the 308 and the 404 are untouched. The 500's body is
+ * again; and a `permanentRedirect()` thrown by the page, or the `notFound()`
+ * its `DataNotFound` throws, never reaches this boundary, so the 308 and the
+ * 404 are untouched. The 500's body is
  * Next.js's empty `__next_error__` document, not the site's shell: this
  * fallback, inside the root layout, renders only after hydration, so a
  * reader without JavaScript gets an empty page. What the boundary changes is

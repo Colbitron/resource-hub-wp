@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+
 import { DataNotFound, NOT_FOUND_METADATA } from "@/components/DataNotFound";
 import { ListingPage, listingMetadata } from "@/components/ListingPage";
 
