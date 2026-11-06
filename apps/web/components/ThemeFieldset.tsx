@@ -23,7 +23,7 @@ import "./theme-toggle.css";
  * Each option's accessible name is "System theme", "Light theme" or "Dark
  * theme": the visible word plus a visually hidden suffix inside the label,
  * so the name stands on its own where the legend is dropped (iOS VoiceOver
- * inside the header landmark, TalkBack with any group), and so it begins
+ * inside a landmark, TalkBack with any group), and so it begins
  * with the visible text for voice control. The legend is visually hidden,
  * never removed. The text is never hidden at narrow widths: at 400% zoom
  * the group wraps instead, so the people who zoom keep the words.
@@ -39,7 +39,7 @@ import "./theme-toggle.css";
  * and the group is invisible but keeps its space, so nothing shifts when it
  * appears. Without JavaScript it never appears, which is right, since the
  * choice could not be applied, and the page follows the system preference;
- * a `<noscript>` style in the root layout then removes the header's slot for
+ * a `<noscript>` style in the root layout then removes the footer's slot for
  * it, so no empty space is kept (`THEME_NOSCRIPT_STYLE` in `lib/theme.ts`).
  */
 

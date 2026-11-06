@@ -40,9 +40,9 @@
 
 /*
  * Not known yet: before hydration has read the stored choice. Invisible but
- * keeping its space, so the header does not move when it appears; gone from
+ * keeping its space, so the footer does not move when it appears; gone from
  * the accessibility tree meanwhile. Without JavaScript the root layout's
- * <noscript> style removes the header's slot instead (lib/theme.ts).
+ * <noscript> style removes the footer's slot instead (lib/theme.ts).
  */
 .rh-theme--pending {
 	visibility: hidden;

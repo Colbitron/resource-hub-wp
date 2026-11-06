@@ -122,9 +122,8 @@ video {
 
 .rh-header__inner {
 	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: var(--rh-space-3) var(--rh-space-4);
+	align-items: baseline;
+	gap: var(--rh-space-4);
 	padding-top: var(--rh-space-4);
 	padding-bottom: var(--rh-space-4);
 }
@@ -140,12 +139,6 @@ video {
 
 .rh-header__name:hover {
 	text-decoration: underline;
-}
-
-/* The theme control at the right; on its own row, still at the right, when the header wraps. */
-.rh-header__theme {
-	margin-left: auto;
-	min-width: 0;
 }
 
 .rh-main {
@@ -164,9 +157,23 @@ video {
 	font-size: var(--rh-text-sm);
 }
 
+/*
+ * The footer's text, then the theme control: one row with the control at
+ * the right where both fit, and the control on a row of its own, at the
+ * left under the text, where they do not.
+ */
 .rh-footer__inner {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--rh-space-4);
 	padding-top: var(--rh-space-4);
 	padding-bottom: var(--rh-space-4);
+}
+
+.rh-footer__theme {
+	min-width: 0;
 }
 
 .rh-footer p {

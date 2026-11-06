@@ -16,9 +16,11 @@ import { ThemeToggle } from "./ThemeToggle";
  * every page. Page content is stacked under `main`, which carries
  * `tabIndex={-1}` so the skip link lands focus on it in every browser.
  *
- * The header holds the site's name and, at its right, the theme control
- * (`ThemeToggle`, the app's one client component besides `ListingFocus`),
- * which wraps under the name when the two do not fit on one line.
+ * The header holds the site's name alone, so it stays one row at every
+ * width. The theme control (`ThemeToggle`, a client component) closes the
+ * footer, after its text: the same place on every page, out of the reading
+ * path, and the last Tab stop. Beside the text where both fit, under it
+ * where they do not.
  */
 export function Shell({ children }: { children: ReactNode }) {
   return (
@@ -31,9 +33,6 @@ export function Shell({ children }: { children: ReactNode }) {
           <Link className="rh-header__name" href="/resources/">
             Resource Hub
           </Link>
-          <div className="rh-header__theme">
-            <ThemeToggle />
-          </div>
         </div>
       </header>
       <main className="rh-shell__inner rh-main" id="main" tabIndex={-1}>
@@ -42,6 +41,9 @@ export function Shell({ children }: { children: ReactNode }) {
       <footer className="rh-footer">
         <div className="rh-shell__inner rh-footer__inner">
           <p>A headless WordPress demonstration: WordPress models the library, Next.js renders it.</p>
+          <div className="rh-footer__theme">
+            <ThemeToggle />
+          </div>
         </div>
       </footer>
     </div>

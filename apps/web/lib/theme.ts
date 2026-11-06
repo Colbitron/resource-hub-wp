@@ -65,10 +65,10 @@ export const THEME_INIT_SCRIPT = [
 
 /**
  * What the root layout puts in a `<noscript>` in `<head>`. With script, the
- * control waits for hydration invisible but keeping its space, so the header
+ * control waits for hydration invisible but keeping its space, so the footer
  * does not move when it appears. Without script it never appears, so that
  * space would be an empty gap for good: this removes the control's slot in
- * the header (`.rh-header__theme`, `components/Shell.tsx`) instead, and the
- * header is laid out as if it had no control.
+ * the footer (`.rh-footer__theme`, `components/Shell.tsx`) instead, and the
+ * footer is laid out as if it had no control.
  */
-export const THEME_NOSCRIPT_STYLE = "<style>.rh-header__theme{display:none}</style>";
+export const THEME_NOSCRIPT_STYLE = "<style>.rh-footer__theme{display:none}</style>";

@@ -7,9 +7,9 @@ import { applyTheme, getServerSnapshot, readTheme, setTheme, subscribe } from "@
 import { ThemeFieldset } from "./ThemeFieldset";
 
 /**
- * The live System / Light / Dark control in the site header: the stored
- * choice from `lib/theme-store.ts`, rendered by `ThemeFieldset`, with the
- * change applied by `setTheme`. One of the two client components in the app
+ * The live System / Light / Dark control at the end of the site footer:
+ * the stored choice from `lib/theme-store.ts`, rendered by `ThemeFieldset`,
+ * with the change applied by `setTheme`. A client component
  * (`apps/web/CLAUDE.md`), because the choice is the reader's and lives in
  * their browser.
  *

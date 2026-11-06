@@ -5,11 +5,11 @@ import { appSiteOrigin } from "./mock-cms/config.mts";
 
 /**
  * The theme control (`components/ThemeToggle.tsx`, `lib/theme.ts`): the
- * System / Light / Dark radios in the site header, the stored choice, the
- * head script that themes the first paint, and what each kind of reader
- * gets. Every check here is on the welcome page at `/`, since the control
- * is in the shell on every page; `specimen.spec.ts` checks the specimen's
- * still copies.
+ * System / Light / Dark radios at the end of the site footer, the stored
+ * choice, the head script that themes the first paint, and what each kind
+ * of reader gets. Every check here is on the welcome page at `/`, since the
+ * control is in the shell on every page; `specimen.spec.ts` checks the
+ * specimen's still copies.
  *
  * The values are never written down here: the dark and the light surface
  * are read from a page that follows the emulated system scheme, and every
@@ -23,6 +23,38 @@ type Choice = keyof typeof NAMES;
 
 function group(page: Page) {
   return page.getByRole("group", { name: "Theme" });
+}
+
+/** Where a focused element is: the skip link, or the landmark it is in, or `null` for none (the page itself). */
+type Stop = { region: "skip" | "banner" | "main" | "contentinfo" | null; name: string; theme: boolean };
+
+async function focusedStop(page: Page): Promise<Stop> {
+  return page.evaluate(() => {
+    const element = document.activeElement;
+    if (element === null || element === document.body) return { region: null, name: "", theme: false };
+    const region = element.classList.contains("rh-skip")
+      ? "skip"
+      : element.closest("header.rh-header")
+        ? "banner"
+        : element.closest("main")
+          ? "main"
+          : element.closest("footer.rh-footer")
+            ? "contentinfo"
+            : null;
+    return { region, name: element.textContent?.trim() ?? "", theme: element.closest("fieldset.rh-theme") !== null };
+  });
+}
+
+/** Presses Tab from the top of the page until the theme control has focus, and returns every stop on the way, the control's last. */
+async function tabToTheme(page: Page): Promise<Stop[]> {
+  const stops: Stop[] = [];
+  for (let presses = 0; presses < 40; presses += 1) {
+    await page.keyboard.press("Tab");
+    const stop = await focusedStop(page);
+    stops.push(stop);
+    if (stop.theme) return stops;
+  }
+  throw new Error(`the theme control was not reached in 40 Tab presses: ${JSON.stringify(stops)}`);
 }
 
 function radio(page: Page, choice: Choice) {
@@ -60,6 +92,10 @@ test.describe("System", () => {
     await page.goto("/");
     await expect(group(page)).toBeVisible();
     await expect(radio(page, "system")).toBeChecked();
+    // In the footer, and only there: the header holds the site's name alone.
+    await expect(page.getByRole("contentinfo").getByRole("group", { name: "Theme" })).toBeVisible();
+    await expect(page.getByRole("banner").getByRole("group")).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("group", { name: "Theme" })).toHaveCount(0);
     await expect(html(page)).not.toHaveAttribute("data-theme");
     expect(await colorScheme(page)).toBe("light dark");
     expect(await stored(page)).toBeNull();
@@ -180,15 +216,30 @@ test.describe("first paint", () => {
 });
 
 test.describe("keyboard", () => {
+  test("comes last: after the skip link, the site's name, the page's content and the footer's links", async ({ page }) => {
+    await page.goto("/");
+    await expect(group(page)).toBeVisible();
+    const stops = await tabToTheme(page);
+    expect(stops[0]).toMatchObject({ region: "skip", name: "Skip to content" });
+    expect(stops[1]).toMatchObject({ region: "banner", name: "Resource Hub" });
+    // Then every link in the welcome page's body, in order, and nothing else.
+    const content = await page.getByRole("main").getByRole("link").allTextContents();
+    expect(content.length).toBeGreaterThan(0);
+    const between = stops.slice(2, -1);
+    expect(between.slice(0, content.length)).toEqual(content.map((name) => ({ region: "main", name: name.trim(), theme: false })));
+    // Then the footer's links, if it has any, in order.
+    const footer = await page.getByRole("contentinfo").getByRole("link").allTextContents();
+    expect(between.slice(content.length)).toEqual(footer.map((name) => ({ region: "contentinfo", name: name.trim(), theme: false })));
+    // And the control, on its checked option.
+    expect(stops.at(-1)).toMatchObject({ region: "contentinfo", theme: true });
+    await expect(radio(page, "system")).toBeFocused();
+  });
+
   test("is one Tab stop; the arrows move the choice and wrap, applying each at once", async ({ page }) => {
     await page.goto("/");
     await expect(group(page)).toBeVisible();
 
-    await page.keyboard.press("Tab");
-    await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
-    await page.keyboard.press("Tab");
-    await expect(page.getByRole("link", { name: "Resource Hub" })).toBeFocused();
-    await page.keyboard.press("Tab");
+    await tabToTheme(page);
     await expect(radio(page, "system")).toBeFocused();
 
     // One more Tab leaves the group: Light and Dark are not stops of their own.
@@ -225,7 +276,7 @@ test.describe("keyboard", () => {
   test("the focused segment shows a focus ring", async ({ page }) => {
     await page.goto("/");
     await expect(group(page)).toBeVisible();
-    for (let i = 0; i < 3; i += 1) await page.keyboard.press("Tab");
+    await tabToTheme(page);
     await expect(radio(page, "system")).toBeFocused();
     const label = page.locator("label[for]", { hasText: "System" });
     const outline = await label.evaluate((node) => {
@@ -239,7 +290,7 @@ test.describe("keyboard", () => {
   test("the focus ring fits inside the group and clear of the next segment, on every option", async ({ page }) => {
     await page.goto("/");
     await expect(group(page)).toBeVisible();
-    for (let i = 0; i < 3; i += 1) await page.keyboard.press("Tab");
+    await tabToTheme(page);
     for (const [index, choice] of (["system", "light", "dark"] as const).entries()) {
       if (index > 0) await page.keyboard.press("ArrowRight");
       await expect(radio(page, choice)).toBeFocused();
@@ -338,15 +389,15 @@ test.describe("without JavaScript", () => {
   }
 
   for (const width of [320, 1280]) {
-    test(`the header keeps no space for the control at ${width}px`, async ({ browser, page }) => {
+    test(`the footer keeps no space for the control at ${width}px`, async ({ browser, page }) => {
       // The reference: a page with JavaScript, with the control's slot taken out.
       await page.setViewportSize({ width, height: 800 });
       await page.goto("/");
       await expect(group(page)).toBeVisible();
-      const withControl = await page.locator(".rh-header").evaluate((node) => node.getBoundingClientRect().height);
+      const withControl = await page.locator(".rh-footer").evaluate((node) => node.getBoundingClientRect().height);
       const withoutControl = await page.evaluate(() => {
-        document.querySelector(".rh-header__theme")?.remove();
-        return document.querySelector(".rh-header")!.getBoundingClientRect().height;
+        document.querySelector(".rh-footer__theme")?.remove();
+        return document.querySelector(".rh-footer")!.getBoundingClientRect().height;
       });
       // Otherwise the comparison below proves nothing.
       expect(withControl).toBeGreaterThan(withoutControl);
@@ -354,8 +405,8 @@ test.describe("without JavaScript", () => {
       const context = await browser.newContext({ javaScriptEnabled: false, viewport: { width, height: 800 }, baseURL: appSiteOrigin() });
       const plain = await context.newPage();
       await plain.goto("/");
-      expect(await plain.locator(".rh-header__theme").boundingBox()).toBeNull();
-      expect(await plain.locator(".rh-header").evaluate((node) => node.getBoundingClientRect().height)).toBe(withoutControl);
+      expect(await plain.locator(".rh-footer__theme").boundingBox()).toBeNull();
+      expect(await plain.locator(".rh-footer").evaluate((node) => node.getBoundingClientRect().height)).toBe(withoutControl);
       await context.close();
     });
   }
@@ -377,7 +428,7 @@ test.describe("forced colours", () => {
     expect(checked.fill).not.toBe(unchecked.fill);
     expect(checked.bar).not.toBe(unchecked.bar);
     expect(checked.barWidth).not.toBe("0px");
-    for (let i = 0; i < 3; i += 1) await page.keyboard.press("Tab");
+    await tabToTheme(page);
     await expect(radio(page, "system")).toBeFocused();
     expect((await read("system")).outline).toBe("solid");
   });
@@ -389,16 +440,16 @@ test.describe("motion", () => {
       await page.emulateMedia({ reducedMotion });
       await page.goto("/");
       await expect(group(page)).toBeVisible();
-      // Every element a theme switch repaints at the top of the page: <html>,
-      // <body>, the header and everything in it, the control's parts among
-      // them, and the two other landmarks. A list of selectors would miss an
+      // Every element of the shell a theme switch repaints: <html>, <body>,
+      // the header and the footer and everything in them, the control's
+      // parts among them, and `main`. A list of selectors would miss an
       // element added later; this walks the tree. `transitionDuration` is a
       // list, one entry per transitioned property.
       const durations = await page.evaluate(() => {
         const elements = [
           document.documentElement,
           document.body,
-          ...document.querySelectorAll("header, header *, main, footer"),
+          ...document.querySelectorAll("header, header *, main, footer, footer *"),
         ];
         return elements.map((element) => {
           // getAttribute, not className, which is an object on SVG elements.

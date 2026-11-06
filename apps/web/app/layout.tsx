@@ -53,7 +53,7 @@ export function generateMetadata(): Metadata {
 //
 // The <noscript> beside it is the one style rule outside a component's
 // stylesheet, because only the browser knows whether script runs: without
-// it the control can never show, so its slot in the header is removed
+// it the control can never show, so its slot in the footer is removed
 // rather than kept invisible (lib/theme.ts, `THEME_NOSCRIPT_STYLE`).
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (

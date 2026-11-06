@@ -71,7 +71,7 @@ import "./specimen.css";
  * filter rows with a term selected, pagination at its first and last pages,
  * where Previous and Next are left out rather than disabled (the
  * component's rule), the theme control in each of its three states (the
- * header's own copy is live and shows the stored choice; these are still),
+ * footer's own copy is live and shows the stored choice; these are still),
  * and a listing's empty state.
  */
 
@@ -436,7 +436,7 @@ export default function SpecimenFixturePage() {
         </div>
         <div className="rh-specimen__state">
           <h3>Theme control</h3>
-          <p>The header&rsquo;s control with each option checked. These copies change nothing; the header&rsquo;s is live.</p>
+          <p>The footer&rsquo;s control with each option checked. These copies change nothing; the footer&rsquo;s is live.</p>
           <div className="rh-specimen__themes">
             {THEME_CHOICES.map((choice) => (
               <StillThemeFieldset key={choice} name={`specimen-theme-${choice}`} value={choice} />

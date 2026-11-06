@@ -66,10 +66,10 @@ for (const width of WIDTHS) {
         for (const family of headingFonts) {
           expect(family, `the specimen was drawn in ${headingFonts.join(", ")}, not Figtree: the font had not loaded`).toMatch(/^Figtree\b/);
         }
-        // The header's theme control shows once hydration has read the stored
+        // The footer's theme control shows once hydration has read the stored
         // choice (none here, so System); wait for it, so the capture never
-        // catches the header before it.
-        await expect(page.getByRole("banner").getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
+        // catches the footer before it.
+        await expect(page.getByRole("contentinfo").getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
         // The states section's link, focused as a keyboard would, so the
         // baseline shows the focus ring (`:focus-visible`).
         const focused = page.locator("#specimen-focus");

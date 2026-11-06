@@ -9,7 +9,7 @@ import { mockCms } from "./mock-cms/client.mts";
  * design work and the screenshot target (`specimen.screenshot.ts`): that
  * every token it shows has a value on the page, that it renders each
  * component and state (the theme control's three states among them, beside
- * the header's live one), that its copy of the listing's empty state matches
+ * the footer's live one), that its copy of the listing's empty state matches
  * the real route's, that it holds at phone width, and that it passes the
  * same axe scan as the sampled pages (`a11y.spec.ts`), so the reference is
  * itself accessible. Which tokens it shows is checked against `tokens.css`
@@ -44,7 +44,7 @@ test("shows the shell, the filters, a card of each type, pagination and prose", 
   }
 });
 
-test("shows the theme control with each option checked, and the header's live one", async ({ page }) => {
+test("shows the theme control with each option checked, and the footer's live one", async ({ page }) => {
   await page.goto(SPECIMEN_PATH);
   const states = page.locator("section[aria-labelledby='specimen-states']").getByRole("group", { name: "Theme" });
   await expect(states).toHaveCount(3);
@@ -57,8 +57,10 @@ test("shows the theme control with each option checked, and the header's live on
   // The three copies are three groups: a copy's radios share a name with no other copy's.
   const names = await states.locator("input").evaluateAll((inputs) => new Set(inputs.map((input) => (input as HTMLInputElement).name)).size);
   expect(names).toBe(3);
-  // The header's own control is live and separate: System, nothing stored.
-  const live = page.getByRole("banner").getByRole("group", { name: "Theme" });
+  // The footer's own control is live and separate: System, nothing stored.
+  // The header has none: it holds the site's name alone.
+  await expect(page.getByRole("banner").getByRole("group")).toHaveCount(0);
+  const live = page.getByRole("contentinfo").getByRole("group", { name: "Theme" });
   await expect(live).toBeVisible();
   await expect(live.getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
 
