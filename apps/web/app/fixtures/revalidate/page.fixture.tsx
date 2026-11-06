@@ -6,11 +6,11 @@ import { wpResourceListSchema } from "@/lib/wp/schemas/rest";
 
 /**
  * A test-only page for e2e/revalidate.spec.ts: one tagged, cached fetch of a
- * resource from the CMS, so the spec can prove the Data Cache serves it
- * (one upstream request for two page loads), that the mock's upstream
- * `Cache-Control: no-cache` does not stop Next.js caching it (ADR 0023's
- * open question), and that a `POST /api/revalidate/` for the resource makes
- * the next load fetch again. It is a route only under `RH_FIXTURES=1`, as
+ * resource from the CMS, so the spec can prove the Data Cache serves it (one
+ * upstream request for two page loads), that the mock's upstream
+ * `Cache-Control: no-cache` does not stop Next.js caching it (which ADR 0043
+ * relies on), and that a `POST /api/revalidate/` for the resource makes the
+ * next load fetch again. It is a route only under `RH_FIXTURES=1`, as
  * `next.config.ts` adds `.fixture.tsx` to the page extensions then.
  *
  * The fetch is shaped as the data layer's will be (ADR 0043): `force-cache`,

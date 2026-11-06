@@ -121,12 +121,12 @@ test.describe("the 404 page", () => {
     // one here is thrown, makes Next.js send the 404 as `<html
     // id="__next_error__">` with an empty body and the not-found page only in
     // the inlined RSC payload, which the client renders on hydration; it has
-    // no server-side fallback to the prerendered not-found page (ADR 0050's
-    // 2026-11-05 amendment). The same document is what ISR stores for the
-    // resource page's and the catch-all's 404s (measured 2026-11-06), so
-    // storing changed nothing here. If this starts failing after an upgrade,
-    // the HTML carries the page: fold these paths into the unmatched URL's
-    // tests and amend the ADR.
+    // no server-side fallback to the prerendered not-found page (a known cost
+    // in `docs/architecture/caching.md`, issue #46). The same document is
+    // what ISR stores for the resource page's and the catch-all's 404s
+    // (measured 2026-11-06), so storing changed nothing here. If this starts
+    // failing after an upgrade, the HTML carries the page: fold these paths
+    // into the unmatched URL's tests and update that page.
     for (const path of [...FROM_NOT_FOUND, UNMATCHED]) {
       const html = await (await get(request, path)).text();
       expect(html, path).toContain('id="__next_error__"');

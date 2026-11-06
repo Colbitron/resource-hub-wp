@@ -1,7 +1,8 @@
 /*
  * The page shell: the base styles the front end owns, built on the shared
- * tokens (ADR 0045). The shared package owns the tokens and the component
- * styles; this file owns only the document, the landmarks and the skip link.
+ * tokens (see packages/ui/README.md). The shared package owns the tokens and
+ * the component styles; this file owns only the document, the landmarks and the
+ * skip link.
  */
 
 *,

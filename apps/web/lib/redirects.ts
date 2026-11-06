@@ -11,9 +11,9 @@ import type { WpResource } from "./wp/schemas/rest";
 
 /**
  * What a request for `/resources/{type}/{slug}/` gets: the resource to
- * render, a computed single-hop 308 to its canonical URL, or a 404 (root
- * `CLAUDE.md`, "Public URLs"; ADRs 0025, 0029, 0035 and 0049, and the
- * 2026-11-05 amendment to ADR 0035 for the mechanism).
+ * render, a computed single-hop 308 to its canonical URL, or a 404 (ADR
+ * 0025). The URL shape and the resolve route are in `packages/ui/README.md`;
+ * the mechanism is in `docs/architecture/caching.md`.
  *
  * The slug is the identity and the type segment is checked:
  *
@@ -43,29 +43,29 @@ import type { WpResource } from "./wp/schemas/rest";
  * - Across changes, the target is always computed from the CMS's current
  *   answer, and the stored copy of a decision lives only until the event for
  *   the change that made it wrong, which clears the tags and paths of both
- *   the old and the new state (ADR 0046), so a type changed and changed back
+ *   the old and the new state (ADR 0043), so a type changed and changed back
  *   cannot loop either: after each event the old URL asks again. The data
  *   layer's Data Cache makes that cheap.
  *
  * How the 308 reaches the wire: `resourceForRequest` calls Next.js's
  * `permanentRedirect()` from an ISR route (`revalidate = 3600`, a
- * `generateStaticParams` returning `[]`), which renders the decision once
- * per URL and stores whatever it was, a 200, a 308 or a 404, under the tags
- * of the fetches that decided it, so the revalidation event for any change
- * to the resource clears a stored redirect at its old URL and a stored 404
- * at its new one (ADR 0035's 2026-11-06 amendment, measured). The stored
- * response leaves Next.js with `s-maxage` alone, which a browser ignores and
- * Chromium then keeps a 308 for ever, so the `headers()` rule in
- * `next.config.ts` puts `public, max-age=0, must-revalidate` on every
- * response of the route. Call it before anything is rendered and outside any
- * Suspense boundary or `loading.tsx`: once streaming has begun, Next.js can
- * only send a 200 with a meta refresh. The route must not call a
- * request-time API (`connection()`, `headers()`) or fetch with `no-store`,
- * since a dynamic bail-out in an ISR route with no prerendered params is a
- * runtime 500. A mixed-case request never reaches the route: `proxy.ts`
- * sends its own `no-store` 308 first, because Next.js keys a stored entry by
- * the decoded path and a case-insensitive file system shares the key
- * between `/A/` and `/a/`; the mixed-case branch below is a second line.
+ * `generateStaticParams` returning `[]`), which renders the decision once per
+ * URL and stores whatever it was, a 200, a 308 or a 404, under the tags of the
+ * fetches that decided it, so the revalidation event for any change to the
+ * resource clears a stored redirect at its old URL and a stored 404 at its new
+ * one (measured; see `docs/architecture/caching.md`). The stored response
+ * leaves Next.js with `s-maxage` alone, which a browser ignores and Chromium
+ * then keeps a 308 for ever, so the `headers()` rule in `next.config.ts` puts
+ * `public, max-age=0, must-revalidate` on every response of the route. Call it
+ * before anything is rendered and outside any Suspense boundary or
+ * `loading.tsx`: once streaming has begun, Next.js can only send a 200 with a
+ * meta refresh. The route must not call a request-time API (`connection()`,
+ * `headers()`) or fetch with `no-store`, since a dynamic bail-out in an ISR
+ * route with no prerendered params is a runtime 500. A mixed-case request
+ * never reaches the route: `proxy.ts` sends its own `no-store` 308 first,
+ * because Next.js keys a stored entry by the decoded path and a
+ * case-insensitive file system shares the key between `/A/` and `/a/`; the
+ * mixed-case branch below is a second line.
  *
  * `decideResourceRequest` is the decision without Next.js, for the unit
  * tests and for a caller that builds the response itself.
@@ -136,8 +136,8 @@ export async function decideResourceRequest(
   }
   if (isCanonicalSegment(typeSegment, canonicalSlug(resolved.type)) && isCanonicalSegment(slugSegment, canonicalSlug(resolved.slug))) {
     // Resolve names the URL that was just asked for, so the slug lookup's
-    // cached miss is stale next to it (ADR 0049). A redirect to the same URL
-    // would loop; a 404 until the next event clears the miss does not.
+    // cached miss is stale next to it. A redirect to the same URL would
+    // loop; a 404 until the next event clears the miss does not.
     return NOT_FOUND;
   }
   return { kind: "redirect", path: pathFor(resolved.type, resolved.slug) };

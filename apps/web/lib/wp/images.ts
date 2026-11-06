@@ -7,8 +7,9 @@ import type { WpResource } from "./schemas/rest";
 /**
  * A resource's featured image, made safe for `next/image`: a same-origin
  * `/media/…` path (ADR 0040) with both dimensions, or nothing. The image
- * trust rule is ADR 0047's for images in a body, held to a stricter bar
- * because `next/image` needs a size (ADR 0039):
+ * trust rule is the one for images in a body (the `lib/content/render.tsx`
+ * docblock), held to a stricter bar because `next/image` needs a size to
+ * reserve the space, so a late image moves nothing (`apps/web/README.md`):
  *
  * 1. The embedded media is the first entry of `_embedded['wp:featuredmedia']`
  *    (core embeds one); a `null` entry, which is how the reader schema keeps

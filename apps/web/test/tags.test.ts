@@ -255,10 +255,10 @@ describe("eventsToInvalidations", () => {
   });
 
   it("covers only the pre-request state of a trash that followed an update in the same request", () => {
-    // ADR 0014: the hook renamed the resource to renamed-example and then
-    // trashed it; the merged event carries the state from before the request
-    // at the top level, and previous is null. renamed-example was never
-    // public, so nothing names it.
+    // The batch semantics (packages/ui/README.md): the hook renamed the
+    // resource to renamed-example and then trashed it; the merged event
+    // carries the state from before the request at the top level, and previous
+    // is null. renamed-example was never public, so nothing names it.
     const result = eventsToInvalidations([
       resource({
         event: "trash",
@@ -288,7 +288,7 @@ describe("eventsToInvalidations", () => {
     }
   });
 
-  it("covers an update whose previous.types stands in the current type (ADR 0016)", () => {
+  it("covers an update whose previous.types stands in the current type (packages/ui/README.md)", () => {
     expect(
       eventsToInvalidations([
         resource({
@@ -572,7 +572,7 @@ describe("eventsToInvalidations", () => {
   });
 });
 
-describe("fetch tags (ADR 0046)", () => {
+describe("fetch tags (docs/architecture/caching.md)", () => {
   it("tag every listing page with its filter's tags and terms", () => {
     expect(listingTags()).toEqual(["resources", "terms"]);
     expect(listingTags({ type: "webinar" })).toEqual(["type:webinar", "terms"]);
@@ -623,13 +623,14 @@ describe("fetch tags (ADR 0046)", () => {
   });
 });
 
-describe("the tagging rule, against ADR 0046's table written out by hand", () => {
+describe("the tagging rule, against docs/architecture/caching.md written out by hand", () => {
   /*
-   * Each fetch's tags are written here from the table's text, as literal
-   * strings, without lib/tags.ts. The functions are checked against them,
-   * and coverage is checked against them, so the rule is not proved with the
-   * code it checks. Every slug below is already canonical (lower case,
-   * percent-encoded), so a literal tag is the tag Next.js stores.
+   * Each fetch's tags are written here from the rules in
+   * docs/architecture/caching.md, as literal strings, without lib/tags.ts. The
+   * functions are checked against them, and coverage is checked against them,
+   * so the rule is not proved with the code it checks. Every slug below is
+   * already canonical (lower case, percent-encoded), so a literal tag is the
+   * tag Next.js stores.
    */
   const adr = {
     library: ["resources", "terms"],
@@ -661,7 +662,7 @@ describe("the tagging rule, against ADR 0046's table written out by hand", () =>
 
   interface Fetch {
     readonly name: string;
-    /** The tags ADR 0046's table gives this fetch, written out by hand. */
+    /** The tags docs/architecture/caching.md gives this fetch, written out by hand. */
     readonly adr: readonly string[];
     /** The tags lib/tags.ts gives it. */
     readonly code: readonly string[];

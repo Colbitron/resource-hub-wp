@@ -17,11 +17,11 @@ import "./listing.css";
 
 /**
  * The one listing behind the eight listing routes under `app/resources/`
- * (root `CLAUDE.md`, "Public URLs"; ADRs 0024, 0034): the library, a type, a
- * topic, a type within a topic, and page `n` of each. A route file parses
- * its segments and hands them here as a `ListingRequest`; this module
- * validates them, reads the data layer and renders the page, and
- * `listingMetadata` gives the route its `generateMetadata`.
+ * (ADR 0024; the URL shape is in `packages/ui/README.md`): the library, a type,
+ * a topic, a type within a topic, and page `n` of each. A route file parses its
+ * segments and hands them here as a `ListingRequest`; this module validates
+ * them, reads the data layer and renders the page, and `listingMetadata` gives
+ * the route its `generateMetadata`.
  *
  * What a request gets:
  *
@@ -36,24 +36,27 @@ import "./listing.css";
  * - A page with no resources is a 200 with the empty state, when both terms
  *   exist: a filter combination with nothing in it is not a missing page.
  * - A resource the reader schema refuses is left off the page and the rest
- *   render (ADR 0049's per-item parsing, `ResourceListing.skipped`); the
- *   count and the pagination stay the CMS's, so pages never shift. A page
- *   whose resources all fail, on a list too short to throw, is the empty
- *   state with a 200, saying the resources on the page can't be shown
- *   rather than that there are none, since the count above it says there
- *   are. That 200 is stored for up to the ISR interval, so its copy makes no
- *   claim about when it will clear, and its metadata says `noindex`. A list
- *   of four or more on which more than half fail throws in the data layer
- *   and is a 500 instead (ADR 0049's threshold).
+ *   render (the data layer parses a list one item at a time and reports
+ *   `ResourceListing.skipped`; see `lib/wp/fetch.ts`); the count and the
+ *   pagination stay the CMS's, so pages never shift. A page whose resources all
+ *   fail, on a list too short to throw, is the empty state with a 200, saying
+ *   the resources on the page can't be shown rather than that there are none,
+ *   since the count above it says there are. That 200 is stored for up to the
+ *   ISR interval, so its copy makes no claim about when it will clear, and its
+ *   metadata says `noindex`. A list of four or more on which more than half
+ *   fail throws in the data layer and is a 500 instead
+ *   (`LIST_FAILURE_MIN_ITEMS` in `lib/wp/fetch.ts`).
  *
- * The routes are ISR (`export const revalidate = 3600`, the data layer's
- * interval as a literal, ADR 0049, and `generateStaticParams` returning `[]`,
- * so the build asks the CMS for nothing and each page renders on its first
- * request). Every fetch here is tagged by the data layer per ADR 0046, so a
- * revalidation event from the CMS clears the page; nothing here reads
- * `searchParams`, `headers()` or `connection()`, which would make the route
- * dynamic (ADR 0034, and ADR 0035's measurement of `connection()` with an
- * empty `generateStaticParams`: a 500 on every request).
+ * The routes are ISR (ADR 0043: `export const revalidate = 3600`, the data
+ * layer's interval as a literal, and `generateStaticParams` returning `[]`, so
+ * the build asks the CMS for nothing and each page renders on its first
+ * request). Every fetch here is tagged by the data layer (the tags each event
+ * clears are in `docs/architecture/caching.md`), so a revalidation event from
+ * the CMS clears the page; nothing here reads `searchParams`, `headers()` or
+ * `connection()`, which would make the route dynamic (ADR 0024 keeps filters
+ * out of `searchParams`, and `connection()` with an empty
+ * `generateStaticParams` measured as a 500 on every request; see
+ * `docs/architecture/caching.md`).
  *
  * Term names are shown as plain text through `plainText`, since WordPress
  * stores `&` as `&amp;` in a term name.
@@ -167,7 +170,8 @@ export async function listingMetadata(request: ListingRequest): Promise<Metadata
     title: valid.page === 1 ? name : `${name}, page ${valid.page}`,
     // A path, which the root layout's `metadataBase` (from the server-only
     // `SITE_URL`) makes absolute; relative when `SITE_URL` is unset, as in
-    // local work (ADR 0050). The CMS's absolute URLs are never used (ADR 0040).
+    // local work (see apps/web/README.md). The CMS's absolute URLs are never
+    // used (ADR 0040).
     alternates: { canonical: listingPath(valid.filter, valid.page) },
     ...(noneShowable(listing, cardCount) ? { robots: { index: false } } : {}),
   };

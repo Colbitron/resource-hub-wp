@@ -11,10 +11,11 @@ import { getTermBySlug } from "./terms";
  * schema relies on for terms and the featured image: a page of a listing,
  * one by slug, one by ID, and several by ID in a given order.
  *
- * Every read of the collection is parsed per item (`cmsGetList`, ADR 0049):
- * a resource the reader schema refuses is left out with a warning, and an
- * answer of four or more resources in which more than half fail throws a
- * `CmsError`. The read by ID is one object and fails as a whole.
+ * Every read of the collection is parsed per item (`cmsGetList` in
+ * `fetch.ts`, whose docblock holds the rule): a resource the reader schema
+ * refuses is left out with a warning, and an answer of four or more
+ * resources in which more than half fail throws a `CmsError`. The read by
+ * ID is one object and fails as a whole.
  */
 
 /** Resources per listing page: divides into rows of two, three and four cards. */
@@ -131,7 +132,7 @@ export async function listResources(options: ListResourcesOptions): Promise<Reso
  * The published resource whose slug is `slug`, or `null`. A slug that cannot
  * be one (`isSlug`) is `null` without a request. The slug is canonicalised
  * first, so `Example` reads `example`: the data layer only normalises, and
- * the page redirects a non-canonical URL (ADR 0049). The canonical form is
+ * the page redirects a non-canonical URL (ADR 0025). The canonical form is
  * the one WordPress stores, sent as the query value so the CMS compares it
  * as stored.
  *
@@ -191,6 +192,11 @@ export async function getResourceBySlug(slug: string): Promise<WpResource | null
  * for a draft or a trashed post. Neither error is kept by the Data Cache,
  * which stores only 200s, so a miss is asked again on the next render.
  *
+ * Treating the 401 as a miss is right for core, but if a REST-lockdown
+ * plugin on the CMS answered every anonymous reader with 401, every by-ID
+ * read would become a 404 page, while the list and slug reads, which treat
+ * any 401 as an error, would throw and fail loudly.
+ *
  * Tagged `resourceByIdTags()`.
  */
 export async function getResourceById(id: number): Promise<WpResource | null> {
@@ -228,7 +234,8 @@ export interface GetResourcesByIdsOptions {
 /**
  * The published resources among `ids`, in the order given (`include` with
  * `orderby=include`): for the related section, after the plugin's related
- * route has chosen and ordered them (ADR 0030). An ID that is not published
+ * route has chosen and ordered them. That route is not built yet (issue #50;
+ * the contract is in `packages/ui/README.md`). An ID that is not published
  * is simply absent. Repeated IDs are asked for once; no IDs is an empty list
  * without a request. Throws a `RangeError` on a value that is not a post ID,
  * on more than 100 IDs, or on a bad `hostSlug`: the caller passes IDs from a
@@ -240,7 +247,7 @@ export interface GetResourcesByIdsOptions {
  * unpublished one, and logged. For fewer than four IDs that holds even when
  * every resource fails, which gives an empty list. For four or more, more
  * than half failing throws a `CmsError`, a systematic fault the page that
- * renders the section must contain (ADR 0049).
+ * renders the section must contain.
  */
 export async function getResourcesByIds(
   ids: readonly number[],

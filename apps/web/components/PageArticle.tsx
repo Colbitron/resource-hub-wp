@@ -18,13 +18,13 @@ import "./prose.css";
  * its canonical path.
  *
  * The body is `content.rendered` through the one server-side pass
- * (`renderContent`, ADR 0047), which sanitises it and rewrites its URLs, with
- * `postId` so a related-resources block in the page excludes the page's own
- * ID whatever its HTML says. A password-protected page is never served: the
- * plugin answers none, and the decision refuses one whose `content.protected`
- * is set. Pages carry no featured image here: the content model gives pages
- * no meta of their own and the front end shows what core's pages endpoint
- * gives.
+ * (`renderContent`, whose docblock holds the rules; ADR 0040), which sanitises
+ * it and rewrites its URLs, with `postId` so a related-resources block in the
+ * page excludes the page's own ID whatever its HTML says. A password-protected
+ * page is never served: the plugin answers none, and the decision refuses one
+ * whose `content.protected` is set. Pages carry no featured image here: the
+ * content model gives pages no meta of their own and the front end shows what
+ * core's pages endpoint gives.
  */
 
 /** The page's view, computed once per render and shared by the component and the metadata. */
@@ -49,10 +49,10 @@ function pageView(page: WpPage, path: string): PageView {
 }
 
 /**
- * The metadata for a page: its title (the root layout's template adds the
- * site name), its excerpt as the description or none, and its canonical
- * path, which the root layout's `metadataBase` makes absolute (ADR 0050's
- * amendment). The CMS's absolute `link` is never used (ADR 0040).
+ * The metadata for a page: its title (the root layout's template adds the site
+ * name), its excerpt as the description or none, and its canonical path, which
+ * the root layout's `metadataBase` makes absolute (see `apps/web/README.md`).
+ * The CMS's absolute `link` is never used (ADR 0040).
  */
 export function pageMetadata(rendered: Extract<RenderedPage, { kind: "render" }>): Metadata {
   const view = pageView(rendered.page, rendered.path);

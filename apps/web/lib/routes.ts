@@ -1,7 +1,7 @@
 /**
  * The front end's public URL vocabulary: the path of every listing and of a
- * single resource, and the checks on the segments that go into them (root
- * `CLAUDE.md`, "Public URLs"; ADRs 0024 and 0034).
+ * single resource, and the checks on the segments that go into them (ADR
+ * 0024; the URL shape is in `packages/ui/README.md`).
  *
  * - `/resources/`, `/resources/{type}/`, `/resources/topic/{topic}/` and
  *   `/resources/{type}/topic/{topic}/` are the listings; page `n` of any of

@@ -16,12 +16,12 @@ import "./prose.css";
 import "./resource.css";
 
 /**
- * The single resource page's content (root `CLAUDE.md`, "Public URLs" and
- * "Block marker"; ADRs 0035, 0037, 0040, 0047): one `<article>` with the
- * title, a meta line (the type, linked to its listing; the published date;
- * the topics, linked to theirs), the featured image, the summary, the body
- * and the source link. `resourceMetadata` gives the route its
- * `generateMetadata` from the same data.
+ * The single resource page's content (ADRs 0024 and 0040; the URL shape and the
+ * block marker, whose related list is not built yet, issue #50, are in
+ * `packages/ui/README.md`): one `<article>` with the title, a meta line (the
+ * type, linked to its listing; the published date; the topics, linked to
+ * theirs), the featured image, the summary, the body and the source link.
+ * `resourceMetadata` gives the route its `generateMetadata` from the same data.
  *
  * The route hands over a `RenderedResource` from `resourceForRequest`
  * (`lib/redirects.ts`), so by the time this renders the redirect and 404
@@ -90,16 +90,15 @@ function resourceView(rendered: RenderedResource): ResourceView {
 }
 
 /**
- * The metadata for the resource: its title (the root layout's template adds
- * the site name), its summary as the description, or none rather than the
- * site's when it has no summary, its canonical path, and Open Graph fields
- * with the featured image's `/media/…` path when there is a trusted one. The
- * canonical, `og:url` and `og:image` are paths, which the root layout's
- * `metadataBase`, from the server-only `SITE_URL`, makes absolute on the
- * public origin (ADR 0050's 2026-11-05 amendment); with `SITE_URL` unset, as
- * in local work, the first two stay relative and Next.js resolves
- * `og:image` against the deployment's URL. The CMS's absolute URLs are never
- * used (ADR 0040).
+ * The metadata for the resource: its title (the root layout's template adds the
+ * site name), its summary as the description, or none rather than the site's
+ * when it has no summary, its canonical path, and Open Graph fields with the
+ * featured image's `/media/…` path when there is a trusted one. The canonical,
+ * `og:url` and `og:image` are paths, which the root layout's `metadataBase`,
+ * from the server-only `SITE_URL`, makes absolute on the public origin (see
+ * `apps/web/README.md`); with `SITE_URL` unset, as in local work, the first two
+ * stay relative and Next.js resolves `og:image` against the deployment's URL.
+ * The CMS's absolute URLs are never used (ADR 0040).
  */
 export function resourceMetadata(rendered: RenderedResource): Metadata {
   const view = resourceView(rendered);
@@ -172,10 +171,11 @@ export function ResourceArticle({ rendered }: { rendered: RenderedResource }) {
       {view.description !== null && <p className="rh-resource__summary">{view.description}</p>}
       <div className="rh-resource__body rh-prose">
         {/*
-         * The related-resources block (ADR 0037): the pass finds the marker
-         * and hands it to `renderBlock`, whose default renders the CMS's own
-         * fallback list. Slice 4 passes `renderBlock` here to swap the marker
-         * for `<RelatedResources>`, fetched with the `topic:{slug}` tag.
+         * The related-resources block, not built yet (issue #50; the marker
+         * is in `packages/ui/README.md`): the pass finds the marker and hands
+         * it to `renderBlock`, whose default renders the CMS's own fallback
+         * list. Slice 4 passes `renderBlock` here to swap the marker for
+         * `<RelatedResources>`, fetched with the `topic:{slug}` tag.
          */}
         {renderContent(resource.content.rendered, cmsUrls(), { postId: resource.id })}
       </div>

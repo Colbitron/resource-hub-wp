@@ -1,7 +1,8 @@
 /**
  * Cache tags, which tags each data-layer fetch carries, and what a
- * revalidation batch invalidates (root `CLAUDE.md`, "Revalidation request" and
- * "Public URLs"; ADRs 0014 to 0017, 0043 and 0046).
+ * revalidation batch invalidates. The events and their states are in
+ * `packages/ui/README.md`, the union rule and `terms` in ADR 0043, and the
+ * table of what each event clears in `docs/architecture/caching.md`.
  *
  * The tags are `resources`, `terms`, `resource:{slug}`, `topic:{slug}`,
  * `type:{slug}` and `pages`. Every fetch in the data layer carries the ones the functions
@@ -119,7 +120,7 @@ export function typeTag(slug: string): string {
 }
 
 /*
- * Fetch tags: the data-layer tagging rule (ADR 0046). Each function names the
+ * Fetch tags: the data-layer tagging rule (ADR 0043). Each function names the
  * tags one kind of fetch carries. They throw a `RangeError` on a bad slug, so
  * a page checks its parameters with `isSlug` and `isTypeSlug` first and calls
  * `notFound()` on a bad one.

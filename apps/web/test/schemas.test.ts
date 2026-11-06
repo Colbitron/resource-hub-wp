@@ -31,7 +31,7 @@ import { wpErrorSchema } from "../lib/wp/schemas/wp-error";
  * `packages/ui/fixtures/valid/` parses and every invalid one is rejected. The
  * conformance runs use the strict mirrors, which reject unknown keys as the
  * JSON Schemas do; the readers the data layer parses with differ only there
- * (ADR 0010, amended 2026-11-05). Then it parses the core REST payloads
+ * (ADR 0010). Then it parses the core REST payloads
  * captured from a real WordPress.
  */
 

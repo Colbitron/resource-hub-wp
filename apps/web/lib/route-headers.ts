@@ -13,10 +13,11 @@ export interface RouteHeaders {
  * too. `max-age=0` makes a browser's copy stale at once and `must-revalidate`
  * forbids using it without asking, so a stored 308 is followed afresh on
  * every navigation and a type changed and changed back, or a front page set
- * and unset, cannot loop (ADR 0025's evidence: with a `max-age`, Chromium,
- * Firefox and WebKit all asked again). The same header on a 200 and a 404
- * costs nothing a browser was not already doing: Next.js's ISR responses
- * carry no validator, so a browser refetched them anyway.
+ * and unset, cannot loop (ADR 0025; measured: with a `max-age`, Chromium,
+ * Firefox and WebKit all asked again, see `docs/architecture/caching.md`).
+ * The same header on a 200 and a 404 costs nothing a browser was not
+ * already doing: Next.js's ISR responses carry no validator, so a browser
+ * refetched them anyway.
  */
 export const REVALIDATE_EACH_TIME = "public, max-age=0, must-revalidate";
 
@@ -29,7 +30,7 @@ export const REVALIDATE_EACH_TIME = "public, max-age=0, must-revalidate";
  * page under a type called `topics` and matches. Next.js matches sources
  * with an optional trailing slash and without regard to case, so the proxy's
  * mixed-case 308 is matched too; it sets `no-store` itself and keeps it
- * (measured on 16.4.5, ADR 0035's 2026-11-06 amendment).
+ * (measured on 16.4.5; see `docs/architecture/caching.md`).
  */
 export const RESOURCE_ROUTE_SOURCE = "/resources/:type((?!(?:topic|page)/)[^/]+)/:slug";
 
@@ -45,11 +46,11 @@ export const RESOURCE_ROUTE_SOURCE = "/resources/:type((?!(?:topic|page)/)[^/]+)
 export const PAGES_ROUTE_SOURCE = `/:path((?!(?:${RESERVED_ROOT_SEGMENTS.join("|")})(?:/|$)).*)?`;
 
 /**
- * The `headers()` rules for `next.config.ts` (ADR 0035's and ADR 0052's
- * 2026-11-06 amendments): the resource page and the pages catch-all are ISR
- * and store their computed 308s like their 200s, Next.js serves a stored
- * response with `s-maxage` and no `max-age`, and Chromium keeps a 308 with
- * no `max-age` for ever, which no revalidation can undo. Next.js keeps a
+ * The `headers()` rules for `next.config.ts` (ADR 0025; the mechanism is in
+ * `docs/architecture/caching.md`): the resource page and the pages catch-all
+ * are ISR and store their computed 308s like their 200s, Next.js serves a
+ * stored response with `s-maxage` and no `max-age`, and Chromium keeps a 308
+ * with no `max-age` for ever, which no revalidation can undo. Next.js keeps a
  * header set by these rules on an ISR response rather than its own
  * (`sendRenderResult` sets `Cache-Control` only when none is set) and still
  * answers from its route cache; a 500 keeps Next.js's `no-store`, which it

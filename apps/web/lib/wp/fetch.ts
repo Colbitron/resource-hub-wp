@@ -11,7 +11,7 @@ import { wpErrorSchema } from "./schemas/wp-error";
 /**
  * The one way the data layer reads the CMS: a GET under `WP_API_URL`, made on
  * the server (ADR 0040), cached in the Next.js Data Cache with the tags the
- * caller fixed from the request (ADRs 0043, 0046), bounded by a timeout, and
+ * caller fixed from the request (ADR 0043), bounded by a timeout, and
  * parsed with a reader schema. What comes back is one of three outcomes the
  * fetchers turn into plain values:
  *
@@ -27,36 +27,38 @@ import { wpErrorSchema } from "./schemas/wp-error";
  * refuses. Redirects are never followed (`redirect: "error"`): a followed
  * one (http to https, a `www` host, a moved CMS) would cache the final 200
  * under the original URL and hide a `WP_API_URL` that needs changing, so it
- * fails the render with reason `redirect` instead (ADR 0049). Its message
- * names the endpoint's path under the API base and never the CMS's origin.
+ * fails the render with reason `redirect` instead. Its message names the
+ * endpoint's path under the API base and never the CMS's origin.
  *
- * A collection (`cmsGetList`) is parsed one element at a time instead (ADR
- * 0049, amended 2026-11-05): an element the item schema refuses is skipped
- * with a `console.warn`, so one bad resource or term cannot take down every
- * listing it appears in. A list of `LIST_FAILURE_MIN_ITEMS` (4) or more
- * elements in which more than half fail throws, because that is a
- * systematic break, not a few bad items; a shorter list, or one in which
- * half or fewer fail, only skips. Each skipped element gets a warning naming
- * the endpoint path, its position and ID and the paths of its failing
- * fields, and each list with any skipped gets one summary warning,
- * `CMS list {path}: skipped {n} of {total}`, for log-based alerting to
- * match. Those warnings are the only thing here that logs, and never name a
- * value or the CMS origin. A list is parsed, and warned about, once per
- * render however many times it is read (`parsedLists`).
+ * A collection (`cmsGetList`) is parsed one element at a time instead: an
+ * element the item schema refuses is skipped with a `console.warn`, so one bad
+ * resource or term cannot take down every listing it appears in. A list of
+ * `LIST_FAILURE_MIN_ITEMS` (4) or more elements in which more than half fail
+ * throws, because that is a systematic break, not a few bad items; a shorter
+ * list, or one in which half or fewer fail, only skips. Each skipped element
+ * gets a warning naming the endpoint path, its position and ID and the paths
+ * of its failing fields, and each list with any skipped gets one summary
+ * warning, `CMS list {path}: skipped {n} of {total}`, for log-based alerting
+ * to match. Those warnings are the only thing here that logs, and never name a
+ * value or the CMS origin. A list is parsed, and warned about, once per render
+ * however many times it is read (`parsedLists`).
  */
 
 /**
- * The ISR safety-net interval, in seconds, on every CMS fetch (ADR 0049). On-demand
+ * The ISR safety-net interval, in seconds, on every CMS fetch. On-demand
  * revalidation is the primary path; the plugin sends each batch once, with
- * no retries (ADR 0013), so this interval is the only repair for a send that
- * failed. Pages that set a route `revalidate` must write the same number as
- * a literal, because Next.js reads segment config statically.
+ * no retries (see `docs/architecture/revalidation.md`), so this interval is
+ * the only repair for a send that failed. An hour bounds that staleness to
+ * what an editor will tolerate while asking the CMS for each cached URL at
+ * most once an hour, in the background. Pages that set a route
+ * `revalidate` must write the same number as a literal, because Next.js
+ * reads segment config statically.
  */
 export const CMS_REVALIDATE_SECONDS = 3600;
 
 /**
  * How long one CMS request may take, headers and body together, in
- * milliseconds (ADR 0049). A healthy WordPress answers these reads in well
+ * milliseconds. A healthy WordPress answers these reads in well
  * under two seconds even with a cold object cache, so ten gives a slow but
  * working CMS five times that, while a hung one fails the render with a
  * `CmsError` long before a Vercel function's duration limit, instead of
@@ -184,7 +186,7 @@ const MAX_ISSUES = 5;
 
 /**
  * A list of at least this many elements throws when more than half of them
- * fail the item schema; a shorter one only skips its bad elements (ADR 0049).
+ * fail the item schema; a shorter one only skips its bad elements.
  * Below four, "more than half" is one bad item in a list of one, or two in
  * two or three: the last page of a listing holding one bad resource, or a
  * final page of terms holding one bad term, which must not fail the render.

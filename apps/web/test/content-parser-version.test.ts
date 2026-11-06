@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 // bundles in lib/node_modules/htmlparser2: html-react-parser's ESM entry
 // re-exports its CommonJS build, which requires html-dom-parser's CommonJS
 // build, so Vitest and the Next server bundle both reach that copy. The
-// pre-pass is sound only if both copies read a body the same way (ADR 0047),
+// pre-pass is sound only if both copies read a body the same way,
 // so this test holds them to one release. It fails on an upgrade of either
 // that lets them drift; pin the direct dependency to the version
 // html-dom-parser declares.

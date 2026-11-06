@@ -1,7 +1,8 @@
 /*
- * The single resource page: the header, the meta line, the featured image,
- * the summary, the body and the source line, built on the shared tokens (ADR
- * 0045). These classes are the front end's own, not part of the contract.
+ * The single resource page: the header, the meta line, the featured image, the
+ * summary, the body and the source line, built on the shared tokens (see
+ * packages/ui/README.md). These classes are the front end's own, not part of
+ * the contract.
  *
  * The whole article sits in one column of `--rh-measure`, the prose line
  * length, so the image is never wider than the text under it. The body's
@@ -67,9 +68,9 @@
 }
 
 /*
- * The featured image. Its width and height attributes reserve its box, so
- * it moves nothing when it loads (ADR 0039); it is never scaled past its own
- * size, and never wider than the column.
+ * The featured image. Its width and height attributes reserve its box, so it
+ * moves nothing when it loads (see apps/web/README.md); it is never scaled past
+ * its own size, and never wider than the column.
  */
 
 .rh-resource__media {

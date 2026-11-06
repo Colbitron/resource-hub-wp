@@ -1,8 +1,8 @@
 /*
  * The listing pages: heading, filters, the count line, the empty state and
- * pagination, built on the shared tokens (ADR 0045). The card grid itself is
- * `.rh-card-grid` in the shared card.css, which ResourceCard imports. These
- * classes are the front end's own, not part of the contract.
+ * pagination, built on the shared tokens (see packages/ui/README.md). The card
+ * grid itself is `.rh-card-grid` in the shared card.css, which ResourceCard
+ * imports. These classes are the front end's own, not part of the contract.
  */
 
 .rh-listing__header {

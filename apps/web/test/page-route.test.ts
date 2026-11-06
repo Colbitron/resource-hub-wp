@@ -4,16 +4,16 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * The page route (ADR 0052, amended 2026-11-06) keeps the segment config its
- * redirects rest on, the same as the resource route (ADR 0035's 2026-11-06
- * amendment): an ISR route with the data layer's interval as a literal and
- * no params at build, so the build never renders `/` from the CMS and each
- * path is rendered on its first request and stored, its 308s and 404s
- * included, until a page event or the interval clears it. There is no
- * `app/page.tsx` beside it: a route with no dynamic segment would be
- * prerendered at build, and would claim `/` from the catch-all. Measured on
- * Next.js 16.4.5: a request-time API or a `no-store` fetch in an ISR route
- * with no prerendered params is a runtime 500.
+ * The page route (ADR 0052) keeps the segment config its redirects rest on,
+ * the same as the resource route (see `docs/architecture/caching.md`): an ISR
+ * route with the data layer's interval as a literal and no params at build, so
+ * the build never renders `/` from the CMS and each path is rendered on its
+ * first request and stored, its 308s and 404s included, until a page event or
+ * the interval clears it. There is no `app/page.tsx` beside it: a route with
+ * no dynamic segment would be prerendered at build, and would claim `/` from
+ * the catch-all. Measured on Next.js 16.4.5: a request-time API or a
+ * `no-store` fetch in an ISR route with no prerendered params is a runtime
+ * 500.
  */
 
 const APP_DIR = new URL("../app/", import.meta.url);
@@ -31,7 +31,7 @@ function withoutComments(code: string): string {
 describe("the page route", () => {
   const code = withoutComments(source("page.tsx"));
 
-  it("exports revalidate = 3600 as a literal, the data layer's interval (ADR 0049)", () => {
+  it("exports revalidate = 3600 as a literal, the data layer's interval", () => {
     expect(code).toMatch(/^export const revalidate = 3600;$/m);
   });
 

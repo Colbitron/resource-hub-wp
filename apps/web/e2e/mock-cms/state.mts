@@ -54,7 +54,7 @@ export interface RelatedItem {
   source: "pick" | "topic";
 }
 
-/** `related_picks` holds at most this many IDs, and the related route's `count` goes no higher (ADR 0020). */
+/** `related_picks` holds at most this many IDs, and the related route's `count` goes no higher (issue #50, not built yet). */
 export const MAX_RELATED = 10;
 
 export interface TermRecord {
@@ -229,7 +229,8 @@ export class MockState {
   }
 
   /**
-   * The related route's merge (ADRs 0020, 0030): the source's picks in order,
+   * The related route's merge, by the contract in `packages/ui/README.md` and
+   * issue #50 (the route is not built yet): the source's picks in order,
    * skipping any that is not published; then, when the source has topics, the
    * newest published resources sharing one; never the source itself, never an
    * ID twice (a pick that would also be fill stays a pick), at most `count`.

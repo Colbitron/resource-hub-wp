@@ -7,11 +7,12 @@ import { RESOURCES, TERMS } from "./mock-cms/seed.mts";
 
 /**
  * The listing routes under `/resources/` against the built app and the mock
- * CMS (root `CLAUDE.md`, "Public URLs"; ADRs 0034, 0035 and 0050): what each
- * route lists, pagination at 12 a page, the filter bar, the 404s that need
- * data, the proxy's canonical-form 308s, the reserved segments, the CMS's
- * absence from the HTML, keyboard reach, and a revalidation event from the
- * CMS reaching every listing it should through the tags of ADR 0046.
+ * CMS (ADRs 0024, 0025 and 0043; see `packages/ui/README.md` and
+ * `docs/architecture/caching.md`): what each route lists, pagination at 12 a
+ * page, the filter bar, the 404s that need data, the proxy's canonical-form
+ * 308s, the reserved segments, the CMS's absence from the HTML, keyboard
+ * reach, and a revalidation event from the CMS reaching every listing it
+ * should through its tags (the table in `docs/architecture/caching.md`).
  *
  * The app's Data Cache and its stored pages outlive the mock's reset, in the
  * process and on disk (e2e/README.md), so `beforeEach` resets the mock and
@@ -396,8 +397,9 @@ test.describe("non-canonical URLs", () => {
   });
 
   test("a capitalised /Resources/ prefix gets the proxy's 308 to the library, in one hop with both rules applied", async ({ request }) => {
-    // The proxy covers every path since the pages catch-all became ISR (ADR 0035's
-    // 2026-11-06 amendment), so the prefix is lower-cased like any other segment.
+    // The proxy covers every path since the pages catch-all became ISR (see
+    // `docs/architecture/caching.md`), so the prefix is lower-cased like any
+    // other segment.
     await expectCanonicalRedirect(request, "/Resources/", "/resources/");
     await expectCanonicalRedirect(request, "/RESOURCES/webinar/", "/resources/webinar/");
     await expectCanonicalRedirect(request, "/Resources/Webinar/page/1/", "/resources/webinar/");
@@ -436,7 +438,7 @@ test.describe("non-canonical URLs", () => {
 
 test.describe("a resource the reader schema refuses", () => {
   // WordPress keeps an escape an editor types in a slug; the front end refuses
-  // it (slugProblem), so the list skips that one resource (ADR 0049).
+  // it (slugProblem), so the list skips that one resource (`lib/wp/fetch.ts`).
   test("is left off its page, the other cards render, and the count and pages stay the CMS's", async ({ page, request }) => {
     const title = "A refused case study";
     await cms.createResource({ title, type: "case-study", slug: "refused%2dcase-study" });
