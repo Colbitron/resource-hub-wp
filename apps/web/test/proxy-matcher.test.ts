@@ -60,6 +60,25 @@ describe("the proxy's matcher", () => {
     }
   });
 
+  it("exempts no name that is not one of the front end's own routes", () => {
+    // Read from the matcher's sources, so a name exempted without being one
+    // of `OWN_ROUTE_PATHS`, the routes that answer for themselves, fails
+    // here: the metadata files in the catch-all's `(?:…)$`, and the route in
+    // the `/api/` clause's `(?!…/?$)`.
+    const exempt: string[] = [];
+    for (const source of config.matcher as string[]) {
+      for (const [, names] of source.matchAll(/\(\?:((?:\\.|[^()\\])*)\)\$/g)) {
+        exempt.push(...names.split("|").map((name) => `/${name.replace(/\\(.)/g, "$1")}`));
+      }
+      for (const [, name] of source.matchAll(/^\/api\/\(\(\?!([a-z-]+)\/\?\$\)/g)) {
+        exempt.push(`/api/${name}/`);
+      }
+    }
+    expect(exempt).toContain("/favicon.ico");
+    expect(exempt).toContain("/api/revalidate/");
+    expect([...exempt].sort()).toEqual([...OWN_ROUTE_PATHS].sort());
+  });
+
   it("matches every /resources/** path, canonical or not, for the page/1 rule and the library's shapes", () => {
     for (const path of [ROOT_PATH + "resources/", "/resources/page/1/", resourcePath("webinar", "example"), "/resources/Webinar/", "/resources/topic/%e6%97%a5/", "/resources/topic/", "/resources/page/x/", "/resources/a/b/c/"]) {
       expect(proxied(path), path).toBe(true);
@@ -67,14 +86,14 @@ describe("the proxy's matcher", () => {
   });
 
   it("matches every other path with an upper-case letter, a percent escape or a repeated slash: the redirects", () => {
-    for (const path of ["/About/", "/about/Team/", "/%41bout/", "/x%E6%97%A5/", "/%D0%94%D0%BE%D0%BC/", "/about//team/", "/Resources/", "/RESOURCES/webinar/", "/Favicon.ICO"]) {
+    for (const path of ["/About/", "/about/Team/", "/%41bout/", "/x%E6%97%A5/", "/%D0%94%D0%BE%D0%BC/", "/about//team/", "/Resources/", "/RESOURCES/webinar/", "/Favicon.ICO", "/apple-icon.PNG"]) {
       expect(decidePath(path), path).not.toBeNull();
       expect(proxied(path), path).toBe(true);
     }
   });
 
   it("matches every path the catch-all would answer with a 404 without a request: a dot, a long segment, a reserved segment, the cap", () => {
-    for (const path of ["/robots.txt", "/wp-login.php", "/.env", "/wp-admin/install.php", "/favicon.icox", "/favicon.ico.bak", "/about/team.html", "/api/", "/api/other/", "/api/Revalidate/", "/api/revalidate/x/", "/api/revalidatex/", `/${"a".repeat(201)}/`, `/about/${"b".repeat(201)}/x/`]) {
+    for (const path of ["/robots.txt", "/wp-login.php", "/.env", "/wp-admin/install.php", "/favicon.icox", "/favicon.ico.bak", "/icon.svgx", "/icon.svg.bak", "/opengraph-image.png.rsc", "/opengraph-image.alt.txt", "/about/team.html", "/api/", "/api/other/", "/api/Revalidate/", "/api/revalidate/x/", "/api/revalidatex/", `/${"a".repeat(201)}/`, `/about/${"b".repeat(201)}/x/`]) {
       expect(decidePath(path), path).toEqual({ kind: "not-found" });
       expect(proxied(path), path).toBe(true);
     }
