@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:screenshots": "node e2e/screenshots.mts",
-    "test:screenshots:update": "node e2e/screenshots.mts --update-snapshots"
+    "test:screenshots:update": "node e2e/screenshots.mts --update-snapshots",
+    "test:lighthouse": "node e2e/lighthouse.mts"
   },
   "dependencies": {
     "@colbitron/resource-hub-ui": "workspace:*",

@@ -45,3 +45,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Lighthouse CI: raw runs and the reports `lhci upload` writes
+/.lighthouseci/
+/lighthouse-results/
