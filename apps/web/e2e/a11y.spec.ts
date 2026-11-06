@@ -41,9 +41,10 @@ for (const { label, path, status } of SAMPLED_URLS) {
         await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });
         const response = await page.goto(path);
         expect(response?.status(), path).toBe(status);
-        // Next.js 16.4.5 sends a data-dependent `notFound()` as its empty error
-        // document and renders the site's 404 page on hydration (errors.spec.ts),
-        // so wait for a heading, which every sampled page has, before scanning.
+        // Both 404s carry the site's page in their HTML (errors.spec.ts), but a
+        // data-decided one hands it to `app/not-found.tsx` on hydration, so
+        // wait for a heading, which every sampled page has, and the load
+        // before scanning.
         await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
         await page.waitForLoadState("load");
         expect(await wcagViolations(page)).toEqual([]);

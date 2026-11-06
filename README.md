@@ -122,7 +122,7 @@ The wp-env scripts run from the root, where `.wp-env.json` is; the rest delegate
 
 ## Testing
 
-Every pull request and every push to `main` runs `.github/workflows/ci.yml`: the CMS gate (the schema test, PHPCS, PHPUnit, then Playwright against the wp-env tests site) and the `web` job (lint, typecheck, unit tests, build, Playwright against a mock CMS). PHPUnit reinstalls the tests site, so it runs before Playwright and the specs activate the plugin themselves; the details are in the plugin's README and `apps/web/e2e/README.md`.
+Every pull request and every push to `main` runs `.github/workflows/ci.yml`: the CMS gate (the schema test, PHPCS, PHPUnit, then Playwright against the wp-env tests site) and the `web` job (lint, typecheck, unit tests, build, Playwright against a mock CMS with an axe scan, then the specimen's pixel screenshots and Lighthouse CI on the same build). PHPUnit reinstalls the tests site, so it runs before Playwright and the specs activate the plugin themselves; the details are in the plugin's README and `apps/web/e2e/README.md`.
 
 ## Deployment
 
