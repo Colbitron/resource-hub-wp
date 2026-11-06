@@ -14,7 +14,7 @@ use ResourceHub\Revalidation\ResultStore;
 
 /**
  * Turns a `_rh_last_revalidation` record into the words the admin screens show: a short label for
- * the Resources list column and a full sentence for the term notice and the status page (ADR 0018).
+ * the list column on the Resources and Pages lists and a full sentence for the term notice and the status page (ADR 0018).
  * The block editor's notice reads the same sentences, handed to its script by
  * {@see \ResourceHub\Editor\RevalidationAssets}. Nothing here prints the response
  * body: a sentence may quote the stored `error`, which is a transport message or one of the plugin's
