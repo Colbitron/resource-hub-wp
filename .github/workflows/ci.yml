@@ -76,14 +76,30 @@ jobs:
       # wp-env picks ~/wp-env (no dot) on Linux hosts that have /snap, which the
       # GitHub runners do. Pin the location so the cache path below is exact.
       # Playwright is a dependency of the plugin package, not the root, so its
-      # version is read from there.
+      # version is read from there. A failed or garbled read fails the step
+      # rather than caching under a key like playwright-Linux-: pnpm exits 0
+      # and prints a message when the filter matches no package, so the value
+      # is checked, not just the exit code. ImageOS and ImageVersion name the
+      # runner image (GitHub-hosted runners set them), which decides the
+      # versions apt installs; they are checked for the same reason.
       - name: Compute cache keys
         id: keys
         run: |
+          playwright=$(pnpm --filter resource-hub-wp exec node -p "require('@playwright/test/package.json').version")
+          if ! [[ "$playwright" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Could not read the Playwright version from resource-hub-wp (got: $playwright)."
+            exit 1
+          fi
+          if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
+            echo "::error::ImageOS or ImageVersion is not set; the apt package cache needs a GitHub-hosted runner image."
+            exit 1
+          fi
           {
             echo "week=$(date -u +%G-W%V)"
-            echo "playwright=$(pnpm --filter resource-hub-wp exec node -p "require('@playwright/test/package.json').version")"
+            echo "playwright=$playwright"
+            echo "image=$ImageOS-$ImageVersion"
             echo "wp_env_home=$RUNNER_TEMP/wp-env"
+            echo "apt_dir=$RUNNER_TEMP/playwright-apt"
           } >> "$GITHUB_OUTPUT"
           echo "WP_ENV_HOME=$RUNNER_TEMP/wp-env" >> "$GITHUB_ENV"
 
@@ -115,16 +131,92 @@ jobs:
       - name: Run PHPUnit
         run: pnpm test:php
 
+      # The key holds the resolved Playwright version, so an upgrade misses and
+      # downloads the new browser.
       - name: Cache Playwright browser
+        id: playwright-cache
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.keys.outputs.playwright }}
 
-      # --with-deps still installs the system libraries on a cache hit; only the
-      # browser download is skipped.
+      # The slow part of the install is apt, not the browser. Over 24 runs, six
+      # install steps in five runs (42260378556 in both jobs, 42286339233,
+      # 42289940447, 42295207168 and 42295912781) took 559 to 615 seconds
+      # instead of 10 to 30, and one more (42304468204, attempt 1) was
+      # cancelled at about 8.4 minutes: azure.archive.ubuntu.com sent the
+      # ~22 MB of fonts Playwright asks for at 30 to 40 kB/s, while the index
+      # update before it took 2 seconds (run 42289940447). So the .deb files
+      # apt downloads are cached. The fonts are new packages, resolved from the
+      # live index apt-get update fetches, so the key cannot pin their
+      # versions: the Playwright version fixes the package list, and the
+      # runner image (ImageOS, ImageVersion) works as a refresh clock, so a new
+      # image or an upgrade misses and saves a fresh set. A file the index no
+      # longer names has a different versioned filename, which apt ignores and
+      # downloads past; the save runs only on a miss, so such a partial hit is
+      # not refreshed until the key changes. apt checks only the size of a file
+      # already in place, so a corrupt one of the right size fails dpkg on every
+      # hit; to recover, delete the entry (gh cache delete <key>, or Actions >
+      # Caches).
+      - name: Restore Playwright's apt packages
+        id: apt-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.keys.outputs.apt_dir }}
+          key: playwright-apt-${{ steps.keys.outputs.image }}-${{ runner.arch }}-${{ steps.keys.outputs.playwright }}
+
+      # On a browser cache hit only the system packages are installed
+      # (install-deps); on a miss the browser is downloaded too. Either way
+      # Playwright runs `apt-get update` and then `apt-get install`, which
+      # skips any package whose .deb is already in /var/cache/apt/archives
+      # (root-owned, hence sudo). On an apt cache miss the files apt fetched
+      # are copied out for the save step below; the runner image ends with
+      # `apt-get clean`, and apt-get keeps what it downloads, so everything
+      # there came from this install. The step limit sits above the slowest
+      # install seen (10.2 minutes), so a miss on a slow mirror still passes.
       - name: Install Playwright browser
-        run: pnpm --filter resource-hub-wp exec playwright install --with-deps chromium
+        id: install-browser
+        timeout-minutes: 15
+        env:
+          CACHE_HIT: ${{ steps.playwright-cache.outputs.cache-hit }}
+          APT_CACHE_HIT: ${{ steps.apt-cache.outputs.cache-hit }}
+          APT_DIR: ${{ steps.keys.outputs.apt_dir }}
+        run: |
+          shopt -s nullglob
+          archives=/var/cache/apt/archives
+          if [ "$APT_CACHE_HIT" = 'true' ]; then
+            cached=("$APT_DIR"/*.deb)
+            if [ "${#cached[@]}" -gt 0 ]; then
+              sudo cp -- "${cached[@]}" "$archives/"
+              echo "Placed ${#cached[@]} cached .deb files in $archives."
+            else
+              echo "::warning::The apt package cache hit but held no .deb files; apt downloads them."
+            fi
+          fi
+          if [ "$CACHE_HIT" = 'true' ]; then
+            pnpm --filter resource-hub-wp exec playwright install-deps chromium
+          else
+            pnpm --filter resource-hub-wp exec playwright install --with-deps chromium
+          fi
+          if [ "$APT_CACHE_HIT" != 'true' ]; then
+            downloaded=("$archives"/*.deb)
+            echo "apt downloaded ${#downloaded[@]} .deb files."
+            if [ "${#downloaded[@]}" -gt 0 ]; then
+              mkdir -p "$APT_DIR"
+              cp -- "${downloaded[@]}" "$APT_DIR/"
+              echo "save-apt=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      # Saved straight after the install, not in a post step, so a later test
+      # failure does not throw away a slow download. Nothing is saved when apt
+      # downloaded nothing, so an empty entry never hides a later download.
+      - name: Save Playwright's apt packages
+        if: steps.install-browser.outputs.save-apt == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.keys.outputs.apt_dir }}
+          key: ${{ steps.apt-cache.outputs.cache-primary-key }}
 
       - name: Run Playwright
         run: pnpm test:e2e
@@ -144,7 +236,9 @@ jobs:
   web:
     name: Lint, typecheck, and build the front end
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Room for the install step's own 15-minute limit (an apt cache miss on a
+    # slow mirror) plus the rest of the job, which has taken up to 2.4 minutes.
+    timeout-minutes: 20
 
     # A placeholder, never a secret. next.config.ts builds the /media/ rewrite
     # from WP_API_URL, so CI builds the same routes a deploy does; nothing
@@ -193,8 +287,80 @@ jobs:
             exit 1
           fi
 
+      # Playwright is a dependency of apps/web, so the version for the cache
+      # keys is read from there, and checked like the gate's (see "Compute
+      # cache keys" there), so a failed read fails the step rather than
+      # caching under an empty or garbled version.
+      - name: Compute Playwright's cache keys
+        id: playwright
+        run: |
+          version=$(pnpm --filter resource-hub-web exec node -p "require('@playwright/test/package.json').version")
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Could not read the Playwright version from resource-hub-web (got: $version)."
+            exit 1
+          fi
+          if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
+            echo "::error::ImageOS or ImageVersion is not set; the apt package cache needs a GitHub-hosted runner image."
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "image=$ImageOS-$ImageVersion"
+            echo "apt_dir=$RUNNER_TEMP/playwright-apt"
+          } >> "$GITHUB_OUTPUT"
+
+      # The fonts apt fetches from a sometimes very slow Ubuntu mirror, cached
+      # and keyed like the gate's; see the comment there. While both jobs
+      # resolve the same Playwright version they share one entry.
+      - name: Restore Playwright's apt packages
+        id: apt-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.playwright.outputs.apt_dir }}
+          key: playwright-apt-${{ steps.playwright.outputs.image }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+
+      # Places the cached .deb files where apt looks for them, installs the
+      # browser and its system packages, and on an apt cache miss copies out
+      # what apt fetched; see the gate's install step for why, and for the step
+      # limit. There is no browser cache here: restoring it took about as long
+      # as downloading Chromium (about 11 seconds, run 42304468204 attempt 2),
+      # and the repository's Actions cache is already at its 10 GB limit.
       - name: Install Playwright's browser
-        run: pnpm --filter resource-hub-web exec playwright install --with-deps chromium
+        id: install-browser
+        timeout-minutes: 15
+        env:
+          APT_CACHE_HIT: ${{ steps.apt-cache.outputs.cache-hit }}
+          APT_DIR: ${{ steps.playwright.outputs.apt_dir }}
+        run: |
+          shopt -s nullglob
+          archives=/var/cache/apt/archives
+          if [ "$APT_CACHE_HIT" = 'true' ]; then
+            cached=("$APT_DIR"/*.deb)
+            if [ "${#cached[@]}" -gt 0 ]; then
+              sudo cp -- "${cached[@]}" "$archives/"
+              echo "Placed ${#cached[@]} cached .deb files in $archives."
+            else
+              echo "::warning::The apt package cache hit but held no .deb files; apt downloads them."
+            fi
+          fi
+          pnpm --filter resource-hub-web exec playwright install --with-deps chromium
+          if [ "$APT_CACHE_HIT" != 'true' ]; then
+            downloaded=("$archives"/*.deb)
+            echo "apt downloaded ${#downloaded[@]} .deb files."
+            if [ "${#downloaded[@]}" -gt 0 ]; then
+              mkdir -p "$APT_DIR"
+              cp -- "${downloaded[@]}" "$APT_DIR/"
+              echo "save-apt=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      # Saved straight after the install; see the gate's save step.
+      - name: Save Playwright's apt packages
+        if: steps.install-browser.outputs.save-apt == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.playwright.outputs.apt_dir }}
+          key: ${{ steps.apt-cache.outputs.cache-primary-key }}
 
       # Starts the mock CMS (apps/web/e2e/mock-cms, plain Node, no Docker and
       # no secrets), builds again with the test-only fixture routes
