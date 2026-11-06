@@ -29,7 +29,10 @@
  * PHP (`ResultText::sentences()`), so every screen uses the same words.
  *
  * On load, a last result that is not a success is shown once. PHP enqueues
- * this only on the resource editor; the post-type check is a second guard.
+ * this only on the resource and page editors, and hands over the REST route
+ * of each post type it runs on (`restPaths`, from the post type's own
+ * `rest_base`), so the list of post types lives in PHP alone; a post type
+ * without a route here is a second guard, and the script does nothing for it.
  */
 import apiFetch from '@wordpress/api-fetch';
 import { dispatch, useSelect } from '@wordpress/data';
@@ -40,7 +43,6 @@ import { store as noticesStore } from '@wordpress/notices';
 import { registerPlugin } from '@wordpress/plugins';
 import { addQueryArgs } from '@wordpress/url';
 
-const POST_TYPE = 'resource';
 const FIELD = 'rh_last_revalidation';
 const NOTICE_ID = 'resource-hub-revalidation';
 const POLL_INTERVAL_MS = 1000;
@@ -54,6 +56,26 @@ const INVALID_SECRET = 'not_configured_invalid_secret';
 
 // Handed over by RevalidationAssets through wp_localize_script().
 const SENTENCES = window.resourceHubRevalidation?.sentences ?? {};
+// The REST route, without the ID, of each post type the notice runs on:
+// `{ resource: '/wp/v2/resources', page: '/wp/v2/pages' }`.
+const REST_PATHS = window.resourceHubRevalidation?.restPaths ?? {};
+
+/**
+ * The REST route of a post type's objects, or null for a post type the
+ * notice does not run on.
+ *
+ * @param {string|undefined} postType The post type.
+ * @return {string|null} The route, without the ID.
+ */
+function restPathFor( postType ) {
+	const path =
+		typeof postType === 'string' &&
+		Object.prototype.hasOwnProperty.call( REST_PATHS, postType )
+			? REST_PATHS[ postType ]
+			: null;
+
+	return typeof path === 'string' && path !== '' ? path : null;
+}
 
 /**
  * A sentence from PHP, or an empty string when the script runs without them.
@@ -218,13 +240,14 @@ function notify( { status, message } ) {
  * Reads the post's record and the server's time from the response's `Date`
  * header.
  *
- * @param {number}      postId The post.
- * @param {AbortSignal} signal Aborts the request.
+ * @param {string}      restPath The post type's REST route, without the ID.
+ * @param {number}      postId   The post.
+ * @param {AbortSignal} signal   Aborts the request.
  * @return {Promise<{record: Object|null, serverNow: number}>} The record, if any, and the server's time.
  */
-async function fetchRecord( postId, signal ) {
+async function fetchRecord( restPath, postId, signal ) {
 	const response = await apiFetch( {
-		path: addQueryArgs( `/wp/v2/resources/${ postId }`, {
+		path: addQueryArgs( `${ restPath }/${ postId }`, {
 			context: 'edit',
 			_fields: FIELD,
 		} ),
@@ -265,13 +288,14 @@ function wait( ms, signal ) {
  * Polls the post's field until this save's record is no longer pending, or
  * the window closes, then shows it. Does nothing more once aborted.
  *
- * @param {Object}      save        The save to poll for.
- * @param {number}      save.postId The post.
- * @param {Object|null} save.known  The record the save response carried.
- * @param {number}      save.since  The saved post's `modified_gmt`, in milliseconds.
- * @param {AbortSignal} signal      Aborts the poll.
+ * @param {Object}      save          The save to poll for.
+ * @param {string}      save.restPath The post type's REST route, without the ID.
+ * @param {number}      save.postId   The post.
+ * @param {Object|null} save.known    The record the save response carried.
+ * @param {number}      save.since    The saved post's `modified_gmt`, in milliseconds.
+ * @param {AbortSignal} signal        Aborts the poll.
  */
-async function pollAfterSave( { postId, known, since }, signal ) {
+async function pollAfterSave( { restPath, postId, known, since }, signal ) {
 	let batch = null;
 	let latest = null;
 	let serverNow = NaN;
@@ -299,7 +323,7 @@ async function pollAfterSave( { postId, known, since }, signal ) {
 		}
 
 		try {
-			const read = await fetchRecord( postId, signal );
+			const read = await fetchRecord( restPath, postId, signal );
 			serverNow = read.serverNow;
 
 			if ( read.record && isThisSave( read.record ) ) {
@@ -330,15 +354,20 @@ async function pollAfterSave( { postId, known, since }, signal ) {
 }
 
 /**
- * Shows the last result when the editor opens a resource, unless it was a
- * success.
+ * Shows the last result when the editor opens a resource or a page, unless it
+ * was a success.
  *
- * @param {number}      postId The post.
- * @param {AbortSignal} signal Aborts the request.
+ * @param {string}      restPath The post type's REST route, without the ID.
+ * @param {number}      postId   The post.
+ * @param {AbortSignal} signal   Aborts the request.
  */
-async function showLastOnLoad( postId, signal ) {
+async function showLastOnLoad( restPath, postId, signal ) {
 	try {
-		const { record, serverNow } = await fetchRecord( postId, signal );
+		const { record, serverNow } = await fetchRecord(
+			restPath,
+			postId,
+			signal
+		);
 
 		if ( ! signal.aborted && record && record.status !== 'sent' ) {
 			notify( describe( record, serverNow ) );
@@ -355,7 +384,7 @@ async function showLastOnLoad( postId, signal ) {
  */
 function RevalidationFeedback() {
 	const {
-		isResource,
+		restPath,
 		postId,
 		isSaving,
 		isSilentSave,
@@ -367,7 +396,7 @@ function RevalidationFeedback() {
 		const editor = select( editorStore );
 
 		return {
-			isResource: editor.getCurrentPostType() === POST_TYPE,
+			restPath: restPathFor( editor.getCurrentPostType() ),
 			postId: editor.getCurrentPostId(),
 			isSaving: editor.isSavingPost(),
 			isSilentSave:
@@ -392,15 +421,15 @@ function RevalidationFeedback() {
 
 	// The last result, once per post.
 	useEffect( () => {
-		if ( ! isResource || ! postId ) {
+		if ( ! restPath || ! postId ) {
 			return undefined;
 		}
 
 		const controller = new AbortController();
-		showLastOnLoad( postId, controller.signal );
+		showLastOnLoad( restPath, postId, controller.signal );
 
 		return () => controller.abort();
-	}, [ isResource, postId ] );
+	}, [ restPath, postId ] );
 
 	// A save starting pauses the running poll. A save ending starts a poll of
 	// its own, or, when it starts none (it failed, or sent nothing), resumes
@@ -408,7 +437,7 @@ function RevalidationFeedback() {
 	useEffect( () => {
 		const track = tracking.current;
 
-		if ( ! isResource || isSaving === track.wasSaving ) {
+		if ( ! restPath || isSaving === track.wasSaving ) {
 			return;
 		}
 
@@ -436,13 +465,18 @@ function RevalidationFeedback() {
 		track.interrupted = null;
 
 		if ( touchesPublic && saveSucceeded ) {
-			setSave( { postId, known, since: serverTime( modifiedGmt ) } );
+			setSave( {
+				restPath,
+				postId,
+				known,
+				since: serverTime( modifiedGmt ),
+			} );
 		} else if ( interrupted ) {
 			// A new object, so the poll effect runs again for the same save.
 			setSave( { ...interrupted } );
 		}
 	}, [
-		isResource,
+		restPath,
 		isSaving,
 		isSilentSave,
 		saveSucceeded,

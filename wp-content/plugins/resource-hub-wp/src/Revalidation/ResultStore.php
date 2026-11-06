@@ -42,6 +42,15 @@ final class ResultStore {
 	public const REST_FIELD = 'rh_last_revalidation';
 
 	/**
+	 * The post types whose saves send an event and hold a record: the field is registered on each, and
+	 * the block editor's notice ({@see \ResourceHub\Editor\RevalidationAssets}) and the list column
+	 * ({@see \ResourceHub\Admin\ListColumn}) show the record on each.
+	 *
+	 * @var string[]
+	 */
+	public const POST_TYPES = array( PostType::NAME, PagePath::POST_TYPE );
+
+	/**
 	 * Status while the batch is scheduled and not yet sent.
 	 */
 	public const PENDING = 'pending';
@@ -111,11 +120,11 @@ final class ResultStore {
 
 	/**
 	 * Registers the read-only `edit`-context REST field on the post type, on pages and on both taxonomies.
-	 * Hooked to `rest_api_init`. The block editor's notice reads it for resources only (ADR 0018); a
-	 * page's record is stored and exposed, and read by nothing in the admin yet.
+	 * Hooked to `rest_api_init`. The block editor's notice polls it after a save of a resource or a page
+	 * (ADR 0018).
 	 */
 	public function register_rest_fields(): void {
-		foreach ( array( PostType::NAME, PagePath::POST_TYPE ) as $post_type ) {
+		foreach ( self::POST_TYPES as $post_type ) {
 			register_rest_field(
 				$post_type,
 				self::REST_FIELD,
@@ -139,7 +148,7 @@ final class ResultStore {
 	}
 
 	/**
-	 * The field's value for a resource: its stored result, for a user who may edit it, in the `edit` context.
+	 * The field's value for a resource or a page: its stored result, for a user who may edit it, in the `edit` context.
 	 *
 	 * @param array<string, mixed> $prepared The prepared post response, with `id`.
 	 * @param string               $field    Field name. Unused.

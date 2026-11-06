@@ -1,8 +1,8 @@
 /**
  * Revalidation feedback for editors (ADRs 0018, 0019): publishing a resource
- * in the block editor shows the revalidation notice, a save's poll shows that
- * save's result only, and the status page's "Send test revalidation" button is
- * disabled until a resource is published.
+ * or a page in the block editor shows the revalidation notice, a save's poll
+ * shows that save's result only, and the status page's "Send test
+ * revalidation" button is disabled until a resource is published.
  *
  * The tests site has no front-end URL or secret, so every send is recorded
  * as "not configured" straight away, with no cron involved. That is the
@@ -135,6 +135,7 @@ const shownNotices = ( page ) => page.evaluate( () => window.rhNotices );
 test.describe( 'Revalidation feedback', () => {
 	let type;
 	const createdIds = [];
+	const createdPageIds = [];
 
 	test.beforeAll( async ( { requestUtils } ) => {
 		const stamp = Date.now();
@@ -150,6 +151,14 @@ test.describe( 'Revalidation feedback', () => {
 			await requestUtils.rest( {
 				method: 'DELETE',
 				path: `/wp/v2/resources/${ id }`,
+				params: { force: true },
+			} );
+		}
+
+		for ( const id of createdPageIds ) {
+			await requestUtils.rest( {
+				method: 'DELETE',
+				path: `/wp/v2/pages/${ id }`,
 				params: { force: true },
 			} );
 		}
@@ -201,6 +210,67 @@ test.describe( 'Revalidation feedback', () => {
 		expect( saved.rh_last_revalidation.event ).toBe( 'publish' );
 
 		// A failure is shown again when the editor loads the resource.
+		await admin.editPost( postId );
+		await expect(
+			page
+				.getByRole( 'region', { name: 'Editor content' } )
+				.getByText( NOT_CONFIGURED )
+		).toBeVisible();
+	} );
+
+	test( 'publishing a page shows the revalidation notice, polled from the pages route, and reloading shows it again', async ( {
+		admin,
+		editor,
+		page,
+		requestUtils,
+	} ) => {
+		await admin.createNewPost( {
+			postType: 'page',
+			title: `E2E page revalidation ${ Date.now() }`,
+		} );
+		// Some content, or reopening the page shows the "Choose a pattern"
+		// modal over the notice.
+		await editor.insertBlock( {
+			name: 'core/paragraph',
+			attributes: { content: 'A page the front end serves.' },
+		} );
+
+		// Every poll of the record, by route, to prove the script reads the
+		// page from `/wp/v2/pages`, never from the resources route.
+		const polls = [];
+		page.on( 'request', ( request ) => {
+			const url = new URL( request.url() );
+			if (
+				request.method() === 'GET' &&
+				url.searchParams.get( '_fields' ) === 'rh_last_revalidation'
+			) {
+				polls.push( restRoute( url ) );
+			}
+		} );
+
+		await editor.publishPost();
+
+		const postId = await page.evaluate( () =>
+			window.wp.data.select( 'core/editor' ).getCurrentPostId()
+		);
+		createdPageIds.push( postId );
+
+		const content = page.getByRole( 'region', { name: 'Editor content' } );
+		await expect( content.getByText( NOT_CONFIGURED ) ).toBeVisible();
+		expect( polls.length ).toBeGreaterThan( 0 );
+		expect( new Set( polls ) ).toEqual(
+			new Set( [ `/wp/v2/pages/${ postId }` ] )
+		);
+
+		// The record is on the page, readable in the edit context only.
+		const saved = await requestUtils.rest( {
+			path: `/wp/v2/pages/${ postId }`,
+			params: { context: 'edit', _fields: 'rh_last_revalidation' },
+		} );
+		expect( saved.rh_last_revalidation.outcome ).toBe( 'not_configured' );
+		expect( saved.rh_last_revalidation.event ).toBe( 'publish' );
+
+		// A failure is shown again when the editor loads the page.
 		await admin.editPost( postId );
 		await expect(
 			page
