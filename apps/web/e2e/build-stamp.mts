@@ -28,6 +28,9 @@ import { appServerEnv } from "./mock-cms/config.mts";
  *
  *   node e2e/build-stamp.mts write   after `next build`, in the build's environment
  *   node e2e/build-stamp.mts check   before `next start` of a prebuilt app
+ *   node e2e/build-stamp.mts verify  the same test, reported without the prebuilt
+ *                                    advice, for `harness.spec.ts` (which runs as
+ *                                    CommonJS and cannot import this module)
  */
 
 const APP_DIR = fileURLToPath(new URL("..", import.meta.url));
@@ -129,7 +132,10 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     if (command === "write") writeBuildStamp();
     else if (command === "check") assertPrebuilt();
-    else throw new Error(`Usage: node e2e/build-stamp.mts write|check (got ${JSON.stringify(command)}).`);
+    else if (command === "verify") {
+      const problem = buildStampProblem();
+      if (problem !== null) throw new Error(problem);
+    } else throw new Error(`Usage: node e2e/build-stamp.mts write|check|verify (got ${JSON.stringify(command)}).`);
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
     process.exit(1);
