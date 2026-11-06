@@ -195,7 +195,7 @@ final class ResolveRouteTest extends WP_UnitTestCase {
 		$this->assertLessThan( $published, $draft );
 		$this->assertContains( 'twin-a', get_post_meta( $draft, '_wp_old_slug', false ) );
 		$this->assertContains( 'twin-a', get_post_meta( $published, '_wp_old_slug', false ) );
-		$this->assertSame( $draft, $this->core_find( 'twin-a', PostType::NAME ), 'Core now picks another holder of the old slug; revisit the resolve section of packages/ui/README.md.' );
+		$this->assertSame( $draft, $this->core_find( 'twin-a', PostType::NAME ), 'Core now picks another holder of the old slug; revisit the resolve semantics in packages/ui/README.md.' );
 		$this->assert_not_found( 'twin-a' );
 	}
 

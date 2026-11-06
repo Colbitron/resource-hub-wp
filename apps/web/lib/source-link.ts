@@ -9,16 +9,15 @@ import { rewriteHref, withoutTrailing, type CmsUrls } from "./urls";
  * may point it anywhere, the CMS included. The page's rule is the HTML
  * pass's rule for links (ADR 0040; the `lib/content/render.tsx` docblock):
  * the URL goes through `rewriteHref`, so an upload on the CMS becomes
- * `/media/…` and a CMS page becomes root-relative; a CMS URL whose rewrite
- * is not a path the front end
- * serves (`/wp-admin/`, `/wp-login.php`, a theme page, which the CMS answers
- * anonymous visitors with a 404 anyway) gives no link, and so does an
- * absolute URL that still names a configured CMS host after the rewrite (a
- * port the configuration does not list). The CMS's address therefore never
- * reaches the page through this field. Anything that is not an absolute
- * http(s) URL (`javascript:`, `data:`, `mailto:`, a protocol-relative
- * `//host/…`) gives no link either: the plugin never stores one, and the
- * front end does not rely on that. Nor does a URL with userinfo
+ * `/media/…` and a CMS page becomes root-relative; a CMS URL whose rewrite is
+ * not a path the front end serves (`/wp-admin/`, `/wp-login.php`, a theme
+ * page, which the CMS answers anonymous visitors with a 404 anyway) gives no
+ * link, and so does an absolute URL that still names a configured CMS host
+ * after the rewrite (a port the configuration does not list). The CMS's
+ * address therefore never reaches the page through this field. Anything that
+ * is not an absolute http(s) URL (`javascript:`, `data:`, `mailto:`, a
+ * protocol-relative `//host/…`) gives no link either: the plugin never stores
+ * one, and the front end does not rely on that. Nor does a URL with userinfo
  * (`https://user@host/`), which the HTML pass's image trust rule refuses too:
  * the part before the `@` can pose as a host.
  *

@@ -16,12 +16,16 @@ import "./prose.css";
 import "./resource.css";
 
 /**
- * The single resource page's content (ADRs 0024 and 0040; the URL shape and the
- * block marker, whose related list is not built yet, issue #50, are in
- * `packages/ui/README.md`): one `<article>` with the title, a meta line (the
- * type, linked to its listing; the published date; the topics, linked to
- * theirs), the featured image, the summary, the body and the source link.
- * `resourceMetadata` gives the route its `generateMetadata` from the same data.
+ * The single resource page's content: one `<article>` with the title, a meta
+ * line (the type, linked to its listing; the published date; the topics,
+ * linked to theirs), the featured image, the summary, the body and the source
+ * link. `resourceMetadata` gives the route its `generateMetadata` from the
+ * same data.
+ *
+ * Its path carries the resource's type, the same on both sites (ADR 0024).
+ * The CMS's address never reaches the page (ADR 0040). The URL shape is in
+ * `packages/ui/README.md`, and so is the block marker. The related list the
+ * marker stands for is not built yet (issue #50).
  *
  * The route hands over a `RenderedResource` from `resourceForRequest`
  * (`lib/redirects.ts`), so by the time this renders the redirect and 404

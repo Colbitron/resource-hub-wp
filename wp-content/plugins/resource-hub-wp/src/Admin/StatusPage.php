@@ -19,13 +19,13 @@ use WP_Post;
 use WP_Query;
 
 /**
- * A status page first (see `docs/architecture/revalidation.md`): which source supplies the front-end URL and the secret, the URL
- * itself, whether PostHog is on, and the last test's result. It never prints the secret, not even
- * in part. Below that, a form writes the two fallback options the constants win over, and a
- * "Send test revalidation" button sends a real `update` event through
- * {@see Revalidation::send_update_for()} for the most recently modified published resource or one
- * chosen in the picker. The test's result is recorded like any other, in that resource's meta and
- * in PostHog, plus a non-autoloaded option this page reads.
+ * A status page first (see `docs/architecture/revalidation.md`): which source supplies the
+ * front-end URL and the secret, the URL itself, whether PostHog is on, and the last test's result.
+ * It never prints the secret, not even in part. Below that, a form writes the two fallback options
+ * the constants win over, and a "Send test revalidation" button sends a real `update` event
+ * through {@see Revalidation::send_update_for()} for the most recently modified published resource
+ * or one chosen in the picker. The test's result is recorded like any other, in that resource's
+ * meta and in PostHog, plus a non-autoloaded option this page reads.
  */
 final class StatusPage {
 	/**

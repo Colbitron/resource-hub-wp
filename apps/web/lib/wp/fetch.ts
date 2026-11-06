@@ -50,20 +50,20 @@ import { wpErrorSchema } from "./schemas/wp-error";
  * no retries (see `docs/architecture/revalidation.md`), so this interval is
  * the only repair for a send that failed. An hour bounds that staleness to
  * what an editor will tolerate while asking the CMS for each cached URL at
- * most once an hour, in the background. Pages that set a route
- * `revalidate` must write the same number as a literal, because Next.js
- * reads segment config statically.
+ * most once an hour, in the background. Pages that set a route `revalidate`
+ * must write the same number as a literal, because Next.js reads segment
+ * config statically.
  */
 export const CMS_REVALIDATE_SECONDS = 3600;
 
 /**
  * How long one CMS request may take, headers and body together, in
- * milliseconds. A healthy WordPress answers these reads in well
- * under two seconds even with a cold object cache, so ten gives a slow but
- * working CMS five times that, while a hung one fails the render with a
- * `CmsError` long before a Vercel function's duration limit, instead of
- * holding the function open. A resource page makes at most three requests
- * in sequence on a cold cache, so its worst case stays near thirty seconds.
+ * milliseconds. A healthy WordPress answers these reads in well under two
+ * seconds even with a cold object cache, so ten gives a slow but working CMS
+ * five times that, while a hung one fails the render with a `CmsError` long
+ * before a Vercel function's duration limit, instead of holding the function
+ * open. A resource page makes at most three requests in sequence on a cold
+ * cache, so its worst case stays near thirty seconds.
  *
  * Next.js drops the signal when it refreshes a stale cache entry in the
  * background, so that refresh is not bounded by this; the visitor is served

@@ -288,7 +288,8 @@ describe("eventsToInvalidations", () => {
     }
   });
 
-  it("covers an update whose previous.types stands in the current type (packages/ui/README.md)", () => {
+  // The previous.types rule is in packages/ui/README.md.
+  it("covers an update whose previous.types stands in the current type", () => {
     expect(
       eventsToInvalidations([
         resource({
@@ -572,7 +573,8 @@ describe("eventsToInvalidations", () => {
   });
 });
 
-describe("fetch tags (docs/architecture/caching.md)", () => {
+// The fetch tagging rule is in docs/architecture/caching.md.
+describe("fetch tags", () => {
   it("tag every listing page with its filter's tags and terms", () => {
     expect(listingTags()).toEqual(["resources", "terms"]);
     expect(listingTags({ type: "webinar" })).toEqual(["type:webinar", "terms"]);
@@ -623,7 +625,7 @@ describe("fetch tags (docs/architecture/caching.md)", () => {
   });
 });
 
-describe("the tagging rule, against docs/architecture/caching.md written out by hand", () => {
+describe("the tagging rule, against tags written out by hand", () => {
   /*
    * Each fetch's tags are written here from the rules in
    * docs/architecture/caching.md, as literal strings, without lib/tags.ts. The

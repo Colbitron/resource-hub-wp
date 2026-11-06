@@ -67,10 +67,10 @@ import {
  * with the slash, because `trailingSlash: true` answers the slashless path
  * with a `308` the plugin's client will not follow with its body.
  *
- * Every refusal is a `400`, `401` or `500`; `413` for a body over the cap
- * and `415` for a wrong content type were rejected because the contract and
- * the error schema list only those three, and the plugin's notice is written
- * around them.
+ * Besides the `405` for another method, every refusal is a `400`, `401` or
+ * `500`; `413` for a body over the cap and `415` for a wrong content type
+ * were rejected because the contract and the error schema list only those
+ * three, and the plugin's notice is written around them.
  *
  * The plugin times out after 3 seconds and never retries (see
  * `docs/architecture/revalidation.md`), so nothing here is slow: no fetch,

@@ -20,11 +20,10 @@
  * earlier save's own record, pending or final (same batch, excluded). The
  * store never writes a cron batch's final result over another batch's pending,
  * so a later save's records are not overwritten by an earlier send (the guard
- * is in PHP's `ResultStore`). A
- * later save pauses the earlier poll while it runs, and replaces it only if it
- * succeeds and starts a poll of its own; a save that fails, such as one
- * refused for breaking the one-type rule, sent nothing, so the earlier save's
- * poll resumes.
+ * is in PHP's `ResultStore`). A later save pauses the earlier poll while it
+ * runs, and replaces it only if it succeeds and starts a poll of its own; a
+ * save that fails, such as one refused for breaking the one-type rule, sent
+ * nothing, so the earlier save's poll resumes.
  *
  * Which saves are polled for: only those that sent something, which the
  * server decides per post type. A resource sends an event when it was or is

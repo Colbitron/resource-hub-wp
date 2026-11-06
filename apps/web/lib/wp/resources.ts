@@ -132,9 +132,9 @@ export async function listResources(options: ListResourcesOptions): Promise<Reso
  * The published resource whose slug is `slug`, or `null`. A slug that cannot
  * be one (`isSlug`) is `null` without a request. The slug is canonicalised
  * first, so `Example` reads `example`: the data layer only normalises, and
- * the page redirects a non-canonical URL (ADR 0025). The canonical form is
- * the one WordPress stores, sent as the query value so the CMS compares it
- * as stored.
+ * the page redirects a non-canonical URL (the rules are in
+ * `lib/canonical-path.ts`). The canonical form is the one WordPress stores,
+ * sent as the query value so the CMS compares it as stored.
  *
  * Tagged `resourceFetchTags(slug)`, a miss included: a miss is a 200 with an
  * empty list, which the Data Cache keeps, so a publish under the slug must

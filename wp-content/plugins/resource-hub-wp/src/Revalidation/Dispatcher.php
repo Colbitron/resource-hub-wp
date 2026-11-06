@@ -14,7 +14,8 @@ namespace ResourceHub\Revalidation;
 /**
  * At `shutdown`, turns the request's queue into batches of at most 25 and schedules one WP-Cron
  * single event per batch, with the full payload as the event's arguments, then spawns cron
- * (ADR 0011; see `docs/architecture/revalidation.md`). The cron callback sends, records and logs; it never reads the post again.
+ * (ADR 0011; see `docs/architecture/revalidation.md`). The cron callback sends, records and logs;
+ * it never reads the post again.
  *
  * Before batching, each `publish` and `update` event is refreshed from its post, so it carries the
  * state the request left behind ({@see ResourceEvents::refresh()}, {@see PageEvents::refresh()}), and every event has its slugs

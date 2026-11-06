@@ -276,10 +276,10 @@ final class ResultStore {
 	 * lose a real result.
 	 *
 	 * The cost: if the later send never completes, the guarded result is lost, and the record stays
-	 * `pending` until the stale-pending display covers it (see `docs/architecture/revalidation.md`). The read here and the write
-	 * after it are not atomic, so a `pending` written between them is still overwritten. Only a
-	 * `pending` is protected: an older guarded result still replaces a later final, such as a
-	 * held-back save's failure.
+	 * `pending` until the stale-pending display covers it (see `docs/architecture/revalidation.md`).
+	 * The read here and the write after it are not atomic, so a `pending` written between them is
+	 * still overwritten. Only a `pending` is protected: an older guarded result still replaces a
+	 * later final, such as a held-back save's failure.
 	 *
 	 * @param string $meta_type `post` or `term`.
 	 * @param int    $object_id Post or term ID.

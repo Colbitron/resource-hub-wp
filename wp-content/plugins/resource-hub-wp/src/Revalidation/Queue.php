@@ -10,8 +10,9 @@ declare(strict_types=1);
 namespace ResourceHub\Revalidation;
 
 /**
- * Collects the events raised during a request and deduplicates them (see `packages/ui/README.md`). {@see Dispatcher} splits
- * them into batches of at most {@see Queue::BATCH_SIZE} after checking each one.
+ * Collects the events raised during a request and deduplicates them (see `packages/ui/README.md`).
+ * {@see Dispatcher} splits them into batches of at most {@see Queue::BATCH_SIZE} after checking
+ * each one.
  *
  * Deduplication is per resource ID for resource events, per (taxonomy, term ID) for term events and
  * per page ID for page events (ADR 0052), so a post and a term that share a numeric ID never merge. A group becomes one event that carries
