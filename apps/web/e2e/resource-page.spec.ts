@@ -59,10 +59,12 @@ function get(request: APIRequestContext, path: string): Promise<APIResponse> {
  * The first `Location` value. A freshly rendered ISR 308 carries the header
  * twice with the same value (Next.js 16.4.5, measured: the stored copy has it
  * once), and Playwright joins repeated headers with a comma; every client
- * reads the first.
+ * reads the first, and this checks they all agree.
  */
 function location(response: APIResponse): string | undefined {
-  return response.headersArray().find((header) => header.name.toLowerCase() === "location")?.value;
+  const values = response.headersArray().filter((header) => header.name.toLowerCase() === "location").map((header) => header.value);
+  expect(new Set(values).size, `one Location value, not ${JSON.stringify(values)}`).toBeLessThanOrEqual(1);
+  return values[0];
 }
 
 /** The `Cache-Control` directives of a response, lower-cased and trimmed. */
