@@ -125,7 +125,8 @@ final class Sender {
 	 * The first {@see Result::BODY_LIMIT} bytes of a body, made valid UTF-8, because core refuses to
 	 * store a meta value that is not, and the result would stay `pending`. The cut is by bytes; core's
 	 * `wp_scrub_utf8()` then replaces each invalid sequence, a character split at the limit among them,
-	 * with U+FFFD, so the stored body may run a few bytes past the limit. Core polyfills the scrub where
+	 * with U+FFFD, which is three bytes, so a body of invalid bytes can grow to about three times the
+	 * limit (about 3 KB). Core polyfills the scrub where
 	 * mbstring is missing, so the plugin does not need the extension. Whether anything was cut is
 	 * recorded on the result as `truncated`, by {@see Sender::send()}.
 	 *

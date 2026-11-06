@@ -244,6 +244,25 @@ final class ResultTextTest extends WP_UnitTestCase {
 		);
 		$this->assertSame( 'Revalidation failed on the front end (500). A stored message.', ResultText::sentence( $stored ) );
 
+		// JSON whitespace before the object still starts like JSON.
+		$indented = self::record(
+			array(
+				'body'      => " \n\t" . $cut,
+				'truncated' => true,
+			)
+		);
+		$this->assertSame( 'Revalidation failed on the front end (500). ' . $note, ResultText::sentence( $indented ) );
+
+		// A cut HTML page never held a message: no note, the same as a short one.
+		$html = self::record(
+			array(
+				'body'      => substr( '<!doctype html><title>Bad Gateway</title>' . str_repeat( '<p>proxy</p>', 200 ), 0, Result::BODY_LIMIT ),
+				'truncated' => true,
+			)
+		);
+		$this->assertSame( 'Revalidation failed on the front end (500).', ResultText::sentence( $html ) );
+		$this->assertSame( 'Revalidation failed on the front end (500).', ResultText::sentence( array( 'body' => '[' . $cut ) + $html ), 'A JSON array is not the contract\'s object.' );
+
 		$unauthorized = self::record(
 			array(
 				'outcome'   => Result::UNAUTHORIZED,

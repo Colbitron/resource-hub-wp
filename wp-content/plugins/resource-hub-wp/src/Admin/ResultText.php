@@ -19,9 +19,11 @@ use ResourceHub\Revalidation\ResultStore;
  * {@see \ResourceHub\Editor\RevalidationAssets}. Nothing here prints the raw response body. For a
  * 400, a 500 or a transport failure a sentence may quote one message: the stored `error` (a transport
  * message or one of the plugin's own), else the `error` string of the front end's JSON body, which the
- * route words to name a path and never a value. When the body was cut and no message could be read
- * from it, the sentence says the reply was too long to show. The secret never reaches a record, so no
- * sentence can quote it. Every caller escapes the sentence on output.
+ * route words to name a path and never a value. When a JSON body was cut and no message could be read
+ * from it, the sentence says the reply was too long to show. The plugin never writes the secret to a
+ * record; a quoted `error` is the front end's own text, trusted not to echo the `Authorization` header
+ * back (a front-end URL pointing at some other host that echoes it would be quoted). Every caller
+ * escapes the sentence on output.
  */
 final class ResultText {
 	/**
@@ -175,7 +177,8 @@ final class ResultText {
 			Result::TRANSPORT_ERROR => __( 'Revalidation could not reach the front end.', 'resource-hub' ),
 			Result::NOT_CONFIGURED  => __( 'Revalidation skipped: the front-end URL or the secret is not configured.', 'resource-hub' ),
 			self::INVALID_SECRET    => __( 'Revalidation skipped: the front-end URL or the secret is not configured; the secret is set but not valid, so check Settings > Resource Hub.', 'resource-hub' ),
-			self::BODY_TOO_LONG     => __( 'The front end\'s reply was too long to show (over 1 KB).', 'resource-hub' ),
+			/* translators: %d: how many kilobytes of a reply are kept, 1 today. */
+			self::BODY_TOO_LONG     => sprintf( __( 'The front end\'s reply was too long to show (over %d KB).', 'resource-hub' ), intdiv( Result::BODY_LIMIT, 1024 ) ),
 			Result::NO_SINGLE_TYPE  => __( 'Revalidation not sent: a resource needs exactly one type.', 'resource-hub' ),
 			Result::RESERVED_TYPE   => __( 'Revalidation not sent: a type\'s slug cannot be topic or page. Give this type a different slug and save it again.', 'resource-hub' ),
 			Result::ENCODE_ERROR    => __( 'Revalidation not sent: the events could not be encoded as JSON.', 'resource-hub' ),
@@ -295,10 +298,12 @@ final class ResultText {
 	/**
 	 * A sentence with the record's error message after it, when there is one: the stored `error` (a
 	 * transport message or one of the plugin's own), else the front end's `error` string when the
-	 * stored body is its JSON `{ "error": "…" }`. When neither gives a message and the record says its
-	 * body was cut ({@see Result::$truncated}), the {@see ResultText::BODY_TOO_LONG} note follows
-	 * instead, so a long reply is not mistaken for one with nothing to say. The raw body itself is
-	 * never printed. Escaped on output.
+	 * stored body is its JSON `{ "error": "…" }`. When neither gives a message, the record says its
+	 * body was cut ({@see Result::$truncated}) and the body starts like a JSON object, the
+	 * {@see ResultText::BODY_TOO_LONG} note follows instead, so a long reply is not mistaken for one with
+	 * nothing to say. A cut body that does not start with `{` (a proxy's HTML error page) gets no note,
+	 * like a short one: it never held a message to show. The raw body itself is never printed. Escaped
+	 * on output.
 	 *
 	 * @param string               $sentence The sentence.
 	 * @param array<string, mixed> $record   The stored record.
@@ -310,7 +315,7 @@ final class ResultText {
 			$error = self::error_from_body( $record );
 		}
 
-		if ( '' === trim( $error ) && true === ( $record['truncated'] ?? false ) ) {
+		if ( '' === trim( $error ) && true === ( $record['truncated'] ?? false ) && self::starts_like_json_object( $record['body'] ?? '' ) ) {
 			$error = self::sentences()[ self::BODY_TOO_LONG ];
 		}
 
@@ -334,5 +339,15 @@ final class ResultText {
 		$decoded = json_decode( $body, true );
 
 		return is_array( $decoded ) && isset( $decoded['error'] ) && is_string( $decoded['error'] ) ? $decoded['error'] : '';
+	}
+
+	/**
+	 * Whether a stored body starts like a JSON object: its first character after JSON's own whitespace
+	 * (space, tab, line feed, carriage return) is `{`. The block editor's script has the same test.
+	 *
+	 * @param mixed $body The stored body.
+	 */
+	private static function starts_like_json_object( mixed $body ): bool {
+		return is_string( $body ) && str_starts_with( ltrim( $body, " \t\n\r" ), '{' );
 	}
 }

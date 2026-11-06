@@ -169,6 +169,20 @@ function errorFromBody( record ) {
 }
 
 /**
+ * Whether a stored body starts like a JSON object: its first character after
+ * JSON's own whitespace is `{`. Mirrors ResultText::starts_like_json_object().
+ *
+ * @param {unknown} body The stored body.
+ * @return {boolean} Whether it starts with `{`.
+ */
+function startsLikeJsonObject( body ) {
+	return (
+		typeof body === 'string' &&
+		body.replace( /^[ \t\n\r]+/, '' ).startsWith( '{' )
+	);
+}
+
+/**
  * Whether a pending record is old enough that the send evidently never ran,
  * judged against the server's clock. Without a server time there is no
  * judging, so it is not stale. Mirrors ResultText::is_stale_pending().
@@ -236,7 +250,8 @@ function describe( record, serverNow ) {
 	}
 
 	// Mirrors ResultText::with_error(): the stored error, else the body's
-	// `error` string, else a note that the reply was cut before one could be read.
+	// `error` string, else, for a cut body that starts like JSON, a note that
+	// the reply was cut before one could be read.
 	if ( WITH_ERROR.includes( record.outcome ) ) {
 		let detail = (
 			typeof record.error === 'string' && record.error.trim() !== ''
@@ -244,7 +259,11 @@ function describe( record, serverNow ) {
 				: errorFromBody( record )
 		).trim();
 
-		if ( ! detail && record.truncated === true ) {
+		if (
+			! detail &&
+			record.truncated === true &&
+			startsLikeJsonObject( record.body )
+		) {
 			detail = sentence( BODY_TOO_LONG ).trim();
 		}
 

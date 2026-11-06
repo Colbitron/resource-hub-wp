@@ -334,6 +334,23 @@ final class SenderTest extends RevalidationTestCase {
 	}
 
 	/**
+	 * A body within the limit is never marked as cut, even when scrubbing its invalid bytes makes the
+	 * stored copy longer than the limit: each invalid byte becomes a three-byte U+FFFD.
+	 */
+	public function test_scrubbing_grows_a_body_without_marking_it_cut(): void {
+		$this->configure();
+		$raw             = str_repeat( "\xff", Result::BODY_LIMIT );
+		$this->responder = static fn(): array => self::http_response( 500, $raw );
+
+		$result = ( new Sender() )->send( self::payload() );
+
+		$this->assertTrue( wp_is_valid_utf8( $result->body ) );
+		$this->assertSame( str_repeat( "\u{FFFD}", Result::BODY_LIMIT ), $result->body );
+		$this->assertSame( 3 * Result::BODY_LIMIT, strlen( $result->body ) );
+		$this->assertFalse( $result->truncated );
+	}
+
+	/**
 	 * The secret appears nowhere in the result.
 	 */
 	public function test_result_never_holds_the_secret(): void {

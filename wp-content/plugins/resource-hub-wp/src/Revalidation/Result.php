@@ -85,7 +85,8 @@ final class Result {
 	public const ENCODE_ERROR_MESSAGE = 'Not sent: the events could not be encoded as JSON.';
 
 	/**
-	 * Bytes of a response body kept, before invalid UTF-8 in them is replaced.
+	 * Bytes of a response body kept, before invalid UTF-8 in them is replaced. The note for a reply cut
+	 * here quotes this size in KB ({@see \ResourceHub\Admin\ResultText::sentences()}).
 	 */
 	public const BODY_LIMIT = 1024;
 

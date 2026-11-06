@@ -32,6 +32,12 @@ final class StatusPageTest extends RevalidationTestCase {
 	private const STORED_SECRET = 'stored-secret-0123456789abcdefghijk';
 
 	/**
+	 * How the "Last test" cell and the notice's paragraph open: with the style that wraps a long message.
+	 */
+	private const CELL   = '<td style="overflow-wrap:anywhere">';
+	private const NOTICE = '<p style="overflow-wrap:anywhere">';
+
+	/**
 	 * The page under test.
 	 *
 	 * @var StatusPage
@@ -274,8 +280,8 @@ final class StatusPageTest extends RevalidationTestCase {
 		$this->assertSame( 'sent', $this->handle() );
 
 		$this->assertSame( $expected, ResultText::sentence( ResultStore::read_post( $post_id ) ), 'The editor reads the same sentence from the meta.' );
-		$this->assertStringContainsString( '<td>' . esc_html( $expected ) . ' <time', StatusPage::html() );
-		$this->assertStringContainsString( '<p>' . esc_html( $expected ) . '</p>', StatusPage::test_notice_html( 'sent' ) );
+		$this->assertStringContainsString( self::CELL . esc_html( $expected ) . ' <time', StatusPage::html() );
+		$this->assertStringContainsString( self::NOTICE . esc_html( $expected ) . '</p>', StatusPage::test_notice_html( 'sent' ) );
 	}
 
 	/**
@@ -324,8 +330,44 @@ final class StatusPageTest extends RevalidationTestCase {
 		$this->assertTrue( StatusPage::last_test()['truncated'] );
 
 		$expected = esc_html( 'Revalidation failed on the front end (500). The front end\'s reply was too long to show (over 1 KB).' );
-		$this->assertStringContainsString( '<td>' . $expected . ' <time', StatusPage::html() );
-		$this->assertStringContainsString( '<p>' . $expected . '</p>', StatusPage::test_notice_html( 'sent' ) );
+		$this->assertStringContainsString( self::CELL . $expected . ' <time', StatusPage::html() );
+		$this->assertStringContainsString( self::NOTICE . $expected . '</p>', StatusPage::test_notice_html( 'sent' ) );
+	}
+
+	/**
+	 * A 500 whose body is a proxy's HTML page over 1 KB is cut, but it never held a message, so the page
+	 * shows the plain sentence with no too-long note, as for a short HTML page.
+	 */
+	public function test_test_with_a_long_html_page_has_no_note(): void {
+		$this->configure();
+		$this->make_resource( 'publish', 'long-html' );
+		$this->responder = static fn(): array => self::http_response( 500, '<!doctype html><title>502 Bad Gateway</title>' . str_repeat( '<p>proxy</p>', 200 ) );
+		$this->submit();
+
+		$this->assertSame( 'sent', $this->handle() );
+		$this->assertTrue( StatusPage::last_test()['truncated'] );
+
+		$expected = 'Revalidation failed on the front end (500).';
+		$this->assertStringContainsString( self::CELL . $expected . ' <time', StatusPage::html() );
+		$this->assertStringContainsString( self::NOTICE . $expected . '</p>', StatusPage::test_notice_html( 'sent' ) );
+	}
+
+	/**
+	 * A front end's message of about 1 KB with no space in it wraps in the cell and the notice, rather
+	 * than stretching the table past the screen.
+	 */
+	public function test_long_unbroken_message_wraps(): void {
+		$this->configure();
+		$this->make_resource( 'publish', 'unbroken' );
+		$message         = str_repeat( 'x', 1000 );
+		$this->responder = static fn(): array => self::http_response( 500, '{"error":"' . $message . '"}' );
+		$this->submit();
+
+		$this->assertSame( 'sent', $this->handle() );
+		$this->assertFalse( StatusPage::last_test()['truncated'] );
+		$this->assertSame( 'overflow-wrap:anywhere', StatusPage::WRAP_STYLE );
+		$this->assertStringContainsString( self::CELL . 'Revalidation failed on the front end (500). ' . $message . ' <time', StatusPage::html() );
+		$this->assertStringContainsString( self::NOTICE . 'Revalidation failed on the front end (500). ' . $message . '</p>', StatusPage::test_notice_html( 'sent' ) );
 	}
 
 	/**
@@ -346,8 +388,8 @@ final class StatusPageTest extends RevalidationTestCase {
 
 		$this->assertSame( 'sent', $this->handle() );
 		$this->assertFalse( StatusPage::last_test()['truncated'] );
-		$this->assertStringContainsString( '<td>' . esc_html( $expected ) . ' <time', StatusPage::html() );
-		$this->assertStringContainsString( '<p>' . esc_html( $expected ) . '</p>', StatusPage::test_notice_html( 'sent' ) );
+		$this->assertStringContainsString( self::CELL . esc_html( $expected ) . ' <time', StatusPage::html() );
+		$this->assertStringContainsString( self::NOTICE . esc_html( $expected ) . '</p>', StatusPage::test_notice_html( 'sent' ) );
 	}
 
 	/**
@@ -445,7 +487,7 @@ final class StatusPageTest extends RevalidationTestCase {
 		$this->assertStringContainsString( 'id="rh-test-search-help"', $html );
 		$this->assertStringContainsString( 'id="rh-test-search-status" role="status" aria-live="polite"', $html );
 		$this->assertStringNotContainsString( 'aria-disabled', $html );
-		$this->assertStringNotContainsString( 'style=', $html );
+		$this->assertSame( substr_count( $html, 'style=' ), substr_count( $html, 'style="' . StatusPage::WRAP_STYLE . '"' ), 'The only inline style is the one that wraps a long message.' );
 	}
 
 	/**
