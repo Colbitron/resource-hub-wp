@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { listingMetadata } from "../components/ListingPage";
 import { pageMetadata } from "../components/PageArticle";
 import { resourceMetadata } from "../components/ResourceArticle";
 import { welcomeMetadata } from "../components/WelcomePage";
@@ -15,12 +16,15 @@ import { wpPageSchema, wpResourceSchema, type WpResource } from "../lib/wp/schem
  * The X card rule (`lib/share-metadata.ts`): `summary_large_image` only with
  * an Open Graph image, `summary` otherwise, and only the card type, since X
  * reads the title, description, image and alt from `og:*`. Then each builder
- * that sets Open Graph, so every route follows the rule, and the root
- * layout, which sets neither and so cannot leak a card into a page.
+ * that sets Open Graph, so every route follows the rule; a listing, which
+ * sets neither; and the root layout, which sets neither and so cannot leak a
+ * card into a page.
  */
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures/wp");
 const RAW = JSON.parse(readFileSync(path.join(fixtures, "resource.single.json"), "utf8")) as Record<string, unknown>;
+const LIST = readFileSync(path.join(fixtures, "resources.list.json"), "utf8");
+const LIST_HEADERS = JSON.parse(readFileSync(path.join(fixtures, "resources.list.headers.json"), "utf8")) as Record<string, string>;
 
 /** The captured resource with its featured media replaced, parsed by the reader schema. */
 function withMedia(entries: unknown[]): WpResource {
@@ -46,6 +50,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("shareMetadata", () => {
@@ -59,6 +64,13 @@ describe("shareMetadata", () => {
   it("falls back to the summary card with no image, never the large one", () => {
     expect(shareMetadata({ title: "A" }).twitter).toEqual({ card: "summary" });
     expect(shareMetadata({ title: "A", images: [] }).twitter).toEqual({ card: "summary" });
+  });
+
+  it("does not count an image with no URL, which Next.js drops", () => {
+    expect(shareMetadata({ title: "A", images: "" }).twitter).toEqual({ card: "summary" });
+    expect(shareMetadata({ title: "A", images: [{ url: "" }] }).twitter).toEqual({ card: "summary" });
+    expect(shareMetadata({ title: "A", images: [{ url: "" }, { url: "/media/a.jpg" }] }).twitter).toEqual({ card: "summary_large_image" });
+    expect(shareMetadata({ title: "A", images: new URL("https://site.example/media/a.jpg") }).twitter).toEqual({ card: "summary_large_image" });
   });
 
   it("passes Open Graph through unchanged and copies nothing of it into twitter", () => {
@@ -96,6 +108,17 @@ describe("the builders", () => {
     });
     expect(pageMetadata({ kind: "render", page, path: "/about/team/" }).twitter).toEqual({ card: "summary" });
     expect(welcomeMetadata.twitter).toEqual({ card: "summary" });
+  });
+
+  it("leaves Open Graph and twitter out of a listing, which X then gives no card", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(LIST, { status: 200, headers: { "Content-Type": "application/json; charset=UTF-8", ...LIST_HEADERS } })),
+    );
+    const metadata = await listingMetadata({});
+    expect(metadata.title).toBe("Resources");
+    expect(metadata).not.toHaveProperty("openGraph");
+    expect(metadata).not.toHaveProperty("twitter");
   });
 
   it("leaves Open Graph and twitter out of the root layout, so no page inherits a card", () => {

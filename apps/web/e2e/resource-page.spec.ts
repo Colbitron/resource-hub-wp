@@ -350,12 +350,18 @@ test.describe("metadata", () => {
     await expect(page.locator(".rh-resource__media img")).toHaveAttribute("width", "1024");
   });
 
-  test("the X card is the large one with an og:image, the summary without, and absent where there is no Open Graph", async ({ page }) => {
-    // ID 30 has a 1600×900 featured image; a resource created with no media has none.
+  test("a resource with a featured image gets the large X card, with Next.js's twitter:* copies of its og:* fields", async ({ page }) => {
+    // ID 30 has a 1600×900 featured image. Only the card type is set by the app; Next.js copies the rest from og:*.
     await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
     await expect(page.locator('meta[name="twitter:card"]')).toHaveCount(1);
     await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute("content", "summary_large_image");
+    const og = async (property: string) => (await page.locator(`meta[property="og:${property}"]`).getAttribute("content")) as string;
+    await expect(page.locator('meta[name="twitter:title"]')).toHaveAttribute("content", await og("title"));
+    await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute("content", await og("image"));
+    await expect(page.locator('meta[name="twitter:image:alt"]')).toHaveAttribute("content", await og("image:alt"));
+  });
 
+  test("a resource with no featured image gets the summary X card and no twitter:image", async ({ page }) => {
     const slug = unique("no-image-card");
     await cms.createResource({ title: "No image card", type: "article", slug });
     await page.goto(resourcePath("article", slug));
@@ -363,14 +369,16 @@ test.describe("metadata", () => {
     await expect(page.locator('meta[property="og:image"]')).toHaveCount(0);
     await expect(page.locator('meta[name="twitter:card"]')).toHaveCount(1);
     await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute("content", "summary");
+    await expect(page.locator('meta[name="twitter:image"]')).toHaveCount(0);
+  });
 
-    // A listing sets no Open Graph, so no card: X has nothing to build one from.
+  test("a listing sets no Open Graph and so no X card: X has nothing to build one from", async ({ page }) => {
     await page.goto("/resources/");
     await expect(page.locator('meta[property^="og:"]')).toHaveCount(0);
     await expect(page.locator('meta[name^="twitter:"]')).toHaveCount(0);
   });
 
-  test("with SITE_URL set, the canonical, og:url and og:image are absolute on the site's origin and never name the CMS", async ({ page }) => {
+  test("with SITE_URL set, the canonical, og:url, og:image and twitter:image are absolute on the site's origin and never name the CMS", async ({ page }) => {
     const site = appSiteOrigin();
     const checks: [string, string][] = [
       [resourcePath(SEEDED.type, SEEDED.slug), resourcePath(SEEDED.type, SEEDED.slug)],
@@ -388,9 +396,11 @@ test.describe("metadata", () => {
         expect(content, `${path} og:url`).toBe(`${site}${expected}`);
         urls.push(content);
       }
-      for (const image of await page.locator('meta[property="og:image"]').evaluateAll((metas) => metas.map((meta) => meta.getAttribute("content") ?? ""))) {
-        expect(image.startsWith(`${site}/media/`), `${path} og:image ${image}`).toBe(true);
-        urls.push(image);
+      for (const selector of ['meta[property="og:image"]', 'meta[name="twitter:image"]']) {
+        for (const image of await page.locator(selector).evaluateAll((metas) => metas.map((meta) => meta.getAttribute("content") ?? ""))) {
+          expect(image.startsWith(`${site}/media/`), `${path} ${selector} ${image}`).toBe(true);
+          urls.push(image);
+        }
       }
       for (const url of urls) {
         expect(url, path).not.toContain(mockCmsOrigin());
@@ -398,10 +408,11 @@ test.describe("metadata", () => {
         expect(url, path).not.toContain("wp-json");
       }
     }
-    // The resource page sets og:url; this is not a check that passed by skipping it.
+    // The resource page sets og:url, og:image and twitter:image; this is not a check that passed by skipping them.
     await page.goto(resourcePath(SEEDED.type, SEEDED.slug));
     await expect(page.locator('meta[property="og:url"]')).toHaveAttribute("content", `${site}${resourcePath(SEEDED.type, SEEDED.slug)}`);
     await expect(page.locator('meta[property="og:image"]')).toHaveAttribute("content", `${site}/media/2026/11/content-model.png`);
+    await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute("content", `${site}/media/2026/11/content-model.png`);
   });
 
   test("the page and its metadata make one CMS request between them", async ({ request }) => {
