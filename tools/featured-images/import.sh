@@ -26,8 +26,10 @@
 #       directory wp-env bind-mounts, imported with the cli container's wp, and
 #       the staging directory is removed again.
 #   import.sh host --ssh USER@HOST --wp-path /abs/wordpress/root [same flags]
-#       A remote site over SSH: scp to a mktemp directory under the host's
-#       /tmp, run there with the host's wp, delete the directory. --ssh and
+#       A remote site over SSH: tar the files into a mktemp directory under
+#       the host's /tmp over ssh (no scp, whose SFTP a host may chroot away
+#       from the shell's /tmp), run there with the host's wp, delete the
+#       directory. --ssh and
 #       --wp-path default to the RH_SSH_TARGET and RH_WP_PATH environment
 #       variables; RH_WP_BIN names the wp binary on the host (one path, no
 #       arguments) when it is not on PATH. Nothing is hard-coded.
@@ -461,11 +463,18 @@ run_host() {
 	CLEANUP_TARGET="$target"
 	log "staging in $target:$tmp"
 
-	# Stage locally first so scp sends exactly the catalogue's files in one go.
+	# Stage locally, then stream the files through the same ssh shell that made the
+	# directory and will run WP-CLI, so one filesystem is seen throughout. scp is
+	# not used: it speaks SFTP, which a host may chroot elsewhere (Cloudways keeps
+	# SFTP in /home/master), where the shell's /tmp does not exist.
 	stage="$(mktemp -d "${TMPDIR:-/tmp}/rh-featured-images.XXXXXX")"
 	CLEANUP_LOCAL="$stage"
 	stage_files "$dir" "$stage" "$slugs" "$revalidate_only"
-	scp -q -- "$stage"/* "$target:$tmp/"
+	# --no-xattrs and COPYFILE_DISABLE keep macOS's tar from adding Apple
+	# extended-attribute headers the host's GNU tar would warn about, file by file.
+	COPYFILE_DISABLE=1 tar --no-xattrs -C "$stage" -cf - . | ssh -- "$target" "tar -C $(printf '%q' "$tmp") -xf -"
+	ssh -- "$target" "test -f $(printf '%q' "$tmp/import.sh") && test -f $(printf '%q' "$tmp/slugs.txt")" \
+		|| die "the staged files did not arrive in $target:$tmp"
 
 	ssh -- "$target" "${RH_WP_BIN:+RH_WP_BIN=$(printf '%q' "$RH_WP_BIN") }${RH_WP_USER:+RH_WP_USER=$(printf '%q' "$RH_WP_USER") }bash $(printf '%q' "$tmp/import.sh") run --dir $(printf '%q' "$tmp") --wp-path $(printf '%q' "$wp_path") $(worker_flags "$force" "$revalidate" "$revalidate_only")"
 }
