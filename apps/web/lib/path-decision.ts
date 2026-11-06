@@ -48,8 +48,9 @@
  *   and the favicon (`OWN_ROUTE_PATHS`), are left alone, and so is
  *   everything under `/_next/` and `/media/`, which the framework and the
  *   uploads rewrite own (a junk `/_next/x/` path still falls through to the
- *   catch-all's empty 404: the proxy's matcher keeps out of `/_next/`, where
- *   every asset request would pay for it).
+ *   catch-all's own 404, which has the not-found page in its HTML through
+ *   `DataNotFound` but is rendered and stored per path: the proxy's matcher
+ *   keeps out of `/_next/`, where every asset request would pay for it).
  * - Under the library: a shape no listing or resource route has
  *   (`parseResourcesSegments`: `/resources/topic/`, `/resources/a/b/c/`), a
  *   listing whose segments the listing refuses (`validListing`: a reserved
