@@ -389,14 +389,30 @@ test.describe("motion", () => {
       await page.emulateMedia({ reducedMotion });
       await page.goto("/");
       await expect(group(page)).toBeVisible();
-      const durations = await page.evaluate(() =>
-        ["body", ".rh-header", ".rh-header__name", ".rh-theme", ".rh-theme__label", "main", "footer"].map((selector) => [
-          selector,
-          getComputedStyle(document.querySelector(selector)!).transitionDuration,
-        ]),
-      );
-      for (const [selector, duration] of durations) {
-        expect(duration, selector).toBe("0s");
+      // Every element a theme switch repaints at the top of the page: <html>,
+      // <body>, the header and everything in it, the control's parts among
+      // them, and the two other landmarks. A list of selectors would miss an
+      // element added later; this walks the tree. `transitionDuration` is a
+      // list, one entry per transitioned property.
+      const durations = await page.evaluate(() => {
+        const elements = [
+          document.documentElement,
+          document.body,
+          ...document.querySelectorAll("header, header *, main, footer"),
+        ];
+        return elements.map((element) => {
+          // getAttribute, not className, which is an object on SVG elements.
+          const names = (element.getAttribute("class") ?? "").trim();
+          const classes = names === "" ? "" : `.${names.split(/\s+/).join(".")}`;
+          return { element: `${element.tagName.toLowerCase()}${classes}`, duration: getComputedStyle(element).transitionDuration };
+        });
+      });
+      // The control's inputs, labels and icons are among them.
+      expect(durations.filter(({ element }) => element.startsWith("input.rh-theme__input"))).toHaveLength(3);
+      expect(durations.filter(({ element }) => element.startsWith("label.rh-theme__label"))).toHaveLength(3);
+      expect(durations.filter(({ element }) => element.startsWith("svg.rh-theme__icon"))).toHaveLength(3);
+      for (const { element, duration } of durations) {
+        expect(duration.split(", ").every((part) => part === "0s"), `${element}: ${duration}`).toBe(true);
       }
     });
   }

@@ -14,19 +14,45 @@ import { THEME_ATTRIBUTE, THEME_CHOICES, THEME_INIT_SCRIPT, THEME_STORAGE_KEY, t
 
 interface Stub {
   attributes: Map<string, string>;
+  /** Every property of `document` or `<html>` the script read, in order. */
+  reads: string[];
   run(): void;
+}
+
+/**
+ * An object that records each property read and throws on any it does not
+ * have, so a script that reached for `innerHTML`, `write` or anything else
+ * would fail the test rather than pass unnoticed.
+ */
+function strict<T extends object>(label: string, target: T, reads: string[]): T {
+  return new Proxy(target, {
+    get(object, property) {
+      reads.push(`${label}.${String(property)}`);
+      if (!(property in object)) throw new Error(`the head script read ${label}.${String(property)}`);
+      return Reflect.get(object, property);
+    },
+  });
 }
 
 /** Runs the script with `localStorage.getItem` answering `stored`, or throwing when it is a function. */
 function stub(stored: string | null | (() => never)): Stub {
   const attributes = new Map<string, string>();
-  const documentStub = {
-    documentElement: {
-      setAttribute(name: string, value: string) {
-        attributes.set(name, value);
-      },
+  const reads: string[] = [];
+  const documentStub = strict(
+    "document",
+    {
+      documentElement: strict(
+        "documentElement",
+        {
+          setAttribute(name: string, value: string) {
+            attributes.set(name, value);
+          },
+        },
+        reads,
+      ),
     },
-  };
+    reads,
+  );
   const localStorageStub = {
     getItem(key: string) {
       expect(key).toBe(THEME_STORAGE_KEY);
@@ -37,7 +63,7 @@ function stub(stored: string | null | (() => never)): Stub {
   // The script's free identifiers, `document` and `localStorage`, resolve to
   // the parameters; nothing else is reachable.
   const run = new Function("document", "localStorage", THEME_INIT_SCRIPT) as (d: unknown, l: unknown) => void;
-  return { attributes, run: () => run(documentStub, localStorageStub) };
+  return { attributes, reads, run: () => run(documentStub, localStorageStub) };
 }
 
 describe("the head script", () => {
@@ -62,6 +88,25 @@ describe("the head script", () => {
     const page = stub(value);
     page.run();
     expect(page.attributes.size).toBe(0);
+  });
+
+  it.each([
+    '"><script>alert(1)</script>',
+    'dark"><script>alert(1)</script>',
+    "dark\" onload=\"alert(1)",
+    "<img src=x onerror=alert(1)>",
+  ])("writes nothing for planted markup (%j), and touches nothing but storage", (value) => {
+    const page = stub(value);
+    page.run();
+    expect(page.attributes.size).toBe(0);
+    expect(page.reads).toEqual([]);
+  });
+
+  it("writes only the literal attribute for a stored value, and reads nothing else of the page", () => {
+    const page = stub("dark");
+    page.run();
+    expect([...page.attributes]).toEqual([[THEME_ATTRIBUTE, "dark"]]);
+    expect(page.reads).toEqual(["document.documentElement", "documentElement.setAttribute"]);
   });
 
   it("sets nothing and does not throw when storage cannot be read", () => {
