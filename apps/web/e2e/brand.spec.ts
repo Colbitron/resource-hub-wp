@@ -11,8 +11,8 @@ import { appSiteOrigin } from "./mock-cms/config.mts";
  * The brand layer (`packages/ui/DESIGN.md`, "Brand"): the header's lockup
  * as the one home link, named "Resource Hub" with the mark hidden from
  * assistive technology, in the Tab order after the skip link and before the
- * theme control; the header's height at phone widths; the lockup under
- * forced colours; the footer's publisher link; the icon files (the SVG,
+ * page; the header as one row, the lockup's height plus its padding, from
+ * 320 px up; the lockup under forced colours; the footer's publisher link; the icon files (the SVG,
  * the 32 px PNG, `favicon.ico` and the apple touch icon) and the default
  * share image, each answering with the right content type and size, the
  * share image at one content-hashed URL per route; a resource with a
@@ -71,34 +71,50 @@ test.describe("the header's lockup", () => {
     ["/", "Browse the library"],
     ["/resources/", "All types"],
   ] as const) {
-    test(`is the second Tab stop on ${path}: skip link, home link, theme control, then the page`, async ({ page }) => {
+    test(`is the second Tab stop on ${path}: skip link, home link, then the page`, async ({ page }) => {
       await page.goto(path);
-      await expect(page.getByRole("banner").getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
+      await expect(page.getByRole("contentinfo").getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
       await page.keyboard.press("Tab");
       await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
       await page.keyboard.press("Tab");
       await expect(page.getByRole("link", { name: "Resource Hub", exact: true })).toBeFocused();
       await page.keyboard.press("Tab");
-      await expect(page.getByRole("radio", { name: "System theme", exact: true })).toBeFocused();
-      await page.keyboard.press("Tab");
       await expect(page.getByRole("link", { name: first, exact: true })).toBeFocused();
     });
   }
 
-  // Measured on 2026-11-06 on every page at 320, 360 and 412 px with the
-  // theme control hydrated, where it wraps under the lockup: 110.5 px (75 px
-  // at 1280, on one row). The half pixel is the margin for rounding; any
-  // real growth (a step more padding, a taller lockup) is several pixels and
-  // fails, because every pixel here pushes the listing's first image, the
-  // LCP element at these widths, further down.
-  for (const width of [360, 412]) {
-    test(`keeps the header at most 111 px tall at ${width} px`, async ({ page }) => {
+  // The header holds the lockup alone, so it is one row at every width: its
+  // height is the lockup's plus the row's padding and the header's bottom
+  // border, and nothing else. A second row, a wrapped wordmark or anything
+  // added beside the lockup that is taller than it fails, because every
+  // pixel here pushes the listing's first image, the LCP element at phone
+  // widths, further down. Measured on 2026-11-06 with Figtree loaded: 52.5 px
+  // at 320, 360, 412 and 1280 px, the lockup's 27.5 plus 24 of padding and
+  // the 1 px border (the theme control's old place in the header made it
+  // 110.5 px at 360 and 412 px, where it wrapped, and 75 px at 1280). The
+  // half pixel is the margin for rounding.
+  for (const width of [320, 360, 412, 1280]) {
+    test(`is one row, the lockup's height plus its padding, at ${width} px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
       for (const path of ["/", "/resources/"]) {
         await page.goto(path);
-        await expect(page.getByRole("banner").getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
-        const header = await page.getByRole("banner").boundingBox();
-        expect(header?.height ?? Infinity, path).toBeLessThanOrEqual(111);
+        await page.evaluate(() => document.fonts.ready);
+        const row = await page.evaluate(() => {
+          const header = document.querySelector("header.rh-header")!;
+          const inner = header.querySelector(".rh-header__inner")!;
+          const lockup = inner.querySelector(".rh-brand")!;
+          const style = getComputedStyle(inner);
+          return {
+            header: header.getBoundingClientRect().height,
+            lockup: lockup.getBoundingClientRect().height,
+            padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
+            border: parseFloat(getComputedStyle(header).borderBottomWidth),
+            children: inner.children.length,
+          };
+        });
+        test.info().annotations.push({ type: "header height", description: `${path} at ${width} px: ${row.header} px (lockup ${row.lockup} + padding ${row.padding} + border ${row.border})` });
+        expect(row.children, path).toBe(1);
+        expect(Math.abs(row.header - (row.lockup + row.padding + row.border)), `${path}: ${JSON.stringify(row)}`).toBeLessThanOrEqual(0.5);
       }
     });
   }
@@ -297,7 +313,7 @@ for (const path of ["/", "/resources/", WITH_IMAGE]) {
       if (response.status() === 404) notFound.push(response.url());
     });
     await page.goto(path);
-    await expect(page.getByRole("banner").getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
+    await expect(page.getByRole("contentinfo").getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
     await page.waitForLoadState("networkidle");
     expect(errors).toEqual([]);
     expect(notFound).toEqual([]);
@@ -308,18 +324,19 @@ for (const path of ["/", "/resources/", WITH_IMAGE]) {
   test(`nothing scrolls horizontally at 320 px on ${path}`, async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 640 });
     await page.goto(path);
-    await expect(page.getByRole("banner").getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
+    await expect(page.getByRole("contentinfo").getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
     const widths = await page.evaluate(() => ({
       scroll: document.documentElement.scrollWidth,
       client: document.documentElement.clientWidth,
     }));
     expect(widths.scroll).toBeLessThanOrEqual(widths.client);
-    // The lockup stays on one line, and the control keeps its words.
+    // The lockup stays on one line, and the footer's control keeps its words.
     const name = page.getByRole("link", { name: "Resource Hub", exact: true });
     const box = await name.boundingBox();
     expect(box?.height ?? 0).toBeLessThan(40);
-    const label = page.getByRole("banner").locator(".rh-theme__label").first();
-    await expect(label).toBeVisible();
-    await expect(label).toContainText("System");
+    const footer = page.getByRole("contentinfo");
+    for (const word of ["System", "Light", "Dark"]) {
+      await expect(footer.locator(".rh-theme__label", { hasText: word })).toBeVisible();
+    }
   });
 }

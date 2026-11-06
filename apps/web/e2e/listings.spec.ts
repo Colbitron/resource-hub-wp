@@ -555,10 +555,13 @@ test("the keyboard reaches the filters and the pagination in order", async ({ pa
   expect(await focused()).toEqual({ text: "2", nav: "Pagination" });
   await page.keyboard.press("Tab");
   expect(await focused()).toEqual({ text: "Next", nav: "Pagination" });
-  // Past the page's content, the footer's theme control is the last stop
-  // (one stop: its checked radio, `theme.spec.ts`).
+  // Past the page's content, the footer: the publisher's link, then the
+  // theme control, the last stop (one stop: its checked radio, `theme.spec.ts`).
+  await page.keyboard.press("Tab");
+  expect(await focused()).toEqual({ text: "Colbination", nav: null });
   await page.keyboard.press("Tab");
   await expect(page.getByRole("contentinfo").getByRole("radio", { name: "System theme", exact: true })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
   await page.keyboard.press("Shift+Tab");
   expect(await focused()).toEqual({ text: "Next", nav: "Pagination" });
   await page.keyboard.press("Enter");
