@@ -1,6 +1,6 @@
 <?php
 /**
- * The last result as a notice on a topic's or type's edit screen (ADRs 0017, 0018).
+ * The last result as a notice on a topic's or type's edit screen (see `docs/architecture/revalidation.md`).
  *
  * @package ResourceHub
  */

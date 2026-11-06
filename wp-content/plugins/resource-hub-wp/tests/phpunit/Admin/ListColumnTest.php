@@ -1,6 +1,6 @@
 <?php
 /**
- * The "Revalidation" column on the Resources and Pages lists (ADR 0018).
+ * The "Revalidation" column on the Resources and Pages lists (see `docs/architecture/revalidation.md`).
  *
  * @package ResourceHub
  */

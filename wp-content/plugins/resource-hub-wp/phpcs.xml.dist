@@ -2,6 +2,10 @@
 <ruleset name="Resource Hub">
 	<description>WordPress Coding Standards as the base, the WordPress VIP Minimum ruleset added to it, and the PSR-12 sniffs that do not conflict with either layered on top.</description>
 
+	<!-- Where WordPress and PSR-12 disagree, WordPress wins, so the code reads like core and every other WordPress plugin;
+	     each PSR-12 exclusion below names the WordPress rule it yields to. Rejected for the same reason: PSR-12 as the base
+	     with WordPress on top, and PSR-12 alone with WordPress-Extra for the security sniffs. -->
+
 	<file>resource-hub.php</file>
 	<file>src</file>
 	<file>tests</file>
@@ -79,7 +83,7 @@
 	</rule>
 
 	<!-- WordPress forbids stacked blank lines inside functions; PSR-12 silences that check (severity 0) and Minimum excludes it.
-	     WordPress wins (ADR 0003), so it is restored here, after the PSR-12 block, where it takes effect. -->
+	     WordPress wins, so it is restored here, after the PSR-12 block, where it takes effect. -->
 	<rule ref="Squiz.WhiteSpace.SuperfluousWhitespace.EmptyLines">
 		<severity>5</severity>
 	</rule>

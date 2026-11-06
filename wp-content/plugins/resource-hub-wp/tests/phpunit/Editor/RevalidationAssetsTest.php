@@ -1,6 +1,6 @@
 <?php
 /**
- * The block editor's revalidation feedback script: where it is enqueued and what it is handed (ADR 0018).
+ * The block editor's revalidation feedback script: where it is enqueued and what it is handed (see `docs/architecture/revalidation.md`).
  *
  * @package ResourceHub
  */

@@ -1,6 +1,6 @@
 <?php
 /**
- * Settings > Resource Hub: the status page, the fallback options and the test button (ADR 0019).
+ * Settings > Resource Hub: the status page, the fallback options and the test button (see `docs/architecture/revalidation.md`).
  *
  * @package ResourceHub
  */

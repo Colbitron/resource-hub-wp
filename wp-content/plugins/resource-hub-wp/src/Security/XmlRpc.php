@@ -1,6 +1,6 @@
 <?php
 /**
- * XML-RPC is off on the headless CMS (ADR 0044).
+ * XML-RPC is off on the headless CMS.
  *
  * @package ResourceHub
  */
@@ -24,6 +24,14 @@ namespace ResourceHub\Security;
  * endpoint itself still answers `GET /xmlrpc.php?rsd` with an RSD document, which core prints
  * before the server is built, so the `xmlrpc_enabled` and `xmlrpc_methods` filters do not run
  * there.
+ *
+ * Trackbacks go through `wp-trackback.php`, not XML-RPC, so this switch does not stop them.
+ * Resources do not declare `trackbacks` support, so core creates them with `ping_status` closed and
+ * `wp-trackback.php` refuses them. That was checked by reading core, not tested over HTTP.
+ *
+ * Blocking `xmlrpc.php` at the host or at Cloudflare was rejected as the switch: the rule would live
+ * outside the repository, where wp-env, CI and the tests cannot check it. It could still be added on
+ * top as load shedding.
  */
 final class XmlRpc {
 	/**

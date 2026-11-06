@@ -1,6 +1,7 @@
 /**
- * XML-RPC is off (ADR 0044): over HTTP, the server offers nothing but the
- * three `system.*` methods core's IXR server always adds.
+ * XML-RPC is off (`src/Security/XmlRpc.php` says why): over HTTP, the server
+ * offers nothing but the three `system.*` methods core's IXR server always
+ * adds.
  *
  * No pingback check here: core already drops `pingback.ping` outside the
  * `production` environment type, and wp-env is `local`, so a pingback over

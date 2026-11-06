@@ -22,14 +22,17 @@ use WP_REST_Server;
 
 /**
  * Answers `{ "id", "type", "slug" }` (`resolve-response.schema.json`) for a published resource found by its
- * current slug or by one it had before, or core's `WP_Error` shape for a 400 or a 404 (ADR 0029). The front
- * end calls it only when its current-slug lookup misses, and sends the 308 itself (ADRs 0025, 0035).
+ * current slug or by one it had before, or core's `WP_Error` shape for a 400 or a 404 (see
+ * `packages/ui/README.md`). The front end calls it only when its current-slug lookup misses, and sends the
+ * 308 itself (ADR 0025).
  *
  * Old slugs come from core's own record, the `_wp_old_slug` post meta, read through core's private
- * `_find_post_by_old_slug()`. That function is guarded with `function_exists()`: without it, old slugs are
- * not found and current slugs still resolve. There is no fallback lookup, because the only public way to
- * find a post by meta value is a `meta_key`/`meta_value` query, which the VIP slow-query sniff flags, and
- * ADR 0029 rejects silencing it.
+ * `_find_post_by_old_slug()`, so there is one record of slug history; a private slug-history taxonomy was
+ * rejected because it would duplicate what core already stores. That function is guarded with
+ * `function_exists()`: without it, old slugs are not found and current slugs still resolve. There is no
+ * fallback lookup, because the only public way to find a post by meta value is a `meta_key`/`meta_value`
+ * query, which the VIP slow-query sniff flags, and a `phpcs:ignore` would silence the sniff rather than
+ * meet it.
  */
 final class ResolveRoute {
 	/**
@@ -202,7 +205,7 @@ final class ResolveRoute {
 	 * The published resource that once had this slug, through core's `_wp_old_slug` record. Core's lookup
 	 * is not status-filtered and returns one match with no ordering, so the status is checked here; when two
 	 * resources once shared the slug, the match is core's, and an unpublished one can hide a published one
-	 * (ADR 0029).
+	 * (see `packages/ui/README.md`).
 	 *
 	 * @param string $slug A sanitized slug.
 	 */

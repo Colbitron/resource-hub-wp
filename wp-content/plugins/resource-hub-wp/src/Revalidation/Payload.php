@@ -22,7 +22,7 @@ use ResourceHub\ContentModel\Taxonomies;
  */
 final class Payload {
 	/**
-	 * The contract version. Fixed by the schema's `const`; a breaking change to an event shape bumps it (ADR 0014).
+	 * The contract version. Fixed by the schema's `const`; a breaking change to an event shape bumps it (ADR 0010).
 	 */
 	public const VERSION = 1;
 

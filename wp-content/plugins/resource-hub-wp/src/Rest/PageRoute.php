@@ -28,12 +28,12 @@ use WP_REST_Server;
  *    was moved or renamed, which core would also find with its own guess
  *    (`redirect_guess_404_permalink()`). Two or more such pages are ambiguous, and the answer is no page.
  *
- * There is no old-slug step, unlike the resolve route (ADR 0029): core records `_wp_old_slug` for
+ * There is no old-slug step, unlike the resolve route ({@see ResolveRoute}): core records `_wp_old_slug` for
  * non-hierarchical post types only (`wp_check_for_changed_slugs()`), so a renamed page's old path is a
  * miss, while its children's old paths are found by step 3 when their slugs are unique.
  *
  * A page found by any step is answered with its canonical path now; the front end redirects when that
- * differs from what it asked for (ADRs 0025, 0035). The static front page's own path is therefore
+ * differs from what it asked for (ADR 0025). The static front page's own path is therefore
  * answered as `/`, so `/home/` redirects to `/`. Unpublished and password-protected pages and the posts
  * page (`page_for_posts`) are never answered ({@see PagePath::is_served()}).
  *

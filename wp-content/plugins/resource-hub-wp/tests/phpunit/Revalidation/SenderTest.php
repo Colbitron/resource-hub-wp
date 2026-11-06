@@ -15,7 +15,7 @@ use ResourceHub\Revalidation\Sender;
 use WP_Error;
 
 /**
- * Tests for {@see Sender} with HTTP mocked (ADR 0013).
+ * Tests for {@see Sender} with HTTP mocked (see `docs/architecture/revalidation.md`).
  */
 final class SenderTest extends RevalidationTestCase {
 	/**

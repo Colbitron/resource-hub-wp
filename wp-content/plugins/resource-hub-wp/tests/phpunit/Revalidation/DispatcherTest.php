@@ -22,7 +22,7 @@ use ResourceHub\Revalidation\Sender;
 use WP_REST_Request;
 
 /**
- * Tests for {@see Dispatcher} (ADRs 0012, 0014, 0019).
+ * Tests for {@see Dispatcher} (ADR 0011; see `docs/architecture/revalidation.md`).
  */
 final class DispatcherTest extends RevalidationTestCase {
 	/**
@@ -245,7 +245,7 @@ final class DispatcherTest extends RevalidationTestCase {
 
 	/**
 	 * The fallback that sends at once wrote its own `pending` first, so it is guarded like a cron batch:
-	 * a newer batch's `pending` written during its send survives the fallback's result (ADR 0018).
+	 * a newer batch's `pending` written during its send survives the fallback's result.
 	 */
 	public function test_schedule_failure_fallback_keeps_a_newer_pending(): void {
 		$this->configure();
@@ -444,7 +444,7 @@ final class DispatcherTest extends RevalidationTestCase {
 
 	/**
 	 * The cron callback keeps a newer batch's `pending`: two saves schedule two batches, and the first
-	 * batch's result, arriving second, does not replace the second batch's `pending` (ADR 0018).
+	 * batch's result, arriving second, does not replace the second batch's `pending`.
 	 */
 	public function test_cron_result_keeps_a_newer_pending(): void {
 		$this->configure();

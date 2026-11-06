@@ -10,7 +10,7 @@ declare(strict_types=1);
 namespace ResourceHub\Revalidation;
 
 /**
- * Collects the events raised during a request and deduplicates them (ADR 0014). {@see Dispatcher} splits
+ * Collects the events raised during a request and deduplicates them (see `packages/ui/README.md`). {@see Dispatcher} splits
  * them into batches of at most {@see Queue::BATCH_SIZE} after checking each one.
  *
  * Deduplication is per resource ID for resource events, per (taxonomy, term ID) for term events and

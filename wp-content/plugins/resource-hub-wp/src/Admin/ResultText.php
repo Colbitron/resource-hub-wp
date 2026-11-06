@@ -14,7 +14,7 @@ use ResourceHub\Revalidation\ResultStore;
 
 /**
  * Turns a `_rh_last_revalidation` record into the words the admin screens show: a short label for
- * the list column on the Resources and Pages lists and a full sentence for the term notice and the status page (ADR 0018).
+ * the list column on the Resources and Pages lists and a full sentence for the term notice and the status page.
  * The block editor's notice reads the same sentences, handed to its script by
  * {@see \ResourceHub\Editor\RevalidationAssets}. Nothing here prints the response
  * body: a sentence may quote the stored `error`, which is a transport message or one of the plugin's
@@ -144,7 +144,7 @@ final class ResultText {
 	 * caused by an invalid secret, and `no_answer`, which only the block editor uses, for a
 	 * poll window that closed with no record for the save. `unexpected_code` holds `%d` for the HTTP
 	 * code. This is the one source of the wording: {@see ResultText::sentence()} reads it here, and the
-	 * block editor's script receives it through `wp_localize_script()` (ADR 0018). Nothing in it is
+	 * block editor's script receives it through `wp_localize_script()`. Nothing in it is
 	 * configuration, so the secret can never reach the browser this way.
 	 *
 	 * @return array<string, string>

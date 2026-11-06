@@ -13,7 +13,7 @@ use ResourceHub\Revalidation\Config;
 use WP_UnitTestCase;
 
 /**
- * Tests for {@see Config} (ADR 0019). The constants are undefined in the test run, so the option
+ * Tests for {@see Config} (see `docs/architecture/revalidation.md`). The constants are undefined in the test run, so the option
  * fallback is what can be exercised; the constant branch is the same code with `defined()` true.
  */
 final class ConfigTest extends WP_UnitTestCase {

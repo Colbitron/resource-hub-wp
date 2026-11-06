@@ -19,7 +19,7 @@ use WP_Post;
 use WP_Query;
 
 /**
- * A status page first (ADR 0019): which source supplies the front-end URL and the secret, the URL
+ * A status page first (see `docs/architecture/revalidation.md`): which source supplies the front-end URL and the secret, the URL
  * itself, whether PostHog is on, and the last test's result. It never prints the secret, not even
  * in part. Below that, a form writes the two fallback options the constants win over, and a
  * "Send test revalidation" button sends a real `update` event through
@@ -192,6 +192,9 @@ final class StatusPage {
 	 * fragment or credentials; a trailing slash is dropped. The send appends `/api/revalidate/`, so a
 	 * path would double it. An empty value clears the option. Anything else is refused with a
 	 * settings error and the stored value is kept.
+	 *
+	 * IP hosts and link-local addresses are accepted by design: an administrator sets the URL, so
+	 * the check is about carrying the secret safely, not about which hosts may be reached.
 	 *
 	 * A null value means the field was not submitted at all, which is what `options.php` passes when
 	 * the field is disabled because its constant is defined: the stored value is kept, as the secret's

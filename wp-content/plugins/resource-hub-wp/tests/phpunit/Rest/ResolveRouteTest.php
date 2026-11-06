@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /resource-hub/v1/resolve?slug=…` (ADR 0029).
+ * `GET /resource-hub/v1/resolve?slug=…` (see `packages/ui/README.md`).
  *
  * @package ResourceHub
  */
@@ -178,7 +178,7 @@ final class ResolveRouteTest extends WP_UnitTestCase {
 	/**
 	 * When an unpublished resource and a published one both once had a slug, core's lookup returns one of
 	 * them with no ordering and no status filter, and today it returns the unpublished one, so the slug is a
-	 * 404. Pinned so a change in core shows up here (ADR 0029).
+	 * 404. Pinned so a change in core shows up here; `packages/ui/README.md` states the same limit.
 	 */
 	public function test_unpublished_holder_of_an_old_slug_hides_a_published_one(): void {
 		$draft = $this->resource( 'twin-a' );
@@ -195,7 +195,7 @@ final class ResolveRouteTest extends WP_UnitTestCase {
 		$this->assertLessThan( $published, $draft );
 		$this->assertContains( 'twin-a', get_post_meta( $draft, '_wp_old_slug', false ) );
 		$this->assertContains( 'twin-a', get_post_meta( $published, '_wp_old_slug', false ) );
-		$this->assertSame( $draft, $this->core_find( 'twin-a', PostType::NAME ), 'Core now picks another holder of the old slug; revisit ADR 0029.' );
+		$this->assertSame( $draft, $this->core_find( 'twin-a', PostType::NAME ), 'Core now picks another holder of the old slug; revisit the resolve section of packages/ui/README.md.' );
 		$this->assert_not_found( 'twin-a' );
 	}
 

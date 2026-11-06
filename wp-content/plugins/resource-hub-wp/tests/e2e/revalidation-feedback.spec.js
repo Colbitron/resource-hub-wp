@@ -1,8 +1,8 @@
 /**
- * Revalidation feedback for editors (ADRs 0018, 0019): publishing a resource
- * or a page in the block editor shows the revalidation notice, a save's poll
- * shows that save's result only, and the status page's "Send test
- * revalidation" button is disabled until a resource is published.
+ * Revalidation feedback for editors (see `docs/architecture/revalidation.md`):
+ * publishing a resource or a page in the block editor shows the revalidation
+ * notice, a save's poll shows that save's result only, and the status page's
+ * "Send test revalidation" button is disabled until a resource is published.
  *
  * The tests site has no front-end URL or secret, so every send is recorded
  * as "not configured" straight away, with no cron involved. That is the

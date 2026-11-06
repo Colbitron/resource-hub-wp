@@ -16,7 +16,8 @@ use WP_REST_Request;
 use WP_Term;
 
 /**
- * Writes `_rh_last_revalidation` on every resource, term and page in a batch and exposes it over REST (ADR 0018).
+ * Writes `_rh_last_revalidation` on every resource, term and page in a batch and exposes it over REST
+ * (see `docs/architecture/revalidation.md`).
  *
  * A batch gets one result, written to every object it carried, each copy noting how many other
  * changes travelled with it. The status moves from `pending`, written when the batch is scheduled,
@@ -120,8 +121,7 @@ final class ResultStore {
 
 	/**
 	 * Registers the read-only `edit`-context REST field on the post type, on pages and on both taxonomies.
-	 * Hooked to `rest_api_init`. The block editor's notice polls it after a save of a resource or a page
-	 * (ADR 0018).
+	 * Hooked to `rest_api_init`. The block editor's notice polls it after a save of a resource or a page.
 	 */
 	public function register_rest_fields(): void {
 		foreach ( self::POST_TYPES as $post_type ) {
@@ -276,7 +276,7 @@ final class ResultStore {
 	 * lose a real result.
 	 *
 	 * The cost: if the later send never completes, the guarded result is lost, and the record stays
-	 * `pending` until the stale-pending display covers it (ADR 0018). The read here and the write
+	 * `pending` until the stale-pending display covers it (see `docs/architecture/revalidation.md`). The read here and the write
 	 * after it are not atomic, so a `pending` written between them is still overwritten. Only a
 	 * `pending` is protected: an older guarded result still replaces a later final, such as a
 	 * held-back save's failure.

@@ -12,7 +12,7 @@ declare(strict_types=1);
 namespace ResourceHub\Revalidation;
 
 /**
- * POSTs a payload to `{FRONTEND_URL}/api/revalidate/` with a 3-second timeout and no retries (ADR 0013),
+ * POSTs a payload to `{FRONTEND_URL}/api/revalidate/` with a 3-second timeout and no retries (see `docs/architecture/revalidation.md`),
  * and turns whatever happens into a {@see Result}.
  *
  * The secret travels only in the `Authorization` header of this request. It is never written to the
@@ -20,7 +20,13 @@ namespace ResourceHub\Revalidation;
  */
 final class Sender {
 	/**
-	 * Seconds to wait for the front end. The VIP ruleset's cap; nothing here needs more.
+	 * Seconds to wait for the front end. The VIP ruleset's cap; nothing here needs more. The send runs in
+	 * cron, so this bounds how long a cron request holds a PHP worker, not how long the editor waits.
+	 * Five seconds with a scoped `phpcs:ignore` was rejected: if the front end ever needs slow work on
+	 * revalidation, it answers first and does the work after, and this timeout is not raised for it.
+	 *
+	 * Nothing retries a failed send: a retry queue needs its own storage, scheduling and failure display,
+	 * and the editor who sees the failure is best placed to decide whether it matters and save again.
 	 */
 	public const TIMEOUT = 3;
 

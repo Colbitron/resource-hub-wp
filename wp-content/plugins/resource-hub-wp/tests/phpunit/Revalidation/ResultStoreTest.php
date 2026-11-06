@@ -22,7 +22,7 @@ use ResourceHub\Revalidation\Sender;
 use WP_REST_Request;
 
 /**
- * Tests for {@see ResultStore} (ADR 0018).
+ * Tests for {@see ResultStore} (see `docs/architecture/revalidation.md`).
  */
 final class ResultStoreTest extends RevalidationTestCase {
 	/**

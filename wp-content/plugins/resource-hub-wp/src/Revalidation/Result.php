@@ -25,7 +25,7 @@ final class Result {
 	public const FAILED = 'failed';
 
 	/**
-	 * The outcomes, one per branch the editor notice has to put into words (ADR 0018).
+	 * The outcomes, one per branch the editor notice has to put into words.
 	 */
 	public const OK              = 'ok';
 	public const BAD_BODY        = 'bad_body';
@@ -85,7 +85,7 @@ final class Result {
 	public const ENCODE_ERROR_MESSAGE = 'Not sent: the events could not be encoded as JSON.';
 
 	/**
-	 * Bytes of a response body kept, before invalid UTF-8 in them is replaced (ADR 0018: "about 1 KB").
+	 * Bytes of a response body kept, before invalid UTF-8 in them is replaced.
 	 */
 	public const BODY_LIMIT = 1024;
 
