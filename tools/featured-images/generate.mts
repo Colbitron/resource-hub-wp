@@ -30,7 +30,14 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
  * `apps/web`, so this tool adds no dependency and no lockfile change: a root
  * `@playwright/test` entry re-resolves peers across the plugin's packages.
  */
-const { chromium } = createRequire(path.join(ROOT, "apps/web/package.json"))("@playwright/test") as typeof import("@playwright/test");
+function loadPlaywright(): typeof import("@playwright/test") {
+  try {
+    return createRequire(path.join(ROOT, "apps/web/package.json"))("@playwright/test");
+  } catch {
+    throw new Error("Could not load @playwright/test from apps/web; run pnpm install at the repository root first.");
+  }
+}
+const { chromium } = loadPlaywright();
 const SEEDER = path.join(ROOT, "wp-content/plugins/resource-hub-wp/src/Seed/Seeder.php");
 const DEFAULT_OUT = path.join(ROOT, "artifacts/featured-images");
 
