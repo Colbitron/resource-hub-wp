@@ -130,23 +130,37 @@ run_import() {
 	# A no-op save of a resource through wp_update_post(), so the plugin's hook
 	# sends an `update` event. The post is read again first and saved only while
 	# it is still a published resource: an editor may have drafted or trashed it
-	# since the lookup, and a save naming a status would publish it again. Prints
-	# "saved" or "not-published"; the plugin's own result goes to stderr and is
-	# left visible.
+	# since the lookup, and a save naming a status would publish it again. The
+	# first line of stdout is the marker, "rh:saved" or "rh:not-published"; the
+	# plugin prints its result at shutdown, after it, as a log line on stdout
+	# when the batch was accepted and as a warning on stderr otherwise.
 	revalidate_post() {
 		local as_user=()
 		[ -n "${RH_WP_USER:-}" ] && as_user=(--user="$RH_WP_USER")
-		wp ${as_user[@]+"${as_user[@]}"} eval "\$p = get_post( $1 ); if ( ! \$p || 'resource' !== \$p->post_type || 'publish' !== \$p->post_status ) { echo 'not-published'; exit; } \$r = wp_update_post( array( 'ID' => $1 ), true ); if ( is_wp_error( \$r ) ) { fwrite( STDERR, \$r->get_error_message() . \"\\n\" ); exit( 1 ); } echo 'saved';"
+		wp ${as_user[@]+"${as_user[@]}"} eval "\$p = get_post( $1 ); if ( ! \$p || 'resource' !== \$p->post_type || 'publish' !== \$p->post_status ) { echo \"rh:not-published\\n\"; exit; } \$r = wp_update_post( array( 'ID' => $1 ), true ); if ( is_wp_error( \$r ) ) { fwrite( STDERR, \$r->get_error_message() . \"\\n\" ); exit( 1 ); } echo \"rh:saved\\n\";"
 	}
 
-	# Runs revalidate_post for a slug and logs the outcome; non-zero on failure.
+	# Runs revalidate_post for a slug and logs the outcome. Returns 0 when the
+	# plugin logged an accepted batch (its line is shown), 3 when the save went
+	# through but the plugin warned instead (the warning is on stderr above, and
+	# in _rh_last_revalidation), 2 when the resource is no longer published, and
+	# 1 when the save itself failed.
 	revalidate_slug() {
-		local slug="$1" id="$2" result
-		result="$(revalidate_post "$id")" || { log "failed   $slug (#$id): the revalidation save failed"; return 1; }
-		case "$result" in
-			saved) log "saved    $slug (#$id): update event queued; the plugin's result is above and in _rh_last_revalidation" ;;
-			not-published) log "warning  $slug (#$id): no longer a published resource, revalidation skipped"; return 2 ;;
-			*) log "failed   $slug (#$id): unexpected save output: $result"; return 1 ;;
+		local slug="$1" id="$2" output marker rest
+		output="$(revalidate_post "$id")" || { log "failed   $slug (#$id): the revalidation save failed"; return 1; }
+		marker="${output%%$'\n'*}"
+		rest="${output#*$'\n'}"
+		[ "$rest" = "$output" ] && rest=""
+		case "$marker" in
+			rh:saved)
+				if [ -n "$rest" ]; then
+					log "saved    $slug (#$id): $rest"
+				else
+					log "warning  $slug (#$id): saved, but the plugin reported a problem (its warning is above, and in _rh_last_revalidation)"
+					return 3
+				fi ;;
+			rh:not-published) log "warning  $slug (#$id): no longer a published resource, revalidation skipped"; return 2 ;;
+			*) log "failed   $slug (#$id): unexpected save output: $output"; return 1 ;;
 		esac
 	}
 
@@ -154,8 +168,8 @@ run_import() {
 	while IFS= read -r slug; do slugs+=("$slug"); done < <(read_slugs "$dir")
 	[ "${#slugs[@]}" -gt 0 ] || die "nothing to import: $dir has no slugs.txt and no PNGs"
 
-	local set=0 skipped=0 no_post=0 failed=0 saved=0 not_published=0 rc
-	local file id thumb title attachment dims removed restored
+	local set=0 skipped=0 no_post=0 failed=0 saved=0 warned=0 not_published=0 rc
+	local file id thumb title attachment dims removed restored candidates candidate basename ours_re lookup_failed
 	for slug in "${slugs[@]}"; do
 		case "$slug" in
 			''|*[!a-z0-9-]*) log "failed   '$slug': not a slug"; failed=$((failed + 1)); continue ;;
@@ -175,6 +189,7 @@ run_import() {
 				revalidate_slug "$slug" "$id" && rc=0 || rc=$?
 				case "$rc" in
 					0) saved=$((saved + 1)) ;;
+					3) warned=$((warned + 1)) ;;
 					2) not_published=$((not_published + 1)) ;;
 					*) failed=$((failed + 1)) ;;
 				esac
@@ -225,20 +240,39 @@ run_import() {
 		# A run interrupted between the import and the meta write leaves an attachment
 		# on the post with no _thumbnail_id. Reuse the newest such attachment, once it
 		# is checked to decode, instead of importing a duplicate; one that does not
-		# decode is deleted and the import happens afresh. --force always imports
-		# afresh. Not covered: a file copied into uploads before the attachment row
-		# was written, which WordPress never lists and only the uploads directory shows.
+		# decode is deleted and the import happens afresh. Ours means the post's
+		# attachment with the resource's title whose file is <slug>.png, or the
+		# <slug>-N.png WordPress names a second copy; an editor's same-titled upload
+		# is left alone. --force always imports afresh. Not covered: a file copied
+		# into uploads before the attachment row was written, which WordPress never
+		# lists and only the uploads directory shows.
 		attachment=""
 		if [ "$force" != "1" ]; then
-			if ! attachment="$(wp post list --post_type=attachment --post_status=inherit --post_parent="$id" --title="$title" --orderby=ID --order=DESC --field=ID)"; then
+			if ! candidates="$(wp post list --post_type=attachment --post_status=inherit --post_parent="$id" --title="$title" --orderby=ID --order=DESC --field=ID)"; then
 				log "failed   $slug (#$id): could not look up the post's attachments"
 				failed=$((failed + 1))
 				continue
 			fi
-			attachment="${attachment%%$'\n'*}"
-			case "$attachment" in
-				*[!0-9]*) log "failed   $slug (#$id): unexpected attachment lookup output: $attachment"; failed=$((failed + 1)); continue ;;
-			esac
+			lookup_failed=0
+			for candidate in $candidates; do
+				case "$candidate" in
+					''|*[!0-9]*) log "failed   $slug (#$id): unexpected attachment lookup output: $candidate"; lookup_failed=1; break ;;
+				esac
+				if ! basename="$(wp eval "echo basename( (string) get_attached_file( $candidate ) );")"; then
+					log "failed   $slug (#$id): could not read the file of attachment #$candidate"
+					lookup_failed=1
+					break
+				fi
+				ours_re="^${slug}(-[0-9]+)?\.png\$"
+				if [[ "$basename" =~ $ours_re ]]; then
+					attachment="$candidate"
+					break
+				fi
+			done
+			if [ "$lookup_failed" = "1" ]; then
+				failed=$((failed + 1))
+				continue
+			fi
 		fi
 		if [ -n "$attachment" ]; then
 			if ! dims="$(attachment_sizes "$attachment")"; then
@@ -302,6 +336,7 @@ run_import() {
 			revalidate_slug "$slug" "$id" && rc=0 || rc=$?
 			case "$rc" in
 				0) saved=$((saved + 1)) ;;
+				3) warned=$((warned + 1)) ;;
 				2) not_published=$((not_published + 1)) ;;
 				*) failed=$((failed + 1)) ;;
 			esac
@@ -309,14 +344,14 @@ run_import() {
 	done
 
 	if [ "$revalidate_only" = "1" ]; then
-		log "done: $saved revalidated, $not_published skipped (not published), $no_post skipped (no post), $failed failed"
+		log "done: $saved revalidated, $warned saved with a plugin warning, $not_published skipped (not published), $no_post skipped (no post), $failed failed"
 		[ "$failed" -eq 0 ] || return 1
-		[ "$saved" -gt 0 ] || die "nothing was revalidated: wrong --wp-path, or an unseeded site?"
+		[ $((saved + warned)) -gt 0 ] || die "nothing was revalidated: wrong --wp-path, or an unseeded site?"
 		return 0
 	fi
 
 	local suffix=""
-	[ "$revalidate" = "1" ] && suffix=", $saved revalidated, $not_published not revalidated (no longer published)"
+	[ "$revalidate" = "1" ] && suffix=", $saved revalidated, $warned saved with a plugin warning, $not_published not revalidated (no longer published)"
 	log "done: $set set, $skipped skipped (already set), $no_post skipped (no post), $failed failed$suffix"
 	[ "$failed" -eq 0 ] || return 1
 	[ $((set + skipped)) -gt 0 ] || die "nothing was set and nothing was already set: wrong --wp-path, or an unseeded site?"
