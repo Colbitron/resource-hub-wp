@@ -50,7 +50,7 @@
 .rh-filters__link {
 	display: inline-block;
 	padding: var(--rh-space-1) var(--rh-space-3);
-	border: var(--rh-border-width) solid var(--rh-color-border);
+	border: var(--rh-border-width) solid var(--rh-color-border-strong);
 	border-radius: var(--rh-radius-sm);
 	color: var(--rh-color-text);
 	font-size: var(--rh-text-sm);
@@ -105,7 +105,7 @@
 }
 
 .rh-pagination__link {
-	border: var(--rh-border-width) solid var(--rh-color-border);
+	border: var(--rh-border-width) solid var(--rh-color-border-strong);
 	border-radius: var(--rh-radius-sm);
 	color: var(--rh-color-text);
 	text-decoration: none;

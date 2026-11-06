@@ -13,6 +13,7 @@ export const COLOR_TOKENS = [
   "--rh-color-surface",
   "--rh-color-surface-raised",
   "--rh-color-border",
+  "--rh-color-border-strong",
   "--rh-color-accent",
   "--rh-color-accent-text",
   "--rh-color-focus",

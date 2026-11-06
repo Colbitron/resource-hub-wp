@@ -22,7 +22,8 @@ Every colour is a role, named for what it does and never for its value, and ever
 | `--rh-color-text-muted` | Secondary text: meta lines, summaries, captions, the footer, hover borders |
 | `--rh-color-surface` | The page: the body background and the card |
 | `--rh-color-surface-raised` | An inset surface a step away from the page: topic chips, code, the image placeholder |
-| `--rh-color-border` | Hairlines, as translucent ink so one value sits on either surface |
+| `--rh-color-border` | Decorative hairlines, as translucent ink so one value sits on either surface: dividers, the card's outline, a table's rules, the card's topic labels |
+| `--rh-color-border-strong` | The boundary of a control whose edge is the only thing that shows it is one: the filter chips, the pagination links and the resource page's topic chips; opaque, in the ink family |
 | `--rh-color-accent` | Links, and the skip link's background: cobalt, the brand's link colour |
 | `--rh-color-accent-text` | Text on `--rh-color-accent` |
 | `--rh-color-focus` | The focus ring: cobalt in light, lemon in dark |
@@ -43,7 +44,9 @@ Every colour is a role, named for what it does and never for its value, and ever
 
 A type the table does not know, or whose ID now carries a different slug, gets a **neutral mark** in the ink (`--rh-color-text`). Adding a type is therefore a development change, not an editorial one: the term is created in the CMS and its accent row ships in the same change and the same deploy, so a new type is never coloured by accident. Rendering the marks on cards and resource pages is still to be built; the table and the tokens come first so the rule exists before anything draws it.
 
-**Contrast is a test, not a table.** WCAG 2.2 AA: 4.5:1 for every pair of text on a background and 3:1 for the focus ring against both surfaces, in both schemes. `test/contrast.test.js` parses `tokens.css`, resolves each scheme and asserts every pair (text and muted text on the page and on the raised surface, links on both, text on the accent, and the inverted current state), so the ratios are never written down to go stale. The marks are decorative and are not asserted; the test prints their ratios. One open point for the owner: in the light scheme lemon is the weakest mark by far, with coral and mint under 3:1 too. Clearing 3:1 would mean darkening those three light values away from the brand's; the dark scheme is fine as it is.
+**Borders are decorative or they mark a control.** The hairline, `--rh-color-border`, is decoration: it separates things that are already told apart by their text and space, so it may sit far under 3:1, and it is never the only edge of something a reader can activate. Wherever a control's edge is what shows it is a control (a filter chip, a pagination link, a topic chip on the resource page), that edge is `--rh-color-border-strong`, which reaches 3:1 against both surfaces (WCAG 1.4.11). The card keeps the hairline because its title is an underlined link, and the card's topic labels keep it because they are not links.
+
+**Contrast is a test, not a table.** WCAG 2.2 AA: 4.5:1 for every pair of text on a background, and 3:1 for the focus ring and a control's boundary against both surfaces, in both schemes. `test/contrast.test.js` parses `tokens.css`, resolves each scheme and asserts every pair (text and muted text on the page and on the raised surface, links on both, text on the accent, the inverted current state, the focus ring and the strong border), so the ratios are never written down to go stale. Every colour token is in an asserted pair or in the test's commented list of decorative exemptions, which is the hairline and the marks; their ratios are printed, not asserted, with a translucent colour composited over the surface first. The test also refuses a token declared outside the one `:root` block, so a scoped override cannot carry a value it never measured. One open point for the owner: in the light scheme lemon is the weakest mark by far, with coral and mint under 3:1 too. Clearing 3:1 would mean darkening those three light values away from the brand's; the dark scheme is fine as it is.
 
 ## Theme and colour scheme
 
@@ -73,7 +76,7 @@ Spacing is one scale on a 4 px step, `--rh-space-1`, `--rh-space-2`, `--rh-space
 
 ## Elevation & Depth
 
-The system is flat. Depth is shown by surface and hairline, not by shadow: the page is `--rh-color-surface`, an inset such as a chip, a code block or the box an image loads into is `--rh-color-surface-raised`, and edges are `--rh-color-border` at `--rh-border-width`. A hover darkens a border to `--rh-color-text-muted`; the current filter and the current page invert, ink behind surface-coloured text. There are no shadow tokens today. If a later direction wants a resting shadow or a lift on hover, it is added as a token here and in `tokens.css` first, and stays subtle enough to vanish in the dark scheme.
+The system is flat. Depth is shown by surface and hairline, not by shadow: the page is `--rh-color-surface`, an inset such as a chip, a code block or the box an image loads into is `--rh-color-surface-raised`, and edges are `--rh-color-border` at `--rh-border-width`, or `--rh-color-border-strong` where the edge marks a control (see [Colors](#colors)). A hover darkens a border to `--rh-color-text-muted`; the current filter and the current page invert, ink behind surface-coloured text. There are no shadow tokens today. If a later direction wants a resting shadow or a lift on hover, it is added as a token here and in `tokens.css` first, and stays subtle enough to vanish in the dark scheme.
 
 ## Shapes
 

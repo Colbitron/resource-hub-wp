@@ -12,8 +12,9 @@
  * theme choice sets `color-scheme` on <html> and every token follows.
  * No `prefers-color-scheme` media query, so that choice needs no second
  * copy of the values. Every text-on-background pair meets WCAG AA (4.5:1
- * for text, 3:1 for the focus ring against both surfaces); the package's
- * test/contrast.test.js reads this file and checks it.
+ * for text; 3:1 for the focus ring and a control's boundary against both
+ * surfaces); the package's test/contrast.test.js reads this file and checks
+ * it.
  */
 
 :root {
@@ -25,6 +26,7 @@
 	--rh-color-surface: light-dark(#f6f4ef, #161519);
 	--rh-color-surface-raised: light-dark(#ece8df, #2a282f);
 	--rh-color-border: light-dark(rgb(30 28 34 / 0.14), rgb(236 233 226 / 0.14));
+	--rh-color-border-strong: light-dark(#807c86, #7a7780);
 	--rh-color-accent: light-dark(#3348c4, #a8b2f0);
 	--rh-color-accent-text: light-dark(#f6f4ef, #161519);
 	--rh-color-focus: light-dark(#4056d6, #efc34a);

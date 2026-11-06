@@ -55,7 +55,7 @@
 .rh-resource__topic {
 	display: inline-block;
 	padding: 0 var(--rh-space-2);
-	border: var(--rh-border-width) solid var(--rh-color-border);
+	border: var(--rh-border-width) solid var(--rh-color-border-strong);
 	border-radius: var(--rh-radius-sm);
 	background: var(--rh-color-surface-raised);
 	color: var(--rh-color-text);
