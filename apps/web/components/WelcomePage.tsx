@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { DEFAULT_SHARE_IMAGE } from "@/lib/share-image";
 import { shareMetadata } from "@/lib/share-metadata";
 
 import "./page.css";
@@ -21,7 +22,8 @@ export const WELCOME_TITLE = "Resource Hub";
 export const welcomeMetadata: Metadata = {
   title: { absolute: WELCOME_TITLE },
   alternates: { canonical: "/" },
-  ...shareMetadata({ type: "website", title: WELCOME_TITLE, url: "/" }),
+  // The default share image, named here because an `openGraph` of its own drops the file-based one (lib/share-image.ts).
+  ...shareMetadata({ type: "website", title: WELCOME_TITLE, url: "/", images: [DEFAULT_SHARE_IMAGE] }),
 };
 
 export function WelcomePage() {

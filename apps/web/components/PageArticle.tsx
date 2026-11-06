@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { renderContent } from "@/lib/content/render";
 import { cmsUrls } from "@/lib/env";
 import type { RenderedPage } from "@/lib/page-request";
+import { DEFAULT_SHARE_IMAGE } from "@/lib/share-image";
 import { shareMetadata } from "@/lib/share-metadata";
 import { plainText } from "@/lib/wp/cards";
 import type { WpPage } from "@/lib/wp/schemas/rest";
@@ -53,8 +54,8 @@ function pageView(page: WpPage, path: string): PageView {
  * The metadata for a page: its title (the root layout's template adds the site
  * name), its excerpt as the description or none, and its canonical path, which
  * the root layout's `metadataBase` makes absolute (see `apps/web/README.md`).
- * The CMS's absolute `link` is never used (ADR 0040). Pages carry no image, so
- * `shareMetadata` gives them the summary X card.
+ * The CMS's absolute `link` is never used (ADR 0040). Pages carry the site's
+ * default share image, so `shareMetadata` gives them the large X card.
  */
 export function pageMetadata(rendered: Extract<RenderedPage, { kind: "render" }>): Metadata {
   const view = pageView(rendered.page, rendered.path);
@@ -67,6 +68,8 @@ export function pageMetadata(rendered: Extract<RenderedPage, { kind: "render" }>
       title: view.title,
       ...(view.description === null ? {} : { description: view.description }),
       url: view.canonical,
+      // The default share image, named here because an `openGraph` of its own drops the file-based one (lib/share-image.ts).
+      images: [DEFAULT_SHARE_IMAGE],
     }),
   };
 }

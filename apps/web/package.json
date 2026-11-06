@@ -13,7 +13,8 @@
     "test:dev": "playwright test --config playwright.dev.config.ts",
     "test:screenshots": "node e2e/screenshots.mts",
     "test:screenshots:update": "node e2e/screenshots.mts --update-snapshots",
-    "test:lighthouse": "node e2e/lighthouse.mts"
+    "test:lighthouse": "node e2e/lighthouse.mts",
+    "brand:images": "node scripts/render-brand-images.mts"
   },
   "dependencies": {
     "@colbitron/resource-hub-ui": "workspace:*",
