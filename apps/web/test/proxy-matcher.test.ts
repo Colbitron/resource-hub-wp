@@ -11,9 +11,10 @@ import { config } from "../proxy";
  * manifest (`tryToParsePath`) and tested as the router tests it at runtime
  * (`getMiddlewareRouteMatcher`, a flagless `RegExp`): it must reach every
  * request `lib/path-decision.ts` could redirect or answer with a 404, and
- * no canonical page path, so an ISR hit for a page never pays for the
- * proxy, nor does the favicon every browser asks for, the revalidate route
- * or a framework asset.
+ * no ASCII canonical page path, so an ISR hit for such a page never pays
+ * for the proxy, nor does the favicon every browser asks for, the
+ * revalidate route or a framework asset. A percent-encoded canonical page
+ * path does run it, through the `%` clause.
  */
 
 const matchers = (config.matcher as string[]).map((source) => {
@@ -32,11 +33,23 @@ function expectReached(path: string): void {
 }
 
 describe("the proxy's matcher", () => {
-  it("never matches a canonical page path, the root included", () => {
+  it("never matches an ASCII canonical page path, the root included", () => {
     for (const segments of [[], ["about"], ["about", "team"], ["company", "contact"], ["resourcesx"], ["apiary"], ["a-b_c~e", "x1"], ["a".repeat(200)]]) {
       const path = pagePath(segments);
       expect(decidePath(path), path).toBeNull();
       expect(proxied(path), path).toBe(false);
+    }
+  });
+
+  it("matches a percent-encoded canonical page path, which the decision then leaves alone", () => {
+    // The `%` clause cannot tell a canonical escape (`%e6%97%a5`, lower-case
+    // hex, as WordPress stores it) from one the decision redirects (upper-case
+    // hex, an escape of a character Next.js decodes, NFD form) without
+    // decoding it, which a matcher cannot do, so every path with a `%` runs
+    // the proxy, and for a canonical one the proxy answers nothing.
+    for (const path of [pagePath(["%e6%97%a5"]), pagePath(["about", "%d0%b4%d0%be%d0%bc"])]) {
+      expect(decidePath(path), path).toBeNull();
+      expect(proxied(path), path).toBe(true);
     }
   });
 

@@ -137,6 +137,29 @@ test.describe("the 404 page", () => {
     }
   });
 
+  test("a 404 decided from the path alone is the build's one not-found entry, and stores nothing for its own URL", async ({ request }) => {
+    // An ISR route stores what it answers under the URL it was asked for, so
+    // its first answer for a new URL is a route-cache MISS and the next a HIT,
+    // as the catch-all's own 404 shows. The proxy's rewrite serves the
+    // prerendered `/_not-found` entry instead: a URL never asked for before
+    // is a HIT at once, and every such URL gets the same document, so the
+    // same ETag (measured on Next.js 16.4.5 under `next start`).
+    const junk = `/${unique("never-asked")}.php`;
+    const responses: APIResponse[] = [];
+    for (const path of [junk, junk, `/api/${unique("never-asked")}/`]) {
+      const response = await get(request, path);
+      expect(response.status(), path).toBe(404);
+      expect(response.headers()["x-nextjs-cache"], path).toBe("HIT");
+      responses.push(response);
+    }
+    const etags = responses.map((response) => response.headers()["etag"]);
+    expect(etags[0]).toBeTruthy();
+    expect(new Set(etags).size, JSON.stringify(etags)).toBe(1);
+    const unmatched = `/${unique("stored-404")}/`;
+    expect((await get(request, unmatched)).headers()["x-nextjs-cache"], unmatched).toBe("MISS");
+    expect((await get(request, unmatched)).headers()["x-nextjs-cache"], unmatched).toBe("HIT");
+  });
+
   test("a 404 decided from the path alone shows the site's page with JavaScript off, and the shell with it on", async ({ browser, page }) => {
     const noScript = await browser.newContext({ javaScriptEnabled: false });
     try {

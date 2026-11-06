@@ -1,9 +1,11 @@
-import { readdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync } from "node:fs";
+import { join, parse } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { isMetadataRouteFile } from "next/dist/lib/metadata/is-metadata-route";
 import { describe, expect, it } from "vitest";
 
+import { decidePath } from "../lib/path-decision";
 import {
   MAX_PAGE_PATH_LENGTH,
   OWN_ROUTE_PATHS,
@@ -28,6 +30,53 @@ import {
   typeTopicListingPath,
   validListing,
 } from "../lib/routes";
+
+const APP_DIR = fileURLToPath(new URL("../app", import.meta.url));
+
+/** `pageExtensions` in `next.config.ts`, with the fixtures' on, as Playwright builds the app. */
+const PAGE_EXTENSIONS = ["fixture.tsx", "tsx", "ts"];
+
+/** A generated metadata route's served name, where it is not the file's own name. */
+const GENERATED_METADATA_NAMES: Record<string, string> = { robots: "robots.txt", manifest: "manifest.webmanifest", sitemap: "sitemap.xml" };
+
+type ServedFile = { readonly file: string; readonly kind: "page" | "route" | "metadata"; readonly segments: readonly string[] };
+
+/**
+ * Every file under `dir` (a directory of `app/`) that answers requests
+ * itself, with the URL segments it is served at, relative to `dir`: a page,
+ * a route handler, or a metadata file in any of its forms, as Next.js's own
+ * `isMetadataRouteFile` recognises them (`favicon.ico`, `robots`, `sitemap`,
+ * `manifest`, `icon`, `apple-icon`, `opengraph-image`, `twitter-image`,
+ * static or generated). A static metadata file is served under its own
+ * name, a generated one under its bare name or the name Next.js gives it
+ * (`robots.ts` at `robots.txt`). A route group or a parallel-route slot adds
+ * no segment, a private folder (`_x`) is not routed, and a dynamic segment
+ * comes back as written (`[type]`). `appPath` is `dir`'s own path under
+ * `app/` (`/resources`), which Next.js reads to tell a root-only metadata
+ * file (`robots`, `manifest`, `favicon.ico`) from a file of that name
+ * elsewhere; `skip` names directories of `dir` left out.
+ */
+function servedFiles(dir: string, skip: readonly string[] = [], appPath = "", segments: readonly string[] = []): ServedFile[] {
+  const found: ServedFile[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const relative = `${appPath}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (skip.includes(entry.name) || entry.name.startsWith("_")) {
+        continue;
+      }
+      const routed = /^\(.*\)$|^@/.test(entry.name) ? segments : [...segments, entry.name];
+      found.push(...servedFiles(join(dir, entry.name), [], relative, routed));
+    } else if (new RegExp(`^(page|route)\\.(${PAGE_EXTENSIONS.join("|").replaceAll(".", "\\.")})$`).test(entry.name)) {
+      found.push({ file: relative, kind: entry.name.startsWith("page") ? "page" : "route", segments });
+    } else if (isMetadataRouteFile(relative, PAGE_EXTENSIONS, true)) {
+      const { name, ext } = parse(entry.name);
+      const generated = PAGE_EXTENSIONS.some((extension) => entry.name.endsWith(`.${extension}`));
+      const served = generated ? (GENERATED_METADATA_NAMES[name] ?? name) : `${name}${ext}`;
+      found.push({ file: relative, kind: "metadata", segments: [...segments, served] });
+    }
+  }
+  return found;
+}
 
 describe("reserved type slugs", () => {
   it("are topic and page", () => {
@@ -447,6 +496,38 @@ describe("OWN_ROUTE_PATHS", () => {
   it("are the revalidate route and the favicon, with the trailing slash every route path has and the file path has not", () => {
     expect(OWN_ROUTE_PATHS).toEqual(["/api/revalidate/", "/favicon.ico"]);
   });
+
+  // The proxy runs before every route and before `public/`, so a route or a
+  // file it decides as a 404 (a dot in its name, a reserved first segment
+  // such as `api`) is never reached, and one it redirects is reached only at
+  // another path. This walks what is actually there, so a new
+  // `app/robots.ts`, `app/api/health/route.ts` or `public/logo.svg` fails
+  // here until `OWN_ROUTE_PATHS` lists it. The two catch-alls are left out:
+  // the page catch-all is what the proxy's page rules mirror, and the
+  // library's routes are pinned to `parseResourcesSegments` below.
+  it("cover every route and metadata file outside the catch-alls, and every public file, so the proxy leaves each one alone", () => {
+    const served = servedFiles(APP_DIR, ["[[...path]]", "resources"]).map(({ file, kind, segments }) => {
+      const routed = segments.map((segment) => (/^\[.*\]$/.test(segment) ? "sample" : segment));
+      // Pages and route handlers end in the slash `trailingSlash: true` gives them; a metadata file is served under its file name.
+      return { file, path: kind === "metadata" ? `/${routed.join("/")}` : `/${routed.map((segment) => `${segment}/`).join("")}` };
+    });
+    const publicDir = fileURLToPath(new URL("../public", import.meta.url));
+    if (existsSync(publicDir)) {
+      for (const entry of readdirSync(publicDir, { recursive: true, withFileTypes: true })) {
+        if (entry.isFile()) {
+          const path = `${entry.parentPath}/${entry.name}`.slice(publicDir.length).split("\\").join("/");
+          served.push({ file: `public${path}`, path });
+        }
+      }
+    }
+    for (const { file, path } of served) {
+      expect(decidePath(path), `${file} is served at ${path}, which the proxy must leave alone: add it to OWN_ROUTE_PATHS, or teach lib/path-decision.ts its shape`).toBeNull();
+    }
+    const paths = served.map(({ path }) => path);
+    for (const path of OWN_ROUTE_PATHS) {
+      expect(paths, `${path} is in OWN_ROUTE_PATHS but nothing under app/ serves it`).toContain(path);
+    }
+  });
 });
 
 describe("validListing", () => {
@@ -525,20 +606,9 @@ describe("parseResourcesSegments", () => {
     }
   });
 
-  it("knows every route under app/resources/, so a new one fails here until the table does", () => {
-    const root = fileURLToPath(new URL("../app/resources", import.meta.url));
-    const patterns: string[][] = [];
-    const walk = (dir: string, segments: string[]): void => {
-      for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        if (entry.isDirectory()) {
-          walk(join(dir, entry.name), [...segments, entry.name]);
-        } else if (entry.name === "page.tsx") {
-          patterns.push(segments);
-        }
-      }
-    };
-    walk(root, []);
-    expect(patterns.length).toBe(9);
+  it("knows every route under app/resources/, a route handler or a metadata file as much as a page, so a new one fails here until the table does", () => {
+    const patterns = servedFiles(join(APP_DIR, "resources"), [], "/resources").map(({ segments }) => segments);
+    expect(patterns.length, "the nine pages under app/resources/ and nothing else that answers requests: a new route handler or metadata file needs its served path checked against the table").toBe(9);
     const sample: Record<string, string> = { "[type]": "webinar", "[topic]": "a11y", "[slug]": "example", "[n]": "2" };
     for (const pattern of patterns) {
       const segments = pattern.filter((segment) => segment !== "[[...rest]]").map((segment) => sample[segment] ?? segment);

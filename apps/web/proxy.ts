@@ -20,7 +20,8 @@ import { REVALIDATE_EACH_TIME } from "./lib/route-headers";
  * that reached either route first would store a redirect at the canonical
  * path's own key. A proxy redirect with no data costs about a fifth of a
  * millisecond, and the proxy adds about a tenth of one to every other
- * matched request; the matcher below keeps canonical page paths out of it.
+ * matched request; the matcher below keeps ASCII canonical page paths out of
+ * it (a percent-encoded one runs it, for nothing: see the matcher).
  *
  * The 404 (issue #46): a path no route could answer with anything but
  * `notFound()`, decided by the routes' own checks, is rewritten to the
@@ -67,8 +68,8 @@ export function proxy(request: NextRequest): NextResponse | undefined {
 }
 
 export const config = {
-  // Only requests the proxy can answer, so a canonical page path (the common
-  // case, an ISR hit) never pays for it: every `/resources/**` path, for the
+  // Only requests the proxy can answer, so an ASCII canonical page path (the
+  // common case, an ISR hit) never pays for it: every `/resources/**` path, for the
   // `/page/1/` rule and the library's shapes; every other `/api/**` path,
   // which is reserved and a 404, except the revalidate route itself; any
   // other path with an upper-case ASCII letter, a percent escape or a
@@ -81,8 +82,11 @@ export const config = {
   // and tests it at runtime with `new RegExp(regexp)` and no flags, so
   // `[A-Z]` is case-sensitive there; `test/proxy-matcher.test.ts` compiles
   // these the same way and checks they reach every path the decision would
-  // act on and no canonical page path. A repeated slash is collapsed by
-  // Next.js's own 308 before the proxy runs.
+  // act on and no ASCII canonical page path. A percent-encoded canonical page
+  // path (`/%e6%97%a5/`) does run it and gets nothing back: telling its
+  // escapes from ones the redirect fixes (upper-case hex, an escape Next.js
+  // decodes, NFD form) needs decoding, which a matcher cannot do. A repeated
+  // slash is collapsed by Next.js's own 308 before the proxy runs.
   matcher: [
     "/resources/:path*",
     "/api/((?!revalidate/?$).*)",

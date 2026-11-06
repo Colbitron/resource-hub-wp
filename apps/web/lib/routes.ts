@@ -324,6 +324,9 @@ export const RESERVED_ROOT_SEGMENTS = ["resources", "api", "media", "_next"] as 
  * runs; these two it leaves alone, by their exact, case-sensitive path, as
  * Next.js matches a route. `/media/…` and `/_next/…` are not listed: the
  * uploads rewrite and the framework own everything under them.
+ * `test/routes.test.ts` walks `app/` and `public/`, so a new route handler,
+ * metadata file or public file the proxy would answer fails there until it
+ * is listed here.
  */
 export const OWN_ROUTE_PATHS = ["/api/revalidate/", "/favicon.ico"] as const;
 
