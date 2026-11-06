@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { platformFonts } from "./platform-fonts.mts";
+
 /**
  * Pixel baselines of the design specimen (`app/fixtures/specimen/`), the page
  * that shows every shared token, every component and the states between
@@ -56,6 +58,13 @@ for (const width of WIDTHS) {
           )
           .toBe(true);
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
+        // A page left in the fallback face would fail below as thousands of
+        // differing pixels; say what went wrong instead.
+        const headingFonts = await platformFonts(page, "h1");
+        expect(headingFonts.length, "the specimen's h1 was drawn with no font").toBeGreaterThan(0);
+        for (const family of headingFonts) {
+          expect(family, `the specimen was drawn in ${headingFonts.join(", ")}, not Figtree: the font missed its block period`).toMatch(/^Figtree\b/);
+        }
         // The states section's link, focused as a keyboard would, so the
         // baseline shows the focus ring (`:focus-visible`).
         const focused = page.locator("#specimen-focus");

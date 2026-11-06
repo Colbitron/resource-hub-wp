@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { clearAppCache } from "./app-cache.mts";
 import { mockCms } from "./mock-cms/client.mts";
+import { platformFonts } from "./platform-fonts.mts";
 
 /**
  * Loading Figtree never moves the page (`app/fonts.ts`, `packages/ui/DESIGN.md`,
@@ -85,21 +86,6 @@ function figtreeLoaded(page: Page): Promise<boolean> {
   });
 }
 
-/** The font files Chromium actually drew the first `h1`'s text with (CDP's CSS.getPlatformFontsForNode). */
-async function h1PlatformFonts(page: Page): Promise<string[]> {
-  const cdp = await page.context().newCDPSession(page);
-  try {
-    await cdp.send("DOM.enable");
-    await cdp.send("CSS.enable");
-    const { root } = await cdp.send("DOM.getDocument", { depth: 0 });
-    const { nodeId } = await cdp.send("DOM.querySelector", { nodeId: root.nodeId, selector: "h1" });
-    const { fonts } = await cdp.send("CSS.getPlatformFontsForNode", { nodeId });
-    return fonts.filter((font) => font.glyphCount > 0).map((font) => font.familyName);
-  } finally {
-    await cdp.detach();
-  }
-}
-
 function headingHeights(page: Page): Promise<number[]> {
   return page.locator(HEADINGS).evaluateAll((headings) => headings.map((heading) => Math.round(heading.getBoundingClientRect().height)));
 }
@@ -137,7 +123,7 @@ async function measureLateFont(page: Page, path: string): Promise<Measurement> {
 
   const shifts = await page.evaluate(() => window.__rhShifts);
   const cls = shifts.reduce((total, shift) => total + shift.value, 0);
-  return { cls, shifts, before, after, h1Fonts: await h1PlatformFonts(page) };
+  return { cls, shifts, before, after, h1Fonts: await platformFonts(page, "h1") };
 }
 
 test.beforeEach(async () => {
@@ -180,7 +166,7 @@ test("without a delay the page is drawn in Figtree", async ({ page }) => {
   await page.evaluate(() => document.fonts.ready);
   expect(await figtreeLoaded(page)).toBe(true);
   // The variable file names itself by its default instance ("Figtree Light"); every glyph is from it.
-  const fonts = await h1PlatformFonts(page);
+  const fonts = await platformFonts(page, "h1");
   expect(fonts.length).toBeGreaterThan(0);
   for (const family of fonts) expect(family).toMatch(/^Figtree\b/);
 });
