@@ -153,8 +153,17 @@ test.describe("first paint", () => {
     await expect(page.getByRole("radio")).toHaveCount(0);
   });
 
+  // What this proves on the production build the suite runs: no uncaught
+  // error, and no hydration failure that makes React throw the server's
+  // markup away and render on the client, which production React logs as a
+  // console error (minified error #418 or #425). It cannot prove the absence
+  // of an attribute mismatch warning: production React never reports one,
+  // with or without `suppressHydrationWarning`. That prop is pinned in the
+  // source by `test/hydration-warning.test.ts`, and `e2e/theme.dev.ts` (run
+  // by hand, `pnpm web:test:dev`) loads the page under `next dev`, where the
+  // warning would be logged.
   for (const choice of ["system", "light", "dark"] as const) {
-    test(`logs no error and no hydration warning with ${choice} stored`, async ({ page }) => {
+    test(`hydrates with ${choice} stored and logs no console error or warning`, async ({ page }) => {
       const messages: string[] = [];
       page.on("console", (message) => {
         if (message.type() === "error" || message.type() === "warning") messages.push(message.text());
