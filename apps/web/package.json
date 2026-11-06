@@ -9,7 +9,9 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:screenshots": "node e2e/screenshots.mts",
+    "test:screenshots:update": "node e2e/screenshots.mts --update-snapshots"
   },
   "dependencies": {
     "@colbitron/resource-hub-ui": "workspace:*",

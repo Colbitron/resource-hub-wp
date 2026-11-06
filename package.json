@@ -35,6 +35,8 @@
 		"web:build": "pnpm --filter resource-hub-web build",
 		"web:test": "pnpm --filter resource-hub-web test",
 		"web:test:e2e": "pnpm --filter resource-hub-web test:e2e",
+		"web:test:screenshots": "pnpm --filter resource-hub-web test:screenshots",
+		"web:test:screenshots:update": "pnpm --filter resource-hub-web test:screenshots:update",
 		"images:generate": "node tools/featured-images/generate.mts",
 		"images:import": "tools/featured-images/import.sh"
 	},

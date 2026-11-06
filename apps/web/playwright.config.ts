@@ -1,11 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
 import {
+  appServerEnv,
   appSiteOrigin,
-  E2E_REVALIDATE_SECRET,
-  mockCmsApiUrl,
   mockCmsOrigin,
   mockCmsPort,
+  prebuilt,
   webPort,
 } from "./e2e/mock-cms/config.mts";
 
@@ -31,6 +31,16 @@ const MOCK_PORT = mockCmsPort();
 // checks that the mock answering is this checkout's (`/__mock/health`).
 const reuseExistingServer = process.env.RH_E2E_REUSE === "1" && !process.env.CI;
 
+// The screenshot project exists only when a browser server is given: the
+// specimen's baselines come from Chromium in Playwright's official Linux
+// Docker image, never from the host's browser, whose fonts render
+// differently. `e2e/screenshots.mts` (`pnpm web:test:screenshots`) starts
+// that container, sets RH_PW_REMOTE_WS to its endpoint and runs this project
+// alone; the test runner, the mock and the app stay on the host, and the
+// container's browser reaches the app's `localhost` through the connection
+// (`exposeNetwork`).
+const remoteBrowser = process.env.RH_PW_REMOTE_WS;
+
 export default defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.spec.ts",
@@ -49,7 +59,41 @@ export default defineConfig({
     baseURL: appSiteOrigin(),
     trace: "retain-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // Screenshots live beside the specs, one directory per spec file, with no
+  // platform suffix: there is one platform, the Docker image's.
+  snapshotPathTemplate: "{testDir}/__screenshots__/{testFilePath}/{arg}{ext}",
+  // CI never writes a baseline; a missing one fails. Baselines are written
+  // only by `pnpm web:test:screenshots:update`.
+  updateSnapshots: process.env.CI ? "none" : "missing",
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    ...(remoteBrowser
+      ? [
+          {
+            name: "screenshots",
+            testMatch: "**/*.screenshot.ts",
+            // threshold 0: any change in any pixel's colour fails. The default
+            // 0.2 let the accent move from #1f4f8f to #2a5a9a unnoticed, which
+            // is the kind of change this gate exists to show. The renders are
+            // exact from run to run, so no tolerance is needed.
+            // Under QEMU emulation one full-page shot of the specimen takes a few
+            // seconds, and toHaveScreenshot needs two; the default 5 s is too short.
+            expect: { toHaveScreenshot: { timeout: 30_000, threshold: 0 } },
+            use: {
+              ...devices["Desktop Chrome"],
+              reducedMotion: "reduce" as const,
+              // No zygote: Chromium's renderers crash without it when the amd64
+              // image runs under QEMU on an Apple-silicon laptop. The flag only
+              // changes how renderer processes start, not how they paint, and it
+              // is set everywhere, CI included, so every baseline is taken the
+              // same way.
+              launchOptions: { args: ["--no-zygote"] },
+              connectOptions: { wsEndpoint: remoteBrowser, exposeNetwork: "<loopback>" },
+            },
+          },
+        ]
+      : []),
+  ],
   webServer: [
     {
       // Node 24 runs the TypeScript entry directly; no build, no loader.
@@ -62,20 +106,14 @@ export default defineConfig({
     {
       // The fetch Data Cache is deleted between the build and the start, so no
       // entry outlives the process whose revalidated tags it would need
-      // (e2e/clear-fetch-cache.mts, e2e/README.md).
-      command: `pnpm exec next build && node e2e/clear-fetch-cache.mts && pnpm exec next start --port ${WEB_PORT}`,
+      // (e2e/clear-fetch-cache.mts, e2e/README.md). RH_E2E_PREBUILT=1 skips
+      // the build and starts the one already in .next (config.mts, `prebuilt`).
+      command: `${prebuilt() ? "" : "pnpm exec next build && "}node e2e/clear-fetch-cache.mts && pnpm exec next start --port ${WEB_PORT}`,
       url: `http://localhost:${WEB_PORT}/`,
       reuseExistingServer,
       timeout: 180_000,
-      env: {
-        RH_FIXTURES: "1",
-        WP_API_URL: mockCmsApiUrl(),
-        // The bearer e2e/revalidate.spec.ts sends; a fixed test value, never a real secret.
-        REVALIDATE_SECRET: E2E_REVALIDATE_SECRET,
-        // The public origin the root layout gives `metadataBase`, so the
-        // canonical and og:url are absolute (e2e/resource-page.spec.ts).
-        SITE_URL: appSiteOrigin(),
-      },
+      // RH_FIXTURES=1, the mock as WP_API_URL, the test secret and SITE_URL.
+      env: appServerEnv(),
     },
   ],
 });
