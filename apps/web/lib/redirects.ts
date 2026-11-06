@@ -1,6 +1,6 @@
 import "server-only";
 
-import { notFound, permanentRedirect } from "next/navigation";
+import { permanentRedirect } from "next/navigation";
 
 import { canonicalSlug, isCanonicalSegment, isSlug, isTypeSlug, resourcePath } from "./routes";
 import { resourceType } from "./wp/cards";
@@ -58,8 +58,10 @@ import type { WpResource } from "./wp/schemas/rest";
  * Chromium then keeps a 308 for ever, so the `headers()` rule in
  * `next.config.ts` puts `public, max-age=0, must-revalidate` on every
  * response of the route. Call it before anything is rendered and outside any
- * Suspense boundary or `loading.tsx`: once streaming has begun, Next.js can
- * only send a 200 with a meta refresh. The route must not call a
+ * Suspense boundary or `loading.tsx`, so the redirect is thrown before the
+ * shell and a not-found decision reaches `DataNotFound`
+ * (`components/DataNotFound.tsx`), which puts the not-found page in the
+ * 404's HTML; the route's comment has the measurements. The route must not call a
  * request-time API (`connection()`, `headers()`) or fetch with `no-store`,
  * since a dynamic bail-out in an ISR route with no prerendered params is a
  * runtime 500. A mixed-case request never reaches the route: `proxy.ts`
@@ -78,6 +80,8 @@ export type ResourceRequestDecision =
   | { readonly kind: "not-found" };
 
 export type RenderedResource = Extract<ResourceRequestDecision, { kind: "render" }>;
+
+export type NotFoundDecision = Extract<ResourceRequestDecision, { kind: "not-found" }>;
 
 export interface ResourceRequestOptions {
   /** The slug lookup; the data layer's `getResourceBySlug` by default. */
@@ -144,21 +148,23 @@ export async function decideResourceRequest(
 }
 
 /**
- * The resource for the request, or no return: a redirect sends Next.js's
- * 308 and a miss renders the not-found page. For an ISR page that stores
- * the answer; see the module comment for how, and call it first.
+ * The resource for the request, or the not-found decision, or no return: a
+ * redirect sends Next.js's 308 from here, before anything is rendered. A
+ * not-found decision is returned rather than thrown, so the page can render
+ * `DataNotFound` (`components/DataNotFound.tsx`), which throws `notFound()`
+ * inside a Suspense boundary and so puts the not-found page in the 404's
+ * HTML, and `generateMetadata` can return the not-found title without
+ * throwing. For an ISR page that stores the answer; see the module comment
+ * for how, and call it first.
  */
 export async function resourceForRequest(
   typeSegment: string,
   slugSegment: string,
   options?: ResourceRequestOptions,
-): Promise<RenderedResource> {
+): Promise<RenderedResource | NotFoundDecision> {
   const decision = await decideResourceRequest(typeSegment, slugSegment, options);
   if (decision.kind === "redirect") {
     permanentRedirect(decision.path);
-  }
-  if (decision.kind === "not-found") {
-    notFound();
   }
   return decision;
 }

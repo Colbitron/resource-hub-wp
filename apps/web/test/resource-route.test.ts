@@ -10,10 +10,13 @@ import { describe, expect, it } from "vitest";
  * rendered on its first request and stored, its 308s and 404s included,
  * until an event or the interval clears it. Measured on Next.js 16.4.5: a
  * request-time API (`connection()`, `headers()`) or a `no-store` fetch in an
- * ISR route with no prerendered params is a runtime 500, and a `loading.tsx`
- * or a Suspense boundary above the decision would turn the 308 into a 200
- * with a meta refresh. The header a stored 308 reaches a browser with is the
- * `headers()` rule's (`lib/route-headers.ts`).
+ * ISR route with no prerendered params is a runtime 500. The decision runs
+ * first, outside any Suspense boundary, so a redirect is thrown before the
+ * shell, and a not-found decision renders `DataNotFound`, whose own boundary
+ * puts the not-found page in the 404's HTML (issue #46); `generateMetadata`
+ * never throws `notFound()`, which for some crawlers would abort the shell.
+ * The header a stored 308 reaches a browser with is the `headers()` rule's
+ * (`lib/route-headers.ts`).
  */
 
 const ROUTE_DIR = new URL("../app/resources/[type]/[slug]/", import.meta.url);
@@ -64,5 +67,11 @@ describe("the single resource route", () => {
     for (const [body] of functions) {
       expect(body).toMatch(/await resourceForRequest\(type, slug\)/);
     }
+  });
+
+  it("answers a not-found decision with DataNotFound and the not-found metadata, never a notFound() of its own", () => {
+    expect(code).toMatch(/<DataNotFound \/>/);
+    expect(code).toMatch(/NOT_FOUND_METADATA/);
+    expect(code).not.toMatch(/\bnotFound\(\)/);
   });
 });

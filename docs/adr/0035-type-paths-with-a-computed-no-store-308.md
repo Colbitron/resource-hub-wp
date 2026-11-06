@@ -210,3 +210,9 @@ The CDN should store the resource page, its 308 and its 404 as it stores a listi
 - The proxy adds about a tenth of a millisecond to every matched request, now every page request too (measured above for the listings).
 - The CMS pages catch-all gets the same treatment: [ADR 0052](0052-the-front-end-renders-the-cms-pages.md)'s amendment of this date.
 - Superseded in part: the "mechanism, chosen by default" section above, the `force-dynamic` consequence, and "`/Resources/…` is a 404, by design". The measurements stand.
+
+## Note, 2026-11-06 (issue #46): the not-found decision is rendered, not thrown
+
+`resourceForRequest` still calls `permanentRedirect()` before anything renders, outside every Suspense boundary, so the 308, its `Location` and the header rule's `Cache-Control` are as measured above (re-measured under `next start` and on a remote-built Vercel preview, `MISS` then `HIT`). It no longer calls `notFound()`: it returns the not-found decision, the page answers it with `<DataNotFound />` (`components/DataNotFound.tsx`), whose own boundary puts the not-found page in the 404's HTML while the ISR render sets the 404 status, and `generateMetadata` returns the not-found title rather than throwing. [ADR 0050](0050-listings-are-isr-that-render-on-first-request.md)'s "Rejected" bullet, amended this day, has the mechanism and the measurement.
+
+The "when streaming has begun" measurement above was of the per-request route. On the ISR route, under `next start`, a `loading.tsx` beside the page left a wrong-type request a 308 with its `Location`, `MISS` then `HIT`, for a browser and for Bingbot, with the loading fallback and a meta refresh as its body: an ISR page is rendered completely before it is answered, so a redirect caught by a boundary still sets the status. That was not measured on Vercel, and the route keeps the decision first with no `loading.tsx` regardless, so `test/resource-route.test.ts` still pins the absence of both.

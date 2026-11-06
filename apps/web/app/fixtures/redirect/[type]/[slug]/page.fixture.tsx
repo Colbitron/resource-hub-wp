@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
 import { resourceForRequest } from "@/lib/redirects";
@@ -46,6 +47,9 @@ export default async function RedirectFixturePage({ params }: { params: Promise<
   await connection();
   const { type, slug } = await params;
   const rendered = await resourceForRequest(type, slug, { pathFor: fixturePath });
+  if (rendered.kind === "not-found") {
+    notFound();
+  }
 
   return (
     <>

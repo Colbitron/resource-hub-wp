@@ -9,12 +9,16 @@
  * sent by Next.js 16.4.5 as its empty `__next_error__` document, with
  * `app/not-found.tsx` only in the inlined RSC payload, rendered on
  * hydration, so without JavaScript, and to a crawler, the body is empty
- * (ADR 0050's 2026-11-05 amendment). Only the prerendered not-found page,
- * which the router renders for a URL no route matches, has the page in its
- * HTML. Since ADR 0052 the root catch-all matches every URL, so no request
+ * (ADR 0050's 2026-11-05 amendment). The prerendered not-found page, which
+ * the router renders for a URL no route matches, has the page in its HTML,
+ * and since ADR 0052 the root catch-all matches every URL, so no request
  * reaches that fallback on its own; a rewrite from the proxy to `/404`
  * (`NOT_FOUND_ROUTE`) with status 404 is what reaches it, on both servers
- * the app runs on. Under `next start` (`e2e/errors.spec.ts` pins it) `/404`
+ * the app runs on. The routes' own 404s have carried the page in their HTML
+ * since 2026-11-06 too (`components/DataNotFound.tsx`), each rendered and
+ * stored once per URL; the rewrite stays for the paths decided here because
+ * it renders nothing and stores nothing per URL, so junk traffic shares one
+ * cached copy. Under `next start` (`e2e/errors.spec.ts` pins it) `/404`
  * is the pathname Next.js's server treats as its 404 page and answers with
  * the prerendered `app/not-found.tsx`: the HTML, status 404, `noindex` in
  * the head, and one shared route-cache entry rather than one per junk URL.
@@ -28,10 +32,9 @@
  * junk URL gets a 404 for its RSC request, which the router answers with a
  * full document load, and that load gets the not-found HTML with status
  * 404 (`proxy.ts` has the measurements). The proxy reads no data, so it can answer only the 404s that are decided
- * from the path alone; the routes still answer with `notFound()` what needs
- * the CMS (an unknown slug, an unknown term, a page past the end, a path no
- * page has), and those keep the empty document until Next.js renders the
- * not-found boundary into the HTML upstream.
+ * from the path alone; the routes answer what needs the CMS (an unknown
+ * slug, an unknown term, a page past the end, a path no page has) with
+ * `DataNotFound`, which has the same page in its HTML.
  *
  * Which paths are decided here, each by the same function the route uses,
  * so the proxy and the route cannot disagree:

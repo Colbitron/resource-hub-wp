@@ -1,6 +1,6 @@
 import "server-only";
 
-import { notFound, permanentRedirect } from "next/navigation";
+import { permanentRedirect } from "next/navigation";
 
 import { isCanonicalSegment, isPageSegment, pagePath, pagePathProblem, pagePathSegments, ROOT_PATH } from "./routes";
 import { getPageById, lookupPage } from "./wp/pages";
@@ -70,6 +70,8 @@ export type PageRequestDecision =
 
 export type RenderedPage = Extract<PageRequestDecision, { kind: "render" | "welcome" }>;
 
+export type NotFoundDecision = Extract<PageRequestDecision, { kind: "not-found" }>;
+
 export interface PageRequestOptions {
   /** The path lookup; the data layer's `lookupPage` by default. */
   readonly lookupPage?: (path: string) => Promise<PageLookup | null>;
@@ -129,20 +131,21 @@ export async function decidePageRequest(
 }
 
 /**
- * The page for the request, or no return: a redirect sends Next.js's 308 and
- * a miss renders the not-found page. For an ISR page that stores the
- * answer; see the module comment for how, and call it first.
+ * The page for the request, the welcome page, or the not-found decision, or
+ * no return: a redirect sends Next.js's 308 from here, before anything is
+ * rendered. A not-found decision is returned rather than thrown, so the
+ * route can render `DataNotFound` (`components/DataNotFound.tsx`), which
+ * puts the not-found page in the 404's HTML, and `generateMetadata` can
+ * return the not-found title without throwing. For an ISR page that stores
+ * the answer; see the module comment for how, and call it first.
  */
 export async function pageForRequest(
   segments: readonly string[],
   options?: PageRequestOptions,
-): Promise<RenderedPage> {
+): Promise<RenderedPage | NotFoundDecision> {
   const decision = await decidePageRequest(segments, options);
   if (decision.kind === "redirect") {
     permanentRedirect(decision.path);
-  }
-  if (decision.kind === "not-found") {
-    notFound();
   }
   return decision;
 }

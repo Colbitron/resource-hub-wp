@@ -23,13 +23,17 @@ import { REVALIDATE_EACH_TIME } from "./lib/route-headers";
  * matched request; the matcher below keeps ASCII canonical page paths out of
  * it (a percent-encoded one runs it, for nothing: see the matcher).
  *
- * The 404 (issue #46): a path no route could answer with anything but
- * `notFound()`, decided by the routes' own checks, is rewritten to `/404`
- * with status 404 (`NOT_FOUND_ROUTE` in `lib/path-decision.ts`), which is
- * the one way on Next.js 16.4.5 to put `app/not-found.tsx` in the HTML: a
- * `notFound()` from a page sends the framework's empty `__next_error__`
- * document, with the page arriving on hydration (ADR 0050's 2026-11-05
- * amendment). The rewrite is internal (the browser keeps its URL), and the
+ * The 404 (issue #46): a path no route could answer with anything but a
+ * 404, decided by the routes' own checks, is rewritten to `/404` with status
+ * 404 (`NOT_FOUND_ROUTE` in `lib/path-decision.ts`), which serves the
+ * prerendered `app/not-found.tsx`. It was first the one way to put that page
+ * in a 404's HTML, since a `notFound()` thrown by a page sends Next.js
+ * 16.4.5's empty `__next_error__` document (ADR 0050's 2026-11-05
+ * amendment). The routes now put it there themselves for the 404s they
+ * decide from data (`components/DataNotFound.tsx`), and the rewrite stays
+ * for what it saves: a junk URL renders no page and stores no entry of its
+ * own, so a scanner's thousand paths share one cached copy rather than
+ * filling the route cache. The rewrite is internal (the browser keeps its URL), and the
  * response carries the `Cache-Control` every other 404 of the app's routes
  * carries (`lib/route-headers.ts`, ADR 0025 as amended): a browser asks
  * again each time, and nothing here outlives a deploy that adds a route.
@@ -69,7 +73,9 @@ import { REVALIDATE_EACH_TIME } from "./lib/route-headers";
  * so a CMS request here would reach the CMS on every matched request. What
  * needs data (an unknown type or topic, a page past the end, a wrong type
  * segment or an old slug on a resource, a wrong parent on a page, a path no
- * page has) is the route's to decide, and its 404 still has the empty body.
+ * page has) is the route's to decide, and the route renders the not-found
+ * page into its own 404's HTML (`components/DataNotFound.tsx`), one stored
+ * entry per URL.
  *
  * The redirect's target keeps the request's query string. Next.js requires
  * the redirect's URL to be absolute, and then writes a path-only `Location`

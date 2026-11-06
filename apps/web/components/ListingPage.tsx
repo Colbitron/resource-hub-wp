@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-
+import { DataNotFound, NOT_FOUND_METADATA } from "@/components/DataNotFound";
 import { FilterNav, type FilterTerm } from "@/components/FilterNav";
 import { ListingFocus } from "@/components/ListingFocus";
 import { Pagination } from "@/components/Pagination";
@@ -28,14 +27,18 @@ import "./listing.css";
  * - A type segment that cannot be a type slug (`topic`, `page`, or not a
  *   slug), a topic segment that cannot be a slug, or a page segment that is
  *   not a canonical page number 2 or more (`0`, `01`, `1.5`, `x`, and `1`,
- *   whose URL is the listing's own) is `notFound()` before any request
+ *   whose URL is the listing's own) is a 404 before any request
  *   (`validListing` in `lib/routes.ts`). Mixed case and `/page/1/` never
  *   reach a route, and nor, in the usual case, do those segments:
  *   `proxy.ts` has already redirected the first to the canonical path and
  *   answered the second with the not-found page's HTML
  *   (`lib/path-decision.ts`, issue #46), so the check here is a second line.
- * - A type or topic that names no term, or a page past the last, is
- *   `notFound()`: the data layer answers `null` or `NO_SUCH_PAGE`.
+ * - A type or topic that names no term, or a page past the last, is a 404:
+ *   the data layer answers `null` or `NO_SUCH_PAGE`.
+ * - Either 404 renders `DataNotFound`, which throws `notFound()` inside its
+ *   own Suspense boundary so the 404's HTML is the site's not-found page
+ *   (issue #46), and `listingMetadata` returns `NOT_FOUND_METADATA` rather
+ *   than throwing (`components/DataNotFound.tsx` has why).
  * - A page with no resources is a 200 with the empty state, when both terms
  *   exist: a filter combination with nothing in it is not a missing page.
  * - A resource the reader schema refuses is left off the page and the rest
@@ -122,14 +125,14 @@ function noneShowable(listing: ResourceListing, cardCount: number): boolean {
 export async function listingMetadata(request: ListingRequest): Promise<Metadata> {
   const valid = validListing(request);
   if (valid === null) {
-    notFound();
+    return NOT_FOUND_METADATA;
   }
   const [terms, listing] = await Promise.all([
     filterTerms(valid.filter),
     listResources({ ...valid.filter, page: valid.page }),
   ]);
   if (terms === null || listing === null || listing === NO_SUCH_PAGE) {
-    notFound();
+    return NOT_FOUND_METADATA;
   }
   const name = heading(terms);
   const cardCount = listing.items.map(toCard).filter((card) => card !== null).length;
@@ -152,7 +155,7 @@ const FIRST_ROW = 3;
 export async function ListingPage({ request }: { request: ListingRequest }) {
   const valid = validListing(request);
   if (valid === null) {
-    notFound();
+    return <DataNotFound />;
   }
   const { filter, page } = valid;
 
@@ -163,7 +166,7 @@ export async function ListingPage({ request }: { request: ListingRequest }) {
     listTerms("resource_topic"),
   ]);
   if (listing === null || listing === NO_SUCH_PAGE || terms === null) {
-    notFound();
+    return <DataNotFound />;
   }
 
   const cards = listing.items.map(toCard).filter((card) => card !== null);

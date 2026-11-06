@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-
+import { DataNotFound, NOT_FOUND_METADATA } from "@/components/DataNotFound";
 import { ListingPage, listingMetadata } from "@/components/ListingPage";
 
 /**
@@ -15,7 +14,8 @@ import { ListingPage, listingMetadata } from "@/components/ListingPage";
  * there, and any path that fell through to it is a 404. Such a shape is
  * known from the path alone, so `proxy.ts` answers it first with the
  * not-found page's HTML (`lib/path-decision.ts`, issue #46); the
- * `notFound()` here is the second line.
+ * `DataNotFound` here, which has the same page in its HTML, is the second
+ * line.
  */
 
 // The data layer's interval, as a literal: Next.js reads segment config statically (ADR 0049).
@@ -25,14 +25,15 @@ export function generateStaticParams(): { rest: string[] }[] {
   return [];
 }
 
-export function generateMetadata(): Promise<Metadata> {
-  return listingMetadata({});
+export async function generateMetadata({ params }: PageProps<"/resources/[[...rest]]">): Promise<Metadata> {
+  const { rest } = await params;
+  return rest !== undefined && rest.length > 0 ? NOT_FOUND_METADATA : listingMetadata({});
 }
 
 export default async function LibraryPage({ params }: PageProps<"/resources/[[...rest]]">) {
   const { rest } = await params;
   if (rest !== undefined && rest.length > 0) {
-    notFound();
+    return <DataNotFound />;
   }
   return <ListingPage request={{}} />;
 }
