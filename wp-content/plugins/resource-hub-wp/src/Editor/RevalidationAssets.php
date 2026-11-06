@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace ResourceHub\Editor;
 
 use ResourceHub\Admin\ResultText;
+use ResourceHub\Pages\PagePath;
 use ResourceHub\Revalidation\ResultStore;
 
 /**
@@ -18,7 +19,9 @@ use ResourceHub\Revalidation\ResultStore;
  * the post's `rh_last_revalidation` field after a save and puts the outcome in a `core/notices`
  * notice, in the sentences {@see ResultText::sentences()} hands it. The REST route it polls comes
  * from each post type's own `rest_base` ({@see RevalidationAssets::rest_paths()}), so the list of
- * post types is kept in one place.
+ * post types is kept in one place. The script polls only after a save that sent something, which
+ * for a page means it was or is served ({@see PagePath::is_served()}); it is handed the posts page's
+ * ID ({@see PagePath::posts_page_id()}) for that test, so the rule's inputs come from PHP.
  */
 final class RevalidationAssets {
 	/**
@@ -78,8 +81,9 @@ final class RevalidationAssets {
 			self::HANDLE,
 			self::OBJECT_NAME,
 			array(
-				'sentences' => ResultText::sentences(),
-				'restPaths' => self::rest_paths(),
+				'sentences'   => ResultText::sentences(),
+				'restPaths'   => self::rest_paths(),
+				'postsPageId' => PagePath::posts_page_id(),
 			)
 		);
 		wp_set_script_translations( self::HANDLE, 'resource-hub' );
