@@ -12,11 +12,24 @@
  *    `/resources/Webinar/` is `/resources/webinar/`, `/About/Team/` is
  *    `/about/team/`, and `/Resources/` is `/resources/`. Every slug the CMS
  *    stores is lower case (`canonicalSlug` in `lib/routes.ts`), so a
- *    lower-cased path is the only one that can be a page's own URL. Escapes
- *    are left exactly as sent, hex case included, because Next.js normalises
- *    them before a page sees them (`%e6%97%a5` and `%E6%97%A5` both arrive as
- *    `%E6%97%A5`, ADR 0049), so a redirect between the two hex cases would be
- *    a redirect to itself. An escape of a character Next.js decodes in params
+ *    lower-cased path is the only one that can be a page's own URL. The
+ *    rule covers every script, not ASCII alone: a valid UTF-8 escape
+ *    sequence is decoded, taken with the text around it to NFC and lower
+ *    case, which is what WordPress's `remove_accents` (with the `intl`
+ *    extension) and `mb_strtolower` leave in a stored slug, and encoded
+ *    again in lower-case hex, WordPress's form; so `/%D0%94%D0%BE%D0%BC/`
+ *    (`Дом`) is `/%d0%b4%d0%be%d0%bc/`, and `/%E6%97%A5/` is `/%e6%97%a5/`.
+ *    The proxy sees the path as sent, hex case included, and its target is
+ *    what WordPress stores, so the redirect is one hop; the page, which sees
+ *    only Next.js's upper-cased hex, still treats either hex case as
+ *    canonical (ADR 0049). An invalid sequence (a lone continuation byte,
+ *    an overlong form, a surrogate) and an ASCII escape Next.js does not
+ *    decode (`%20`, `%2F`) are left exactly as sent. A path differing from a
+ *    stored slug only in normalisation form reaches this rule as NFC too; a
+ *    CMS without `intl` could store an NFD slug, whose own URL would then
+ *    redirect to a 404, which is the one case this rule does not cover.
+ *    Repeated slashes (`/about//team/`) collapse to one, though Next.js's own
+ *    308 removes them before the proxy runs. An escape of a character Next.js decodes in params
  *    (`DECODED_IN_PARAMS` in `lib/routes.ts`: `encodeURIComponent`'s
  *    unescaped set, so `%57ebinar` and `a%27b` alike) is decoded first, as
  *    Next.js would decode it, and then lower-cased with the rest. The set is
@@ -54,7 +67,9 @@
  * and ADR 0052's 2026-11-06 amendments): the resource page and the pages
  * catch-all are ISR routes that store what they answer, and Next.js keys the
  * stored entry by the decoded path, which on a case-insensitive file system
- * (macOS, where the suite runs) makes `/About/` and `/about/` one entry.
+ * (macOS, where the suite runs) makes `/About/` and `/about/` one entry, and
+ * `/Дом/` and `/дом/` likewise, since APFS folds case in every script and
+ * compares normalisation forms as equal.
  * Measured on 16.4.5 under `next start`: with no proxy in front, a request
  * for `/Company/` before any for `/company/` stored the page's 308 to
  * `/company/` under that key, and `/company/` then redirected to itself.
@@ -76,29 +91,135 @@ import { DECODED_IN_PARAMS, isReservedRootSegment } from "./routes";
 
 const LIBRARY_PREFIX = "/resources";
 
-/** A percent escape, or a run of upper-case ASCII letters outside one. */
-const ESCAPE_OR_UPPER = /%[0-9A-Fa-f]{2}|[A-Z]+/g;
+/** A run of percent escapes, or a run of upper-case ASCII letters outside one. */
+const ESCAPES_OR_UPPER = /(?:%[0-9A-Fa-f]{2})+|[A-Z]+/g;
 
 /** A `%` that does not begin a well-formed escape. */
 const MALFORMED_ESCAPE = /%(?![0-9A-Fa-f]{2})/;
 
+/** Decodes one UTF-8 sequence, or throws on an invalid, overlong or surrogate one. */
+const utf8 = new TextDecoder("utf-8", { fatal: true });
+
+/** How many bytes a UTF-8 sequence with this lead byte has, or 0 for a byte that cannot lead one. */
+function sequenceLength(lead: number): number {
+  if (lead >= 0xc2 && lead <= 0xdf) return 2;
+  if (lead >= 0xe0 && lead <= 0xef) return 3;
+  if (lead >= 0xf0 && lead <= 0xf4) return 4;
+  return 0;
+}
+
 /**
- * `segment` with every escape of a character in `DECODED_IN_PARAMS` decoded,
- * once, and every other upper-case ASCII letter lower-cased. Other escapes
- * keep their bytes and their hex case. A segment with a malformed escape is
- * returned as sent, so a decoded escape can never pair with a stray `%`.
+ * `text` as WordPress stores it in a slug, as far as case and form go: NFC,
+ * then lower-cased, then NFC again, repeated until it no longer changes.
+ * `sanitize_title_with_dashes` applies `mb_strtolower` to a UTF-8 title, and
+ * `remove_accents` before it normalises NFD to NFC when PHP's `intl`
+ * extension is loaded, so a stored slug is NFC and lower case in every
+ * script; a request in another form is a miss for WordPress, and this makes
+ * it one URL. JavaScript's `toLowerCase` is the full Unicode mapping, as
+ * `mb_strtolower` is; the loop covers the few characters whose lower-case
+ * form composes differently, so the result is a fixed point.
+ */
+function canonicalCharacters(text: string): string {
+  let current = text;
+  for (let round = 0; round < 4; round += 1) {
+    const next = current.normalize("NFC").toLowerCase().normalize("NFC");
+    if (next === current) break;
+    current = next;
+  }
+  return current;
+}
+
+/**
+ * `text` with every non-ASCII character percent-encoded in lower-case hex,
+ * as WordPress encodes a slug, and so every ASCII character a URL parser
+ * would encode in a path (a control, a space, `"`, `#`, `%`, `<`, `>`, `?`,
+ * a backtick, `{`, `}`, DEL): none arrives raw in a path, but a
+ * normalisation can produce one (U+1FEF, a Greek varia, composes to a
+ * backtick), and a target the parser would rewrite is not a fixed point.
+ * Every other ASCII character is left as is.
+ */
+function encodeForPath(text: string): string {
+  return text.replace(/[^\x21\x24\x26-\x3b\x3d\x40-\x5f\x61-\x7a\x7c\x7e]+/g, (run) => encodeURIComponent(run).toLowerCase().replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16)}`));
+}
+
+/**
+ * A run of escapes in canonical form. Each escape is one of three things.
+ * An escape of a character Next.js decodes in params (`DECODED_IN_PARAMS`)
+ * is decoded, as Next.js would. A valid UTF-8 sequence of two to four
+ * escapes is decoded to its character, which joins the text around it for
+ * `canonicalCharacters` and comes back encoded in lower-case hex, so `Дом`
+ * becomes `дом` as WordPress stores it and `%E6%97%A5` becomes `%e6%97%a5`;
+ * an invalid sequence (a lone continuation byte, an overlong form, a
+ * surrogate, a truncated sequence) is left as sent. Any other escape (`%20`,
+ * `%2F`, `%25`) is left exactly as sent, hex case included. The pieces are
+ * returned as text to canonicalise and escapes to keep, in order.
+ */
+function splitEscapes(run: string): { text?: string; keep?: string }[] {
+  const escapes = run.match(/%[0-9A-Fa-f]{2}/g) ?? [];
+  const bytes = escapes.map((escape) => Number.parseInt(escape.slice(1), 16));
+  const pieces: { text?: string; keep?: string }[] = [];
+  for (let index = 0; index < bytes.length; ) {
+    const byte = bytes[index];
+    if (byte < 0x80) {
+      const character = String.fromCharCode(byte);
+      pieces.push(DECODED_IN_PARAMS.test(character) ? { text: character } : { keep: escapes[index] });
+      index += 1;
+      continue;
+    }
+    const length = sequenceLength(byte);
+    let decoded: string | null = null;
+    if (length > 0 && index + length <= bytes.length) {
+      try {
+        decoded = utf8.decode(Uint8Array.from(bytes.slice(index, index + length)));
+      } catch {
+        decoded = null;
+      }
+    }
+    if (decoded === null) {
+      pieces.push({ keep: escapes[index] });
+      index += 1;
+    } else {
+      pieces.push({ text: decoded });
+      index += length;
+    }
+  }
+  return pieces;
+}
+
+/**
+ * `segment` in canonical form: every escape of a character in
+ * `DECODED_IN_PARAMS` decoded, once; every valid multi-byte escape sequence
+ * decoded; the text that results, with the raw characters around it, taken
+ * to NFC and lower case (`canonicalCharacters`), ASCII and the other scripts
+ * alike; and every non-ASCII character encoded again in lower-case hex.
+ * Escapes that are neither (`%2F`, an invalid byte) keep their bytes and
+ * their hex case, and are a boundary the normalisation does not cross. A
+ * segment with a malformed escape is returned as sent, so a decoded escape
+ * can never pair with a stray `%`.
  */
 function canonicalSegment(segment: string): string {
   if (MALFORMED_ESCAPE.test(segment)) {
     return segment;
   }
-  const canonical = segment.replace(ESCAPE_OR_UPPER, (match) => {
-    if (!match.startsWith("%")) {
-      return match.toLowerCase();
+  // Text to canonicalise, interleaved with escapes to keep as sent.
+  const pieces: { text?: string; keep?: string }[] = [];
+  let last = 0;
+  for (const match of segment.matchAll(ESCAPES_OR_UPPER)) {
+    pieces.push({ text: segment.slice(last, match.index) });
+    pieces.push(...(match[0].startsWith("%") ? splitEscapes(match[0]) : [{ text: match[0] }]));
+    last = match.index + match[0].length;
+  }
+  pieces.push({ text: segment.slice(last) });
+  let canonical = "";
+  let text = "";
+  for (const piece of [...pieces, { keep: "" }]) {
+    if (piece.text !== undefined) {
+      text += piece.text;
+      continue;
     }
-    const character = String.fromCharCode(Number.parseInt(match.slice(1), 16));
-    return DECODED_IN_PARAMS.test(character) ? character.toLowerCase() : match;
-  });
+    canonical += encodeForPath(canonicalCharacters(text)) + piece.keep;
+    text = "";
+  }
   // `%2e` or `%2e%2e` alone is a dot segment to a URL parser, which removes it
   // before the proxy sees the path; decoding one here would only make a path
   // that a parser rewrites, so it is left as sent.

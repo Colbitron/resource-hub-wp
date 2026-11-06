@@ -267,7 +267,7 @@ test("a segment in mixed case is one 308 from the proxy to the lower-case URL, b
   await expectRedirect(request, fixturePath("podcast", SEEDED.slug), canonical);
 });
 
-test("a percent-encoded slug renders in either hex case, with no redirect to loop through", async ({ request }) => {
+test("a percent-encoded slug renders in WordPress's lower-case hex, and upper-case hex is one hop to it", async ({ request }) => {
   // WordPress stores a non-ASCII slug percent-encoded in lower case; browsers and
   // Next.js present the escapes in upper case, so both forms must render as is.
   const { slug } = await cms.createResource({ title: `日本語の記事 ${RUN}`, type: "article" });
@@ -276,9 +276,10 @@ test("a percent-encoded slug renders in either hex case, with no redirect to loo
   const upperHex = slug.replace(/%[0-9a-f]{2}/g, (escape) => escape.toUpperCase());
   expect(upperHex).not.toBe(slug);
   await expectOk(request, fixturePath("article", slug));
-  await expectOk(request, fixturePath("article", upperHex));
-  // The type segment in mixed case gets the proxy's redirect, which leaves the escapes' hex as sent.
-  await expectRedirect(request, fixturePath("Article", upperHex), fixturePath("article", upperHex));
+  // Upper-case hex, as a browser sends it, gets the proxy's one hop to WordPress's lower-case form;
+  // the page itself treats either hex case as canonical, so nothing can loop.
+  await expectRedirect(request, fixturePath("article", upperHex), fixturePath("article", slug));
+  await expectRedirect(request, fixturePath("Article", upperHex), fixturePath("article", slug));
 });
 
 test("an unknown slug, a reserved type and an invalid slug are 404s", async ({ request }) => {

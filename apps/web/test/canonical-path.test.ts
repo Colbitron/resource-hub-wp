@@ -43,6 +43,7 @@ describe("canonicalResourcesPath", () => {
       "/resources/webinar/topic/accessibility/page/3/",
       "/resources/webinar/alt-text-at-scale/",
       "/resources/topic/%e6%97%a5/",
+      "/resources/topic/%d0%b4%d0%be%d0%bc/",
     ]) {
       expect(canonicalResourcesPath(path), path).toBeNull();
     }
@@ -55,12 +56,14 @@ describe("canonicalResourcesPath", () => {
     expect(canonicalResourcesPath("/resources/webinar/Page/2/")).toBe("/resources/webinar/page/2/");
   });
 
-  it("leaves percent escapes as sent, their hex case included", () => {
-    expect(canonicalResourcesPath("/resources/topic/%E6%97%A5/")).toBeNull();
-    expect(canonicalResourcesPath("/resources/topic/%e6%97%A5/")).toBeNull();
-    expect(canonicalResourcesPath("/resources/Topic/%E6%97%A5/")).toBe("/resources/topic/%E6%97%A5/");
+  it("brings a multi-byte escape to WordPress's lower-case hex, and leaves other escapes as sent", () => {
+    expect(canonicalResourcesPath("/resources/topic/%e6%97%a5/")).toBeNull();
+    expect(canonicalResourcesPath("/resources/topic/%E6%97%A5/")).toBe("/resources/topic/%e6%97%a5/");
+    expect(canonicalResourcesPath("/resources/topic/%e6%97%A5/")).toBe("/resources/topic/%e6%97%a5/");
+    expect(canonicalResourcesPath("/resources/Topic/%E6%97%A5/")).toBe("/resources/topic/%e6%97%a5/");
     expect(canonicalResourcesPath("/resources/topic/a%20B/")).toBe("/resources/topic/a%20b/");
     expect(canonicalResourcesPath("/resources/topic/%2F/")).toBeNull();
+    expect(canonicalResourcesPath("/resources/topic/%2f/")).toBeNull();
   });
 
   it("decodes an escape of an unreserved character, as Next.js does in params, and then lower-cases it", () => {
@@ -151,6 +154,8 @@ describe("canonicalResourcesPath", () => {
       "/resources/%57ebinar/Topic/A%20B/",
       "/resources/Topic/%E6%97%A5/page/1/",
       "/resources/case%2Dstudy/Slug%2Dhere/",
+      "/resources/topic/%D0%94%D0%BE%D0%BC/",
+      "/resources/webinar/cafe%CC%81/",
     ]) {
       const canonical = canonicalResourcesPath(path);
       expect(canonical, path).not.toBeNull();
@@ -219,12 +224,11 @@ describe("canonicalResourcesPath", () => {
       }
     }
     // And a slug upper-cased in a URL comes back to its canonical form.
-    for (const slug of ["Webinar", "Case-Study", "%E6%97%A5"]) {
+    for (const slug of ["Webinar", "Case-Study", "%E6%97%A5", "%D0%94%D0%BE%D0%BC"]) {
       const path = `/resources/topic/${slug}/`;
-      const expected = `/resources/topic/${canonicalSlug(slug)}/`;
       const canonical = canonicalResourcesPath(path) ?? path;
-      // Hex case is left alone by the proxy and ignored by the page, so compare without it.
-      expect(canonical.toLowerCase()).toBe(expected);
+      // The proxy's form is the data layer's canonical form, hex case included (and lower-cased in every script, which `canonicalSlug` leaves to WordPress).
+      expect(canonical).toBe(`/resources/topic/${canonicalSlug(slug === "%D0%94%D0%BE%D0%BC" ? "%d0%b4%d0%be%d0%bc" : slug)}/`);
     }
   });
 });
@@ -244,7 +248,7 @@ describe("canonicalPath", () => {
     expect(canonicalPath("/About/Team/")).toBe("/about/team/");
     expect(canonicalPath("/%41bout/")).toBe("/about/");
     expect(canonicalPath("/about/%54eam")).toBe("/about/team");
-    expect(canonicalPath("/About/%E6%97%A5/")).toBe("/about/%E6%97%A5/");
+    expect(canonicalPath("/About/%E6%97%A5/")).toBe("/about/%e6%97%a5/");
     expect(canonicalPath("/About/%4%41/")).toBe("/about/%4%41/");
   });
 
@@ -256,6 +260,61 @@ describe("canonicalPath", () => {
     expect(canonicalPath("/Resources/Webinar/Alt-Text/")).toBe("/resources/webinar/alt-text/");
     for (const path of ["/resources/", "/resources/webinar/alt-text-at-scale/", "/resources/topic/a11y/page/2/"]) {
       expect(canonicalPath(path), path).toBe(canonicalResourcesPath(path));
+    }
+  });
+
+  it("collapses a repeated slash, which Next.js's own 308 removes first anyway", () => {
+    expect(canonicalPath("/about//team/")).toBe("/about/team/");
+    expect(canonicalPath("//about/")).toBe("/about/");
+    expect(canonicalPath("/About//Team/")).toBe("/about/team/");
+  });
+
+  it("lower-cases every script as WordPress's mb_strtolower does, takes the text to NFC as remove_accents does, and encodes it in lower-case hex", () => {
+    const dom = "/%D0%94%D0%BE%D0%BC/"; // Дом
+    expect(canonicalPath(dom)).toBe("/%d0%b4%d0%be%d0%bc/");
+    expect(canonicalPath("/%d0%b4%d0%be%d0%bc/")).toBeNull();
+    // Upper-case hex alone is a redirect to WordPress's lower-case form, once.
+    expect(canonicalPath("/x/%E6%97%A5/")).toBe("/x/%e6%97%a5/");
+    expect(canonicalPath("/x/%e6%97%a5/")).toBeNull();
+    // Greek, with the final sigma JavaScript and mbstring both handle.
+    expect(canonicalPath(`/${encodeURIComponent("ΟΔΟΣ")}/`)).toBe(`/${encodeURIComponent("οδος").toLowerCase()}/`);
+    // NFD becomes NFC: `e` plus a combining acute is `é`, raw text and escape together.
+    expect(canonicalPath("/caf%C3%A9/")).toBe("/caf%c3%a9/");
+    expect(canonicalPath("/cafe%CC%81/")).toBe("/caf%c3%a9/");
+    expect(canonicalPath("/caf%c3%a9/")).toBeNull();
+    // Full case mapping: the Kelvin sign is a plain `k`, the Turkish dotted I keeps its dot.
+    expect(canonicalPath("/%E2%84%AAelvin/")).toBe("/kelvin/");
+    expect(canonicalPath("/%C4%B0stanbul/")).toBe("/i%cc%87stanbul/");
+  });
+
+  it("leaves an invalid UTF-8 sequence, and an ASCII escape Next.js does not decode, exactly as sent", () => {
+    for (const path of ["/a%ff/", "/a%80b/", "/a%c0%af/", "/a%ed%a0%80/", "/a%e6%97/", "/a%2Fb/", "/a%20b/", "/a%25b/"]) {
+      expect(canonicalPath(path), path).toBeNull();
+    }
+    // Beside one, the rest of the segment is still canonicalised, in the same hop.
+    expect(canonicalPath("/A%ffB%2F/")).toBe("/a%ffb%2F/");
+    expect(canonicalPath("/%D0%94%ff/")).toBe("/%d0%b4%ff/");
+  });
+
+  it("is a fixed point and survives a URL parser for every code point, encoded, in a page path", () => {
+    const check = (path: string) => {
+      const received = new URL(path, "http://localhost").pathname;
+      const canonical = canonicalPath(received);
+      if (canonical === null) return;
+      expect(canonical, path).not.toBe(received);
+      expect(new URL(canonical, "http://localhost").pathname, path).toBe(canonical);
+      expect(canonicalPath(canonical), `${path} -> ${canonical}`).toBeNull();
+    };
+    for (let code = 0x80; code <= 0xffff; code += 1) {
+      if (code >= 0xd800 && code <= 0xdfff) continue;
+      const character = String.fromCodePoint(code);
+      const encoded = encodeURIComponent(character);
+      check(`/x${encoded}y/`);
+      check(`/x${encoded.toLowerCase()}y/`);
+      check(`/e${encoded}/`);
+    }
+    for (const code of [0x10000, 0x1d400, 0x1e900, 0x1f600, 0x10400, 0x10ffff]) {
+      check(`/x${encodeURIComponent(String.fromCodePoint(code))}/`);
     }
   });
 
