@@ -7,8 +7,11 @@
 # and the Playwright specs re-activate the plugin themselves.
 #
 # The web job lints, typechecks, unit-tests, builds and end-to-end tests the Next.js front end
-# in apps/web alongside the gate. It needs no secrets: it builds against a
-# placeholder CMS URL and makes no CMS calls at build time.
+# in apps/web alongside the gate, then runs its visual, accessibility and
+# performance gates on the end-to-end build: the axe scan runs inside the
+# end-to-end suite, the specimen's screenshots in Playwright's Docker image,
+# and Lighthouse CI against the same build. It needs no secrets: it builds
+# against a placeholder CMS URL and makes no CMS calls at build time.
 #
 # The deploy job runs after the gate, only on main and on manual dispatch, and
 # syncs the plugin, from wp-content/plugins/resource-hub-wp, to the Cloudways
@@ -323,11 +326,15 @@ jobs:
         run: pnpm exec wp-env logs tests --watch=false
 
   web:
+    # The name is kept as it was before the screenshot and Lighthouse steps
+    # joined the job, so a required status check that names it still matches.
     name: Lint, typecheck, and build the front end
     runs-on: ubuntu-latest
     # Room for the install step's own 15-minute limit (an apt cache miss on a
-    # slow mirror) plus the rest of the job, which has taken up to 2.4 minutes.
-    timeout-minutes: 20
+    # slow mirror) plus the rest of the job, which took up to 2.4 minutes
+    # before the screenshot and Lighthouse gates joined it (Lighthouse alone
+    # takes about 4.5 minutes locally).
+    timeout-minutes: 30
 
     # A placeholder, never a secret. next.config.ts builds the /media/ rewrite
     # from WP_API_URL, so CI builds the same routes a deploy does; nothing
@@ -382,6 +389,37 @@ jobs:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
 
+      # Playwright is a dependency of apps/web, so the version for the cache
+      # keys is read from there, and checked like the gate's (see "Compute
+      # cache keys" there), so a failed read fails the step rather than
+      # caching under an empty or garbled version.
+      #
+      # The screenshot tests run Chromium in Playwright's official Docker image
+      # at that version (apps/web/e2e/screenshots.mts). The image is large, so
+      # its pull starts here in the background and overlaps lint, typecheck,
+      # the builds and the end-to-end run; the screenshot step's `docker run`
+      # joins it if it has not finished. The runner reaps the process at the
+      # end of the job.
+      - name: Compute Playwright's cache keys and start pulling its image
+        id: playwright
+        run: |
+          version=$(pnpm --filter resource-hub-web exec node -p "require('@playwright/test/package.json').version")
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Could not read the Playwright version from resource-hub-web (got: $version)."
+            exit 1
+          fi
+          if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
+            echo "::error::ImageOS or ImageVersion is not set; the apt package cache needs a GitHub-hosted runner image."
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "image=$ImageOS-$ImageVersion"
+            echo "apt_dir=$RUNNER_TEMP/playwright-apt"
+          } >> "$GITHUB_OUTPUT"
+          nohup docker pull --platform linux/amd64 "mcr.microsoft.com/playwright:v$version-noble" \
+            > "$RUNNER_TEMP/playwright-image-pull.log" 2>&1 &
+
       - name: Lint the front end
         run: pnpm web:lint
 
@@ -405,28 +443,6 @@ jobs:
             exit 1
           fi
 
-      # Playwright is a dependency of apps/web, so the version for the cache
-      # keys is read from there, and checked like the gate's (see "Compute
-      # cache keys" there), so a failed read fails the step rather than
-      # caching under an empty or garbled version.
-      - name: Compute Playwright's cache keys
-        id: playwright
-        run: |
-          version=$(pnpm --filter resource-hub-web exec node -p "require('@playwright/test/package.json').version")
-          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Could not read the Playwright version from resource-hub-web (got: $version)."
-            exit 1
-          fi
-          if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
-            echo "::error::ImageOS or ImageVersion is not set; the apt package cache needs a GitHub-hosted runner image."
-            exit 1
-          fi
-          {
-            echo "version=$version"
-            echo "image=$ImageOS-$ImageVersion"
-            echo "apt_dir=$RUNNER_TEMP/playwright-apt"
-          } >> "$GITHUB_OUTPUT"
-
       # The fonts apt fetches from a sometimes very slow Ubuntu mirror, cached
       # and keyed like the gate's; see the comment there. While both jobs
       # resolve the same Playwright version they share one entry.
@@ -442,7 +458,9 @@ jobs:
       # what apt fetched; see the gate's install step for why, and for the step
       # limit. There is no browser cache here: restoring it took about as long
       # as downloading Chromium (about 11 seconds, run 42304468204 attempt 2),
-      # and the repository's Actions cache is already at its 10 GB limit.
+      # and the repository's Actions cache is already at its 10 GB limit. The
+      # browser serves the end-to-end suite and Lighthouse CI, which runs
+      # Playwright's Chromium (apps/web/lighthouserc.cjs).
       - name: Install Playwright's browser
         id: install-browser
         timeout-minutes: 15
@@ -488,8 +506,31 @@ jobs:
       - name: Run the front end's end-to-end tests
         run: pnpm web:test:e2e
 
+      # The rest reuse the build the end-to-end run left in apps/web/.next
+      # (RH_E2E_PREBUILT=1), built with the fixture routes and the mock CMS on
+      # the default ports, so no third `next build` runs.
+      #
+      # The specimen page (app/fixtures/specimen/) against the baselines in
+      # apps/web/e2e/__screenshots__/, in Chromium inside Playwright's Docker
+      # image, as they were generated. A missing baseline fails; CI never
+      # writes one. On a failure the actual and diff images are in the traces
+      # artifact below.
+      - name: Run the front end's screenshot tests
+        env:
+          RH_E2E_PREBUILT: '1'
+        run: pnpm web:test:screenshots
+
+      # Lighthouse CI, mobile, three runs per sampled URL (apps/web/
+      # lighthouserc.cjs): performance at least 0.95, accessibility 1, LCP at
+      # most 2500 ms, CLS at most 0.05, TBT at most 200 ms, on the medians.
+      # The medians go to the job summary; the reports are an artifact below.
+      - name: Run Lighthouse CI on the front end
+        env:
+          RH_E2E_PREBUILT: '1'
+        run: pnpm web:test:lighthouse
+
       # Traces are kept only for failed tests (trace: retain-on-failure), in
-      # Playwright's default output directory.
+      # Playwright's default output directory, with the screenshot diffs.
       - name: Upload the front end's Playwright traces
         if: failure()
         uses: actions/upload-artifact@v7
@@ -497,6 +538,18 @@ jobs:
           name: web-playwright-traces
           path: apps/web/test-results/
           retention-days: 7
+
+      # Every Lighthouse report, pass or fail, from LHCI's filesystem target.
+      # The repository is private, so the reports stay in the run's own
+      # artifacts, never in LHCI's temporary public storage.
+      - name: Upload the Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-lighthouse-reports
+          path: apps/web/lighthouse-results/
+          if-no-files-found: ignore
+          retention-days: 14
 
   deploy:
     name: Deploy to the host
