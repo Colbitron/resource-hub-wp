@@ -40,6 +40,18 @@ function get(request: APIRequestContext, path: string): Promise<APIResponse> {
   return request.get(path, { maxRedirects: 0 });
 }
 
+/**
+ * The first `Location` value. A freshly rendered ISR 308 carries the header
+ * twice with the same value (Next.js 16.4.5, measured: the stored copy has it
+ * once), and Playwright joins repeated headers with a comma; every client
+ * reads the first, and this checks they all agree.
+ */
+function location(response: APIResponse): string | undefined {
+  const values = response.headersArray().filter((header) => header.name.toLowerCase() === "location").map((header) => header.value);
+  expect(new Set(values).size, `one Location value, not ${JSON.stringify(values)}`).toBeLessThanOrEqual(1);
+  return values[0];
+}
+
 function cacheDirectives(response: APIResponse): string[] {
   return (response.headers()["cache-control"] ?? "")
     .split(",")
@@ -110,9 +122,11 @@ test.describe("the 404 page", () => {
     // id="__next_error__">` with an empty body and the not-found page only in
     // the inlined RSC payload, which the client renders on hydration; it has
     // no server-side fallback to the prerendered not-found page (ADR 0050's
-    // 2026-11-05 amendment). If this starts failing after an upgrade, the
-    // HTML carries the page: fold these paths into the unmatched URL's tests
-    // and amend the ADR.
+    // 2026-11-05 amendment). The same document is what ISR stores for the
+    // resource page's and the catch-all's 404s (measured 2026-11-06), so
+    // storing changed nothing here. If this starts failing after an upgrade,
+    // the HTML carries the page: fold these paths into the unmatched URL's
+    // tests and amend the ADR.
     for (const path of [...FROM_NOT_FOUND, UNMATCHED]) {
       const html = await (await get(request, path)).text();
       expect(html, path).toContain('id="__next_error__"');
@@ -121,11 +135,12 @@ test.describe("the 404 page", () => {
     }
   });
 
-  test("leaves the redirect contract alone: a wrong type is still one 308 with no-store", async ({ request }) => {
+  test("leaves the redirect contract alone: a wrong type is still one 308 that a browser must ask for again", async ({ request }) => {
     const response = await get(request, `/resources/podcast/${SEEDED.slug}/`);
     expect(response.status()).toBe(308);
-    expect(response.headers().location).toBe(`/resources/${SEEDED.type}/${SEEDED.slug}/`);
-    expect(cacheDirectives(response)).toContain("no-store");
+    expect(location(response)).toBe(`/resources/${SEEDED.type}/${SEEDED.slug}/`);
+    expect(cacheDirectives(response)).toContain("max-age=0");
+    expect(cacheDirectives(response)).toContain("must-revalidate");
   });
 });
 

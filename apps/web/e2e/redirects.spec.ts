@@ -12,11 +12,17 @@ import { E2E_REVALIDATE_SECRET } from "./mock-cms/config.mts";
  * the canonical URL, which answers 200, with `Cache-Control: no-store`, and
  * a type changed and changed back never serves a cached redirect.
  *
- * Most tests use the API request context, which has no HTTP cache: they prove
- * what the server sends, which an ISR route that stored its 308s could also
- * pass. The browser round trip drives Chromium, whose cache keeps a 308 that
- * lacks a cache header for ever (ADR 0025), so it is the test that would fail
- * on a stored redirect.
+ * The fixture route renders on every request, so these tests cover the
+ * decision's edge cases without a route cache in the way. It sits behind
+ * the same proxy as every path (ADR 0035's 2026-11-06 amendment), so a
+ * mixed-case segment gets the proxy's `no-store` 308 before the decision
+ * runs, and under the catch-all's `headers()` rule, so the fixture's own
+ * 308s carry `public, max-age=0, must-revalidate` in place of Next.js's
+ * dynamic `no-store` (`sendRenderResult` keeps a header already set). The
+ * real route is ISR and stores what it answers; `e2e/resource-page.spec.ts`
+ * proves what it stores, what clears it, and that Chromium, whose cache
+ * keeps a 308 that lacks a cache header for ever (ADR 0025), asks the server
+ * again each time.
  *
  * Every hop is requested with `maxRedirects: 0`, so each response is seen as
  * sent. `expectRedirect` is the one place a redirect is asserted: the
@@ -74,13 +80,19 @@ async function expectOk(request: APIRequestContext, path: string): Promise<APIRe
   return response;
 }
 
-/** One 308 from `from` to `to`, with `no-store`, not from a route cache, and `to` a 200: a single hop. */
+/**
+ * One 308 from `from` to `to`, not from a route cache, with a header a
+ * browser must ask again under (`no-store` from the proxy, `max-age=0` from
+ * the fixture under the catch-all's header rule), and `to` a 200: a single
+ * hop.
+ */
 async function expectRedirect(request: APIRequestContext, from: string, to: string): Promise<void> {
   const first = await get(request, from);
   expect(first.status(), `${from} should redirect`).toBe(308);
   expect(first.headers().location).toBe(to);
-  expect(cacheDirectives(first)).toContain("no-store");
-  expect(cacheDirectives(first).some((directive) => directive.startsWith("s-maxage"))).toBe(false);
+  const directives = cacheDirectives(first);
+  expect(directives.includes("no-store") || directives.includes("max-age=0"), `${from}: ${directives.join(", ")}`).toBe(true);
+  expect(directives.some((directive) => directive.startsWith("s-maxage"))).toBe(false);
   expect(first.headers()["x-nextjs-cache"]).toBeUndefined();
   await expectOk(request, to);
 }
@@ -148,7 +160,7 @@ test("a renamed slug is one 308 from the old slug to the new", async ({ request 
   await expectRedirect(request, fixturePath("webinar", before), fixturePath("article", after));
 });
 
-test("a type changed and changed back: each step answers a fresh single-hop 308 with no-store headers", async ({ request }) => {
+test("a type changed and changed back: each step answers a fresh single-hop 308", async ({ request }) => {
   const slug = unique("round-trip");
   const { id } = await cms.createResource({ title: "Round trip", type: "webinar", slug });
   const asWebinar = fixturePath("webinar", slug);
@@ -212,7 +224,7 @@ async function expectBrowserLands(page: Page, hops: BrowserHop[], from: string, 
   await expect(page.getByTestId("fixture-title")).toHaveText(title);
   await expect(page.getByTestId("fixture-path")).toHaveText(to);
   expect(hops, `the redirects followed from ${from}`).toEqual(
-    from === to ? [] : [{ from, status: 308, cacheControl: expect.stringContaining("no-store"), fromCache: false }],
+    from === to ? [] : [{ from, status: 308, cacheControl: expect.stringMatching(/no-store|max-age=0/), fromCache: false }],
   );
 }
 
@@ -241,17 +253,21 @@ test("in Chromium, a type changed and changed back lands on the current URL at e
   await expectBrowserLands(page, hops, asPodcast, asWebinar, title);
 });
 
-test("a segment in mixed case is one 308 to the lower-case URL", async ({ request }) => {
+test("a segment in mixed case is one 308 from the proxy to the lower-case URL, before the decision runs", async ({ request }) => {
   const canonical = fixturePath(SEEDED.type, SEEDED.slug);
   await expectRedirect(request, fixturePath("Webinar", SEEDED.slug), canonical);
   await expectRedirect(request, fixturePath(SEEDED.type, "Revalidation-From-The-Editors-Chair"), canonical);
-  // Wrong type and mixed case together: still one hop.
-  await expectRedirect(request, fixturePath("PODCAST", "Revalidation-From-The-Editors-Chair"), canonical);
-  // An upper-case letter hidden in an escape: Next.js decodes `%52` to `R` before the page sees it.
+  // An upper-case letter hidden in an escape: the proxy decodes `%52` to `R` as Next.js would, and lower-cases it.
   await expectRedirect(request, fixturePath(SEEDED.type, "%52evalidation-from-the-editors-chair"), canonical);
+  // Wrong type and mixed case together: the proxy lower-cases, then the decision redirects the type; two hops, each a decision of its own.
+  const first = await get(request, fixturePath("PODCAST", "Revalidation-From-The-Editors-Chair"));
+  expect(first.status()).toBe(308);
+  expect(first.headers().location).toBe(fixturePath("podcast", SEEDED.slug));
+  expect(cacheDirectives(first)).toContain("no-store");
+  await expectRedirect(request, fixturePath("podcast", SEEDED.slug), canonical);
 });
 
-test("a percent-encoded slug renders in either hex case, with no redirect to loop through", async ({ request }) => {
+test("a percent-encoded slug renders in WordPress's lower-case hex, and upper-case hex is one hop to it", async ({ request }) => {
   // WordPress stores a non-ASCII slug percent-encoded in lower case; browsers and
   // Next.js present the escapes in upper case, so both forms must render as is.
   const { slug } = await cms.createResource({ title: `日本語の記事 ${RUN}`, type: "article" });
@@ -260,17 +276,21 @@ test("a percent-encoded slug renders in either hex case, with no redirect to loo
   const upperHex = slug.replace(/%[0-9a-f]{2}/g, (escape) => escape.toUpperCase());
   expect(upperHex).not.toBe(slug);
   await expectOk(request, fixturePath("article", slug));
-  await expectOk(request, fixturePath("article", upperHex));
-  // The type segment in mixed case still redirects, to the lower-case encoded slug.
+  // Upper-case hex, as a browser sends it, gets the proxy's one hop to WordPress's lower-case form;
+  // the page itself treats either hex case as canonical, so nothing can loop.
+  await expectRedirect(request, fixturePath("article", upperHex), fixturePath("article", slug));
   await expectRedirect(request, fixturePath("Article", upperHex), fixturePath("article", slug));
 });
 
 test("an unknown slug, a reserved type and an invalid slug are 404s", async ({ request }) => {
   await expectNotFound(request, fixturePath("webinar", unique("no-such-resource")));
   await expectNotFound(request, fixturePath("no-such-type", unique("no-such-resource")));
-  // `topic` and `page` are route segments, never a type, in any case.
+  // `topic` and `page` are route segments, never a type, in any case (the proxy lower-cases `Page` first; the decision refuses either).
   await expectNotFound(request, fixturePath("topic", SEEDED.slug));
-  await expectNotFound(request, fixturePath("Page", SEEDED.slug));
+  await expectNotFound(request, fixturePath("page", SEEDED.slug));
+  const capitalised = await get(request, fixturePath("Page", SEEDED.slug));
+  expect(capitalised.status()).toBe(308);
+  expect(capitalised.headers().location).toBe(fixturePath("page", SEEDED.slug));
   // Longer than any slug WordPress can store: refused before any lookup.
   await expectNotFound(request, fixturePath("webinar", "a".repeat(201)));
 });
@@ -285,9 +305,17 @@ test("a type stored as arti%27cle is refused, never a redirect to its own URL", 
   const slug = unique("quoted-type");
   const { id } = await cms.createResource({ title: "Quoted type", type: "arti%27cle", slug });
 
-  for (const type of ["arti%27cle", "arti'cle", "ARTI%27CLE", "webinar"]) {
+  // Typed as the CMS stores it, the proxy decodes `%27` as Next.js would and sends one hop to
+  // the decoded path, where the slug lookup's body fails the reader schema and the page throws
+  // a `CmsError`: a 500, never a redirect back to `arti%27cle`.
+  for (const type of ["arti%27cle", "ARTI%27CLE"]) {
     const response = await get(request, fixturePath(type, slug));
-    // The slug lookup's body fails the reader schema, so the page throws a `CmsError`: a 500, not a 308.
+    expect(response.status(), type).toBe(308);
+    expect(response.headers().location, type).toBe(fixturePath("arti'cle", slug));
+    expect(cacheDirectives(response), type).toContain("no-store");
+  }
+  for (const type of ["arti'cle", "webinar"]) {
+    const response = await get(request, fixturePath(type, slug));
     expect(response.status(), `${type}: ${response.headers().location ?? ""}`).toBe(500);
     expect(response.headers().location, type).toBeUndefined();
   }

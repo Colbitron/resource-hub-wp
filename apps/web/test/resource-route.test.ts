@@ -4,15 +4,16 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * The single resource route keeps the segment config ADR 0035's 2026-11-05
- * amendment rests on: it renders on every request, so that its computed
- * redirects are sent as 308s with `no-store` and never stored. Measured on
- * Next.js 16.4.5: a `permanentRedirect()` from an ISR route is prerendered
- * and stored with `s-maxage`, a dynamic bail-out on the redirect branch
- * alone is a runtime 500, and a `generateStaticParams` returning `[]` with
- * `connection()` alone is a 500 on every request, which `force-dynamic`
- * prevents. A `loading.tsx` or a Suspense boundary above the decision would
- * turn the 308 into a 200 with a meta refresh.
+ * The single resource route keeps the segment config ADR 0035's 2026-11-06
+ * amendment rests on: an ISR route like the listings (ADR 0050), with the
+ * data layer's interval as a literal and no params at build, so each URL is
+ * rendered on its first request and stored, its 308s and 404s included,
+ * until an event or the interval clears it. Measured on Next.js 16.4.5: a
+ * request-time API (`connection()`, `headers()`) or a `no-store` fetch in an
+ * ISR route with no prerendered params is a runtime 500, and a `loading.tsx`
+ * or a Suspense boundary above the decision would turn the 308 into a 200
+ * with a meta refresh. The header a stored 308 reaches a browser with is the
+ * `headers()` rule's (`lib/route-headers.ts`).
  */
 
 const ROUTE_DIR = new URL("../app/resources/[type]/[slug]/", import.meta.url);
@@ -29,13 +30,20 @@ function withoutComments(code: string): string {
 describe("the single resource route", () => {
   const code = withoutComments(source("page.tsx"));
 
-  it('exports dynamic = "force-dynamic"', () => {
-    expect(code).toMatch(/^export const dynamic = "force-dynamic";$/m);
+  it("exports revalidate = 3600 as a literal, the data layer's interval (ADR 0049)", () => {
+    expect(code).toMatch(/^export const revalidate = 3600;$/m);
   });
 
-  it("exports no revalidate and no generateStaticParams", () => {
-    expect(code).not.toMatch(/^export const revalidate\b/m);
-    expect(code).not.toMatch(/generateStaticParams/);
+  it("exports a generateStaticParams that returns [], so the build never asks the CMS", () => {
+    const match = /export function generateStaticParams\(\)[^\n]*\{\s*return \[\];\s*\}/.exec(code);
+    expect(match).not.toBeNull();
+  });
+
+  it("exports no dynamic and calls no request-time API, which would be a 500 in an ISR route with no prerendered params", () => {
+    expect(code).not.toMatch(/^export const dynamic\b/m);
+    expect(code).not.toMatch(/\bconnection\(\)/);
+    expect(code).not.toMatch(/\b(?:headers|cookies|draftMode)\(\)/);
+    expect(code).not.toMatch(/no-store/);
   });
 
   it("has no loading.tsx and no Suspense boundary of its own", () => {
@@ -50,11 +58,10 @@ describe("the single resource route", () => {
     expect(boundary).not.toMatch(/\berror\b/);
   });
 
-  it("awaits connection() and the request decision in both the page and generateMetadata", () => {
+  it("awaits the request decision first in both the page and generateMetadata", () => {
     const functions = [...code.matchAll(/export (?:async function generateMetadata|default async function \w+)[\s\S]*?\n}/g)];
     expect(functions).toHaveLength(2);
     for (const [body] of functions) {
-      expect(body).toMatch(/await connection\(\)/);
       expect(body).toMatch(/await resourceForRequest\(type, slug\)/);
     }
   });

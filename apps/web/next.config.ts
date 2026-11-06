@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 import { buildSiteUrl } from "./lib/env-schema";
 import { mediaRewrites } from "./lib/media-rewrites";
+import { routeHeaders } from "./lib/route-headers";
 
 // SITE_URL, the public origin the root layout gives `metadataBase`, is
 // checked when the config loads: a malformed value fails every build, and an
@@ -43,6 +44,22 @@ const nextConfig: NextConfig = {
   // 2026-11-05 amendment records that and the pending alternative.
   async rewrites() {
     return mediaRewrites(process.env);
+  },
+
+  // The single-resource route and the pages catch-all are ISR and store
+  // their computed 308s like their 200s (ADR 0035's and ADR 0052's
+  // 2026-11-06 amendments). Next.js sends a stored response with `s-maxage`
+  // only, which a browser ignores, and Chromium keeps a 308 with no
+  // `max-age` for ever (ADR 0025), which no revalidation can undo. These
+  // rules put the header Vercel's CDN sends browsers anyway on every
+  // response of the two routes, so under `next start` too a browser asks
+  // again each time; Next.js keeps it on an ISR response rather than its
+  // own (`sendRenderResult` sets `Cache-Control` only when none is set) and
+  // still answers from its route cache. The listings keep Next.js's header:
+  // their only redirects come from `proxy.ts`. See lib/route-headers.ts for
+  // the rules and their tests.
+  async headers() {
+    return routeHeaders();
   },
 };
 

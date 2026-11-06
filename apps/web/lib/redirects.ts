@@ -41,26 +41,31 @@ import type { WpResource } from "./wp/schemas/rest";
  *   It never redirects again. `test/redirects.test.ts` checks this as a
  *   property over thousands of generated slugs and requests.
  * - Across changes, the target is always computed from the CMS's current
- *   answer and never stored, so a type changed and changed back cannot loop
- *   either: each request to the old URL asks again. The data layer's Data
- *   Cache makes that cheap, and the revalidation events clear it (ADR 0046).
+ *   answer, and the stored copy of a decision lives only until the event for
+ *   the change that made it wrong, which clears the tags and paths of both
+ *   the old and the new state (ADR 0046), so a type changed and changed back
+ *   cannot loop either: after each event the old URL asks again. The data
+ *   layer's Data Cache makes that cheap.
  *
  * How the 308 reaches the wire: `resourceForRequest` calls Next.js's
- * `permanentRedirect()`, and the route that calls it must render on every
- * request: a dynamic segment with `export const dynamic = "force-dynamic"`
- * and no `generateStaticParams`. In a dynamic render Next.js sends the
- * redirect as a 308 with
- * `Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate`
- * and stores nothing. Measured on 2026-11-05 (ADR 0035's amendment): from an
- * ISR route the same call is prerendered and stored as a 308 with
- * `s-maxage=3600` and no `max-age`, which a browser that receives that
- * header keeps for ever (what Vercel's CDN forwards is unmeasured), and
- * making only the redirecting render dynamic in an ISR route fails with
- * `DYNAMIC_SERVER_USAGE` at runtime. `force-dynamic` keeps the route dynamic
- * even if `generateStaticParams` is added. So the route is dynamic, by
- * design, and the e2e suite asserts the header on every redirect. Call it before
- * anything is rendered and outside any Suspense boundary or `loading.tsx`:
- * once streaming has begun, Next.js can only send a 200 with a meta refresh.
+ * `permanentRedirect()` from an ISR route (`revalidate = 3600`, a
+ * `generateStaticParams` returning `[]`), which renders the decision once
+ * per URL and stores whatever it was, a 200, a 308 or a 404, under the tags
+ * of the fetches that decided it, so the revalidation event for any change
+ * to the resource clears a stored redirect at its old URL and a stored 404
+ * at its new one (ADR 0035's 2026-11-06 amendment, measured). The stored
+ * response leaves Next.js with `s-maxage` alone, which a browser ignores and
+ * Chromium then keeps a 308 for ever, so the `headers()` rule in
+ * `next.config.ts` puts `public, max-age=0, must-revalidate` on every
+ * response of the route. Call it before anything is rendered and outside any
+ * Suspense boundary or `loading.tsx`: once streaming has begun, Next.js can
+ * only send a 200 with a meta refresh. The route must not call a
+ * request-time API (`connection()`, `headers()`) or fetch with `no-store`,
+ * since a dynamic bail-out in an ISR route with no prerendered params is a
+ * runtime 500. A mixed-case request never reaches the route: `proxy.ts`
+ * sends its own `no-store` 308 first, because Next.js keys a stored entry by
+ * the decoded path and a case-insensitive file system shares the key
+ * between `/A/` and `/a/`; the mixed-case branch below is a second line.
  *
  * `decideResourceRequest` is the decision without Next.js, for the unit
  * tests and for a caller that builds the response itself.
@@ -140,8 +145,8 @@ export async function decideResourceRequest(
 
 /**
  * The resource for the request, or no return: a redirect sends Next.js's
- * 308 and a miss renders the not-found page. For a page that renders on
- * every request; see the module comment for why, and call it first.
+ * 308 and a miss renders the not-found page. For an ISR page that stores
+ * the answer; see the module comment for how, and call it first.
  */
 export async function resourceForRequest(
   typeSegment: string,

@@ -10,14 +10,19 @@ import { RESOURCES, TERMS } from "./mock-cms/seed.mts";
  * against the built app and the mock CMS (root `CLAUDE.md`, "Public URLs",
  * "Server side only" and "Block marker"; ADRs 0035, 0037, 0040 and 0047):
  * what it renders, that the CMS's address is nowhere in the response, its
- * metadata, the redirect contract on the real route (one computed 308 with
- * `no-store`, then a 200; the proxy's 308 for mixed case; a 404 for an
- * unknown slug), the Chromium round trip that a stored redirect would fail,
- * that the page and its metadata make one CMS request between them, and the
- * page's accessibility and layout stability.
+ * metadata, the redirect contract on the real route (one computed 308, then
+ * a 200; the proxy's 308 for mixed case; a 404 for an unknown slug), what
+ * ISR stores and what clears it (ADR 0035's 2026-11-06 amendment: the 200,
+ * the 308 and the 404 are stored and served as route-cache hits with the
+ * `headers()` rule's `Cache-Control`, and a resource event clears a stored
+ * redirect at the old URL and a stored 404 at the new one), the Chromium
+ * round trip that a browser-kept redirect would fail, that the page and its
+ * metadata make one CMS request between them, and the page's accessibility
+ * and layout stability.
  *
- * `e2e/redirects.spec.ts` keeps the same contract on the fixture route with
- * every edge case; this spec proves the real route sends it.
+ * `e2e/redirects.spec.ts` keeps the decision's edge cases on the fixture
+ * route, which renders on every request; this spec proves the real, stored
+ * route sends the contract.
  *
  * Changes to the mock are followed by the revalidation event the CMS would
  * send, because the app's Data Cache does not see the mock change
@@ -50,6 +55,18 @@ function get(request: APIRequestContext, path: string): Promise<APIResponse> {
   return request.get(path, { maxRedirects: 0 });
 }
 
+/**
+ * The first `Location` value. A freshly rendered ISR 308 carries the header
+ * twice with the same value (Next.js 16.4.5, measured: the stored copy has it
+ * once), and Playwright joins repeated headers with a comma; every client
+ * reads the first, and this checks they all agree.
+ */
+function location(response: APIResponse): string | undefined {
+  const values = response.headersArray().filter((header) => header.name.toLowerCase() === "location").map((header) => header.value);
+  expect(new Set(values).size, `one Location value, not ${JSON.stringify(values)}`).toBeLessThanOrEqual(1);
+  return values[0];
+}
+
 /** The `Cache-Control` directives of a response, lower-cased and trimmed. */
 function cacheDirectives(response: APIResponse): string[] {
   return (response.headers()["cache-control"] ?? "")
@@ -61,19 +78,53 @@ function cacheDirectives(response: APIResponse): string[] {
 async function expectOk(request: APIRequestContext, path: string): Promise<APIResponse> {
   const response = await get(request, path);
   expect(response.status(), `${path} should answer 200`).toBe(200);
-  expect(response.headers().location).toBeUndefined();
+  expect(location(response)).toBeUndefined();
   return response;
 }
 
-/** One 308 from `from` to `to`, with `no-store`, not from a route cache, and `to` a 200: a single hop. */
-async function expectRedirect(request: APIRequestContext, from: string, to: string): Promise<void> {
+/**
+ * The `Cache-Control` every response of the resource route carries, from the
+ * `headers()` rule in `next.config.ts` (`lib/route-headers.ts`): a browser's
+ * copy is stale at once and may not be used without asking, so a stored 308
+ * is followed afresh each time. No `s-maxage`, which Next.js would otherwise
+ * send alone, and no `no-store`, which would forbid the route cache's
+ * purpose.
+ */
+function expectRevalidateEachTime(response: APIResponse, path: string): void {
+  const directives = cacheDirectives(response);
+  expect(directives, path).toContain("max-age=0");
+  expect(directives, path).toContain("must-revalidate");
+  expect(directives, path).not.toContain("no-store");
+  expect(directives.some((directive) => directive.startsWith("s-maxage")), path).toBe(false);
+}
+
+/**
+ * One 308 from `from` to `to`, and `to` a 200: a single hop. From the route
+ * (`"stored"`): rendered once and then a route-cache hit, with the header
+ * rule's `Cache-Control`. From the proxy (`"proxy"`): `no-store`, never from
+ * any cache.
+ */
+async function expectRedirect(request: APIRequestContext, from: string, to: string, source: "stored" | "proxy" = "stored"): Promise<void> {
   const first = await get(request, from);
   expect(first.status(), `${from} should redirect`).toBe(308);
-  expect(first.headers().location).toBe(to);
-  expect(cacheDirectives(first)).toContain("no-store");
-  expect(cacheDirectives(first).some((directive) => directive.startsWith("s-maxage"))).toBe(false);
-  expect(first.headers()["x-nextjs-cache"]).toBeUndefined();
+  expect(location(first)).toBe(to);
+  if (source === "proxy") {
+    expect(cacheDirectives(first)).toContain("no-store");
+    expect(first.headers()["x-nextjs-cache"]).toBeUndefined();
+  } else {
+    expectRevalidateEachTime(first, from);
+    expect(first.headers()["x-nextjs-cache"], from).toMatch(/^(MISS|HIT)$/);
+  }
   await expectOk(request, to);
+}
+
+/** A second request for a stored response: the same status, answered from the route cache. */
+async function expectStored(request: APIRequestContext, path: string, status: number): Promise<APIResponse> {
+  const response = await get(request, path);
+  expect(response.status(), `${path} should still answer ${status}`).toBe(status);
+  expect(response.headers()["x-nextjs-cache"], `${path} should be a route-cache hit`).toBe("HIT");
+  expectRevalidateEachTime(response, path);
+  return response;
 }
 
 /** A schema-valid `update` event for resource `id` in its current state, with `previous` as given. */
@@ -338,17 +389,19 @@ test.describe("metadata", () => {
     await expectRedirect(request, resourcePath("webinar", slug), resourcePath("article", slug));
     expect(await restRequests()).toEqual({});
 
-    // A 404: the miss is one cached lookup, and resolve, whose miss is never cached, is asked once per request.
+    // A 404: the miss is one cached lookup and one resolve request, whose miss the Data
+    // Cache never stores; the route cache stores the 404 itself, so a second request for
+    // the same URL asks the CMS nothing (ADR 0035's 2026-11-06 amendment).
     const missing = unique("missing");
     await cms.resetRequests();
     await expectNotFound(request, resourcePath("article", missing));
     requests = await restRequests();
     expect(requests[`/wp-json/wp/v2/resources?_embed&slug=${missing}`]).toBe(1);
     expect(requests[`/wp-json/resource-hub/v1/resolve?slug=${missing}`]).toBe(1);
-    await expectNotFound(request, resourcePath("article", missing));
+    await expectStored(request, resourcePath("article", missing), 404);
     requests = await restRequests();
     expect(requests[`/wp-json/wp/v2/resources?_embed&slug=${missing}`]).toBe(1);
-    expect(requests[`/wp-json/resource-hub/v1/resolve?slug=${missing}`]).toBe(2);
+    expect(requests[`/wp-json/resource-hub/v1/resolve?slug=${missing}`]).toBe(1);
   });
 });
 
@@ -358,15 +411,19 @@ async function expectNotFound(request: APIRequestContext, path: string): Promise
 }
 
 test.describe("the redirect contract on the real route", () => {
-  test("the canonical URL is a 200 that is never stored", async ({ request }) => {
-    const response = await expectOk(request, resourcePath(SEEDED.type, SEEDED.slug));
-    expect(cacheDirectives(response)).toContain("no-store");
-    expect(response.headers()["x-nextjs-cache"]).toBeUndefined();
+  test("the canonical URL is a 200 stored by ISR: the second request is a route-cache hit with the header rule's Cache-Control", async ({ request }) => {
+    const path = resourcePath(SEEDED.type, SEEDED.slug);
+    const first = await expectOk(request, path);
+    expectRevalidateEachTime(first, path);
+    expect(first.headers()["x-nextjs-cache"]).toMatch(/^(MISS|HIT)$/);
+    await expectStored(request, path, 200);
   });
 
-  test("a wrong type segment is one 308 with no-store to the canonical URL, which answers 200", async ({ request }) => {
+  test("a wrong type segment is one 308 to the canonical URL, which answers 200, and the 308 is stored like the page", async ({ request }) => {
     await expectRedirect(request, resourcePath("podcast", SEEDED.slug), resourcePath(SEEDED.type, SEEDED.slug));
     await expectRedirect(request, resourcePath("no-such-type", SEEDED.slug), resourcePath(SEEDED.type, SEEDED.slug));
+    const stored = await expectStored(request, resourcePath("podcast", SEEDED.slug), 308);
+    expect(location(stored)).toBe(resourcePath(SEEDED.type, SEEDED.slug));
   });
 
   test("an old slug, after a rename, is one 308 to the new URL", async ({ request }) => {
@@ -382,35 +439,66 @@ test.describe("the redirect contract on the real route", () => {
     await expectRedirect(request, resourcePath("webinar", before), resourcePath("article", after));
   });
 
-  test("a segment in mixed case is one 308 from the proxy to the lower-case URL", async ({ request }) => {
+  test("a segment in mixed case is one 308 from the proxy, with no-store, to the lower-case URL", async ({ request }) => {
     const canonical = resourcePath(SEEDED.type, SEEDED.slug);
-    await expectRedirect(request, resourcePath("Webinar", SEEDED.slug), canonical);
-    await expectRedirect(request, resourcePath(SEEDED.type, "Revalidation-From-The-Editors-Chair"), canonical);
+    await expectRedirect(request, resourcePath("Webinar", SEEDED.slug), canonical, "proxy");
+    await expectRedirect(request, resourcePath(SEEDED.type, "Revalidation-From-The-Editors-Chair"), canonical, "proxy");
     // Wrong type and mixed case together: the proxy lower-cases, the page redirects the type; two decisions, still one hop each.
     const first = await get(request, resourcePath("PODCAST", SEEDED.slug));
     expect(first.status()).toBe(308);
-    expect(first.headers().location).toBe(resourcePath("podcast", SEEDED.slug));
+    expect(location(first)).toBe(resourcePath("podcast", SEEDED.slug));
     expect(cacheDirectives(first)).toContain("no-store");
+    expect(first.headers()["x-nextjs-cache"]).toBeUndefined();
   });
 
-  test("an unknown slug, a reserved type and an invalid slug are 404s", async ({ request }) => {
-    await expectNotFound(request, resourcePath("webinar", unique("no-such-resource")));
+  test("an unknown slug, a reserved type and an invalid slug are 404s, and an unknown slug's 404 is stored", async ({ request }) => {
+    const missing = resourcePath("webinar", unique("no-such-resource"));
+    await expectNotFound(request, missing);
+    await expectStored(request, missing, 404);
     await expectNotFound(request, resourcePath("topic", SEEDED.slug));
     await expectNotFound(request, resourcePath("page", SEEDED.slug));
     await expectNotFound(request, resourcePath("webinar", "a".repeat(201)));
   });
 
-  test("a type changed and changed back: each step answers a fresh single-hop 308", async ({ request }) => {
+  test("a resource event clears a stored 404 at the new slug and a stored 308 at the old one", async ({ request }) => {
+    const before = unique("stored-before");
+    const after = unique("stored-after");
+    const { id } = await cms.createResource({ title: "Stored", type: "article", slug: before });
+    await expectOk(request, resourcePath("article", before));
+    // The new slug's 404 is stored before the rename happens.
+    await expectNotFound(request, resourcePath("article", after));
+    await expectStored(request, resourcePath("article", after), 404);
+
+    await cms.renameSlug(id, after);
+    await revalidate(request, [await updateEvent(id, { slug: before })]);
+    // The event named both paths and both `resource:` tags: the 404 is gone and the old path is a 308, which is then stored.
+    await expectOk(request, resourcePath("article", after));
+    await expectRedirect(request, resourcePath("article", before), resourcePath("article", after));
+    const stored = await expectStored(request, resourcePath("article", before), 308);
+    expect(location(stored)).toBe(resourcePath("article", after));
+
+    // Renamed back: the stored 308 at the old path must not survive the event, or it would redirect to a 308 the other way.
+    await cms.renameSlug(id, before);
+    await revalidate(request, [await updateEvent(id, { slug: after })]);
+    await expectOk(request, resourcePath("article", before));
+    await expectRedirect(request, resourcePath("article", after), resourcePath("article", before));
+  });
+
+  test("a type changed and changed back: each step answers a single-hop 308, with the stored one cleared by the event", async ({ request }) => {
     const slug = unique("round-trip");
     const { id } = await cms.createResource({ title: "Round trip", type: "webinar", slug });
     const asWebinar = resourcePath("webinar", slug);
     const asPodcast = resourcePath("podcast", slug);
     await expectOk(request, asWebinar);
     await expectRedirect(request, asPodcast, asWebinar);
+    await expectStored(request, asPodcast, 308);
 
+    // webinar -> podcast: the stored 200 and the stored 308 both carry `resource:{slug}`, which the event clears.
     await cms.setType(id, "podcast");
     await revalidate(request, [await updateEvent(id, { type: "webinar" })]);
     await expectRedirect(request, asWebinar, asPodcast);
+    await expectStored(request, asWebinar, 308);
+    await expectStored(request, asPodcast, 200);
 
     await cms.setType(id, "webinar");
     await revalidate(request, [await updateEvent(id, { type: "podcast" })]);
@@ -451,7 +539,7 @@ async function watchRedirects(page: Page): Promise<BrowserHop[]> {
   return hops;
 }
 
-/** Navigates Chromium to `from` and expects it to land on `to`, titled `title`, through at most one server-sent `no-store` redirect. */
+/** Navigates Chromium to `from` and expects it to land on `to`, titled `title`, through at most one redirect that came from the server with `max-age=0`, never from Chromium's cache. */
 async function expectBrowserLands(page: Page, hops: BrowserHop[], from: string, to: string, title: string): Promise<void> {
   hops.length = 0;
   const response = await page.goto(from);
@@ -461,11 +549,11 @@ async function expectBrowserLands(page: Page, hops: BrowserHop[], from: string, 
   const canonical = page.locator('link[rel="canonical"]');
   expect(new URL((await canonical.getAttribute("href")) as string, page.url()).pathname).toBe(to);
   expect(hops, `the redirects followed from ${from}`).toEqual(
-    from === to ? [] : [{ from, status: 308, cacheControl: expect.stringContaining("no-store"), fromCache: false }],
+    from === to ? [] : [{ from, status: 308, cacheControl: expect.stringMatching(/max-age=0/), fromCache: false }],
   );
 }
 
-test("in Chromium, a type changed and changed back lands on the current URL at every step", async ({ page, request }) => {
+test("in Chromium, a type changed and changed back lands on the current URL at every step, the stored 308 included", async ({ page, request }) => {
   const slug = unique("browser-round-trip");
   const title = `Browser round trip ${RUN}`;
   const { id } = await cms.createResource({ title, type: "webinar", slug });
@@ -474,6 +562,8 @@ test("in Chromium, a type changed and changed back lands on the current URL at e
   const hops = await watchRedirects(page);
 
   await expectBrowserLands(page, hops, asWebinar, asWebinar, title);
+  // Twice: the second time the 308 is a route-cache hit, and Chromium must still ask the server for it.
+  await expectBrowserLands(page, hops, asPodcast, asWebinar, title);
   await expectBrowserLands(page, hops, asPodcast, asWebinar, title);
 
   // webinar -> podcast: a kept podcast -> webinar redirect would now loop.

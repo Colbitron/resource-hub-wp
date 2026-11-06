@@ -153,9 +153,12 @@ test("a resource the reader schema refuses leaves the listing, the other resourc
       `/resources/webinar/${SEEDED_SLUG}/`,
     );
 
-    // Its own URL reaches the page decoded, as another slug that names nothing: a 404.
+    // Its own URL: the proxy decodes the escape, as Next.js would before a page saw it, into
+    // another slug that names nothing, so one 308 and then the route's 404.
     const own = await request.get(`/fixtures/redirect/article/${escapedSlug}/`, { maxRedirects: 0 });
-    expect(own.status()).toBe(404);
+    expect(own.status()).toBe(308);
+    expect(own.headers().location).toBe("/fixtures/redirect/article/case-study/");
+    expect((await request.get("/fixtures/redirect/article/case-study/", { maxRedirects: 0 })).status()).toBe(404);
   } finally {
     await cms.reset();
     await clearAppCache(request);

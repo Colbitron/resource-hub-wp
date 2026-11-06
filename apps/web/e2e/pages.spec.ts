@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type APIResponse } from "@playwright/test";
+import { expect, test, type APIRequestContext, type APIResponse, type Page } from "@playwright/test";
 
 import { mockCms } from "./mock-cms/client.mts";
 import { appSiteOrigin, E2E_REVALIDATE_SECRET, mockCmsOrigin, mockCmsPort } from "./mock-cms/config.mts";
@@ -8,11 +8,17 @@ import { appSiteOrigin, E2E_REVALIDATE_SECRET, mockCmsOrigin, mockCmsPort } from
  * against the built app and the mock CMS: `/` as the welcome page while no
  * front page is set and as the static front page once one is; every other
  * published page at its parent chain; the redirect contract (one computed
- * 308 with `no-store` for the front page's own slug, an upper-case letter and
- * a moved page's old path); the 404s (a draft, a wrong parent whose slug two
- * pages share, the posts page, a reserved first segment and a dotted segment,
- * the last two without a CMS request); the `pages` tag's freshness; and that
- * nothing of the CMS reaches the HTML.
+ * 308 for the front page's own slug and a moved page's old path, stored by
+ * ISR and sent with the `headers()` rule's `Cache-Control`; the proxy's
+ * `no-store` 308 for an upper-case letter); what ISR stores and what a page
+ * event clears (ADR 0052's 2026-11-06 amendment: the welcome page and the
+ * front page at `/`, a stored 308 at `/welcome/` and at a moved page's old
+ * path, a stored 404 at a path a page is then published at); the 404s (a
+ * draft, a wrong parent whose slug two pages share, the posts page, a
+ * reserved first segment and a dotted segment, the last two without a CMS
+ * request); the `pages` tag's freshness; the Chromium round trip that a
+ * browser-kept redirect would fail; and that nothing of the CMS reaches the
+ * HTML.
  *
  * Changes to the mock are followed by the page event the CMS would send,
  * because the app's Data Cache does not see the mock change (e2e/README.md).
@@ -30,6 +36,18 @@ const cms = mockCms();
 
 function get(request: APIRequestContext, path: string): Promise<APIResponse> {
   return request.get(path, { maxRedirects: 0 });
+}
+
+/**
+ * The first `Location` value. A freshly rendered ISR 308 carries the header
+ * twice with the same value (Next.js 16.4.5, measured: the stored copy has it
+ * once), and Playwright joins repeated headers with a comma; every client
+ * reads the first, and this checks they all agree.
+ */
+function location(response: APIResponse): string | undefined {
+  const values = response.headersArray().filter((header) => header.name.toLowerCase() === "location").map((header) => header.value);
+  expect(new Set(values).size, `one Location value, not ${JSON.stringify(values)}`).toBeLessThanOrEqual(1);
+  return values[0];
 }
 
 function cacheDirectives(response: APIResponse): string[] {
@@ -63,11 +81,40 @@ function expectNoCms(html: string, path: string): void {
   expect(html, path).not.toContain("wp-json");
 }
 
-async function expectRedirect(response: APIResponse, location: string, path: string): Promise<void> {
+/**
+ * The `Cache-Control` every response of the pages catch-all carries, from
+ * the `headers()` rule in `next.config.ts` (`lib/route-headers.ts`): a
+ * browser's copy is stale at once and may not be used without asking, so a
+ * stored 308 is followed afresh each time.
+ */
+function expectRevalidateEachTime(response: APIResponse, path: string): void {
+  const directives = cacheDirectives(response);
+  expect(directives, path).toContain("max-age=0");
+  expect(directives, path).toContain("must-revalidate");
+  expect(directives, path).not.toContain("no-store");
+  expect(directives.some((directive) => directive.startsWith("s-maxage")), path).toBe(false);
+}
+
+/** A 308 to `location`: from the route, stored by ISR with the header rule's `Cache-Control`; or from the proxy, `no-store` and never from any cache. */
+async function expectRedirect(response: APIResponse, target: string, path: string, source: "stored" | "proxy" = "stored"): Promise<void> {
   expect(response.status(), path).toBe(308);
-  expect(response.headers()["location"], path).toBe(location);
-  expect(cacheDirectives(response), path).toContain("no-store");
-  expect(response.headers()["x-nextjs-cache"], path).toBeUndefined();
+  expect(location(response), path).toBe(target);
+  if (source === "proxy") {
+    expect(cacheDirectives(response), path).toContain("no-store");
+    expect(response.headers()["x-nextjs-cache"], path).toBeUndefined();
+  } else {
+    expectRevalidateEachTime(response, path);
+    expect(response.headers()["x-nextjs-cache"], path).toMatch(/^(MISS|HIT)$/);
+  }
+}
+
+/** A second request for a stored response: the same status, answered from the route cache. */
+async function expectStored(request: APIRequestContext, path: string, status: number): Promise<APIResponse> {
+  const response = await get(request, path);
+  expect(response.status(), `${path} should still answer ${status}`).toBe(status);
+  expect(response.headers()["x-nextjs-cache"], `${path} should be a route-cache hit`).toBe("HIT");
+  expectRevalidateEachTime(response, path);
+  return response;
 }
 
 async function expectPage(response: APIResponse, title: string, path: string): Promise<string> {
@@ -93,8 +140,10 @@ test.describe("the root", () => {
     expect(html).toContain("<title>Resource Hub</title>");
     expect(html).toMatch(/<a [^>]*href="\/resources\/"[^>]*>Browse the library<\/a>/);
     expect(html).toContain(`<link rel="canonical" href="${appSiteOrigin()}/"`);
-    expect(cacheDirectives(response)).toContain("no-store");
+    expectRevalidateEachTime(response, "/");
     expectNoCms(html, "/");
+    // Stored by ISR like any page, under the `pages` tag its lookup carries.
+    expect(await (await expectStored(request, "/", 200)).text()).toContain('<h1 class="rh-page__title">Resource Hub</h1>');
   });
 
   test("is the static front page once one is set, with its body rewritten, and its own slug redirects to /", async ({ request }) => {
@@ -112,22 +161,30 @@ test.describe("the root", () => {
     expect(html).not.toContain("wp-content/uploads");
 
     await expectRedirect(await get(request, `/${WELCOME.slug}/`), "/", `/${WELCOME.slug}/`);
+    expect(location(await expectStored(request, `/${WELCOME.slug}/`, 308))).toBe("/");
     const followed = await request.get(`/${WELCOME.slug}/`);
     expect(followed.status()).toBe(200);
     expect(followed.url()).toBe(`${appSiteOrigin()}/`);
   });
 
-  test("goes back to the welcome page when the front page is unset or unpublished, after the event", async ({ request }) => {
+  test("goes back to the welcome page when the front page is unset or unpublished, after the event, and the stored 308 at the page's own slug goes with it", async ({ request }) => {
+    // The welcome page is stored at `/` first, so the swap is a change to a stored entry.
+    expect(await (await get(request, "/")).text()).toContain('<h1 class="rh-page__title">Resource Hub</h1>');
+    await expectStored(request, "/", 200);
     await cms.setFrontPage(WELCOME.id);
     await revalidate(request, [pageEvent("update", WELCOME.id, "/", `/${WELCOME.slug}/`)]);
     await expectPage(await get(request, "/"), WELCOME.title, "/");
+    await expectRedirect(await get(request, `/${WELCOME.slug}/`), "/", `/${WELCOME.slug}/`);
+    await expectStored(request, `/${WELCOME.slug}/`, 308);
 
     await cms.setFrontPage(null);
-    // Stale until the CMS says so.
+    // Stale until the CMS says so: the stored front page and the stored 308 are served as they are.
     await expectPage(await get(request, "/"), WELCOME.title, "/");
+    await expectStored(request, `/${WELCOME.slug}/`, 308);
     await revalidate(request, [pageEvent("update", WELCOME.id, `/${WELCOME.slug}/`, "/")]);
     expect(await (await get(request, "/")).text()).toContain('<h1 class="rh-page__title">Resource Hub</h1>');
     await expectPage(await get(request, `/${WELCOME.slug}/`), WELCOME.title, `/${WELCOME.slug}/`);
+    await expectStored(request, `/${WELCOME.slug}/`, 200);
 
     await cms.setFrontPage(WELCOME.id);
     await cms.setPageStatus(WELCOME.id, "draft");
@@ -155,7 +212,7 @@ test.describe("pages at their paths", () => {
     for (const path of [`/${ABOUT.slug}/history/`, `/${NEWS.slug}/`, `/${TEAM.slug}/`, `/elsewhere/${TEAM.slug}/`, `/no-such-page-${Date.now()}/`]) {
       const response = await get(request, path);
       expect(response.status(), path).toBe(404);
-      expect(response.headers()["location"], path).toBeUndefined();
+      expect(location(response), path).toBeUndefined();
       const html = await response.text();
       expect(html, path).toContain("<title>Page not found | Resource Hub</title>");
       expectNoCms(html, path);
@@ -165,7 +222,7 @@ test.describe("pages at their paths", () => {
   test("a reserved first segment, a dotted segment or an over-long path is a 404 without a request to the CMS", async ({ request }) => {
     await cms.resetRequests();
     const tooLong = `/${Array.from({ length: 11 }, () => "a".repeat(200)).join("/")}/`;
-    for (const path of ["/api/", "/api/other/", "/media/", "/_next/", "/robots.txt", "/sitemap.xml", "/Resources/", tooLong]) {
+    for (const path of ["/api/", "/api/other/", "/media/", "/_next/", "/robots.txt", "/sitemap.xml", tooLong]) {
       expect((await get(request, path)).status(), path).toBe(404);
     }
     const { byPath } = await cms.requests();
@@ -187,28 +244,46 @@ test.describe("pages at their paths", () => {
     await expectPage(await get(request, "/api-2/"), "Saved after the rule", "/api-2/");
   });
 
-  test("an upper-case letter in a segment redirects to the lower-case path, in one hop", async ({ request }) => {
-    await expectRedirect(await get(request, `/About/${TEAM.slug}/`), `/${ABOUT.slug}/${TEAM.slug}/`, "/About/team/");
-    await expectRedirect(await get(request, `/${ABOUT.slug}/Team/`), `/${ABOUT.slug}/${TEAM.slug}/`, "/about/Team/");
+  test("an upper-case letter in a segment, or an escape of one, gets the proxy's no-store 308 to the lower-case path, in one hop, before any route stores anything", async ({ request }) => {
+    // From the proxy, never the route: Next.js keys a stored entry by the decoded path, and a
+    // case-insensitive file system shares the key between `/About/` and `/about/`, so a
+    // mixed-case request that reached the route first would store its 308 at the canonical
+    // path's own key (measured, ADR 0052's 2026-11-06 amendment).
+    await expectRedirect(await get(request, `/About/${TEAM.slug}/`), `/${ABOUT.slug}/${TEAM.slug}/`, "/About/team/", "proxy");
+    await expectRedirect(await get(request, `/${ABOUT.slug}/Team/`), `/${ABOUT.slug}/${TEAM.slug}/`, "/about/Team/", "proxy");
+    await expectRedirect(await get(request, `/%41bout/${TEAM.slug}/`), `/${ABOUT.slug}/${TEAM.slug}/`, "/%41bout/team/", "proxy");
+    // The library's prefix too: the proxy covers every path now, so `/Resources/` is a case redirect, no longer a 404.
+    await expectRedirect(await get(request, "/Resources/"), "/resources/", "/Resources/", "proxy");
     const followed = await request.get(`/About/Team/`);
     expect(followed.status()).toBe(200);
     expect(followed.url()).toBe(`${appSiteOrigin()}/${ABOUT.slug}/${TEAM.slug}/`);
+    // And the canonical path's own entry is the page, not a redirect to itself.
+    await expectPage(await get(request, `/${ABOUT.slug}/${TEAM.slug}/`), TEAM.title, `/${ABOUT.slug}/${TEAM.slug}/`);
   });
 
-  test("a moved page's old path redirects to its new one when its slug is unique, and both read after the event", async ({ request }) => {
+  test("a moved page's old path redirects to its new one when its slug is unique, both read after the event, and a move back clears the stored 308", async ({ request }) => {
     const oldPath = `/${ABOUT.slug}/${CONTACT.slug}/`;
     const newPath = `/${COMPANY.slug}/${CONTACT.slug}/`;
     await expectPage(await get(request, oldPath), CONTACT.title, oldPath);
-    // Even before the move, a wrong parent with a unique slug redirects to the page's path.
+    // Even before the move, a wrong parent with a unique slug redirects to the page's path; the 308 is stored.
     await expectRedirect(await get(request, newPath), oldPath, newPath);
+    await expectStored(request, newPath, 308);
 
     await cms.setPageParent(CONTACT.id, COMPANY.id);
     await revalidate(request, [pageEvent("update", CONTACT.id, newPath, oldPath)]);
 
-    await expectRedirect(await get(request, oldPath), newPath, oldPath);
+    // The event named both paths and the `pages` tag: the stored 308 at the new path is a page now, the old path a 308.
     await expectPage(await get(request, newPath), CONTACT.title, newPath);
+    await expectRedirect(await get(request, oldPath), newPath, oldPath);
+    await expectStored(request, oldPath, 308);
     const followed = await request.get(oldPath);
     expect(followed.url()).toBe(`${appSiteOrigin()}${newPath}`);
+
+    // Moved back: the stored 308 at the old path must not survive, or it would point at a 308 pointing back.
+    await cms.setPageParent(CONTACT.id, ABOUT.id);
+    await revalidate(request, [pageEvent("update", CONTACT.id, oldPath, newPath)]);
+    await expectPage(await get(request, oldPath), CONTACT.title, oldPath);
+    await expectRedirect(await get(request, newPath), oldPath, newPath);
   });
 
   test("a renamed parent takes its own old path to a 404 and its children's old paths to a redirect, after the event", async ({ request }) => {
@@ -263,17 +338,92 @@ test.describe("freshness through the pages tag", () => {
     expect(byPath[read]).toBe(2);
   });
 
-  test("a trashed page is a 404 after its event, and a new page is served after its publish", async ({ request }) => {
+  test("a trashed page is a 404 after its event, and a new page is served after its publish even where a 404 was stored", async ({ request }) => {
     const path = `/${COMPANY.slug}/`;
     await expectPage(await get(request, path), "Company", path);
     await cms.setPageStatus(COMPANY.id, "trash");
     await revalidate(request, [pageEvent("trash", COMPANY.id, path, null)]);
     expect((await get(request, path)).status()).toBe(404);
+    await expectStored(request, path, 404);
 
-    const created = await cms.createPage({ title: "Brand new", slug: `brand-new-${Date.now().toString(36)}`, parent: ABOUT.id });
+    // A crawler found the path before the editor published there: the 404 is stored, and the publish event clears it.
+    const slug = `brand-new-${Date.now().toString(36)}`;
+    const newPath = `/${ABOUT.slug}/${slug}/`;
+    expect((await get(request, newPath)).status()).toBe(404);
+    await expectStored(request, newPath, 404);
+    const created = await cms.createPage({ title: "Brand new", slug, parent: ABOUT.id });
+    expect(created.path).toBe(newPath);
     await revalidate(request, [pageEvent("publish", created.id, created.path, null)]);
     await expectPage(await get(request, created.path), "Brand new", created.path);
   });
+
+  test("a junk path's 404 is stored: the second request is a route-cache hit that asks the CMS nothing", async ({ request }) => {
+    const path = `/no-such-page-${Date.now().toString(36)}/`;
+    const lookup = `/wp-json/resource-hub/v1/page?path=${encodeURIComponent(path)}`;
+    await cms.resetRequests();
+    expect((await get(request, path)).status()).toBe(404);
+    await expectStored(request, path, 404);
+    await expectStored(request, path, 404);
+    const { byPath } = await cms.requests();
+    expect(byPath[lookup]).toBe(1);
+  });
+});
+
+/** One navigation's redirect, as Chromium's network layer reported it. */
+interface BrowserHop {
+  from: string;
+  status: number;
+  cacheControl: string;
+  fromCache: boolean;
+}
+
+/** Records every redirect Chromium follows on `page`, and whether its cache answered it, from the DevTools protocol (the technique of `e2e/resource-page.spec.ts`). */
+async function watchRedirects(page: Page): Promise<BrowserHop[]> {
+  const hops: BrowserHop[] = [];
+  const session = await page.context().newCDPSession(page);
+  await session.send("Network.enable");
+  session.on("Network.requestWillBeSent", (event) => {
+    const redirect = event.redirectResponse;
+    if (redirect === undefined) return;
+    const cacheControl = Object.entries(redirect.headers).find(([name]) => name.toLowerCase() === "cache-control")?.[1] ?? "";
+    hops.push({
+      from: new URL(redirect.url).pathname,
+      status: redirect.status,
+      cacheControl: String(cacheControl),
+      fromCache: redirect.fromDiskCache === true || redirect.fromPrefetchCache === true || redirect.fromServiceWorker === true,
+    });
+  });
+  return hops;
+}
+
+/** Navigates Chromium to `from` and expects it to land on `to`, titled `title`, through at most one redirect that came from the server with `max-age=0`, never from Chromium's cache. */
+async function expectBrowserLands(page: Page, hops: BrowserHop[], from: string, to: string, title: string): Promise<void> {
+  hops.length = 0;
+  const response = await page.goto(from);
+  expect(new URL(page.url()).pathname, `${from} should land on ${to}`).toBe(to);
+  expect(response?.status(), `${to} should answer 200`).toBe(200);
+  await expect(page.locator("h1.rh-page__title")).toHaveText(title);
+  expect(hops, `the redirects followed from ${from}`).toEqual(
+    from === to ? [] : [{ from, status: 308, cacheControl: expect.stringMatching(/max-age=0/), fromCache: false }],
+  );
+}
+
+test("in Chromium, a front page set and unset lands on the current page at every step, the stored 308 included", async ({ page, request }) => {
+  const own = `/${WELCOME.slug}/`;
+  const hops = await watchRedirects(page);
+  await expectBrowserLands(page, hops, own, own, WELCOME.title);
+
+  await cms.setFrontPage(WELCOME.id);
+  await revalidate(request, [pageEvent("update", WELCOME.id, "/", own)]);
+  // Twice: the second time the 308 is a route-cache hit, and Chromium must still ask the server for it.
+  await expectBrowserLands(page, hops, own, "/", WELCOME.title);
+  await expectBrowserLands(page, hops, own, "/", WELCOME.title);
+
+  // Unset: a kept /welcome/ -> / redirect would now hide the page at its own path.
+  await cms.setFrontPage(null);
+  await revalidate(request, [pageEvent("update", WELCOME.id, own, "/")]);
+  await expectBrowserLands(page, hops, own, own, WELCOME.title);
+  await expectBrowserLands(page, hops, "/", "/", "Resource Hub");
 });
 
 test.describe("the page route's answer to a page event", () => {

@@ -6,10 +6,11 @@ import "@/components/resource.css";
  * The page route's error boundary: what a reader sees when the data layer
  * throws (a `CmsError`: the CMS down, slow, answering wrongly, or a page that
  * fails the reader schema). As measured for the resource route on Next.js
- * 16.4.5 (ADR 0035's consequences): the response is still a 500 with the
- * dynamic `no-store` header, a `permanentRedirect()` or `notFound()` never
- * reaches this boundary, and the fallback renders only after hydration, so
- * what it changes is what a hydrated reader sees in place of Next.js's bare
+ * 16.4.5 (ADR 0035's consequences and its 2026-11-06 amendment): the
+ * response is a 500 with Next.js's `no-store` header, which ISR never
+ * stores, a `permanentRedirect()` or `notFound()` never reaches this
+ * boundary, and the fallback renders only after hydration, so what it
+ * changes is what a hydrated reader sees in place of Next.js's bare
  * "Application error" page.
  *
  * It takes no `error` prop on purpose, so no message or digest, and so no CMS
