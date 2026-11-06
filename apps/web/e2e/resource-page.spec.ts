@@ -396,9 +396,10 @@ test.describe("metadata", () => {
         expect(content, `${path} og:url`).toBe(`${site}${expected}`);
         urls.push(content);
       }
+      // A resource's own image is under `/media/`; a listing carries the site's default share image (brand.spec.ts).
       for (const selector of ['meta[property="og:image"]', 'meta[name="twitter:image"]']) {
         for (const image of await page.locator(selector).evaluateAll((metas) => metas.map((meta) => meta.getAttribute("content") ?? ""))) {
-          expect(image.startsWith(`${site}/media/`), `${path} ${selector} ${image}`).toBe(true);
+          expect(image.startsWith(`${site}/media/`) || image.startsWith(`${site}/opengraph-image.png`), `${path} ${selector} ${image}`).toBe(true);
           urls.push(image);
         }
       }
