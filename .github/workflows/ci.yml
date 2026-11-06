@@ -392,14 +392,16 @@ jobs:
       # Playwright is a dependency of apps/web, so the version for the cache
       # keys is read from there, and checked like the gate's (see "Compute
       # cache keys" there), so a failed read fails the step rather than
-      # caching under an empty or garbled version.
+      # caching under an empty or garbled version. `image` is the runner's
+      # image, for the apt cache key.
       #
-      # The screenshot tests run Chromium in Playwright's official Docker image
-      # at that version (apps/web/e2e/screenshots.mts). The image is large, so
-      # its pull starts here in the background and overlaps lint, typecheck,
-      # the builds and the end-to-end run; the screenshot step's `docker run`
-      # joins it if it has not finished. The runner reaps the process at the
-      # end of the job.
+      # The screenshot tests run Chromium in Playwright's official Docker image,
+      # pinned by digest in apps/web/e2e/playwright-image.mts (`docker_image`).
+      # The image is large, so its pull starts here in the background and
+      # overlaps lint, typecheck, the builds and the end-to-end run. The pull's
+      # exit status goes to a file that the "Wait for the screenshot image"
+      # step below reads, so a failed pull shows as its own error with its log,
+      # not as a late, slower pull inside the screenshot step.
       - name: Compute Playwright's cache keys and start pulling its image
         id: playwright
         run: |
@@ -412,13 +414,15 @@ jobs:
             echo "::error::ImageOS or ImageVersion is not set; the apt package cache needs a GitHub-hosted runner image."
             exit 1
           fi
+          docker_image=$(node -e "import('./apps/web/e2e/playwright-image.mts').then((m) => console.log(m.PLAYWRIGHT_IMAGE))")
           {
             echo "version=$version"
             echo "image=$ImageOS-$ImageVersion"
             echo "apt_dir=$RUNNER_TEMP/playwright-apt"
+            echo "docker_image=$docker_image"
           } >> "$GITHUB_OUTPUT"
-          nohup docker pull --platform linux/amd64 "mcr.microsoft.com/playwright:v$version-noble" \
-            > "$RUNNER_TEMP/playwright-image-pull.log" 2>&1 &
+          nohup sh -c 'docker pull --platform linux/amd64 "$1"; echo $? > "$2"' sh "$docker_image" \
+            "$RUNNER_TEMP/playwright-image-pull.status" > "$RUNNER_TEMP/playwright-image-pull.log" 2>&1 &
 
       - name: Lint the front end
         run: pnpm web:lint
@@ -504,18 +508,45 @@ jobs:
       # specs against `next start`; see apps/web/playwright.config.ts and
       # apps/web/e2e/README.md.
       - name: Run the front end's end-to-end tests
+        id: e2e
         run: pnpm web:test:e2e
 
       # The rest reuse the build the end-to-end run left in apps/web/.next
       # (RH_E2E_PREBUILT=1), built with the fixture routes and the mock CMS on
-      # the default ports, so no third `next build` runs.
+      # the default ports, so no third `next build` runs; the harness stamps
+      # that build and each step checks the stamp first
+      # (apps/web/e2e/build-stamp.mts), so a missing or other build fails
+      # with the reason.
       #
+      # They need that build, not a passing end-to-end run, so they run
+      # whenever the end-to-end step ran, pass or fail: a failing spec must
+      # not hide a screenshot diff or a budget. A failure in any of them
+      # still fails the job.
+
+      # Joins the background pull started above and fails here, with its log,
+      # if it failed.
+      - name: Wait for the screenshot image
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
+        timeout-minutes: 10
+        run: |
+          status_file="$RUNNER_TEMP/playwright-image-pull.status"
+          until [ -s "$status_file" ]; do sleep 2; done
+          echo "::group::docker pull log"
+          cat "$RUNNER_TEMP/playwright-image-pull.log"
+          echo "::endgroup::"
+          if [ "$(cat "$status_file")" != "0" ]; then
+            echo "::error::Pulling ${{ steps.playwright.outputs.docker_image }} failed; the log is above."
+            exit 1
+          fi
+
       # The specimen page (app/fixtures/specimen/) against the baselines in
       # apps/web/e2e/__screenshots__/, in Chromium inside Playwright's Docker
       # image, as they were generated. A missing baseline fails; CI never
       # writes one. On a failure the actual and diff images are in the traces
-      # artifact below.
+      # artifact below. When CI and a laptop disagree on a baseline, the
+      # "Screenshot baselines" workflow regenerates them on a GitHub runner.
       - name: Run the front end's screenshot tests
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
         env:
           RH_E2E_PREBUILT: '1'
         run: pnpm web:test:screenshots
@@ -525,6 +556,7 @@ jobs:
       # most 2500 ms, CLS at most 0.05, TBT at most 200 ms, on the medians.
       # The medians go to the job summary; the reports are an artifact below.
       - name: Run Lighthouse CI on the front end
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
         env:
           RH_E2E_PREBUILT: '1'
         run: pnpm web:test:lighthouse
