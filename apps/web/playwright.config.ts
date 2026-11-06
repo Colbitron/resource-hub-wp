@@ -99,8 +99,11 @@ export default defineConfig({
             // Under QEMU emulation one full-page shot of the specimen takes a few
             // seconds, and toHaveScreenshot needs two; the default 5 s is too short.
             expect: { toHaveScreenshot: { timeout: 30_000, threshold: 0, maxDiffPixels: 50 } },
-            // Two full-page comparisons and a crop, under emulation, and
-            // writing the diffs when they fail: more than the default 30 s.
+            // The whole test (the image poll, `document.fonts.ready`, the discarded
+            // capture, two full-page comparisons and a crop, and writing the diffs
+            // when they fail) runs past the default 30 s under emulation: a 1280 px
+            // shot measured between 10 and 50 s on an Apple-silicon laptop. The
+            // test gets its own budget; a hang still fails.
             timeout: 120_000,
             use: {
               ...devices["Desktop Chrome"],
