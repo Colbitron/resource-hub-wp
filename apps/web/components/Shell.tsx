@@ -4,6 +4,8 @@ import Link from "next/link";
 import "@colbitron/resource-hub-ui/tokens.css";
 import "./shell.css";
 
+import { ThemeToggle } from "./ThemeToggle";
+
 /**
  * The page shell: skip link, header, `main` and footer around every page.
  *
@@ -13,6 +15,10 @@ import "./shell.css";
  * the root layout renders the shell around every page, so the tokens reach
  * every page. Page content is stacked under `main`, which carries
  * `tabIndex={-1}` so the skip link lands focus on it in every browser.
+ *
+ * The header holds the site's name and, at its right, the theme control
+ * (`ThemeToggle`, the app's one client component besides `ListingFocus`),
+ * which wraps under the name when the two do not fit on one line.
  */
 export function Shell({ children }: { children: ReactNode }) {
   return (
@@ -25,6 +31,9 @@ export function Shell({ children }: { children: ReactNode }) {
           <Link className="rh-header__name" href="/resources/">
             Resource Hub
           </Link>
+          <div className="rh-header__theme">
+            <ThemeToggle />
+          </div>
         </div>
       </header>
       <main className="rh-shell__inner rh-main" id="main" tabIndex={-1}>

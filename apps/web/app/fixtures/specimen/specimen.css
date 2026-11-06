@@ -70,6 +70,13 @@
 	border: var(--rh-border-width) solid var(--rh-color-text-muted);
 }
 
+/* The three still copies of the theme control, side by side where they fit. */
+.rh-specimen__themes {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--rh-space-4);
+}
+
 /* One state in the states section, set apart from the next. */
 .rh-specimen__state + .rh-specimen__state {
 	margin-top: var(--rh-space-7);

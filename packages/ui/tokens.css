@@ -79,6 +79,7 @@
 	--rh-radius-sm: 2px;
 	--rh-radius: 4px;
 	--rh-border-width: 1px;
+	--rh-border-width-strong: 2px;
 	--rh-focus-width: 3px;
 
 	/* Measure: prose line length and the page's content width. */

@@ -57,7 +57,7 @@ export const SPACE_TOKENS = [
 
 export const RADIUS_TOKENS = ["--rh-radius-sm", "--rh-radius"] as const;
 
-export const LINE_TOKENS = ["--rh-border-width", "--rh-focus-width"] as const;
+export const LINE_TOKENS = ["--rh-border-width", "--rh-border-width-strong", "--rh-focus-width"] as const;
 
 export const MEASURE_TOKENS = ["--rh-measure", "--rh-measure-wide"] as const;
 

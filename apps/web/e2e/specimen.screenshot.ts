@@ -5,12 +5,12 @@ import { platformFonts } from "./platform-fonts.mts";
 /**
  * Pixel baselines of the design specimen (`app/fixtures/specimen/`), the page
  * that shows every shared token, every component and the states between
- * them (focus, selected filters, pagination's ends, an empty listing): at
- * 360 and 1280 px, in the light and the dark scheme, with reduced motion;
- * and, for each, a crop of the focused link and its ring, compared with a
- * tolerance of a few pixels. A change to a token, a component's markup or
- * its CSS moves pixels here, so every design change shows its cost as a diff
- * in review.
+ * them (focus, selected filters, pagination's ends, the theme control in
+ * each state, an empty listing): at 360 and 1280 px, in the light and the
+ * dark scheme, with reduced motion; and, for each, a crop of the focused
+ * link and its ring, compared with a tolerance of a few pixels. A change to
+ * a token, a component's markup or its CSS moves pixels here, so every
+ * design change shows its cost as a diff in review.
  *
  * Only the `screenshots` project runs this file, and that project only
  * exists when `e2e/screenshots.mts` has started Chromium in Playwright's
@@ -66,6 +66,10 @@ for (const width of WIDTHS) {
         for (const family of headingFonts) {
           expect(family, `the specimen was drawn in ${headingFonts.join(", ")}, not Figtree: the font had not loaded`).toMatch(/^Figtree\b/);
         }
+        // The header's theme control shows once hydration has read the stored
+        // choice (none here, so System); wait for it, so the capture never
+        // catches the header before it.
+        await expect(page.getByRole("banner").getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
         // The states section's link, focused as a keyboard would, so the
         // baseline shows the focus ring (`:focus-visible`).
         const focused = page.locator("#specimen-focus");
