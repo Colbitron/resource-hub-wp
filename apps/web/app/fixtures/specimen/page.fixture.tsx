@@ -57,7 +57,10 @@ import "./specimen.css";
  * 404 page) are rendered with fixture data shaped as the CMS sends it, parsed
  * with the data layer's own schemas, so they meet the same types the routes
  * hand them. Each brings its own `<h1>`, as on its route; here they are
- * samples under the specimen's sections.
+ * samples under the specimen's sections, so the page has several `<h1>`s
+ * nested under `<h2>`s. They come from the real components and are kept so
+ * the pixels are theirs; this page is not a heading-structure reference
+ * (each route's own spec and the axe scan check that).
  *
  * The states section shows what the other sections cannot: the focus ring
  * (the screenshot test focuses `#specimen-focus` before the capture), both

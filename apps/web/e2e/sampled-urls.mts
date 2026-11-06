@@ -23,16 +23,19 @@
  */
 
 export interface SampledUrl {
-  /** The page template the URL stands for, as the test titles name it. */
-  readonly template: string;
+  /**
+   * What the URL samples, a route or a state of one (an empty listing, a
+   * last page), as the test titles name it.
+   */
+  readonly label: string;
   /** A root-relative path with the trailing slash every public URL has. */
   readonly path: string;
   /** The status the URL answers with on the seed. */
   readonly status: 200 | 404;
   /**
    * Whether Lighthouse measures it. Lighthouse refuses to score a document
-   * that answers 4xx (`ERRORED_DOCUMENT_REQUEST`), so the 404 template is
-   * axe's alone.
+   * that answers 4xx (`ERRORED_DOCUMENT_REQUEST`), so the 404 is axe's
+   * alone.
    */
   readonly lighthouse: boolean;
 }
@@ -40,14 +43,14 @@ export interface SampledUrl {
 export const SAMPLED_URLS: readonly SampledUrl[] = [
   // The seed leaves the CMS's front page unset, as on the hosted CMS, so `/`
   // is the front end's own welcome page (ADR 0052).
-  { template: "front page", path: "/", status: 200, lighthouse: true },
+  { label: "front page", path: "/", status: 200, lighthouse: true },
   // A published CMS page with a body: a CMS link, an external link and an upload.
-  { template: "CMS page", path: "/welcome/", status: 200, lighthouse: true },
-  { template: "library", path: "/resources/", status: 200, lighthouse: true },
-  { template: "type listing", path: "/resources/webinar/", status: 200, lighthouse: true },
-  { template: "topic listing", path: "/resources/topic/performance/", status: 200, lighthouse: true },
+  { label: "CMS page", path: "/welcome/", status: 200, lighthouse: true },
+  { label: "library", path: "/resources/", status: 200, lighthouse: true },
+  { label: "type listing", path: "/resources/webinar/", status: 200, lighthouse: true },
+  { label: "topic listing", path: "/resources/topic/performance/", status: 200, lighthouse: true },
   {
-    template: "type within topic listing",
+    label: "type within topic listing",
     path: "/resources/article/topic/accessibility/",
     status: 200,
     lighthouse: true,
@@ -55,21 +58,21 @@ export const SAMPLED_URLS: readonly SampledUrl[] = [
   // No podcast has the accessibility topic: a 200 with the empty state and
   // its link back to the library, and no cards.
   {
-    template: "empty type within topic listing",
+    label: "empty type within topic listing",
     path: "/resources/podcast/topic/accessibility/",
     status: 200,
     lighthouse: true,
   },
   // 14 published resources at 12 a page: page 2 is the last, with Previous and no Next.
-  { template: "paginated listing", path: "/resources/page/2/", status: 200, lighthouse: true },
+  { label: "paginated listing", path: "/resources/page/2/", status: 200, lighthouse: true },
   // The long-form resource: headings, lists, a blockquote, code, a table, a
   // figure, the related block and a 1600×900 featured image.
   {
-    template: "resource",
+    label: "resource",
     path: "/resources/article/taxonomies-versus-meta/",
     status: 200,
     lighthouse: true,
   },
   // A path no page has: the root catch-all's `notFound()` (ADR 0052).
-  { template: "not found", path: "/no-such-page/", status: 404, lighthouse: false },
+  { label: "not found", path: "/no-such-page/", status: 404, lighthouse: false },
 ];

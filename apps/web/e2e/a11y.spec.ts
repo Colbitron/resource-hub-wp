@@ -34,8 +34,8 @@ test.beforeEach(async ({ request }) => {
   await clearAppCache(request);
 });
 
-for (const { template, path, status } of SAMPLED_URLS) {
-  test.describe(`${template} (${path})`, () => {
+for (const { label, path, status } of SAMPLED_URLS) {
+  test.describe(`${label} (${path})`, () => {
     for (const colorScheme of SCHEMES) {
       test(`has no WCAG A or AA violation in the ${colorScheme} scheme`, async ({ page }) => {
         await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });

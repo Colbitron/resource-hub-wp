@@ -526,6 +526,7 @@ jobs:
       # Joins the background pull started above and fails here, with its log,
       # if it failed.
       - name: Wait for the screenshot image
+        id: image
         if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
         timeout-minutes: 10
         run: |
@@ -543,10 +544,12 @@ jobs:
       # apps/web/e2e/__screenshots__/, in Chromium inside Playwright's Docker
       # image, as they were generated. A missing baseline fails; CI never
       # writes one. On a failure the actual and diff images are in the traces
-      # artifact below. When CI and a laptop disagree on a baseline, the
-      # "Screenshot baselines" workflow regenerates them on a GitHub runner.
+      # artifact below, from the project's own output directory. When CI and
+      # a laptop disagree on a baseline, apps/web/e2e/README.md says what to
+      # do. Skipped when the image's pull failed (the step above has already
+      # failed the job), so a broken registry never starts a second pull.
       - name: Run the front end's screenshot tests
-        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
         env:
           RH_E2E_PREBUILT: '1'
         run: pnpm web:test:screenshots
