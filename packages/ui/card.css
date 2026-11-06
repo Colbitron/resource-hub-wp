@@ -1,6 +1,7 @@
 /*
- * The resource card. Class names are part of the contract (ADRs 0041, 0045):
- * the front end's <ResourceCard> and the CMS render the same markup.
+ * The resource card. Class names are part of the contract (ADR 0033; see
+ * `packages/ui/README.md`): the front end's <ResourceCard> and the CMS render
+ * the same markup.
  *
  * Built only on the tokens in tokens.css, which the consumer loads first.
  *
@@ -19,7 +20,7 @@
  * the whole card, so the card is clickable without nesting anything in the
  * link, and the focus ring is drawn around the card through the same box.
  *
- * The trade-off of that stretched link (ADR 0045): the overlay sits above the
+ * The trade-off of that stretched link: the overlay sits above the
  * summary and the topics, so their text cannot be selected with the mouse; a
  * drag starts on the link. Accepted, because the card is a link to the page
  * that holds the same text. The alternative, if selection is ever wanted, is
