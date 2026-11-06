@@ -350,6 +350,26 @@ test.describe("metadata", () => {
     await expect(page.locator(".rh-resource__media img")).toHaveAttribute("width", "1024");
   });
 
+  test("the X card is the large one with an og:image, the summary without, and absent where there is no Open Graph", async ({ page }) => {
+    // ID 30 has a 1600×900 featured image; a resource created with no media has none.
+    await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
+    await expect(page.locator('meta[name="twitter:card"]')).toHaveCount(1);
+    await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute("content", "summary_large_image");
+
+    const slug = unique("no-image-card");
+    await cms.createResource({ title: "No image card", type: "article", slug });
+    await page.goto(resourcePath("article", slug));
+    await expect(page.locator('meta[property="og:title"]')).toHaveAttribute("content", "No image card");
+    await expect(page.locator('meta[property="og:image"]')).toHaveCount(0);
+    await expect(page.locator('meta[name="twitter:card"]')).toHaveCount(1);
+    await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute("content", "summary");
+
+    // A listing sets no Open Graph, so no card: X has nothing to build one from.
+    await page.goto("/resources/");
+    await expect(page.locator('meta[property^="og:"]')).toHaveCount(0);
+    await expect(page.locator('meta[name^="twitter:"]')).toHaveCount(0);
+  });
+
   test("with SITE_URL set, the canonical, og:url and og:image are absolute on the site's origin and never name the CMS", async ({ page }) => {
     const site = appSiteOrigin();
     const checks: [string, string][] = [

@@ -8,6 +8,7 @@ import { cmsUrls } from "@/lib/env";
 import type { RenderedResource } from "@/lib/redirects";
 import { resourceTopics, type ResourceTopic } from "@/lib/resource-topics";
 import { resourcePath, topicListingPath, typeListingPath } from "@/lib/routes";
+import { shareMetadata } from "@/lib/share-metadata";
 import { sourceLink, type SourceLink } from "@/lib/source-link";
 import { toCard } from "@/lib/wp/cards";
 import { featuredImage, openGraphImage, type FeaturedImage } from "@/lib/wp/images";
@@ -107,7 +108,8 @@ function resourceView(rendered: RenderedResource): ResourceView {
  * makes absolute on the public origin (see `apps/web/README.md`); with
  * `SITE_URL` unset, as in local work, the first two stay relative and
  * Next.js resolves `og:image` against the deployment's URL. The CMS's
- * absolute URLs are never used (ADR 0040).
+ * absolute URLs are never used (ADR 0040). `shareMetadata` adds the X card
+ * type: the large card with that image, the summary card without one.
  */
 export function resourceMetadata(rendered: RenderedResource): Metadata {
   const view = resourceView(rendered);
@@ -116,7 +118,7 @@ export function resourceMetadata(rendered: RenderedResource): Metadata {
     title: view.title,
     description: view.description,
     alternates: { canonical: view.canonical },
-    openGraph: {
+    ...shareMetadata({
       type: "article",
       title: view.title,
       ...(view.description === null ? {} : { description: view.description }),
@@ -134,7 +136,7 @@ export function resourceMetadata(rendered: RenderedResource): Metadata {
               },
             ],
           }),
-    },
+    }),
   };
 }
 

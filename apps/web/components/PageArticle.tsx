@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { renderContent } from "@/lib/content/render";
 import { cmsUrls } from "@/lib/env";
 import type { RenderedPage } from "@/lib/page-request";
+import { shareMetadata } from "@/lib/share-metadata";
 import { plainText } from "@/lib/wp/cards";
 import type { WpPage } from "@/lib/wp/schemas/rest";
 
@@ -52,7 +53,8 @@ function pageView(page: WpPage, path: string): PageView {
  * The metadata for a page: its title (the root layout's template adds the site
  * name), its excerpt as the description or none, and its canonical path, which
  * the root layout's `metadataBase` makes absolute (see `apps/web/README.md`).
- * The CMS's absolute `link` is never used (ADR 0040).
+ * The CMS's absolute `link` is never used (ADR 0040). Pages carry no image, so
+ * `shareMetadata` gives them the summary X card.
  */
 export function pageMetadata(rendered: Extract<RenderedPage, { kind: "render" }>): Metadata {
   const view = pageView(rendered.page, rendered.path);
@@ -60,12 +62,12 @@ export function pageMetadata(rendered: Extract<RenderedPage, { kind: "render" }>
     title: view.title,
     description: view.description,
     alternates: { canonical: view.canonical },
-    openGraph: {
+    ...shareMetadata({
       type: "website",
       title: view.title,
       ...(view.description === null ? {} : { description: view.description }),
       url: view.canonical,
-    },
+    }),
   };
 }
 
