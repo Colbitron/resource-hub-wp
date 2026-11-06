@@ -1,0 +1,71 @@
+/*
+ * The specimen page's own layout: swatch grids, sample rows and bars. Only
+ * the fixture page imports it, and it styles only `.rh-specimen__*`, so it
+ * never changes how a component looks. Built on the shared tokens.
+ */
+
+.rh-specimen__section {
+	margin-top: var(--rh-space-7);
+}
+
+.rh-specimen__swatches,
+.rh-specimen__list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.rh-specimen__swatches {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+	gap: var(--rh-space-4);
+}
+
+.rh-specimen__list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--rh-space-4);
+}
+
+.rh-specimen__row {
+	display: flex;
+	flex-direction: column;
+	gap: var(--rh-space-2);
+	min-width: 0;
+}
+
+.rh-specimen__name {
+	color: var(--rh-color-text-muted);
+	font-size: var(--rh-text-sm);
+	overflow-wrap: anywhere;
+}
+
+.rh-specimen__swatch {
+	display: block;
+	height: var(--rh-space-8);
+	border: var(--rh-border-width) solid var(--rh-color-border);
+	border-radius: var(--rh-radius);
+}
+
+.rh-specimen__sample {
+	display: block;
+	overflow-wrap: anywhere;
+}
+
+.rh-specimen__paragraph {
+	max-width: var(--rh-measure);
+}
+
+.rh-specimen__bar {
+	display: block;
+	height: var(--rh-space-4);
+	background: var(--rh-color-accent);
+}
+
+.rh-specimen__box {
+	display: block;
+	width: var(--rh-space-8);
+	height: var(--rh-space-8);
+	background: var(--rh-color-surface-raised);
+	border: var(--rh-border-width) solid var(--rh-color-text-muted);
+}
