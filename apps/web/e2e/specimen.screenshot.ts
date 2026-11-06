@@ -6,8 +6,9 @@ import { expect, test } from "@playwright/test";
  * them (focus, selected filters, pagination's ends, an empty listing): at
  * 360 and 1280 px, in the light and the dark scheme, with reduced motion;
  * and, for each, a crop of the focused link and its ring, compared with a
- * tolerance of a few pixels. A change to a token, a component's markup or its CSS moves
- * pixels here, so every design change shows its cost as a diff in review.
+ * tolerance of a few pixels. A change to a token, a component's markup or
+ * its CSS moves pixels here, so every design change shows its cost as a diff
+ * in review.
  *
  * Only the `screenshots` project runs this file, and that project only
  * exists when `e2e/screenshots.mts` has started Chromium in Playwright's
@@ -69,10 +70,10 @@ for (const width of WIDTHS) {
         // The focus ring alone, compared with a tolerance of
         // FOCUS_MAX_DIFF_PIXELS: its colour (`--rh-color-focus`), width
         // (`--rh-focus-width`) and offset are a few hundred pixels of a page
-        // of millions, under any useful tolerance for the whole page. The crop is the link's box grown by
-        // FOCUS_MARGIN on every side, enough for the 2 px offset, the ring
-        // and a band of the surface around it, so a wider or further ring
-        // moves pixels inside it.
+        // of millions, under any useful tolerance for the whole page. The
+        // crop is the link's box grown by FOCUS_MARGIN on every side, enough
+        // for the 2 px offset, the ring and a band of the surface around it,
+        // so a wider or further ring moves pixels inside it.
         await expect(focused).toBeFocused();
         await focused.scrollIntoViewIfNeeded();
         const box = await focused.boundingBox();
