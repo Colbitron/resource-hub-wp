@@ -1,30 +1,35 @@
 ---
 status: accepted
 date: 2026-11-04
+merges: 0035 (2026-11-06); rewritten 2026-11-06 for the mechanism on main
 ---
 
-# A permanent redirect is computed, single-hop, and sent with `Cache-Control: no-store`
+# A permanent redirect is computed, single-hop, and never one a browser may keep
 
-Type paths ([ADR 0024](0024-type-paths-mirrored-on-both-sites.md)) mean a resource's URL changes when its type changes, and a type can change back. A webinar re-typed as a podcast and then back again is the case that breaks naive redirects: with a manual redirect table and header-less 301s, browsers keep the first redirect and loop. Every redirect here is computed from the current state rather than stored: a 308 to the canonical URL, which always answers 200, in a single hop, sent with `Cache-Control: no-store`. The old path is revalidated too, so the edge cache does not keep serving it.
+Type paths (ADR 0024) mean a resource's URL changes when its type changes, and a type can change back. A webinar re-typed as a podcast and then back again is the case that breaks naive redirects: with a stored redirect table and header-less 301s, browsers keep the first redirect and loop. An old slug is the same problem: the slug is the identity, and a renamed resource's old URL must lead to its new one without a table to keep.
 
-These redirects are the front end's: its type-mismatch redirect and its old-slug redirect ([ADR 0029](0029-old-slugs-resolve-through-core.md)). The CMS sends readers no redirects at all; its theme pages answer anonymous visitors with a 404 ([ADR 0031](0031-cms-theme-pages-are-for-logged-in-users.md)).
+**The decision.** Every redirect is computed from the CMS's current state, never stored as a rule: a 308 to the canonical URL, which always answers 200, in a single hop, carrying a cache header that keeps a browser from holding it. The slug is looked up first; the CMS's resolve route is asked only on a miss, so renamed resources cost one extra request and current ones none. The CMS sends readers no redirects at all (ADR 0031).
 
-The evidence, gathered 2026-11-04 with a Playwright test across Chromium 156, Firefox 157 and WebKit 27.2: Chromium caches a header-less 308 indefinitely and fails webinar → podcast → webinar with `ERR_TOO_MANY_REDIRECTS`. With `no-store`, `no-cache` or a `max-age`, all three engines asked the server again. The engine source agrees: Chromium's `GetFreshnessLifetimes` gives 301 and 308 `TimeDelta::Max()` unless a header overrules it; Firefox gives 0 heuristic freshness without `Last-Modified`; WebKit gives a 301 365 days and a 308 zero, and drops redirects marked `no-store`, `no-cache` or `must-revalidate`. Google's guidance agrees from the other side, asking for permanent redirects only "when you're sure that the redirect won't be reverted".
+**The evidence**, gathered 2026-11-04 with Playwright across Chromium 156, Firefox 157 and WebKit 27.2: Chromium caches a header-less 308 indefinitely and fails webinar to podcast to webinar with `ERR_TOO_MANY_REDIRECTS`; with `no-store`, `no-cache` or a `max-age`, all three engines asked the server again. Engine source agrees (Chromium gives a 301 or 308 infinite freshness unless a header overrules it), and Google asks for permanent redirects only when the redirect will not be reverted.
+
+**The mechanism on main.** Two kinds of redirect, by what decides them:
+
+- Redirects decidable from the path alone (case and escape canonicalisation, a trailing `/page/1/`) come from `proxy.ts` before any route runs, with `Cache-Control: no-store`, reading no data.
+- Redirects that need data (a wrong type, an old slug, a wrong page parent, the front page's own slug) come from the ISR pages: the decision runs before anything renders and calls `permanentRedirect()`. The 308 is stored like the page and cleared by the same revalidation event that makes it wrong, because every event revalidates the union of its current and previous state (ADR 0043). A stored response leaves Next.js with `s-maxage` alone, which a browser ignores, so a `headers()` rule puts `public, max-age=0, must-revalidate` on every response of those routes, the header Vercel's CDN sends browsers anyway; the 2026-11-04 evidence shows a `max-age` is enough for all three engines to ask again.
+
+The first version of this record required `no-store` on every permanent redirect, and the resource page was first built as a per-request render to send it. That was reversed on 2026-11-06 for what a dynamic page costs on Vercel; the rule is replaced by its purpose, and the measurements are in [`docs/architecture/caching.md`](../architecture/caching.md).
 
 ## Considered options
 
 - **A stored redirect table with plain 301s.** Rejected: the loop above.
+- **A per-request render that sends every redirect with `no-store`.** The contract-literal choice, measured and built first. Reversed: a function invocation and a cold start on every view, no CDN-cacheable HTML, and one uncached resolve request per page view for every unknown slug, to buy something ISR plus the union rule and a `headers()` rule buys anyway.
+- **`proxy.ts` with the data layer.** Rejected: its `fetch` is not the Data Cache's, so a CMS request per page view.
+- **A Route Handler at the resource path.** Rejected: cannot share a segment with the page.
+- **Cache Components with the decision in the dynamic part.** Rejected by ADR 0043, and a redirect after the static shell is flushed is a meta refresh.
 
 ## Consequences
 
-- Rule for the CMS and the front end alike: never send a permanent redirect without a cache header. The CMS sends anonymous visitors no redirects ([ADR 0031](0031-cms-theme-pages-are-for-logged-in-users.md)), so the front end's are the ones in scope; the rule covers any redirect either side adds.
-- A Playwright round-trip test on the front end changes a type, changes it back, and follows both URLs.
-- Old slugs resolve the same way, through the resolve route ([ADR 0029](0029-old-slugs-resolve-through-core.md)), with the front end sending the 308.
-
-## Amendment, 2026-11-05: "computed rather than stored" needs a page that renders on every request
-
-The record above assumed the front end could compute a redirect at render time and send it with `no-store`. On Next.js 16.4.5 that is true only when the page renders on every request. From an ISR route, `permanentRedirect()` is prerendered and stored like a page, with `Cache-Control: s-maxage=3600, stale-while-revalidate=…` and no `no-store`, and a route that tries to render dynamically only when it redirects is a 500 at runtime. The resource page therefore renders per request, with the data layer's Data Cache behind it, and Next.js sends every redirect as a 308 with `private, no-cache, no-store, max-age=0, must-revalidate` that nothing stores. The measurements and the mechanism are in [ADR 0035](0035-type-paths-with-a-computed-no-store-308.md)'s amendment of the same date. "The old path is revalidated too" above still holds for the 200 that used to live at the old path; the redirect itself is never in any cache to clear. Vercel's documentation says its CDN strips `s-maxage` and sends browsers `max-age=0`, which, if it holds for an ISR 308, would also stop the loop recorded above; that is unmeasured, and ADR 0035 sets out the trade-off and the spike that will settle it, pending the owner's review.
-
-## Amendment, 2026-11-06: the purpose stands, the literal header does not
-
-The owner's decision of 2026-11-06 makes the resource page and the pages catch-all ISR routes, so their computed 308s are stored like their pages and cleared by the same revalidation events that make them wrong ([ADR 0035](0035-type-paths-with-a-computed-no-store-308.md)'s and [ADR 0052](0052-the-front-end-renders-the-cms-pages.md)'s amendments of that date). The rule this record set, `no-store` on every permanent redirect, is replaced by what it was for: a browser never keeps a redirect whose target can change. Measured on Next.js 16.4.5, a stored 308 leaves `next start` with `s-maxage` alone, which a browser ignores, so a `headers()` rule in `next.config.ts` puts `public, max-age=0, must-revalidate` on every response of the two routes, the header Vercel's CDN sends browsers anyway; the evidence above already showed a `max-age` is enough for Chromium, Firefox and WebKit to ask again. The redirects `proxy.ts` sends from the path alone keep `no-store`. The Chromium round trips in `e2e/resource-page.spec.ts` and `e2e/pages.spec.ts` follow a route-cache hit 308 and then its reversal, with every hop from the server.
+- Rule for both sides: never send a permanent redirect without a cache header, for any redirect whose target can change. Next.js's own trailing-slash 308 carries none and is exempt, because `/path` to `/path/` never changes; a slashless non-canonical path takes two hops.
+- A redirect's target is a fixed point: it is built from canonical segments, so following it never redirects again. Unit tests check that over generated slugs and paths, and a Playwright round trip follows a type change and its reversal with every hop from the server.
+- `proxy.ts` must stay free of the data layer and of anything that varies with the CMS.
+- The decision in an ISR page runs before streaming begins and outside any Suspense boundary or `loading.tsx`, and the route uses no request-time API, or the redirect is a 200 with a meta refresh or a runtime 500.
