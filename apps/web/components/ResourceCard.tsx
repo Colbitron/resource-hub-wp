@@ -52,8 +52,7 @@ const IMAGE_SIZES = "(min-width: 74rem) 22.5rem, (min-width: 56rem) 33vw, (min-w
  * One resource in a listing. A server component with plain props and no data
  * fetching: the caller maps the REST payload to these. The title's link is the
  * card's only interactive element; `card.css` stretches its hit area over the
- * whole card without nesting anything (the trade-off is in `card.css`'s
- * header).
+ * whole card without nesting anything (packages/ui/DESIGN.md).
  */
 export function ResourceCard({
   title,

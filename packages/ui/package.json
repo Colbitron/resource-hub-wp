@@ -2,7 +2,7 @@
 	"name": "@colbitron/resource-hub-ui",
 	"version": "0.1.0",
 	"private": true,
-	"description": "The contract between the Resource Hub WordPress plugin and its Next.js front end: JSON Schemas (draft 2020-12) and the shared stylesheets.",
+	"description": "The contract between the Resource Hub WordPress plugin and its Next.js front end: JSON Schemas (draft 2020-12), the shared stylesheets and the typeface, with the visual system written up in DESIGN.md.",
 	"license": "GPL-2.0-or-later",
 	"type": "module",
 	"repository": {
@@ -12,17 +12,20 @@
 	},
 	"files": [
 		"schemas",
+		"fonts",
 		"tokens.css",
 		"card.css",
-		"README.md"
+		"README.md",
+		"DESIGN.md"
 	],
 	"exports": {
 		"./schemas/*": "./schemas/*",
+		"./fonts/*": "./fonts/*",
 		"./tokens.css": "./tokens.css",
 		"./card.css": "./card.css"
 	},
 	"scripts": {
-		"test": "node --test test/schemas.test.js"
+		"test": "node --test"
 	},
 	"devDependencies": {
 		"ajv": "^8.17.1",

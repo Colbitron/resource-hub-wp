@@ -1,8 +1,8 @@
 /*
- * The single resource page: the header, the meta line, the featured image, the
- * summary, the body and the source line, built on the shared tokens (see
- * packages/ui/README.md). These classes are the front end's own, not part of
- * the contract.
+ * The single resource page: the header, the meta line, the featured image,
+ * the summary, the body and the source line, built on the shared tokens
+ * (packages/ui/DESIGN.md). These classes are the front end's own, not part
+ * of the contract.
  *
  * The whole article sits in one column of `--rh-measure`, the prose line
  * length, so the image is never wider than the text under it. The body's

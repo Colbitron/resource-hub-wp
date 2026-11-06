@@ -12,9 +12,10 @@ import { SAMPLED_URLS } from "./sampled-urls.mts";
  * 2.0, 2.1 and 2.2 level A and AA rule axe has. Zero violations, in both
  * schemes, on every sampled URL.
  *
- * Both schemes, because the shared tokens switch on `prefers-color-scheme`
- * and a contrast failure in one says nothing about the other. Each scheme is
- * emulated before the page loads, so the first paint is already in it.
+ * Both schemes, because every shared colour token is a `light-dark()` pair
+ * that follows the scheme (`packages/ui/DESIGN.md`) and a contrast failure
+ * in one says nothing about the other. Each scheme is emulated before the
+ * page loads, so the first paint is already in it.
  *
  * axe sees what a browser renders: it checks contrast against computed
  * colours, so it covers the tokens as the pages use them. It cannot judge

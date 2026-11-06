@@ -1,8 +1,8 @@
 /*
  * The page shell: the base styles the front end owns, built on the shared
- * tokens (see packages/ui/README.md). The shared package owns the tokens and
- * the component styles; this file owns only the document, the landmarks and the
- * skip link.
+ * tokens (packages/ui/DESIGN.md). The shared package owns the tokens and
+ * the component styles; this file owns only the document, the landmarks and
+ * the skip link.
  */
 
 *,
@@ -38,8 +38,9 @@ h1,
 h2,
 h3 {
 	margin: 0 0 var(--rh-space-3);
-	font-family: var(--rh-font-serif);
-	font-weight: 600;
+	font-family: var(--rh-font-sans);
+	font-weight: var(--rh-weight-heading);
+	letter-spacing: var(--rh-tracking-heading);
 	line-height: var(--rh-leading-tight);
 	overflow-wrap: anywhere;
 }
@@ -114,9 +115,10 @@ video {
 
 .rh-header__name {
 	color: var(--rh-color-text);
-	font-family: var(--rh-font-serif);
+	font-family: var(--rh-font-sans);
 	font-size: var(--rh-text-lg);
-	font-weight: 600;
+	font-weight: var(--rh-weight-heading);
+	letter-spacing: var(--rh-tracking-heading);
 	text-decoration: none;
 }
 

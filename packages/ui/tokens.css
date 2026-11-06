@@ -2,31 +2,56 @@
  * Resource Hub design tokens. Part of the contract between the CMS and the
  * front end (ADR 0033; see `packages/ui/README.md`): every token here is a
  * name both sides, and the planned CMS theme, build on, so renaming one is a
- * contract change.
+ * contract change. What each token is for, and the rules around them, are
+ * in DESIGN.md beside this file; this file holds the values and nothing
+ * else.
  *
- * Plain CSS custom properties on :root, no framework, system font stacks and
- * no web fonts. Light is the default; dark follows the reader's
- * `prefers-color-scheme`. Every text-on-background pair below meets WCAG AA
- * (4.5:1 for text, 3:1 for the focus ring against both surfaces); the ratios
- * are in the contrast table in `packages/ui/README.md`.
+ * Plain CSS custom properties on :root, no framework. Every colour is a
+ * `light-dark()` pair, and `color-scheme: light dark` on :root lets the
+ * reader's system preference pick the side; a consumer that offers a
+ * theme choice sets `color-scheme` on <html> and every token follows.
+ * No `prefers-color-scheme` media query, so that choice needs no second
+ * copy of the values. Every text-on-background pair meets WCAG AA (4.5:1
+ * for text, 3:1 for the focus ring against both surfaces); the package's
+ * test/contrast.test.js reads this file and checks it.
  */
 
 :root {
 	color-scheme: light dark;
 
-	/* Colour, light scheme. */
-	--rh-color-text: #1c2024;
-	--rh-color-text-muted: #59636e;
-	--rh-color-surface: #ffffff;
-	--rh-color-surface-raised: #f2f4f6;
-	--rh-color-border: #d2d7dc;
-	--rh-color-accent: #1f4f8f;
-	--rh-color-accent-text: #ffffff;
-	--rh-color-focus: #1f4f8f;
+	/* Colour. Roles, never values: the brand's paper and ink, with a cobalt link. */
+	--rh-color-text: light-dark(#1e1c22, #ece9e2);
+	--rh-color-text-muted: light-dark(#5c5962, #aaa7ad);
+	--rh-color-surface: light-dark(#f6f4ef, #161519);
+	--rh-color-surface-raised: light-dark(#ece8df, #2a282f);
+	--rh-color-border: light-dark(rgb(30 28 34 / 0.14), rgb(236 233 226 / 0.14));
+	--rh-color-accent: light-dark(#3348c4, #a8b2f0);
+	--rh-color-accent-text: light-dark(#f6f4ef, #161519);
+	--rh-color-focus: light-dark(#4056d6, #efc34a);
 
-	/* Type. System stacks only: a serif for headings, a sans for everything else. */
-	--rh-font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-	--rh-font-serif: Charter, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+	/*
+	 * The five brand accents, for small marks only (a dot beside a printed
+	 * type name), never text and never a text background: in the light
+	 * scheme lemon, coral and mint sit under 3:1 against the surface.
+	 * Cobalt, lemon and mint are lifted a step in the dark scheme.
+	 */
+	--rh-mark-coral: #ee6358;
+	--rh-mark-cobalt: light-dark(#4056d6, #8a98f0);
+	--rh-mark-lemon: light-dark(#d8ad2e, #efc34a);
+	--rh-mark-mint: light-dark(#1fa97d, #35c498);
+	--rh-mark-grape: #9d78e0;
+
+	/*
+	 * Type. One typeface, Figtree, for everything. Each consumer loads the
+	 * file in fonts/ its own way and sets --rh-font-figtree to the family
+	 * names it registered (the front end's next/font loader sets it on
+	 * <html>, with its size-adjusted fallback face); a consumer that
+	 * registers the family as plain "Figtree" leaves the variable unset.
+	 * Headings are the same face, heavier and slightly tighter.
+	 */
+	--rh-font-sans: var(--rh-font-figtree, "Figtree"), system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	--rh-weight-heading: 700;
+	--rh-tracking-heading: -0.02em;
 	--rh-text-sm: 0.875rem;
 	--rh-text-base: 1rem;
 	--rh-text-md: 1.125rem;
@@ -55,17 +80,4 @@
 	/* Measure: prose line length and the page's content width. */
 	--rh-measure: 65ch;
 	--rh-measure-wide: 72rem;
-}
-
-@media (prefers-color-scheme: dark) {
-	:root {
-		--rh-color-text: #e8eaed;
-		--rh-color-text-muted: #a6aeb8;
-		--rh-color-surface: #15181b;
-		--rh-color-surface-raised: #1f2327;
-		--rh-color-border: #353b42;
-		--rh-color-accent: #8fb5f0;
-		--rh-color-accent-text: #0f1a2b;
-		--rh-color-focus: #8fb5f0;
-	}
 }
