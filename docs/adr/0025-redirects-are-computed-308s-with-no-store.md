@@ -6,7 +6,7 @@ merges: 0035 (2026-11-06); rewritten 2026-11-06 for the mechanism on main
 
 # A permanent redirect is computed, single-hop, and never one a browser may keep
 
-Type paths (ADR 0024) mean a resource's URL changes when its type changes, and a type can change back. A webinar re-typed as a podcast and then back again is the case that breaks naive redirects: with a stored redirect table and header-less 301s, browsers keep the first redirect and loop. An old slug is the same problem: the slug is the identity, and a renamed resource's old URL must lead to its new one without a table to keep.
+Type paths (ADR 0024) mean a resource's URL changes when its type changes, and a type can change back. A webinar re-typed as a podcast and then back again is the case that breaks naive redirects: with a stored redirect table and header-less 301s, browsers keep the first redirect and loop. Google also asks for a permanent redirect only when it will not be reverted, and a type that changes back reverts one. An old slug is the same problem: the slug is the identity, and a renamed resource's old URL must lead to its new one without a table to keep.
 
 **The decision.** Every redirect is computed from the CMS's current state, never stored as a rule: a 308 to the canonical URL, which always answers 200, in a single hop, carrying a cache header that keeps a browser from holding it. The slug is looked up first; the CMS's resolve route is asked only on a miss, so renamed resources cost one extra request and current ones none. The CMS sends readers no redirects at all (ADR 0031).
 
