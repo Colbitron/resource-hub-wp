@@ -5,10 +5,16 @@ import { mediaPath } from "../urls";
 import type { WpResource } from "./schemas/rest";
 
 /**
- * A resource's featured image, made safe for `next/image`: a same-origin
- * `/media/…` path (ADR 0040) with both dimensions, or nothing. The image
- * trust rule is ADR 0047's for images in a body, held to a stricter bar
- * because `next/image` needs a size (ADR 0039):
+ * A resource's featured image, made safe for `next/image` and for
+ * `og:image`: a same-origin `/media/…` path (ADR 0040) with both dimensions,
+ * or nothing. Two choices of file are made from the same media by the same
+ * rules, differing only in the minimum width of rule 4: `featuredImage`, for
+ * the card and the resource page's `next/image`, with
+ * `CARD_SOURCE_MIN_WIDTH`, and `openGraphImage`, for the page's `og:image`,
+ * with `OPEN_GRAPH_MIN_WIDTH`. Both are `chooseImage`; whichever is called,
+ * the original either passes rules 1 to 3 or there is no image, so the two
+ * are `null` together. The image trust rule is ADR 0047's for images in a
+ * body, held to a stricter bar because `next/image` needs a size (ADR 0039):
  *
  * 1. The embedded media is the first entry of `_embedded['wp:featuredmedia']`
  *    (core embeds one); a `null` entry, which is how the reader schema keeps
@@ -28,11 +34,19 @@ import type { WpResource } from "./schemas/rest";
  *    query or a hash.
  * 4. A size is used in place of the original only when it passes rule 3, has
  *    valid dimensions, is the original's shape (WordPress crops some sizes,
- *    such as the 150×150 thumbnail), is at least `CARD_SOURCE_MIN_WIDTH`
- *    wide and is smaller than anything chosen so far, so the optimizer reads
- *    the smallest file that is still sharp at the card's width. A size that
- *    fails any of these is skipped, never a reason to drop the image; the
- *    original failing is.
+ *    such as the 150×150 thumbnail), is at least the minimum width and is
+ *    smaller than anything chosen so far, so the reader gets the smallest
+ *    file that is still sharp where it is shown: the optimizer reads it for
+ *    the card and the page, a social network for a link preview. When no
+ *    size qualifies, the original is used, as the largest file there is,
+ *    even if it is narrower than the minimum. A size that fails any of these
+ *    is skipped, never a reason to drop the image; the original failing is.
+ *
+ * Neither choice checks a file size. Social networks cap `og:image` (LinkedIn
+ * at 5 MB). A size is a WordPress derivative, usually well under that but not
+ * always (a 2048-wide PNG of a photograph can pass it); the original is
+ * whatever was uploaded; and the REST response carries `filesize` only
+ * sometimes, so keeping the files under a cap is the editor's part.
  */
 
 /** The largest width or height accepted, in pixels: well past any camera's, small enough to be a real number. */
@@ -44,6 +58,14 @@ export const MAX_IMAGE_DIMENSION = 16_384;
  * sharp at a device pixel ratio of two with room to spare.
  */
 export const CARD_SOURCE_MIN_WIDTH = 800;
+
+/**
+ * The narrowest size worth using for `og:image`. LinkedIn asks for at least
+ * 1200×627 (https://www.linkedin.com/help/linkedin/answer/46687), and
+ * Facebook and X show a large preview at 1200×630; WordPress's 1024-wide
+ * `large` size, which the card takes, is under all three.
+ */
+export const OPEN_GRAPH_MIN_WIDTH = 1200;
 
 export interface FeaturedImage {
   /** `/media/…`, same-origin. */
@@ -108,8 +130,8 @@ function sameShape(width: number, height: number, original: { width: number; hei
   return Math.abs(height - (width * original.height) / original.width) <= 1;
 }
 
-/** The resource's featured image by the rules above, or `null`. Reads `WP_API_URL` and `WP_MEDIA_ORIGIN`. */
-export function featuredImage(resource: WpResource): FeaturedImage | null {
+/** The resource's featured image by the rules above with `minWidth` as rule 4's minimum, or `null`. Reads `WP_API_URL` and `WP_MEDIA_ORIGIN`. */
+function chooseImage(resource: WpResource, minWidth: number): FeaturedImage | null {
   const media = resource._embedded["wp:featuredmedia"][0];
   if (media === undefined || media === null) {
     return null;
@@ -132,7 +154,7 @@ export function featuredImage(resource: WpResource): FeaturedImage | null {
     if (!isDimension(size.width) || !isDimension(size.height)) {
       continue;
     }
-    if (size.width < CARD_SOURCE_MIN_WIDTH || size.width >= chosen.width) {
+    if (size.width < minWidth || size.width >= chosen.width) {
       continue;
     }
     if (!sameShape(size.width, size.height, { width, height })) {
@@ -144,4 +166,14 @@ export function featuredImage(resource: WpResource): FeaturedImage | null {
     }
   }
   return { ...chosen, alt: media.alt_text };
+}
+
+/** The image for the card and the resource page's `next/image`: rule 4 with `CARD_SOURCE_MIN_WIDTH`. */
+export function featuredImage(resource: WpResource): FeaturedImage | null {
+  return chooseImage(resource, CARD_SOURCE_MIN_WIDTH);
+}
+
+/** The image for the resource page's `og:image`: rule 4 with `OPEN_GRAPH_MIN_WIDTH`. */
+export function openGraphImage(resource: WpResource): FeaturedImage | null {
+  return chooseImage(resource, OPEN_GRAPH_MIN_WIDTH);
 }
