@@ -97,12 +97,24 @@ read_slugs() {
 }
 
 run_import() {
-	local dir="$1" wp_path="$2" force="$3" revalidate="$4" revalidate_only="$5" wp_bin="${RH_WP_BIN:-wp}"
+	local dir="$1" wp_path="$2" force="$3" revalidate="$4" revalidate_only="$5" wp_bin="${RH_WP_BIN:-wp}" preflight
 	[ -d "$dir" ] || die "no such directory: $dir"
 	command -v "$wp_bin" >/dev/null 2>&1 || die "wp not found (set RH_WP_BIN to the binary's path)"
 
+	# The staging directory as an absolute path, since the rest runs from the
+	# WordPress root: WP-CLI evaluates wp-config.php rather than including it, so
+	# a relative require in it (Cloudways's `require_once 'wp-salt.php'`) resolves
+	# against the working directory, and from anywhere else every call is a fatal.
+	dir="$(cd "$dir" && pwd)" || die "cannot enter $dir"
+	cd "$wp_path" || die "cannot enter the WordPress root $wp_path"
+
 	# `command` keeps this from calling itself when the binary is also named wp.
 	wp() { command "$wp_bin" --path="$wp_path" "$@"; }
+
+	# One check up front, so a WP-CLI that cannot load WordPress stops the run
+	# with one message instead of a stack trace per slug.
+	preflight="$(wp core is-installed 2>&1)" || die "WP-CLI cannot load WordPress at $wp_path${preflight:+:
+$preflight}"
 
 	# The ID of the one resource with this slug in the given statuses, empty when
 	# there is none; exits non-zero on a lookup error or output that is not an ID
