@@ -99,7 +99,7 @@ function restPathFor( postType ) {
  *
  * @param {string|undefined} postType      The post type.
  * @param {Object}           post          The post's saved state.
- * @param {number}           post.id       The post's ID.
+ * @param {number|string}    post.id       The post's ID.
  * @param {string|undefined} post.status   Its status.
  * @param {string|undefined} post.password Its password, empty for none.
  * @return {boolean} Whether it is served.
@@ -113,7 +113,7 @@ function isServed( postType, { id, status, password } ) {
 		case 'resource':
 			return true;
 		case 'page':
-			return ( password ?? '' ) === '' && id !== POSTS_PAGE_ID;
+			return ( password ?? '' ) === '' && Number( id ) !== POSTS_PAGE_ID;
 		default:
 			return false;
 	}

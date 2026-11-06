@@ -45,20 +45,21 @@ final class RevalidationAssetsTest extends WP_UnitTestCase {
 
 	/**
 	 * The object the script is handed, decoded from the `var resourceHubRevalidation = {…};` line
-	 * `wp_localize_script()` writes, so the test does not depend on key order or slash escaping.
+	 * `wp_localize_script()` writes, so the assertions compare decoded values and not the JSON's slash
+	 * escaping or layout.
 	 *
-	 * @param string $message Names the case in a failure.
+	 * @param string $label Names the case in a failure message.
 	 * @return array<string, mixed>
 	 */
-	private function localized_data( string $message ): array {
+	private function localized_data( string $label ): array {
 		$data = wp_scripts()->get_data( RevalidationAssets::HANDLE, 'data' );
-		$this->assertIsString( $data, $message );
+		$this->assertIsString( $data, $label );
 
 		$prefix = 'var ' . RevalidationAssets::OBJECT_NAME . ' = ';
-		$this->assertSame( 1, preg_match( '/^' . preg_quote( $prefix, '/' ) . '(\{.*\});$/s', trim( $data ), $match ), $message );
+		$this->assertSame( 1, preg_match( '/^' . preg_quote( $prefix, '/' ) . '(\{.*\});$/s', trim( $data ), $match ), $label );
 
 		$decoded = json_decode( $match[1], true );
-		$this->assertIsArray( $decoded, $message );
+		$this->assertIsArray( $decoded, $label );
 
 		return $decoded;
 	}
@@ -86,7 +87,7 @@ final class RevalidationAssetsTest extends WP_UnitTestCase {
 			$this->assertTrue( wp_script_is( RevalidationAssets::HANDLE, 'enqueued' ), $post_type );
 
 			$data = $this->localized_data( $post_type );
-			$this->assertSame( array( 'sentences', 'restPaths', 'postsPageId' ), array_keys( $data ), $post_type );
+			$this->assertEqualsCanonicalizing( array( 'sentences', 'restPaths', 'postsPageId' ), array_keys( $data ), $post_type );
 			$this->assertSame( ResultText::sentences(), $data['sentences'], $post_type );
 			$this->assertSame(
 				array(
@@ -126,14 +127,14 @@ final class RevalidationAssetsTest extends WP_UnitTestCase {
 
 		update_option( 'show_on_front', 'page' );
 		$this->enqueue_on( 'page' );
-		$this->assertSame( (string) $posts_page, $this->localized_data( 'page' )['postsPageId'] );
+		$this->assertSame( (string) $posts_page, $this->localized_data( 'show_on_front=page' )['postsPageId'] );
 
 		wp_dequeue_script( RevalidationAssets::HANDLE );
 		wp_deregister_script( RevalidationAssets::HANDLE );
 
 		update_option( 'show_on_front', 'posts' );
 		$this->enqueue_on( 'page' );
-		$this->assertSame( '0', $this->localized_data( 'posts' )['postsPageId'] );
+		$this->assertSame( '0', $this->localized_data( 'show_on_front=posts' )['postsPageId'] );
 	}
 
 	/**
