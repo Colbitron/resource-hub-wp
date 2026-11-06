@@ -45,9 +45,11 @@ export function generateMetadata(): Metadata {
 // ISR-cached, so this is the only place the choice can be read without
 // making every page dynamic. React then hydrates an <html> whose attributes
 // differ from the markup it rendered; `suppressHydrationWarning` on that one
-// element, and no other, tells it to keep the DOM's. The theme control
-// (components/ThemeToggle.tsx) re-applies the attribute after hydration, for
-// development's Strict Mode remount, which resets it.
+// element, and no other, tells it to keep the DOM's
+// (test/hydration-warning.test.ts holds that). The theme control
+// (components/ThemeToggle.tsx) re-applies the attribute after hydration as a
+// guard: the Next.js guide warns that development's Strict Mode remount can
+// reset it; not reproduced on Next.js 16.4.5 with React 19.3.
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={figtree.variable} suppressHydrationWarning>

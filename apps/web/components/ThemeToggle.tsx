@@ -20,13 +20,12 @@ import { ThemeFieldset } from "./ThemeFieldset";
  * in `app/layout.tsx`.
  *
  * The layout effect re-applies the choice to `<html>` whenever it changes,
- * which covers two cases the store's own `applyTheme` does not: another tab
- * is handled by the store, but in development React's Strict Mode remounts
- * the tree once and on that remount resets `<html>` to the attributes it
- * renders from JSX, clearing the one the head script set; and the
- * attribute is applied before paint on the first client render in any case.
- * In production the effect finds the attribute already set and sets it
- * again, to the same value.
+ * before paint. It is a guard: the Next.js guide warns that development's
+ * Strict Mode remount can reset `<html>` to the attributes React rendered,
+ * clearing the one the head script set. That was not reproduced on Next.js
+ * 16.4.5 with React 19.3 (`e2e/theme.dev.ts` checks it under `next dev`),
+ * so today the effect finds the attribute already set and sets it again,
+ * to the same value; it is kept in case a later version does reset it.
  */
 export function ThemeToggle() {
   const choice = useSyncExternalStore(subscribe, readTheme, getServerSnapshot);
