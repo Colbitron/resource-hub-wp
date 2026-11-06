@@ -75,8 +75,14 @@ export async function waitOutClockSkew(request: APIRequestContext): Promise<numb
   }
   const { skewMs } = (await response.json()) as { skewMs: number };
   const wait = skewWaitMs(skewMs);
+  // A deadline rather than one timer: Node's setTimeout counts from the
+  // event loop's cached time and can fire up to a millisecond early
+  // (measured 34.3 ms for a 35 ms timer), so it sleeps until the full wait
+  // has passed on the monotonic clock.
   const started = performance.now();
-  await new Promise((resolve) => setTimeout(resolve, wait));
+  for (let left = wait; left > 0; left = wait - (performance.now() - started)) {
+    await new Promise((resolve) => setTimeout(resolve, Math.ceil(left)));
+  }
   const log = process.env.RH_E2E_SKEW_LOG;
   if (log) appendFileSync(log, `${JSON.stringify({ skewMs, waitMs: wait, waitedMs: performance.now() - started })}\n`);
   return skewMs;
