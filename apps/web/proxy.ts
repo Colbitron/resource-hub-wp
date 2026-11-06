@@ -16,7 +16,7 @@ import { canonicalPath } from "./lib/canonical-path";
  * that reached either route first would store a redirect at the canonical
  * path's own key. A proxy redirect with no data costs about a fifth of a
  * millisecond, and the proxy adds about a tenth of one to every other
- * matched request.
+ * matched request; the matcher below keeps canonical page paths out of it.
  *
  * This proxy never reads the data layer: its `fetch` is not the Data Cache's,
  * so a CMS request here would reach the CMS on every matched request. What
@@ -40,10 +40,15 @@ export function proxy(request: NextRequest): NextResponse | undefined {
 }
 
 export const config = {
-  // Every path but the revalidate route, the uploads rewrite and the
-  // framework's assets: those are not pages, an upload's file name may carry
-  // upper-case letters, and `lib/canonical-path.ts` leaves them alone in any
-  // case regardless. The root and the static favicon match and pass through,
-  // since they have no canonical form to send them to.
-  matcher: "/((?!api/|media/|_next/).*)",
+  // Only requests that can need a redirect, so a canonical page path (the
+  // common case, an ISR hit) never pays for the proxy: every `/resources/**`
+  // path, for the `/page/1/` rule, and any other path with an upper-case
+  // ASCII letter, a percent escape or a repeated slash, outside the
+  // revalidate route, the uploads rewrite and the framework's assets, which
+  // are not pages and which `lib/canonical-path.ts` leaves alone regardless.
+  // Next.js compiles a matcher with path-to-regexp and tests it at runtime
+  // with `new RegExp(regexp)` and no flags, so `[A-Z]` is case-sensitive
+  // there; `test/proxy-matcher.test.ts` compiles these the same way. A
+  // repeated slash is collapsed by Next.js's own 308 before the proxy runs.
+  matcher: ["/resources/:path*", "/((?!_next/|api/|media/).*(?:[A-Z%]|//).*)"],
 };
