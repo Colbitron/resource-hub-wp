@@ -12,7 +12,7 @@ import { config } from "../proxy";
  * (`getMiddlewareRouteMatcher`, a flagless `RegExp`): it must reach every
  * request `lib/path-decision.ts` could redirect or answer with a 404, and
  * no ASCII canonical page path, so an ISR hit for such a page never pays
- * for the proxy, nor does the favicon every browser asks for, the
+ * for the proxy, nor do the favicon and icons every browser asks for, the
  * revalidate route or a framework asset. A percent-encoded canonical page
  * path does run it, through the `%` clause.
  */
@@ -53,7 +53,7 @@ describe("the proxy's matcher", () => {
     }
   });
 
-  it("never matches the front end's own routes outside the library: the favicon and the revalidate route", () => {
+  it("never matches the front end's own routes outside the library: the metadata files and the revalidate route", () => {
     for (const path of [...OWN_ROUTE_PATHS, "/api/revalidate"]) {
       expect(decidePath(path), path).toBeNull();
       expect(proxied(path), path).toBe(false);

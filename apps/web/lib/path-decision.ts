@@ -46,7 +46,7 @@
  *   `wp-login.php`, `.env`), a first segment the front end's own routes use
  *   (`api`, `resources` in another case), or a path over the plugin's cap.
  *   The front end's own routes under those segments, the revalidate route
- *   and the favicon (`OWN_ROUTE_PATHS`), are left alone, and so is
+ *   and the metadata files (`OWN_ROUTE_PATHS`), are left alone, and so is
  *   everything under `/_next/` and `/media/`, which the framework and the
  *   uploads rewrite own (a junk `/_next/x/` path still falls through to the
  *   catch-all's own 404, which has the not-found page in its HTML through
