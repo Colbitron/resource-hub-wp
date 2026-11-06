@@ -1,0 +1,36 @@
+/*
+ * The lockup: the mark beside the wordmark, as one link (Brand.tsx;
+ * packages/ui/DESIGN.md, "Brand"). The front end's own classes, built on
+ * the shared tokens; not part of the contract.
+ *
+ * The wordmark is set like a heading (the heading weight and tracking, the
+ * tight line height) at `--rh-text-lg`, the size the header has always used
+ * for the site's name. The mark is 1.25 em of that, a little taller than
+ * the capitals beside it, and the gap between them is one spacing step, so
+ * the whole lockup is 1.25 em tall and scales with the reader's text size.
+ * Nothing here moves: the link underlines its name on hover, as every link
+ * does, and the mark stays still.
+ */
+
+.rh-brand {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--rh-space-2);
+	color: var(--rh-color-text);
+	font-family: var(--rh-font-sans);
+	font-size: var(--rh-text-lg);
+	font-weight: var(--rh-weight-heading);
+	letter-spacing: var(--rh-tracking-heading);
+	line-height: var(--rh-leading-tight);
+	text-decoration: none;
+}
+
+.rh-brand__mark {
+	flex: none;
+	width: 1.25em;
+	height: 1.25em;
+}
+
+.rh-brand:hover .rh-brand__name {
+	text-decoration: underline;
+}

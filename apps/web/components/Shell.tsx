@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
 
 import "@colbitron/resource-hub-ui/tokens.css";
 import "./shell.css";
 
+import { BrandLockup } from "./Brand";
 import { ThemeToggle } from "./ThemeToggle";
 
 /**
@@ -16,11 +16,16 @@ import { ThemeToggle } from "./ThemeToggle";
  * every page. Page content is stacked under `main`, which carries
  * `tabIndex={-1}` so the skip link lands focus on it in every browser.
  *
- * The header holds the site's name alone, so it stays one row at every
- * width. The theme control (`ThemeToggle`, a client component) closes the
- * footer, after its text: the same place on every page, out of the reading
- * path, and the last Tab stop. Beside the text where both fit, under it
- * where they do not.
+ * The header holds the lockup alone (`BrandLockup`: the publisher's mark
+ * and the wordmark "Resource Hub", one link to the library), so it is one
+ * row at every width from 320 px up, as short as it can be without
+ * shrinking anything (`shell.css`).
+ *
+ * The footer names the publisher, with the one external link the shell
+ * has, says what the site is, and closes with the theme control
+ * (`ThemeToggle`, a client component): the same place on every page, out
+ * of the reading path, and the last Tab stop. Beside the text where both
+ * fit, under it where they do not.
  */
 export function Shell({ children }: { children: ReactNode }) {
   return (
@@ -30,9 +35,7 @@ export function Shell({ children }: { children: ReactNode }) {
       </a>
       <header className="rh-header">
         <div className="rh-shell__inner rh-header__inner">
-          <Link className="rh-header__name" href="/resources/">
-            Resource Hub
-          </Link>
+          <BrandLockup />
         </div>
       </header>
       <main className="rh-shell__inner rh-main" id="main" tabIndex={-1}>
@@ -40,7 +43,12 @@ export function Shell({ children }: { children: ReactNode }) {
       </main>
       <footer className="rh-footer">
         <div className="rh-shell__inner rh-footer__inner">
-          <p>A headless WordPress demonstration: WordPress models the library, Next.js renders it.</p>
+          <div className="rh-footer__text">
+            <p>
+              Published by <a href="https://colbination.com/">Colbination</a>.
+            </p>
+            <p>A headless WordPress demonstration: WordPress models the library, Next.js renders it.</p>
+          </div>
           <div className="rh-footer__theme">
             <ThemeToggle />
           </div>
