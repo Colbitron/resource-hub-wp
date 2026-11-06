@@ -35,6 +35,10 @@ use WP_Post;
  * `delete` comes from `before_delete_post` for a published page, while the post still exists. A
  * change that never touches a served page (a draft saved, the posts page edited, a post of any
  * other type) sends nothing.
+ *
+ * Served means published with no password and not the posts page ({@see PagePath::is_served()}), so
+ * a password put on a published page is an `unpublish` and one taken off a `publish`, exactly as the
+ * front end sees them: the page leaves or joins what it serves.
  */
 final class PageEvents {
 	/**
@@ -79,7 +83,10 @@ final class PageEvents {
 	 * The event is the change from `$post_before` to the saved post, both judged as the options stand
 	 * at the hook: served before and after is an `update` whose `previous` is the path before; not
 	 * served before and served after is a `publish`; served before and not after is an `unpublish`,
-	 * or a `trash` when the save trashed it, with the path before at the top level.
+	 * or a `trash` when the save trashed it, with the path before at the top level. The path before
+	 * comes from `$post_before` and the options ({@see PagePath::of_post_before()}): the front page
+	 * unpublished is reported under `/`, the path readers used, although the saved post is no longer
+	 * public and so no longer the front page as {@see PagePath::front_page_id()} reads it.
 	 *
 	 * @param int          $post_id     Post ID.
 	 * @param WP_Post      $post        The post as saved.
@@ -107,7 +114,7 @@ final class PageEvents {
 		}
 
 		// `$post_before` is set: the page was served, so it existed before the save.
-		$before = PagePath::of_post( $post_before );
+		$before = PagePath::of_post_before( $post_before );
 
 		if ( $is_served ) {
 			$this->queue->add( self::event( 'update', $post->ID, PagePath::of_post( $post ), $before ) );
@@ -137,18 +144,22 @@ final class PageEvents {
 
 	/**
 	 * `update_option_show_on_front`: switching to or from `page` moves the page `page_on_front` names
-	 * between `/` and its own path.
+	 * between `/` and its own path, and takes the page `page_for_posts` names out of, or puts it back
+	 * into, what is served, since core reads that option only while `show_on_front` is `page`.
 	 *
 	 * @param mixed $old_value The value before.
 	 * @param mixed $value     The value after.
 	 */
 	public function on_show_on_front( mixed $old_value, mixed $value ): void {
-		$page = (int) get_option( 'page_on_front' );
+		$page  = (int) get_option( 'page_on_front' );
+		$posts = (int) get_option( 'page_for_posts' );
 
 		if ( 'page' === $old_value && 'page' !== $value ) {
 			$this->moved( $page, '/', null );
+			$this->posts_page_changed( $posts );
 		} elseif ( 'page' !== $old_value && 'page' === $value ) {
 			$this->moved( $page, null, '/' );
+			$this->posts_page_changed( $posts );
 		}
 	}
 
@@ -191,21 +202,35 @@ final class PageEvents {
 	}
 
 	/**
-	 * `update_option_page_for_posts`: the old posts page is served again and the new one no longer is,
-	 * each at its own path. Sent as an `update` from that path to itself, since the lookup's answer for
-	 * the path changes while the path does not.
+	 * `update_option_page_for_posts`: while `show_on_front` is `page`, the old posts page is served
+	 * again and the new one no longer is, each at its own path. With `show_on_front` on `posts` the
+	 * option means nothing to core and nothing changes.
 	 *
 	 * @param mixed $old_value The value before.
 	 * @param mixed $value     The value after.
 	 */
 	public function on_page_for_posts( mixed $old_value, mixed $value ): void {
-		foreach ( array_unique( array( (int) $old_value, (int) $value ) ) as $page_id ) {
-			$post = $page_id > 0 ? get_post( $page_id ) : null;
+		if ( 'page' !== get_option( 'show_on_front' ) ) {
+			return;
+		}
 
-			if ( $post instanceof WP_Post && PagePath::POST_TYPE === $post->post_type && 'publish' === $post->post_status ) {
-				$path = PagePath::own_path( $post );
-				$this->queue->add( self::event( 'update', $post->ID, $path, $path ) );
-			}
+		foreach ( array_unique( array( (int) $old_value, (int) $value ) ) as $page_id ) {
+			$this->posts_page_changed( $page_id );
+		}
+	}
+
+	/**
+	 * Queues an `update` from a page's own path to itself for a public page that just became, or just
+	 * stopped being, the posts page: the lookup's answer for the path changes while the path does not.
+	 *
+	 * @param int $page_id The page, or 0 for none.
+	 */
+	private function posts_page_changed( int $page_id ): void {
+		$post = $page_id > 0 ? get_post( $page_id ) : null;
+
+		if ( $post instanceof WP_Post && PagePath::is_public( $post ) ) {
+			$path = PagePath::own_path( $post );
+			$this->queue->add( self::event( 'update', $post->ID, $path, $path ) );
 		}
 	}
 

@@ -73,8 +73,9 @@ final class Payload {
 	 * so those checks see the event as sent. Every other slug is returned exactly as stored.
 	 *
 	 * A page path's segment that decodes to nothing is kept as stored: the schema's `pagePath` asks
-	 * only for a non-empty segment, so the stored escape is still sent, and the front end, which
-	 * refuses such a segment, answers the whole batch with a 400 that names it.
+	 * only for a non-empty segment with no slash or whitespace, as does the front end's reader, so the
+	 * event goes out and the front end revalidates the path as written. The lookup for that path is
+	 * what the front end refuses, so such a page is a 404 there either way.
 	 *
 	 * @param array<string, mixed> $event A resource, term or page event.
 	 * @return array<string, mixed>

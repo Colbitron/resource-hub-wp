@@ -225,6 +225,7 @@ final class PageEventsTest extends RevalidationTestCase {
 	public function test_posts_page_changes_send_updates_for_both_pages(): void {
 		$news = $this->page( 'news' );
 		$blog = $this->page( 'blog' );
+		update_option( 'show_on_front', 'page' );
 		$this->queue->clear();
 
 		update_option( 'page_for_posts', $news );
@@ -254,6 +255,157 @@ final class PageEventsTest extends RevalidationTestCase {
 			)
 		);
 		$this->assertTrue( $this->queue->is_empty() );
+	}
+
+	/**
+	 * Unpublishing the front page, which core does not reset the options for, is reported under `/`, the
+	 * path readers used, not under the page's own slug.
+	 */
+	public function test_unpublishing_the_front_page_sends_unpublish_under_the_root(): void {
+		$home = $this->page( 'home' );
+		update_option( 'show_on_front', 'page' );
+		update_option( 'page_on_front', $home );
+		$this->queue->clear();
+
+		wp_update_post(
+			array(
+				'ID'          => $home,
+				'post_status' => 'draft',
+			)
+		);
+
+		$event = $this->assert_single_queued_event();
+		$this->assertSame(
+			array(
+				'event'    => 'unpublish',
+				'id'       => $home,
+				'path'     => '/',
+				'previous' => null,
+			),
+			$this->shape( $event )
+		);
+		$this->assertSame( 'page', get_option( 'show_on_front' ), 'Core leaves the setting alone on unpublish; the test assumes it.' );
+
+		// Published again, it is the front page again.
+		$this->queue->clear();
+		wp_update_post(
+			array(
+				'ID'          => $home,
+				'post_status' => 'publish',
+			)
+		);
+		$republished = $this->assert_single_queued_event();
+		$this->assertSame(
+			array(
+				'event'    => 'publish',
+				'id'       => $home,
+				'path'     => '/',
+				'previous' => null,
+			),
+			$this->shape( $republished )
+		);
+	}
+
+	/**
+	 * A password put on a served page is an `unpublish`, since the front end stops serving it, and one
+	 * taken off is a `publish`.
+	 */
+	public function test_password_on_and_off_are_unpublish_and_publish(): void {
+		$about = $this->page( 'about' );
+		$this->queue->clear();
+
+		wp_update_post(
+			array(
+				'ID'            => $about,
+				'post_password' => 'hunter2',
+			)
+		);
+		$locked = $this->assert_single_queued_event();
+		$this->assertSame(
+			array(
+				'event'    => 'unpublish',
+				'id'       => $about,
+				'path'     => '/about/',
+				'previous' => null,
+			),
+			$this->shape( $locked )
+		);
+
+		$this->queue->clear();
+		wp_update_post(
+			array(
+				'ID'           => $about,
+				'post_content' => '<p>Still locked.</p>',
+			)
+		);
+		$this->assertTrue( $this->queue->is_empty(), 'A protected page is not served, so its saves send nothing.' );
+
+		wp_update_post(
+			array(
+				'ID'            => $about,
+				'post_password' => '',
+			)
+		);
+		$unlocked = $this->assert_single_queued_event();
+		$this->assertSame(
+			array(
+				'event'    => 'publish',
+				'id'       => $about,
+				'path'     => '/about/',
+				'previous' => null,
+			),
+			$this->shape( $unlocked )
+		);
+	}
+
+	/**
+	 * `page_for_posts` counts only while `show_on_front` is `page`: changing it under `posts` sends nothing,
+	 * and switching `show_on_front` sends the posts page's own update beside the front page's.
+	 */
+	public function test_posts_page_follows_show_on_front(): void {
+		$home = $this->page( 'home' );
+		$news = $this->page( 'news' );
+		$this->queue->clear();
+
+		update_option( 'page_for_posts', $news );
+		$this->assertTrue( $this->queue->is_empty(), 'With show_on_front on posts, page_for_posts means nothing.' );
+
+		update_option( 'page_on_front', $home );
+		$this->assertTrue( $this->queue->is_empty() );
+
+		update_option( 'show_on_front', 'page' );
+		$events = $this->queue->events();
+		$this->assertCount( 2, $events );
+		$this->assert_valid_request(
+			array(
+				'version' => 1,
+				'events'  => $events,
+			)
+		);
+		$this->assertSame(
+			array(
+				'event'    => 'update',
+				'id'       => $home,
+				'path'     => '/',
+				'previous' => array( 'path' => '/home/' ),
+			),
+			$this->shape( $events[0] )
+		);
+		$this->assertSame(
+			array(
+				'event'    => 'update',
+				'id'       => $news,
+				'path'     => '/news/',
+				'previous' => array( 'path' => '/news/' ),
+			),
+			$this->shape( $events[1] )
+		);
+
+		$this->queue->clear();
+		update_option( 'show_on_front', 'posts' );
+		$events = $this->queue->events();
+		$this->assertCount( 2, $events );
+		$this->assertSame( array( $home, $news ), array_column( $events, 'id' ) );
 	}
 
 	/**
