@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace ResourceHub\Tests\Editor;
 
+use ResourceHub\Admin\ResultText;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\Editor\RevalidationAssets;
 use ResourceHub\Revalidation\ResultStore;
@@ -43,13 +44,40 @@ final class RevalidationAssetsTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The script is enqueued on the page editor as on the resource editor, with the sentences and the
-	 * REST routes, and not on the post editor. Needs the built bundle, which `pnpm build` writes.
+	 * The object the script is handed, decoded from the `var resourceHubRevalidation = {…};` line
+	 * `wp_localize_script()` writes, so the test does not depend on key order or slash escaping.
+	 *
+	 * @param string $message Names the case in a failure.
+	 * @return array<string, mixed>
 	 */
-	public function test_enqueued_on_resource_and_page_editors_only(): void {
+	private function localized_data( string $message ): array {
+		$data = wp_scripts()->get_data( RevalidationAssets::HANDLE, 'data' );
+		$this->assertIsString( $data, $message );
+
+		$prefix = 'var ' . RevalidationAssets::OBJECT_NAME . ' = ';
+		$this->assertSame( 1, preg_match( '/^' . preg_quote( $prefix, '/' ) . '(\{.*\});$/s', trim( $data ), $match ), $message );
+
+		$decoded = json_decode( $match[1], true );
+		$this->assertIsArray( $decoded, $message );
+
+		return $decoded;
+	}
+
+	/**
+	 * Skips a test that needs the built bundle, which `pnpm build` writes.
+	 */
+	private function require_bundle(): void {
 		if ( ! is_readable( dirname( __DIR__, 3 ) . '/build/editor/revalidation-feedback.asset.php' ) ) {
 			$this->markTestSkipped( 'The editor bundle is not built; run `pnpm build` first.' );
 		}
+	}
+
+	/**
+	 * The script is enqueued on the page editor as on the resource editor, with the sentences, the
+	 * REST routes and the posts page's ID (none set here), and not on the post editor.
+	 */
+	public function test_enqueued_on_resource_and_page_editors_only(): void {
+		$this->require_bundle();
 
 		$this->assertSame( array( PostType::NAME, 'page' ), ResultStore::POST_TYPES );
 
@@ -57,11 +85,19 @@ final class RevalidationAssetsTest extends WP_UnitTestCase {
 			$this->enqueue_on( $post_type );
 			$this->assertTrue( wp_script_is( RevalidationAssets::HANDLE, 'enqueued' ), $post_type );
 
-			$data = wp_scripts()->get_data( RevalidationAssets::HANDLE, 'data' );
-			$this->assertIsString( $data, $post_type );
-			$this->assertStringContainsString( 'var ' . RevalidationAssets::OBJECT_NAME . ' = ', $data, $post_type );
-			$this->assertStringContainsString( '"sentences":{', $data, $post_type );
-			$this->assertStringContainsString( '"restPaths":{"resource":"/wp/v2/resources","page":"/wp/v2/pages"}', $data, $post_type );
+			$data = $this->localized_data( $post_type );
+			$this->assertSame( array( 'sentences', 'restPaths', 'postsPageId' ), array_keys( $data ), $post_type );
+			$this->assertSame( ResultText::sentences(), $data['sentences'], $post_type );
+			$this->assertSame(
+				array(
+					PostType::NAME => '/wp/v2/resources',
+					'page'         => '/wp/v2/pages',
+				),
+				$data['restPaths'],
+				$post_type
+			);
+			// wp_localize_script() hands a top-level scalar over as a string; the script reads it with Number().
+			$this->assertSame( '0', $data['postsPageId'], $post_type );
 
 			wp_dequeue_script( RevalidationAssets::HANDLE );
 			wp_deregister_script( RevalidationAssets::HANDLE );
@@ -70,6 +106,34 @@ final class RevalidationAssetsTest extends WP_UnitTestCase {
 		$this->enqueue_on( 'post' );
 		$this->assertFalse( wp_script_is( RevalidationAssets::HANDLE, 'enqueued' ) );
 		$this->assertFalse( wp_script_is( RevalidationAssets::HANDLE, 'registered' ) );
+	}
+
+	/**
+	 * The script is handed the posts page's ID while `show_on_front` is `page`, as core reads
+	 * `page_for_posts`, so it can tell that saving the posts page sends nothing; with `show_on_front`
+	 * on `posts` the option names an ordinary page, and the ID handed over is 0.
+	 */
+	public function test_hands_over_the_posts_page_id_as_core_reads_it(): void {
+		$this->require_bundle();
+
+		$posts_page = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
+		update_option( 'page_for_posts', $posts_page );
+
+		update_option( 'show_on_front', 'page' );
+		$this->enqueue_on( 'page' );
+		$this->assertSame( (string) $posts_page, $this->localized_data( 'page' )['postsPageId'] );
+
+		wp_dequeue_script( RevalidationAssets::HANDLE );
+		wp_deregister_script( RevalidationAssets::HANDLE );
+
+		update_option( 'show_on_front', 'posts' );
+		$this->enqueue_on( 'page' );
+		$this->assertSame( '0', $this->localized_data( 'posts' )['postsPageId'] );
 	}
 
 	/**
