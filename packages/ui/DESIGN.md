@@ -62,11 +62,10 @@ The reader's system preference is the default. `tokens.css` sets `color-scheme: 
 
 **Manual check with VoiceOver and Safari on macOS.** The automated gate (`apps/web/e2e/theme.spec.ts`: axe in each state, one Tab stop and wrapping arrows, the same names at 320 and 1280 px, first paint by the script alone with every bundle blocked, hydration with no console error, JavaScript off, forced colours, no transitions, targets at 320×256, two tabs) cannot hear what a screen reader says. Once per change to the control, with VoiceOver on (Command-F5) in Safari, on any page of the site:
 
-1. Press Tab until the "Resource Hub" link is reached, then Tab once more. Listen for the option's name with "theme" in it, its selected state, its position and the group's name, in the order "System theme, selected, radio button, 1 of 3, Theme, group" or close to it; the words vary by version.
+1. Move with VoiceOver's own navigation, VO-Right Arrow (Control-Option-Right Arrow), which is how a VoiceOver user goes through a page and the primary path to check, from the "Resource Hub" link to the control. Listen for the option's name with "theme" in it, its selected state, its position and the group's name, in the order "System theme, selected, radio button, 1 of 3, Theme, group" or close to it; the words vary by version. Note whether Safari stops on the legend or on a label apart from its radio, a known Safari behaviour and not a defect of the markup.
 2. Press Right Arrow. Listen for "Light theme, selected, radio button, 2 of 3", and see the page turn light at once. Right Arrow again: "Dark theme", "3 of 3", the page dark. Right Arrow again: System, the page following the system preference.
-3. Press Tab. Focus leaves the group in one step. Shift-Tab returns to the checked option.
-4. Read through the group with VO-Right Arrow (Control-Option-Right): the legend "Theme" and each option. Note whether Safari stops on a label apart from its radio, a known Safari behaviour and not a defect of the markup.
-5. Reload. The chosen option is still selected and announced as such.
+3. Then the keyboard path without VoiceOver's keys. It assumes Safari's "Press Tab to highlight each item on a webpage" is on (Safari > Settings > Advanced); with it off, Safari's Tab skips links and buttons, so press Option-Tab wherever this step says Tab. Press Tab until the "Resource Hub" link is reached, then Tab once more: focus lands on the checked option, announced as in step 1. Tab again: focus leaves the group in one step. Shift-Tab returns to the checked option.
+4. Reload. The chosen option is still selected and announced as such.
 
 Not tested: NVDA, JAWS, VoiceOver on iOS and TalkBack. The names were built to stand alone for the last two, which may drop the legend.
 
