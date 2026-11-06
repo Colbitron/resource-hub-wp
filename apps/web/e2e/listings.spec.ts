@@ -4,6 +4,7 @@ import { clearAppCache } from "./app-cache.mts";
 import { mockCms } from "./mock-cms/client.mts";
 import { E2E_REVALIDATE_SECRET, MOCK_CMS_HOST, mockCmsOrigin } from "./mock-cms/config.mts";
 import { RESOURCES, TERMS } from "./mock-cms/seed.mts";
+import { postRevalidate } from "./revalidation.mts";
 
 /**
  * The listing routes under `/resources/` against the built app and the mock
@@ -22,7 +23,6 @@ import { RESOURCES, TERMS } from "./mock-cms/seed.mts";
  * once more while it re-renders.
  */
 
-const ROUTE = "/api/revalidate/";
 const PER_PAGE = 12;
 
 const cms = mockCms();
@@ -53,7 +53,7 @@ function termName(taxonomy: "resource_type" | "resource_topic", slug: string): s
 }
 
 async function revalidate(request: APIRequestContext, events: unknown[]): Promise<APIResponse> {
-  const response = await request.post(ROUTE, {
+  const response = await postRevalidate(request, {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${E2E_REVALIDATE_SECRET}` },
     data: JSON.stringify({ version: 1, events }),
   });

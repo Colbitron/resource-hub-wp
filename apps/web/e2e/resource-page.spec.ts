@@ -4,6 +4,7 @@ import type { AxeResults } from "axe-core";
 import { mockCms } from "./mock-cms/client.mts";
 import { appSiteOrigin, E2E_REVALIDATE_SECRET, MOCK_CMS_HOST, mockCmsOrigin, mockCmsPort } from "./mock-cms/config.mts";
 import { RESOURCES, TERMS } from "./mock-cms/seed.mts";
+import { postRevalidate } from "./revalidation.mts";
 
 /**
  * The single resource page at the real route `/resources/[type]/[slug]/`
@@ -28,7 +29,6 @@ import { RESOURCES, TERMS } from "./mock-cms/seed.mts";
  * (e2e/README.md); resources a test creates get a slug of this run's own.
  */
 
-const ROUTE = "/api/revalidate/";
 /** A seeded webinar (ID 33) with a rich body: CMS links, an upload with a `srcset`, the block marker. */
 const SEEDED = { id: 33, type: "webinar", slug: "revalidation-from-the-editors-chair", title: "Revalidation from the editor’s chair" };
 /** The seeded long-form article (ID 30): headings, lists, a quote, code, a table, a figure, a 1600×900 image. */
@@ -144,7 +144,7 @@ async function updateEvent(id: number, previous: { slug?: string; type?: string 
 }
 
 async function revalidate(request: APIRequestContext, events: unknown[]): Promise<void> {
-  const response = await request.post(ROUTE, {
+  const response = await postRevalidate(request, {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${E2E_REVALIDATE_SECRET}` },
     data: JSON.stringify({ version: 1, events }),
   });

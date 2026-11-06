@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type APIResponse, type Page } fro
 
 import { mockCms } from "./mock-cms/client.mts";
 import { E2E_REVALIDATE_SECRET } from "./mock-cms/config.mts";
+import { postRevalidate } from "./revalidation.mts";
 
 /**
  * The resource page's redirects (`lib/redirects.ts`) against the built app
@@ -35,7 +36,6 @@ import { E2E_REVALIDATE_SECRET } from "./mock-cms/config.mts";
  */
 
 const PREFIX = "/fixtures/redirect";
-const ROUTE = "/api/revalidate/";
 /** A seeded webinar (ID 33) with a rich body. */
 const SEEDED = { id: 33, type: "webinar", slug: "revalidation-from-the-editors-chair" };
 
@@ -127,7 +127,7 @@ async function updateEvent(id: number, previous: PreviousState) {
 
 /** Sends `events` to the revalidate route as the CMS would, and expects a 200. */
 async function revalidate(request: APIRequestContext, events: unknown[]): Promise<void> {
-  const response = await request.post(ROUTE, {
+  const response = await postRevalidate(request, {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${E2E_REVALIDATE_SECRET}` },
     data: JSON.stringify({ version: 1, events }),
   });
@@ -323,7 +323,7 @@ test("a type stored as arti%27cle is refused, never a redirect to its own URL", 
 
   // The event the CMS would send for it is refused too, with a message that names the escape.
   const event = { ...(await updateEvent(id, {})), previous: null, event: "publish" };
-  const response = await request.post(ROUTE, {
+  const response = await postRevalidate(request, {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${E2E_REVALIDATE_SECRET}` },
     data: JSON.stringify({ version: 1, events: [event] }),
   });

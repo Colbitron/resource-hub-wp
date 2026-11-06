@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type APIResponse } from "@playwri
 
 import { mockCms } from "./mock-cms/client.mts";
 import { E2E_REVALIDATE_SECRET } from "./mock-cms/config.mts";
+import { postRevalidate } from "./revalidation.mts";
 
 /**
  * `POST /api/revalidate/` against the built app and the mock CMS: the
@@ -49,7 +50,7 @@ async function updateEvent(id: number, slug: string, topics: string[]) {
 
 /** POSTs `body` as JSON, or a string as its raw bytes (Playwright would otherwise JSON-encode a string under a JSON content type). */
 function post(request: APIRequestContext, body: unknown, bearer?: string | null): Promise<APIResponse> {
-  return request.post(ROUTE, {
+  return postRevalidate(request, {
     headers: headers(bearer),
     data: typeof body === "string" ? Buffer.from(body, "utf8") : JSON.stringify(body),
   });

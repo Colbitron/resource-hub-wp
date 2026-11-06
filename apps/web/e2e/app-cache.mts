@@ -2,6 +2,7 @@ import type { APIRequestContext } from "@playwright/test";
 
 import { E2E_REVALIDATE_SECRET } from "./mock-cms/config.mts";
 import { TERMS } from "./mock-cms/seed.mts";
+import { postRevalidate } from "./revalidation.mts";
 
 /**
  * Puts the app under test back in step with a freshly reset mock. The mock's
@@ -28,7 +29,7 @@ export async function clearAppCache(request: APIRequestContext): Promise<void> {
     name: term.name,
     previous: { slug: term.slug, name: term.name },
   }));
-  const response = await request.post("/api/revalidate/", {
+  const response = await postRevalidate(request, {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${E2E_REVALIDATE_SECRET}` },
     data: JSON.stringify({ version: 1, events }),
   });
