@@ -13,7 +13,7 @@ import { libraryParams } from "@/lib/prerender";
  * decide: the library is prerendered when the CMS answers at build
  * (`libraryParams` in `lib/prerender.ts`) and rendered on its first request
  * when it does not, so a build never fails for a CMS reason, and stored by
- * ISR from then on either way (ADRs 0043 and 0053; see
+ * ISR from then on either way (ADR 0043; see
  * `docs/architecture/caching.md`). Static and dynamic siblings win over a
  * catch-all, so this page serves `/resources/` only: `rest` is empty there,
  * and any path that fell through to it is a 404. Such a shape is known from
@@ -37,7 +37,7 @@ export const revalidate = 3600;
 
 /**
  * The library's one path, `/resources/` (`rest: []`), prerendered when the
- * CMS answers at build, or `[]` when it does not (ADR 0053; `lib/prerender.ts`).
+ * CMS answers at build, or `[]` when it does not (ADR 0043; `lib/prerender.ts`).
  */
 export function generateStaticParams(): Promise<{ rest: string[] }[]> {
   return libraryParams();

@@ -15,7 +15,7 @@ export const revalidate = 3600;
 
 /**
  * Each type's first page, prerendered as an entry to the library when the
- * CMS answers at build, or `[]` when it does not (ADR 0053;
+ * CMS answers at build, or `[]` when it does not (ADR 0043;
  * `lib/prerender.ts`). Later pages and topic listings stay on demand.
  */
 export function generateStaticParams(): Promise<{ type: string }[]> {

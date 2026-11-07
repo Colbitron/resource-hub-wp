@@ -37,7 +37,7 @@ A filterable resources library: WordPress models it and pushes changes, Next.js 
 | Deploying, rolling back, rotating a secret, host notes | `docs/runbooks/deploy.md` |
 | Running and testing the plugin, its WP-CLI commands, its directory map | `wp-content/plugins/resource-hub-wp/README.md` |
 | Running and testing the front end, its configuration, routes and images | `apps/web/README.md`, `apps/web/e2e/README.md` |
-| Why the system has its shape | `docs/adr/` (14 records) |
+| Why the system has its shape | `docs/adr/` (13 records) |
 | Why one class or module does what it does | Its docblock |
 | What is not built yet | Issue #50 (slice 4 and the theme notes) |
 

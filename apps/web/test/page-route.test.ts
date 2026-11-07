@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
  * the same as the resource route (see `docs/architecture/caching.md`): an ISR
  * route with the data layer's interval as a literal and a
  * `generateStaticParams` that prerenders `/` alone, and only when the CMS
- * answers for it at build (ADR 0053; `lib/prerender.ts`), so every other
+ * answers for it at build (ADR 0043; `lib/prerender.ts`), so every other
  * path is rendered on its first request and stored, its 308s and 404s
  * included, until a page event or the interval clears it. There is no
  * `app/page.tsx` beside it: a route with no dynamic segment would be

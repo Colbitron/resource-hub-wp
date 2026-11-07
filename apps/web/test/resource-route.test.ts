@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
  * (ADR 0025; see `docs/architecture/caching.md`): an ISR route like the
  * listings (ADR 0043), with the data layer's interval as a literal and a
  * `generateStaticParams` that prerenders the newest resources when the CMS
- * answers at build and nothing otherwise (ADR 0053; `lib/prerender.ts`), so
+ * answers at build and nothing otherwise (ADR 0043; `lib/prerender.ts`), so
  * every other URL is rendered on its first request and stored, its 308s and
  * 404s included, until an event or the interval clears it.
  * Measured on Next.js 16.4.5: a request-time API (`connection()`, `headers()`)

@@ -7,7 +7,7 @@ import { CMS_REVALIDATE_SECONDS } from "../lib/wp/fetch";
 
 /**
  * The eight listing routes keep the segment config ISR rests on: the build
- * never fails for a CMS reason (ADRs 0043 and 0053), and each listing is
+ * never fails for a CMS reason (ADR 0043), and each listing is
  * rendered on its first request and stored (`docs/architecture/caching.md`),
  * except the library and each type's first page, which the build prerenders
  * when the CMS answers (`lib/prerender.ts`). Next.js reads `revalidate`

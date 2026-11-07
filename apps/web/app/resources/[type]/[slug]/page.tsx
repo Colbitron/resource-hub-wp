@@ -13,7 +13,7 @@ import { resourceForRequest } from "@/lib/redirects";
  * URL itself. A not-found decision renders `DataNotFound`, so the 404's HTML
  * is the site's not-found page (issue #46).
  *
- * The route is ISR, like the listings (ADRs 0043 and 0053; see
+ * The route is ISR, like the listings (ADR 0043; see
  * `docs/architecture/caching.md`): `revalidate = 3600`, the data layer's
  * interval as a literal, and a `generateStaticParams` that prerenders the
  * newest resources when the CMS answers at build (`resourcePageParams` in
@@ -70,7 +70,7 @@ export const revalidate = 3600;
 /**
  * The newest resources, prerendered so a reader's first click from the
  * library is served from the CDN and the client can prefetch the rows
- * (ADR 0053): `RECENT_RESOURCES` (50) across every type and
+ * (ADR 0043): `RECENT_RESOURCES` (50) across every type and
  * `RECENT_PER_TYPE` (10) of each, or `[]` when the CMS does not answer.
  */
 export function generateStaticParams(): Promise<{ type: string; slug: string }[]> {

@@ -50,7 +50,7 @@ import type { WpPage } from "./wp/schemas/rest";
  *
  * `pageForRequest` runs it with Next.js from an ISR route (`revalidate =
  * 3600`, a `generateStaticParams` that prerenders `/` alone when the CMS
- * answers at build (ADR 0053), no `loading.tsx`): the
+ * answers at build (ADR 0043), no `loading.tsx`): the
  * answer, a page, the welcome page, a 308 or a 404, is stored under the
  * `pages` tag and cleared by the next page event, which names the paths it
  * changes, and every response carries the `headers()` rule's

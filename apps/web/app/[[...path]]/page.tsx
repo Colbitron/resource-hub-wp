@@ -19,7 +19,7 @@ import { rootPageParams } from "@/lib/prerender";
  * segment the front end's routes own is a 404 here without a request.
  *
  * The route is ISR, like the resource page and the listings
- * (ADRs 0043, 0052 and 0053; see `docs/architecture/caching.md`):
+ * (ADRs 0043 and 0052; see `docs/architecture/caching.md`):
  * `revalidate = 3600`, the data layer's interval as a literal, and a
  * `generateStaticParams` that prerenders `/` alone, and only when the CMS
  * answers for it at build (`rootPageParams` in `lib/prerender.ts`; an
@@ -61,7 +61,7 @@ export const revalidate = 3600;
 
 /**
  * The site's root, `/` (`path: []`), prerendered when the CMS answers for
- * it at build, or `[]` when it does not (ADR 0053; `lib/prerender.ts`). No
+ * it at build, or `[]` when it does not (ADR 0043; `lib/prerender.ts`). No
  * other CMS page is prerendered.
  */
 export function generateStaticParams(): Promise<{ path: string[] }[]> {
