@@ -51,3 +51,5 @@ next-env.d.ts
 # Lighthouse CI: raw runs and the reports `lhci upload` writes
 /.lighthouseci/
 /lighthouse-results/
+# Lighthouse on a Vercel preview: the redacted reports `e2e/preview-lighthouse.mts` writes
+/lighthouse-preview-results/

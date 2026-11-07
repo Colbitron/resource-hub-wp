@@ -21,6 +21,9 @@
 # host (ADR 0005). The deploy-web job runs after both deploy and web, and
 # starts the front end's production deploy on Vercel through a deploy hook
 # (ADR 0051).
+#
+# Lighthouse against each pull request's Vercel preview is a separate,
+# non-blocking workflow, preview-lighthouse.yml.
 name: CI
 
 # Pull requests run the gate once. A plain `push:` trigger alongside

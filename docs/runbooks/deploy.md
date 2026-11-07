@@ -8,7 +8,7 @@ Nothing is deployed by hand. A push to `main` runs the gate, then the `deploy` j
 
 ## Secrets
 
-Six repository secrets feed the two deploy jobs. None is in git.
+Six repository secrets feed the two deploy jobs, and a seventh the preview Lighthouse workflow. None is in git.
 
 | Secret | Holds |
 |---|---|
@@ -18,6 +18,7 @@ Six repository secrets feed the two deploy jobs. None is in git.
 | `DEPLOY_PATH` | Absolute path of the plugin directory itself, ending in `wp-content/plugins/resource-hub-wp`; the job refuses anything else, because `rsync --delete` into the wrong directory would remove other plugins |
 | `DEPLOY_KNOWN_HOSTS` | The server's pinned host key line or lines, so the runner never trusts on first use |
 | `VERCEL_DEPLOY_HOOK_URL` | The Vercel project's deploy hook for `main`; the URL is the credential |
+| `VERCEL_PROTECTION_BYPASS` | The Vercel project's deployment protection bypass secret (Vercel env var `VERC_DEP_PROT`), sent as `x-vercel-protection-bypass` by `.github/workflows/preview-lighthouse.yml` to reach a pull request's preview; nothing else reads it |
 
 The CMS's own configuration (`RESOURCE_HUB_FRONTEND_URL`, `RESOURCE_HUB_REVALIDATE_SECRET`, and the optional `RESOURCE_HUB_POSTHOG_KEY` and `RESOURCE_HUB_POSTHOG_HOST`) is `define()`d in the host's `wp-config.php`. The front end's (`WP_API_URL`, `REVALIDATE_SECRET`, `SITE_URL`, optionally `WP_MEDIA_ORIGIN`) lives in the Vercel project's environment variables; `apps/web/README.md` describes each.
 
@@ -68,6 +69,7 @@ A CMS rollback and a front-end rollback are two separate actions. Because contra
 ## Rotating secrets
 
 - **The deploy hook.** Create a new hook for `main` in the Vercel project's Git settings, update `VERCEL_DEPLOY_HOOK_URL`, then delete the old hook.
+- **The protection bypass secret.** Regenerate it in the Vercel project's Deployment Protection settings, then update `VERCEL_PROTECTION_BYPASS` and the local `VERC_DEP_PROT`. Until both are updated the preview Lighthouse comment reports a refused header; nothing deploys through it.
 - **The revalidation secret.** It is one value on both sides: `RESOURCE_HUB_REVALIDATE_SECRET` in the host's `wp-config.php` and `REVALIDATE_SECRET` in the Vercel project. It must meet [the secret's rule](../../packages/ui/README.md#configuration); the CMS treats one that breaks it as not configured. Change the front end first, redeploy, then the CMS, then press "Send test revalidation" on Settings > Resource Hub, which sends a real event and records the result.
 - **The deploy SSH key.** Generate a new key used only for deploys, add its public half on the host, update `DEPLOY_SSH_KEY`, then remove the old public key from the host.
 
