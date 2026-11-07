@@ -23,7 +23,8 @@ src/
   Cli/                   the two WP-CLI commands
   Seed/                  the seeder behind `wp resource-hub seed`
 blocks/related-resources/  the block scaffold (editor only; the render callback is slice 4)
-editor/                  block-editor scripts: resource details panel, type radios, revalidation notice
+editor/                  block-editor scripts: resource details panel with the related picks control,
+                         type radios, revalidation notice
 admin/status-page/       the status page's picker script
 tests/phpunit/           PHPUnit, run inside the wp-env tests container
 tests/e2e/               Playwright against the wp-env tests site
@@ -73,13 +74,14 @@ Things to know:
 
 - **PHPUnit reinstalls the tests site.** The bootstrap drops and reinstalls the tests database, which deactivates every plugin there. CI runs PHPUnit before Playwright, and every Playwright spec imports `test` from `tests/e2e/fixtures.js`, a worker-scoped fixture that activates the plugin before any spec runs. The dev site on 8888 is untouched.
 - **Payloads are validated against the shared schemas.** `tests/phpunit/Revalidation/SchemaValidator.php` registers every schema in `packages/ui/schemas/` under its `$id` with `opis/json-schema` (draft 2020-12, cross-file `$ref`s) and checks every payload a test builds. `SchemaTest` runs the package's `revalidate-request.*.json` fixtures through the PHP validator, so the two validators agree on the request schema. No PHP test runs the other schemas' fixtures, and Ajv's strict compile runs only under `pnpm test:schemas`. `opis/json-schema` is a dev dependency and is never shipped.
+- **The related picks spec borrows axe from the front end.** `tests/e2e/related-picks.spec.js` resolves `@axe-core/playwright` from `apps/web`, the one workspace package that depends on it, so the plugin carries no second copy; a root `pnpm install` is what makes it reachable.
 - **`build/` is not committed.** CI builds it before the gate runs; locally, run `pnpm build` (or `pnpm start` to watch) after `pnpm env:start`. `webpack.config.js` extends the `@wordpress/scripts` config with the non-block entries under `editor/` and `admin/`.
 - **PHP 8.4 in wp-env, CI and on the host.** The declared floor (`Requires PHP`, `composer.json`, PHPCS `testVersion`) stays at 8.2 and is not exercised by CI.
 - **WordPress 6.9 or newer** (`Requires at least`). The salted object-cache helpers behind the related route's cache (`wp_cache_set_salted()`, `wp_cache_get_salted()`) arrived in 6.9.
 
 ## What is not built yet
 
-The block's render callback and its marker, and the editor's picker for `related_picks`, are the rest of slice 4; the related route (`GET /resource-hub/v1/related/{id}?count=n`) and the `related_picks` meta exist, and the front end does not read them yet. The block directory holds an editor scaffold only. The CMS block theme is slice 5. The spec for both is in the slice-4 issue linked from the root README's status table.
+The block's render callback and its marker are the rest of slice 4; the related route (`GET /resource-hub/v1/related/{id}?count=n`) and the `related_picks` meta exist, with the editor's control for the picks in the Resource details panel, and the front end does not read them yet. The block directory holds an editor scaffold only. The CMS block theme is slice 5. The spec for both is in the slice-4 issue linked from the root README's status table.
 
 ## Possible next steps
 
