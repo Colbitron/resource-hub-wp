@@ -1,0 +1,56 @@
+# DISABLED: stored as .yml.txt so GitHub never runs it. To re-enable, on a
+# branch named experiment/** only (never main, never a PR branch):
+#   git mv apps/web/e2e/experiments/lhci-experiment.yml.txt .github/workflows/lhci-experiment.yml
+# and delete this header. It triggers on every push to experiment/**; each
+# run is one ubuntu-latest job of about 15 to 25 minutes, so push only when
+# a run is wanted. Set the variants in env below (see the docblock of
+# apps/web/e2e/experiments/lh-experiment.mts); for a variant that measures a
+# Vercel preview (ext), RH_LHX_EXTRA_HEADERS can carry the repository secret
+# VERCEL_PROTECTION_BYPASS as x-vercel-protection-bypass. Delete the branch
+# when done. docs/runbooks/lighthouse-calibration-resume.md has the procedure.
+#
+# THROWAWAY EXPERIMENT (first run on experiment/lhci-contention): runs the
+# calibrated Lighthouse step under several variants on one build, on one
+# runner, and uploads the reports privately. Never merged.
+name: LHCI experiment
+
+on:
+  push:
+    branches: [ 'experiment/**' ]
+
+concurrency:
+  group: lhx-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      RH_LHX_VARIANTS: snap,v0,snap.again
+      RH_LHX_SNAP_K: '800'
+      RH_LHX_REF_K: '1040'
+      RH_LHX_RUNS: '3'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Host
+        run: nproc; lscpu | head -20; free -m
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright's Chromium
+        run: pnpm --filter resource-hub-web exec playwright install --with-deps chromium
+      - name: Run the variants
+        working-directory: apps/web
+        # Builds once with the test environment (appServerEnv) and stamps it.
+        run: node e2e/experiments/lh-experiment.mts
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lhx-reports
+          path: apps/web/lhx-results/
+          if-no-files-found: ignore
+          retention-days: 7
