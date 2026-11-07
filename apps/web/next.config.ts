@@ -30,6 +30,18 @@ const nextConfig: NextConfig = {
   // (ADR 0024).
   trailingSlash: true,
 
+  // Every route's CSS, about 6 KB compressed, ships inline in <head> rather
+  // than as five render-blocking files. On a page whose LCP is an image,
+  // Lighthouse's simulation charges every request that finished before the
+  // image painted, including the framework's scripts, and the five files held
+  // the browser's connections while those scripts waited. Inline, the scripts
+  // start with the CSS, and the simulated LCP of both image-led sampled pages
+  // and every page's FCP fall by about 150 and 280 ms. The cost is CSS a
+  // returning reader cannot cache apart from the HTML, and a second copy of it
+  // in the RSC payload; a client navigation still uses <link> tags.
+  // apps/web/README.md, "Images", has the measurements.
+  experimental: { inlineCss: true },
+
   // next/image optimises only same-origin /media/… sources, which the rewrite
   // below maps to the CMS's uploads; the CMS host is never a remote pattern, so
   // no image request names it (ADR 0040; apps/web/README.md has the images

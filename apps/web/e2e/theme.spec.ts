@@ -170,9 +170,9 @@ test.describe("first paint", () => {
     expect(dark).not.toBe(light);
 
     // Now Dark is stored, the system scheme is light, and no bundle loads:
-    // the stylesheets and the font still do (the build puts them under
-    // `/_next/static/` too), every JavaScript file does not, so React never
-    // runs. The inline script in <head> is all there is.
+    // the CSS (inline in the HTML, `inlineCss` in next.config.ts) and the
+    // font (under `/_next/static/` too) still do, every JavaScript file does
+    // not, so React never runs. The inline script in <head> is all there is.
     await page.evaluate((key) => localStorage.setItem(key, "dark"), STORAGE_KEY);
     await page.route(
       (url) => url.pathname.startsWith("/_next/static/") && url.pathname.endsWith(".js"),
