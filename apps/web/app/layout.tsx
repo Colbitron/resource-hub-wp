@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { Shell } from "@/components/Shell";
 import { siteUrl } from "@/lib/env";
+import { THEME_INIT_SCRIPT, THEME_NOSCRIPT_STYLE } from "@/lib/theme";
 
 import { figtree } from "./fonts";
 
@@ -36,9 +37,34 @@ export function generateMetadata(): Metadata {
 // where it declares `--rh-font-sans`, on `:root`, so a class lower down the
 // tree would never reach it; and a font applied by the root layout is
 // preloaded on every route (app/fonts.ts).
+//
+// The one script in <head> is the theme's first paint (lib/theme.ts): it
+// reads the stored choice and sets `data-theme` on <html> as the browser
+// parses, before anything is painted and before any bundle loads, so a
+// reader who chose Dark never sees a light flash. Pages are static and
+// ISR-cached, so this is the only place the choice can be read without
+// making every page dynamic. React then hydrates an <html> whose attributes
+// differ from the markup it rendered; `suppressHydrationWarning` on that one
+// element, and no other, tells it to keep the DOM's
+// (test/hydration-warning.test.ts holds that). The theme control
+// (components/ThemeToggle.tsx) re-applies the attribute after hydration as a
+// guard: the Next.js guide warns that development's Strict Mode remount can
+// reset it; not reproduced on Next.js 16.4.5 with React 19.3.
+//
+// The <noscript> beside it is the one style rule outside a component's
+// stylesheet, because only the browser knows whether script runs: without
+// it the control can never show, so its slot in the footer is removed
+// rather than kept invisible (lib/theme.ts, `THEME_NOSCRIPT_STYLE`).
+//
+// These two are the app's only `dangerouslySetInnerHTML`, each a constant
+// built from no input (test/dangerous-html.test.ts holds that).
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={figtree.variable}>
+    <html lang="en" className={figtree.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <noscript dangerouslySetInnerHTML={{ __html: THEME_NOSCRIPT_STYLE }} />
+      </head>
       <body>
         <Shell>{children}</Shell>
       </body>

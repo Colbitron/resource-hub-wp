@@ -20,12 +20,11 @@ import localFont from "next/font/local";
  *   on slow mobile profiles, `swap` showed Figtree on the first paint of
  *   almost every cold load, where `optional` dropped it on most cold loads
  *   over 3G, with the same LCP and no measured layout shift (`packages/ui/DESIGN.md`,
- *   Consumers and loading, has the table). The cost is a file that arrives
+ *   Font display, has the table). The cost is a file that arrives
  *   after the first paint: titles are bold and the fallback is calibrated on
  *   the regular weight, so a title can re-wrap when Figtree replaces it.
  *   `e2e/font-swap.spec.ts` holds the file back two seconds and keeps the
- *   layout shift that causes within budget. Provisional: the owner may
- *   revisit it.
+ *   layout shift that causes within budget. The choice is settled.
  * - `adjustFontFallback: "Arial"`: a second `@font-face` for the fallback,
  *   Arial with size, ascent, descent and line-gap overrides matched to
  *   Figtree's metrics, so the fallback text takes nearly the space Figtree

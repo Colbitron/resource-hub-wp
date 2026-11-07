@@ -8,7 +8,8 @@ import { mockCms } from "./mock-cms/client.mts";
  * The design specimen (`app/fixtures/specimen/`), the reference page for the
  * design work and the screenshot target (`specimen.screenshot.ts`): that
  * every token it shows has a value on the page, that it renders each
- * component and state, that its copy of the listing's empty state matches
+ * component and state (the theme control's three states among them, beside
+ * the footer's live one), that its copy of the listing's empty state matches
  * the real route's, that it holds at phone width, and that it passes the
  * same axe scan as the sampled pages (`a11y.spec.ts`), so the reference is
  * itself accessible. Which tokens it shows is checked against `tokens.css`
@@ -41,6 +42,40 @@ test("shows the shell, the filters, a card of each type, pagination and prose", 
   for (const selector of ["h2", "h3", "ul", "ol", "blockquote", "table", "a"]) {
     await expect(prose.locator(selector).first(), selector).toBeVisible();
   }
+});
+
+test("shows the theme control with each option checked, and the footer's live one", async ({ page }) => {
+  await page.goto(SPECIMEN_PATH);
+  const states = page.locator("section[aria-labelledby='specimen-states']").getByRole("group", { name: "Theme" });
+  await expect(states).toHaveCount(3);
+  for (const [index, name] of ["System theme", "Light theme", "Dark theme"].entries()) {
+    const copy = states.nth(index);
+    await expect(copy.getByRole("radio")).toHaveCount(3);
+    await expect(copy.getByRole("radio", { name, exact: true })).toBeChecked();
+    await expect(copy.getByRole("radio", { checked: true })).toHaveCount(1);
+  }
+  // The three copies are three groups: a copy's radios share a name with no other copy's.
+  const names = await states.locator("input").evaluateAll((inputs) => new Set(inputs.map((input) => (input as HTMLInputElement).name)).size);
+  expect(names).toBe(3);
+  // The footer's own control is live and separate: System, nothing stored.
+  // The header has none: it holds the site's name alone.
+  await expect(page.getByRole("banner").getByRole("group")).toHaveCount(0);
+  const live = page.getByRole("contentinfo").getByRole("group", { name: "Theme" });
+  await expect(live).toBeVisible();
+  await expect(live.getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
+
+  // The copies are inert: a click or an arrow key on one leaves its state, the
+  // page's theme and storage as they were.
+  const systemCopy = states.nth(0);
+  await systemCopy.getByRole("radio", { name: "Dark theme", exact: true }).click();
+  await expect(systemCopy.getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
+  await expect(systemCopy.getByRole("radio", { name: "Dark theme", exact: true })).not.toBeChecked();
+  await states.nth(1).getByRole("radio", { name: "Light theme", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(states.nth(1).getByRole("radio", { name: "Light theme", exact: true })).toBeChecked();
+  await expect(page.locator("html")).not.toHaveAttribute("data-theme");
+  expect(await page.evaluate(() => localStorage.getItem("rh-theme"))).toBeNull();
+  await expect(live.getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
 });
 
 test("shows pagination in the middle and at both ends", async ({ page }) => {

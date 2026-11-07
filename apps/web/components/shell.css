@@ -15,6 +15,21 @@ html {
 	-webkit-text-size-adjust: 100%;
 }
 
+/*
+ * The reader's theme choice (lib/theme.ts): `data-theme` on <html>, set by
+ * the head script before first paint and by the theme control after, pins
+ * the colour scheme to one side, and every `light-dark()` token in
+ * tokens.css follows. No attribute means System: `:root`'s
+ * `color-scheme: light dark` and the system preference apply.
+ */
+:root[data-theme="light"] {
+	color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+	color-scheme: dark;
+}
+
 body {
 	margin: 0;
 	background: var(--rh-color-surface);
@@ -142,9 +157,23 @@ video {
 	font-size: var(--rh-text-sm);
 }
 
+/*
+ * The footer's text, then the theme control: one row with the control at
+ * the right where both fit, and the control on a row of its own, at the
+ * left under the text, where they do not.
+ */
 .rh-footer__inner {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--rh-space-4);
 	padding-top: var(--rh-space-4);
 	padding-bottom: var(--rh-space-4);
+}
+
+.rh-footer__theme {
+	min-width: 0;
 }
 
 .rh-footer p {

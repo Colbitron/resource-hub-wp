@@ -531,7 +531,7 @@ test("the keyboard reaches the filters and the pagination in order", async ({ pa
       return element === null || element === document.body ? null : { text: element.textContent?.trim() ?? "", nav: element.closest("nav")?.getAttribute("aria-label") ?? null };
     });
 
-  // Skip link, then the header's name, then straight into the filters.
+  // Skip link, the header's name, then straight into the filters.
   await page.keyboard.press("Tab");
   expect((await focused())?.text).toBe("Skip to content");
   await page.keyboard.press("Tab");
@@ -554,6 +554,12 @@ test("the keyboard reaches the filters and the pagination in order", async ({ pa
   await page.keyboard.press("Tab");
   expect(await focused()).toEqual({ text: "2", nav: "Pagination" });
   await page.keyboard.press("Tab");
+  expect(await focused()).toEqual({ text: "Next", nav: "Pagination" });
+  // Past the page's content, the footer's theme control is the last stop
+  // (one stop: its checked radio, `theme.spec.ts`).
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("contentinfo").getByRole("radio", { name: "System theme", exact: true })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
   expect(await focused()).toEqual({ text: "Next", nav: "Pagination" });
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/resources\/page\/2\/$/);

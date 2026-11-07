@@ -14,6 +14,7 @@ import { cmsUrls } from "@/lib/env";
 import type { RenderedPage } from "@/lib/page-request";
 import type { RenderedResource } from "@/lib/redirects";
 import { listingPath } from "@/lib/routes";
+import { THEME_CHOICES } from "@/lib/theme";
 import { wpPageSchema, wpResourceSchema } from "@/lib/wp/schemas/rest";
 
 import {
@@ -28,6 +29,7 @@ import {
   SPACE_TOKENS,
   TEXT_SIZE_TOKENS,
 } from "./tokens";
+import { StillThemeFieldset } from "./StillThemeFieldset";
 
 // The listing's own styles (filters, pagination, the empty state), which
 // ListingPage imports for the real routes; every other component brings its
@@ -68,7 +70,9 @@ import "./specimen.css";
  * (the screenshot test focuses `#specimen-focus` before the capture), both
  * filter rows with a term selected, pagination at its first and last pages,
  * where Previous and Next are left out rather than disabled (the
- * component's rule), and a listing's empty state.
+ * component's rule), the theme control in each of its three states (the
+ * footer's own copy is live and shows the stored choice; these are still),
+ * and a listing's empty state.
  */
 
 export const metadata: Metadata = {
@@ -429,6 +433,15 @@ export default function SpecimenFixturePage() {
           <p>On the first page there is no Previous, and on the last no Next.</p>
           <Pagination filter={{}} current={1} total={3} />
           <Pagination filter={{}} current={3} total={3} />
+        </div>
+        <div className="rh-specimen__state">
+          <h3>Theme control</h3>
+          <p>The footer&rsquo;s control with each option checked. These copies change nothing; the footer&rsquo;s is live.</p>
+          <div className="rh-specimen__themes">
+            {THEME_CHOICES.map((choice) => (
+              <StillThemeFieldset key={choice} name={`specimen-theme-${choice}`} value={choice} />
+            ))}
+          </div>
         </div>
         <div className="rh-specimen__state">
           <h3>An empty listing</h3>

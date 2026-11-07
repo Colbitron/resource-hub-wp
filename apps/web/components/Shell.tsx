@@ -4,6 +4,8 @@ import Link from "next/link";
 import "@colbitron/resource-hub-ui/tokens.css";
 import "./shell.css";
 
+import { ThemeToggle } from "./ThemeToggle";
+
 /**
  * The page shell: skip link, header, `main` and footer around every page.
  *
@@ -13,6 +15,12 @@ import "./shell.css";
  * the root layout renders the shell around every page, so the tokens reach
  * every page. Page content is stacked under `main`, which carries
  * `tabIndex={-1}` so the skip link lands focus on it in every browser.
+ *
+ * The header holds the site's name alone, so it stays one row at every
+ * width. The theme control (`ThemeToggle`, a client component) closes the
+ * footer, after its text: the same place on every page, out of the reading
+ * path, and the last Tab stop. Beside the text where both fit, under it
+ * where they do not.
  */
 export function Shell({ children }: { children: ReactNode }) {
   return (
@@ -33,6 +41,9 @@ export function Shell({ children }: { children: ReactNode }) {
       <footer className="rh-footer">
         <div className="rh-shell__inner rh-footer__inner">
           <p>A headless WordPress demonstration: WordPress models the library, Next.js renders it.</p>
+          <div className="rh-footer__theme">
+            <ThemeToggle />
+          </div>
         </div>
       </footer>
     </div>
