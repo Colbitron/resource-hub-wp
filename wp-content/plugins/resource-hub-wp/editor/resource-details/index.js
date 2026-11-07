@@ -6,7 +6,11 @@
  * auth callback the plugin registered with `register_post_meta()`. The picks
  * control is in `related-picks.js`. PHP enqueues this script only
  * on the editor for the `resource` post type; the post-type check below is a
- * second guard for any editor that loads it anyway.
+ * second guard for any editor that loads it anyway. The summary is required
+ * once the resource is public: the panel says so in words above the field
+ * while it is blank (`RequiredState`, from the required-fields plugin), and
+ * the `resource-hub-summary` class is how that plugin's notice finds the
+ * field to focus.
  */
 import { registerPlugin } from '@wordpress/plugins';
 import {
@@ -18,6 +22,7 @@ import { useSelect } from '@wordpress/data';
 import { TextareaControl, TextControl } from '@wordpress/components';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
+import { RequiredState } from '../required-fields/required-state';
 // The Types panel's radio buttons ship in this bundle, the one script PHP
 // loads on the resource editor.
 import '../resource-type';
@@ -54,8 +59,10 @@ function ResourceDetailsPanel() {
 			name="resource-details"
 			title={ __( 'Resource details', 'resource-hub' ) }
 		>
+			<RequiredState field="summary" />
 			<TextareaControl
 				__nextHasNoMarginBottom
+				className="resource-hub-summary"
 				label={ __( 'Summary', 'resource-hub' ) }
 				help={ sprintf(
 					/* translators: 1: maximum length in characters, 2: characters left. */

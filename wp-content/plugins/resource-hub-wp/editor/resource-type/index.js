@@ -12,7 +12,10 @@
  * with the post. The server enforces the rule on every REST save (OneType in
  * PHP), so this control is the convenience, not the check. Types are a fixed
  * list managed on the Types screen (ADR 0007), so there is no "Add New Type"
- * form here.
+ * form here. While no type is chosen, the panel says so in words above the
+ * buttons (`RequiredState`, from the required-fields plugin), and the
+ * `resource-hub-type-radio` class is how that plugin's notice finds the
+ * buttons to focus.
  */
 import { addFilter } from '@wordpress/hooks';
 import { RadioControl, Spinner } from '@wordpress/components';
@@ -21,6 +24,8 @@ import { useDispatch, useSelect } from '@wordpress/data';
 import { store as editorStore } from '@wordpress/editor';
 import { decodeEntities } from '@wordpress/html-entities';
 import { __ } from '@wordpress/i18n';
+
+import { RequiredState } from '../required-fields/required-state';
 
 const TAXONOMY = 'resource_type';
 
@@ -68,18 +73,22 @@ function ResourceTypeRadio() {
 	const value = selected.length === 1 ? String( selected[ 0 ] ) : '';
 
 	return (
-		<RadioControl
-			label={ __( 'Type', 'resource-hub' ) }
-			hideLabelFromVision
-			selected={ value }
-			options={ types.map( ( type ) => ( {
-				label: decodeEntities( type.name ),
-				value: String( type.id ),
-			} ) ) }
-			onChange={ ( id ) =>
-				editPost( { [ TAXONOMY ]: [ Number( id ) ] } )
-			}
-		/>
+		<>
+			<RequiredState field="type" />
+			<RadioControl
+				className="resource-hub-type-radio"
+				label={ __( 'Type', 'resource-hub' ) }
+				hideLabelFromVision
+				selected={ value }
+				options={ types.map( ( type ) => ( {
+					label: decodeEntities( type.name ),
+					value: String( type.id ),
+				} ) ) }
+				onChange={ ( id ) =>
+					editPost( { [ TAXONOMY ]: [ Number( id ) ] } )
+				}
+			/>
+		</>
 	);
 }
 
