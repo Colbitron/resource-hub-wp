@@ -296,6 +296,7 @@ describe("canonicalPath", () => {
     expect(canonicalPath("/%D0%94%ff/")).toBe("/%d0%b4%ff/");
   });
 
+  // An exhaustive loop over about 64k code points takes about 4.6 s on a CI runner, so the default 5 s leaves no margin.
   it("is a fixed point and survives a URL parser for every code point, encoded, in a page path", () => {
     const check = (path: string) => {
       const received = new URL(path, "http://localhost").pathname;
@@ -316,7 +317,7 @@ describe("canonicalPath", () => {
     for (const code of [0x10000, 0x1d400, 0x1e900, 0x1f600, 0x10400, 0x10ffff]) {
       check(`/x${encodeURIComponent(String.fromCodePoint(code))}/`);
     }
-  });
+  }, 30_000);
 
   it("drops /page/1/ only under /resources/, where page is a reserved segment", () => {
     expect(canonicalPath("/about/page/1/")).toBeNull();
