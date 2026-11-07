@@ -547,7 +547,8 @@ export default function SpecimenFixturePage() {
       </Section>
 
       <Section id="specimen-prose" title="Prose">
-        <div className="rh-prose">{renderContent(PROSE, cmsUrls())}</div>
+        {/* At the reading measure, as a body is on its page, so the insets are the width the article gives them. */}
+        <div className="rh-prose rh-specimen__prose">{renderContent(PROSE, cmsUrls())}</div>
       </Section>
 
       <Section id="specimen-states" title="States">
