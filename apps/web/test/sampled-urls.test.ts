@@ -16,13 +16,14 @@ describe("SAMPLED_URLS", () => {
     expect(imageLed).toEqual(["/resources/", "/resources/article/taxonomies-versus-meta/", "/welcome/"]);
   });
 
-  it("exempts no page from the whole-document check and only the CMS page from the discovery check", () => {
+  it("exempts only the resource page from the whole-document check and only the CMS page from the discovery check", () => {
     // An exemption from the whole-document check is the owner's decision
     // (e2e/document-size.spec.ts's docblock); the change that makes one
-    // updates this list with it.
+    // updates this list with it. The resource page's is the owner's of
+    // 2026-11-08, for its related section.
     const exempt = (key: "wholeDocumentGuard" | "discoveryGuard") =>
       SAMPLED_URLS.filter((sample) => sample[key] === false).map((sample) => sample.path);
-    expect(exempt("wholeDocumentGuard")).toEqual([]);
+    expect(exempt("wholeDocumentGuard")).toEqual(["/resources/article/taxonomies-versus-meta/"]);
     expect(exempt("discoveryGuard")).toEqual(["/welcome/"]);
   });
 });

@@ -104,12 +104,18 @@ export const SAMPLED_URLS: readonly SampledUrl[] = [
   { label: "paginated listing", path: "/resources/page/2/", status: 200, lighthouse: true, imageLed: false },
   // The long-form resource: headings, lists, a blockquote, code, a table, a
   // figure, the related block and a 1600×900 featured image.
+  // Exempt from the whole-document check by the owner's decision of
+  // 2026-11-08 (issue #85): its related section is wanted content, and the
+  // section's `card.css` and `related.css` put its HTML over the first round
+  // trip. The rule, the ceiling it is held to instead and the measurements
+  // are in `document-size.spec.ts`'s docblock.
   {
     label: "resource",
     path: "/resources/article/taxonomies-versus-meta/",
     status: 200,
     lighthouse: true,
     imageLed: true,
+    wholeDocumentGuard: false,
   },
   // A path no page has: the root catch-all asks the CMS and answers with
   // `DataNotFound`, stored per URL (ADR 0052).

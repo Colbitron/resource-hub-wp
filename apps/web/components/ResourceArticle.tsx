@@ -31,12 +31,14 @@ import "./resource.css";
  * data.
  *
  * The meta line borrows the row's labels from the shared `card-labels.css`
- * rather than drawing a second mark, and imports that file alone rather
- * than the whole row's `card.css`, so none of the row's layout is inlined
- * into this page's HTML twice (once in `<style>`, once in the RSC payload):
- * with it, the page's HTML crossed the 14,600 bytes Lighthouse's simulated
- * connection sends in its first round trip (`apps/web/README.md`,
- * "Images"). The labels: the type is `.rh-card__type` with its
+ * rather than drawing a second mark, and this component imports that file
+ * alone rather than the whole row's `card.css`, so the meta line adds none
+ * of the row's layout to a page (inlined CSS is in the HTML twice, once in
+ * `<style>` and once in the RSC payload). The resource page loads `card.css`
+ * all the same, with `related.css`, for the related section's rows, and is
+ * over the whole-document size check for it by the owner's decision
+ * (`e2e/document-size.spec.ts`'s docblock has the rule and the numbers).
+ * The labels: the type is `.rh-card__type` with its
  * `data-accent`, whose `::before` is the dot, and the topics are
  * `.rh-card__topics` with the short rules between them. The type's name is
  * a link to its listing, inside that span, so the dot is the span's and
