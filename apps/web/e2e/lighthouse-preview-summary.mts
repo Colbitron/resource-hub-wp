@@ -37,6 +37,8 @@ export interface PreviewAudit {
 /** The parts of a Lighthouse result the comment reads; a superset of the gate's `Lhr`. */
 export interface PreviewLhr extends Lhr {
   finalDisplayedUrl?: string;
+  /** The settings the run was made with; `blockedUrlPatterns` are the URLs Chrome was told to abort. */
+  configSettings?: { blockedUrlPatterns?: string[] };
   /** Set when the run failed as a whole; `NO_ERROR` otherwise. */
   runtimeError?: { code: string; message?: string };
   audits: Record<string, PreviewAudit | undefined>;
@@ -70,6 +72,8 @@ interface NetworkItem {
   resourceType?: string;
   transferSize?: number;
   networkEndTime?: number;
+  statusCode?: number;
+  protocol?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -161,15 +165,35 @@ export function lcpImageBytes(lhr: PreviewLhr): number | null {
   return [...images].sort((a, b) => (a.networkEndTime ?? 0) - (b.networkEndTime ?? 0))[0].transferSize;
 }
 
+/** A Chrome URL-blocking pattern (`Network.setBlockedURLs`: `*` matches anything) as a regular expression. */
+function blockPattern(pattern: string): RegExp {
+  return new RegExp(`^${pattern.split("*").map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`);
+}
+
+/**
+ * Whether the run's own `blockedUrlPatterns` match the request and Chrome
+ * aborted it before anything was sent: Lighthouse still lists such a
+ * request, with no status, protocol or bytes. A request that matches a
+ * pattern but shows any of those went out and counts.
+ */
+function abortedByBlock(item: NetworkItem, patterns: readonly string[]): boolean {
+  if (!patterns.some((pattern) => blockPattern(pattern).test(item.url))) return false;
+  return item.statusCode === -1 && !item.protocol && !item.transferSize;
+}
+
 /**
  * The origins, other than the page's own, that the run's requests went to.
  * Lighthouse sends its extra headers on every request the page makes, so
  * a request to another origin carried the bypass secret there. Only
  * network origins count: `data:` URLs (elided by Lighthouse) and the like
- * have none.
+ * have none, and neither does a request the run's `blockedUrlPatterns`
+ * made Chrome abort before it was sent (`abortedByBlock`); one that
+ * matches a pattern but went out anyway counts, so the check also proves
+ * the block worked.
  */
 export function foreignOrigins(lhr: PreviewLhr, origin: string): string[] {
   const own = new URL(origin).origin;
+  const patterns = lhr.configSettings?.blockedUrlPatterns ?? [];
   const found = new Set<string>();
   for (const item of networkItems(lhr)) {
     let parsed: URL;
@@ -179,7 +203,9 @@ export function foreignOrigins(lhr: PreviewLhr, origin: string): string[] {
       continue;
     }
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") continue;
-    if (parsed.origin !== own) found.add(parsed.origin);
+    if (parsed.origin === own) continue;
+    if (abortedByBlock(item, patterns)) continue;
+    found.add(parsed.origin);
   }
   return [...found].sort();
 }

@@ -178,6 +178,28 @@ describe("foreignOrigins", () => {
     expect(foreignOrigins(lhr(PAGE, {}), ORIGIN)).toEqual([]);
     expect(foreignOrigins(lhr(PAGE, {}), `${ORIGIN}/`)).toEqual([]);
   });
+
+  it("ignores a request the run's blockedUrlPatterns made Chrome abort, as Lighthouse records it, and nothing else", () => {
+    // The signature of a blocked request on 2026-11-07: Lighthouse 13 lists
+    // it with status -1, no protocol and no bytes.
+    const aborted = { url: "https://vercel.live/_next-live/feedback/feedback.js", resourceType: "Script", statusCode: -1, protocol: "", transferSize: 0 };
+    const withBlock = (requests: object[], patterns = ["https://vercel.live/*"]): PreviewLhr => ({
+      ...lhr(PAGE, { requests: requests as never }),
+      configSettings: { blockedUrlPatterns: patterns },
+    });
+    expect(foreignOrigins(withBlock([aborted]), ORIGIN)).toEqual([]);
+    // The same request answered (the block did not work) counts.
+    expect(foreignOrigins(withBlock([{ ...aborted, statusCode: 204, protocol: "h2", transferSize: 157 }]), ORIGIN)).toEqual(["https://vercel.live"]);
+    expect(foreignOrigins(withBlock([{ ...aborted, statusCode: -1, protocol: "h2" }]), ORIGIN)).toEqual(["https://vercel.live"]);
+    // A failed request to an origin no pattern names counts: it may have been sent.
+    expect(foreignOrigins(withBlock([{ ...aborted, url: "https://other.example/x.js" }]), ORIGIN)).toEqual(["https://other.example"]);
+    // Without the pattern the aborted signature alone is not enough.
+    expect(foreignOrigins(withBlock([aborted], []), ORIGIN)).toEqual(["https://vercel.live"]);
+    expect(foreignOrigins(lhr(PAGE, { requests: [aborted] }), ORIGIN)).toEqual(["https://vercel.live"]);
+    // Patterns are Chrome's: `*` is a wildcard, the rest literal.
+    expect(foreignOrigins(withBlock([aborted], ["https://vercel.live/_next-live/*.js"]), ORIGIN)).toEqual([]);
+    expect(foreignOrigins(withBlock([aborted], ["https://vercel.live/other/*"]), ORIGIN)).toEqual(["https://vercel.live"]);
+  });
 });
 
 describe("describeElement", () => {
