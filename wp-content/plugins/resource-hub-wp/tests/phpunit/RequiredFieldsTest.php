@@ -200,12 +200,59 @@ final class RequiredFieldsTest extends WP_UnitTestCase {
 	 */
 	public function blank_summaries(): array {
 		return array(
-			'empty'         => array( '' ),
-			'whitespace'    => array( "  \n" ),
-			'no-break'      => array( '&nbsp;' ),
-			'empty element' => array( '<em></em>' ),
-			'null'          => array( null ),
+			'empty'                       => array( '' ),
+			'whitespace'                  => array( "  \n" ),
+			'no-break space, raw'         => array( "\u{00A0}" ),
+			'zero-width, raw'             => array( "\u{200B}\u{FEFF}" ),
+			'empty element'               => array( '<em></em>' ),
+			'script only'                 => array( '<script>alert(1)</script>' ),
+			'null'                        => array( null ),
+			// Stored as '' by the sanitizer, so judging the raw value would let it publish blank.
+			'invalid UTF-8'               => array( "ab\xC3\x28cd" ),
+			'invalid UTF-8 among letters' => array( "A summary \xFF" ),
 		);
+	}
+
+	/**
+	 * A summary that is stored with something to read passes, entities typed as text among them:
+	 * the front end shows the stored text verbatim, so a typed `&nbsp;` is six visible characters.
+	 *
+	 * @dataProvider good_summaries
+	 *
+	 * @param string $summary The `meta.summary` sent.
+	 * @param string $stored  What the sanitizer stores.
+	 */
+	public function test_good_summary_is_accepted( string $summary, string $stored ): void {
+		$response = $this->send( 'POST', '/wp/v2/resources', $this->complete( array( 'meta' => array( Meta::SUMMARY => $summary ) ), 'publish' ) );
+
+		$this->assertSame( 201, $response->get_status() );
+		$this->assertSame( $stored, get_post_meta( $response->get_data()['id'], Meta::SUMMARY, true ) );
+	}
+
+	/**
+	 * Cases for test_good_summary_is_accepted().
+	 *
+	 * @return array<string, array{0: string, 1: string}>
+	 */
+	public function good_summaries(): array {
+		return array(
+			'plain'                   => array( 'A summary', 'A summary' ),
+			'no-break entity as text' => array( '&nbsp;', '&nbsp;' ),
+			'escaped tag as text'     => array( '&lt;b&gt;', '<b>' ),
+			'one letter among blanks' => array( "\u{FEFF} \u{00A0} a \u{200B}", "\u{FEFF} \u{00A0} a \u{200B}" ),
+		);
+	}
+
+	/**
+	 * The summary's blank rule, stated on its own: stored text is judged as it is, with nothing
+	 * stripped or decoded.
+	 */
+	public function test_is_blank_summary(): void {
+		$this->assertTrue( RequiredFields::is_blank_summary( '' ) );
+		$this->assertTrue( RequiredFields::is_blank_summary( " \t\n\u{00A0}\u{200B}\u{200C}\u{200D}\u{FEFF}" ) );
+		$this->assertFalse( RequiredFields::is_blank_summary( '&nbsp;' ) );
+		$this->assertFalse( RequiredFields::is_blank_summary( '<em></em>' ) );
+		$this->assertFalse( RequiredFields::is_blank_summary( '&#8203;' ) );
 	}
 
 	/**
@@ -414,10 +461,10 @@ final class RequiredFieldsTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * An autosave of a published resource with a blank title is not judged: it writes a revision,
-	 * never the resource, and the resource keeps its title.
+	 * An autosave of a published resource with a blank title passes: it writes a revision, never
+	 * the resource, and the resource keeps its title.
 	 */
-	public function test_autosave_is_not_judged(): void {
+	public function test_autosave_of_a_published_resource_passes(): void {
 		$post_id = $this->published_resource();
 
 		$response = $this->send(
@@ -432,6 +479,129 @@ final class RequiredFieldsTest extends WP_UnitTestCase {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'Published', get_post( $post_id )->post_title );
 		$this->assertSame( 'publish', get_post_status( $post_id ) );
+	}
+
+	/**
+	 * A crafted autosave that sends `status: publish` for the author's own draft, which core's
+	 * autosaves route would write to the resource itself, is refused while the draft lacks a
+	 * field, judged on what that write stores: the summary it sends does not count, because the
+	 * route does not write meta to the resource. Nothing is written.
+	 */
+	public function test_autosave_that_would_publish_an_incomplete_draft_is_refused(): void {
+		$post_id = $this->draft_resource( false );
+		wp_set_object_terms( $post_id, $this->topic, Taxonomies::TOPIC );
+
+		$response = $this->send(
+			'POST',
+			'/wp/v2/resources/' . $post_id . '/autosaves',
+			array(
+				'status' => 'publish',
+				'meta'   => array( Meta::SUMMARY => 'Sent, not stored' ),
+			)
+		);
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( RequiredFields::SUMMARY_MISSING, $response->get_data()['code'] );
+		$this->assertSame( 'draft', get_post_status( $post_id ) );
+		$this->assertSame( 'A draft', get_post( $post_id )->post_title );
+
+		$blank_title = $this->send(
+			'POST',
+			'/wp/v2/resources/' . $post_id . '/autosaves',
+			array(
+				'status' => 'future',
+				'title'  => array( 'raw' => ' ' ),
+			)
+		);
+		$this->assertSame( 400, $blank_title->get_status() );
+		$this->assertSame( RequiredFields::TITLE_MISSING, $blank_title->get_data()['code'] );
+		$this->assertSame( 'draft', get_post_status( $post_id ) );
+	}
+
+	/**
+	 * An autosave of a draft that sends no status, or a status that is not public, passes
+	 * whatever the draft lacks: it is a draft save.
+	 */
+	public function test_autosave_of_an_incomplete_draft_as_a_draft_passes(): void {
+		$post_id = $this->draft_resource( false );
+
+		$response = $this->send(
+			'POST',
+			'/wp/v2/resources/' . $post_id . '/autosaves',
+			array(
+				'title'   => '',
+				'content' => 'Still typing',
+			)
+		);
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'draft', get_post_status( $post_id ) );
+		$this->assertSame( 'Still typing', get_post( $post_id )->post_content );
+	}
+
+	/**
+	 * Unpublishing is never refused: a published resource that lacks a summary, sent to draft or
+	 * private with its title blanked and its topics cleared too, saves.
+	 *
+	 * @dataProvider unpublished_statuses
+	 *
+	 * @param string $status The status sent.
+	 */
+	public function test_unpublishing_an_incomplete_resource_is_allowed( string $status ): void {
+		$post_id = $this->published_resource();
+		delete_post_meta( $post_id, Meta::SUMMARY );
+
+		$response = $this->send(
+			'POST',
+			'/wp/v2/resources/' . $post_id,
+			array(
+				'status'          => $status,
+				'title'           => '',
+				'content'         => 'Some content.',
+				Taxonomies::TOPIC => array(),
+			)
+		);
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( $status, get_post_status( $post_id ) );
+		$this->assertSame( RequiredFields::FIELDS, RequiredFields::missing_stored( $post_id ) );
+	}
+
+	/**
+	 * Cases for test_unpublishing_an_incomplete_resource_is_allowed().
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function unpublished_statuses(): array {
+		return array(
+			'draft'   => array( 'draft' ),
+			'private' => array( 'private' ),
+		);
+	}
+
+	/**
+	 * A draft resource by the current user with a type, titled "A draft", with a topic and a
+	 * summary when asked.
+	 *
+	 * @param bool $complete Whether to store a topic and a summary too.
+	 */
+	private function draft_resource( bool $complete ): int {
+		$post_id = self::factory()->post->create(
+			array(
+				'post_type'   => PostType::NAME,
+				'post_status' => 'draft',
+				'post_title'  => 'A draft',
+				'post_author' => get_current_user_id(),
+			)
+		);
+		wp_set_object_terms( $post_id, $this->type, Taxonomies::TYPE );
+
+		if ( $complete ) {
+			wp_set_object_terms( $post_id, $this->topic, Taxonomies::TOPIC );
+			update_post_meta( $post_id, Meta::SUMMARY, 'A summary' );
+		}
+
+		return $post_id;
 	}
 
 	/**

@@ -25,10 +25,15 @@ use WP_REST_Request;
  * - a title that is not blank;
  * - at least one `resource_topic`;
  * - a `summary` meta value that is not blank.
- * Blank is the front end's rule for a title (`cardTitle()` in `apps/web/lib/wp/cards.ts`): tags
- * stripped, entities decoded, and nothing left once whitespace, no-break spaces and the
- * zero-width characters U+200B to U+200D and U+FEFF are removed. A draft, pending or private
- * resource may lack all three, so an editor never loses work to the rule.
+ * Blank follows what the front end shows. The title is rendered HTML that `cardTitle()` in
+ * `apps/web/lib/wp/cards.ts` reads as text, so a title is blank when nothing is left once tags
+ * are stripped, entities decoded, and whitespace, no-break spaces and the zero-width characters
+ * U+200B to U+200D and U+FEFF are removed (`is_blank()`). The summary is stored as plain text
+ * and shown verbatim, so it is judged as it would be stored, after `MetaRules::sanitize_summary()`,
+ * and is blank when nothing is left once whitespace and those characters are removed, with no
+ * entity decoding: a typed `&nbsp;` is six visible characters (`is_blank_summary()`). A draft,
+ * pending or private resource may lack all three, and a save that unpublishes a resource
+ * (to draft, pending or private) is never refused, so an editor never loses work to the rule.
  *
  * The block editor saves through REST, so the check runs on `rest_pre_insert_resource`, after
  * OneType's: before WordPress writes the post, its terms or its meta. Each field is judged from
@@ -39,27 +44,49 @@ use WP_REST_Request;
  * along as the response's `additional_errors`. The editor's own lock (`editor/required-fields/`)
  * keeps the editor from sending such a save: that is the convenience, this is the check.
  *
- * An autosave is not judged. The autosaves route runs this filter too, but for a published or
- * scheduled resource it writes an autosave revision and never the resource itself, and for a
- * draft it is a draft save, so it can neither publish anything nor leave a public resource worse.
- * Judging it would only fail the editor's periodic autosave while a title is being retyped.
+ * Autosaves are judged before the route's callback runs (`rest_dispatch_request`), not on
+ * `rest_pre_insert_resource`, because core's autosaves controller ignores an error from that
+ * filter and saves anyway. The route writes the resource itself, status included, for an
+ * author's own draft (`WP_REST_Autosaves_Controller::create_item()` calls `wp_update_post()`),
+ * so a crafted `POST /wp/v2/resources/{id}/autosaves` with `status: publish` could otherwise
+ * publish a draft unchecked. An autosave passes when the stored status is public (the route then
+ * writes an autosave revision, never the resource) or when the status it sends, or the stored
+ * one if it sends none, is not public; otherwise it is judged like any other save, on what that
+ * write would store: the title from the request or storage, and the topics and summary from
+ * storage, since the route writes neither terms nor meta to the resource. The editor's own
+ * periodic autosave never sends a public status, so it always passes.
  *
  * Quick Edit on the Resources list saves outside REST. It can blank the title, change the topics
  * (a flat taxonomy stays on in Quick Edit) and move the status, so while its handler runs a save
  * that would leave a resource `publish` or `future` without the three is refused, judged on what
  * core is about to write (`wp_insert_post_data`): the title from the row, the topics from the
  * `tax_input` names core assigns after the row when the request carries them and the stored
- * topics otherwise, and the summary as stored, since Quick Edit cannot edit it. The request ends
- * with the message, which the list shows in the row, before anything is written (core's
- * `edit_post()` has already written `_edit_last`), as OneType's Quick Edit refusal does.
+ * topics otherwise, and the summary as stored, since Quick Edit cannot edit it. For a resource
+ * already published or scheduled the rule is OneType's "no worse": the save is refused only when
+ * it would leave a field missing that is not missing now, so a resource an unguarded path left
+ * incomplete can still be Quick Edited. The request ends with the message, which the list shows
+ * in the row, before anything is written (core's `edit_post()` has already written
+ * `_edit_last`), as OneType's Quick Edit refusal does.
  *
- * Guarded: REST saves and Quick Edit. Not guarded: Bulk Edit, which can publish a draft that
- * lacks a topic or a summary (it cannot blank a title), the classic `post.php` form submission,
- * WP-CLI, and PHP calls to `wp_insert_post()` and the like, the seeder among them (it gives every
- * resource all three); XML-RPC is off (XmlRpc). A resource made public through those without one
- * of the three is served by the front end as it is, and the editor keeps its Update button off
- * until an editor fills the gap. `missing_stored()` is for listing such resources from WP-CLI
- * (README, "Running it").
+ * Guarded: REST saves, autosaves and Quick Edit. Not guarded, so each can leave a public resource
+ * without one of the three:
+ * - Bulk Edit, which can publish a draft that lacks a topic or a summary (it cannot blank a
+ *   title);
+ * - restoring a revision (`revision.php`, `wp_restore_post_revision()`), which writes the
+ *   revision's title through `wp_update_post()` and so can blank the title of a published
+ *   resource from a revision saved before it had one (the summary is not revisioned);
+ * - deleting a topic (the Topics screen, `DELETE /wp/v2/resource_topic/{id}`,
+ *   `wp term delete`), which removes it from every resource and can leave a published or
+ *   scheduled one with none; a scheduled one then publishes through cron unchecked. Topics are
+ *   open like tags, and keeping a used topic from being deleted, as UsedTypes does for types,
+ *   is a product decision that has not been made;
+ * - cron publishing a scheduled resource (`wp_publish_post()`), which checks nothing, so a
+ *   resource scheduled complete and emptied since by one of these paths publishes as it is;
+ * - the classic `post.php` form submission, WP-CLI, and PHP calls to `wp_insert_post()` and the
+ *   like, the seeder among them (it gives every resource all three); XML-RPC is off (XmlRpc).
+ * A resource made public through those without one of the three is served by the front end as
+ * it is, and the editor keeps its Update button off until an editor fills the gap.
+ * `missing_stored()` is for listing such resources from WP-CLI (README, "Running it").
  */
 final class RequiredFields {
 	/**
@@ -83,9 +110,9 @@ final class RequiredFields {
 	public const FIELDS = array( 'title', 'topic', 'summary' );
 
 	/**
-	 * Whitespace, no-break spaces and the zero-width characters, for `is_blank()`. `\p{Z}` is
-	 * every Unicode separator, the no-break space among them; the ASCII controls `\s` would cover
-	 * are listed so the class does not depend on PCRE's Unicode mode for `\s`.
+	 * Whitespace, no-break spaces and the zero-width characters, for `is_blank_summary()`.
+	 * `\p{Z}` is every Unicode separator, the no-break space among them; the ASCII controls `\s`
+	 * would cover are listed so the class does not depend on PCRE's Unicode mode for `\s`.
 	 */
 	private const BLANK_CHARACTERS = '/[\p{Z}\t\n\x0B\f\r\x{200B}-\x{200D}\x{FEFF}]+/u';
 
@@ -97,25 +124,27 @@ final class RequiredFields {
 	private int $quick_edit_id = 0;
 
 	/**
-	 * Hooks the check onto REST saves of `resource` and onto the Resources list's Quick Edit
-	 * handler. Registered after OneType, so its REST check runs after OneType's at the same
-	 * priority.
+	 * Hooks the check onto REST saves and autosaves of `resource` and onto the Resources list's
+	 * Quick Edit handler. Registered after OneType, so its REST check runs after OneType's at the
+	 * same priority.
 	 */
 	public function register(): void {
 		add_filter( 'rest_pre_insert_' . PostType::NAME, array( $this, 'check_rest_save' ), 10, 2 );
+		add_filter( 'rest_dispatch_request', array( $this, 'check_autosave' ), 10, 2 );
 		add_action( 'wp_ajax_inline-save', array( $this, 'guard_quick_edit' ), 0 );
 	}
 
 	/**
 	 * Rule: the post as the save would leave it has no missing field for its status, or the save
-	 * is refused. An autosave, and an earlier error, pass through.
+	 * is refused. An earlier error passes through, and so does an autosave, which check_autosave()
+	 * has judged before the route ran.
 	 *
 	 * @param stdClass|WP_Error $prepared_post The post core is about to save, or an earlier error.
 	 * @param WP_REST_Request   $request       The REST request.
 	 * @return stdClass|WP_Error The post unchanged, or the refusal.
 	 */
 	public function check_rest_save( $prepared_post, WP_REST_Request $request ) {
-		if ( ! $prepared_post instanceof stdClass || str_ends_with( $request->get_route(), '/autosaves' ) ) {
+		if ( ! $prepared_post instanceof stdClass || self::is_autosave( $request ) ) {
 			return $prepared_post;
 		}
 
@@ -142,12 +171,53 @@ final class RequiredFields {
 		$meta = $request['meta'] ?? null;
 
 		if ( is_array( $meta ) && array_key_exists( Meta::SUMMARY, $meta ) ) {
-			$summary = is_scalar( $meta[ Meta::SUMMARY ] ) ? (string) $meta[ Meta::SUMMARY ] : '';
+			$summary = MetaRules::sanitize_summary( $meta[ Meta::SUMMARY ] );
 		} else {
 			$summary = $existing ? self::stored_summary( $existing->ID ) : '';
 		}
 
 		return self::problem( $status, self::missing( $title, $topics, $summary ) ) ?? $prepared_post;
+	}
+
+	/**
+	 * Rule: an autosave that would write a public status onto a resource that is not public is
+	 * refused while the resource, as that write would leave it, lacks a field. Hooked to
+	 * `rest_dispatch_request`, which runs after the route's permission check and before its
+	 * callback, so a refusal is the response and nothing is written. Any other request, and an
+	 * autosave that passes, is left to the route.
+	 *
+	 * @param mixed           $result  Null, or a response an earlier filter chose.
+	 * @param WP_REST_Request $request The REST request.
+	 * @return mixed The result unchanged, or the refusal.
+	 */
+	public function check_autosave( $result, WP_REST_Request $request ) {
+		if ( null !== $result || 'POST' !== $request->get_method() || ! self::is_autosave( $request ) ) {
+			return $result;
+		}
+
+		$existing = get_post( (int) $request['id'] );
+
+		if ( ! $existing || PostType::NAME !== $existing->post_type || in_array( $existing->post_status, OneType::PUBLIC_STATUSES, true ) ) {
+			return $result;
+		}
+
+		$status = is_string( $request['status'] ) && '' !== $request['status'] ? $request['status'] : $existing->post_status;
+
+		if ( ! in_array( $status, OneType::PUBLIC_STATUSES, true ) ) {
+			return $result;
+		}
+
+		// The title as core's `prepare_item_for_database()` reads it: a string, or a non-empty `raw`.
+		$title = $request['title'];
+
+		if ( is_array( $title ) ) {
+			$title = empty( $title['raw'] ) ? null : $title['raw'];
+		}
+
+		$title   = is_string( $title ) ? $title : $existing->post_title;
+		$missing = self::missing( $title, self::stored_topic_count( $existing->ID ), self::stored_summary( $existing->ID ) );
+
+		return self::problem( $status, $missing ) ?? $result;
 	}
 
 	/**
@@ -175,8 +245,9 @@ final class RequiredFields {
 
 	/**
 	 * Rule: while Quick Edit saves a resource, a save that would leave it `publish` or `future`
-	 * without a title, a topic or a summary ends with the message before anything is written.
-	 * Hooked to `wp_insert_post_data`, late, only while that handler runs. OneType's own Quick Edit
+	 * without a title, a topic or a summary ends with the message before anything is written;
+	 * for a resource already published or scheduled, only when the save would leave a field
+	 * missing that is not missing in storage. Hooked to `wp_insert_post_data`, late, only while that handler runs. OneType's own Quick Edit
 	 * guard runs at the same priority and may end the request first; either message fits.
 	 *
 	 * @param array<string, mixed> $data    The post fields core is about to write, slashed.
@@ -203,8 +274,16 @@ final class RequiredFields {
 		}
 
 		$missing = self::missing( $title, $topics, self::stored_summary( $post_id ) );
+		$stored  = get_post( $post_id );
 
-		if ( array() !== $missing ) {
+		// No worse: a resource already public is refused only for a gap this save would open.
+		if ( $stored && in_array( $stored->post_status, OneType::PUBLIC_STATUSES, true ) ) {
+			$opened = array_diff( $missing, self::missing_stored( $post_id ) );
+		} else {
+			$opened = $missing;
+		}
+
+		if ( array() !== $opened ) {
 			wp_die( esc_html( self::admin_message( $missing ) ) );
 		}
 
@@ -243,7 +322,7 @@ final class RequiredFields {
 	 *
 	 * @param string $title   The title after the save.
 	 * @param int    $topics  Number of topics after the save.
-	 * @param string $summary The summary meta after the save.
+	 * @param string $summary The summary meta after the save, as stored (sanitized).
 	 * @return string[]
 	 */
 	public static function missing( string $title, int $topics, string $summary ): array {
@@ -257,7 +336,7 @@ final class RequiredFields {
 			$missing[] = 'topic';
 		}
 
-		if ( self::is_blank( $summary ) ) {
+		if ( self::is_blank_summary( $summary ) ) {
 			$missing[] = 'summary';
 		}
 
@@ -282,17 +361,29 @@ final class RequiredFields {
 	}
 
 	/**
-	 * Rule: text is blank when nothing is left once tags are stripped, entities decoded, and
+	 * Rule: a title is blank when nothing is left once tags are stripped, entities decoded, and
 	 * whitespace, no-break spaces and the zero-width characters are removed. Text that is not
 	 * valid UTF-8 is not blank: it has bytes a reader would see something for.
 	 *
-	 * @param string $text The text as stored or as sent.
+	 * @param string $text The title as stored or as sent.
 	 */
 	public static function is_blank( string $text ): bool {
 		$decoded = html_entity_decode( wp_strip_all_tags( $text ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-		$left    = preg_replace( self::BLANK_CHARACTERS, '', $decoded );
 
-		return '' === $left;
+		return self::is_blank_summary( $decoded );
+	}
+
+	/**
+	 * Rule: a summary, as stored, is blank when nothing is left once whitespace, no-break spaces
+	 * and the zero-width characters are removed. It is plain text the front end shows verbatim,
+	 * so nothing is stripped or decoded: `&nbsp;` typed as text is not blank. A value sent over
+	 * REST is judged after `MetaRules::sanitize_summary()`, so a value that sanitizes to empty
+	 * (invalid UTF-8, markup alone) is blank.
+	 *
+	 * @param string $text The summary as stored.
+	 */
+	public static function is_blank_summary( string $text ): bool {
+		return '' === preg_replace( self::BLANK_CHARACTERS, '', $text );
 	}
 
 	/**
@@ -347,6 +438,15 @@ final class RequiredFields {
 			default:
 				return __( 'A resource needs a summary to be published or scheduled. Write one in the Resource details panel.', 'resource-hub' );
 		}
+	}
+
+	/**
+	 * Whether the request is to a resource's autosaves route.
+	 *
+	 * @param WP_REST_Request $request The REST request.
+	 */
+	private static function is_autosave( WP_REST_Request $request ): bool {
+		return 1 === preg_match( '#^/wp/v2/' . PostType::REST_BASE . '/\d+/autosaves/?$#', $request->get_route() );
 	}
 
 	/**

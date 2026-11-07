@@ -205,6 +205,73 @@ final class RequiredFieldsAdminTest extends WP_Ajax_UnitTestCase {
 	}
 
 	/**
+	 * Unpublishing through Quick Edit is never refused, even for a published resource that lacks
+	 * a summary and has its title blanked and its topics cleared in the same row.
+	 *
+	 * @dataProvider unpublished_statuses
+	 *
+	 * @param string $status The status chosen in the row.
+	 */
+	public function test_quick_edit_unpublishes_an_incomplete_resource( string $status ): void {
+		$post_id = $this->published();
+		delete_post_meta( $post_id, Meta::SUMMARY );
+
+		$this->quick_edit(
+			$post_id,
+			array(
+				'_status'    => $status,
+				'post_title' => '',
+				'tax_input'  => array( Taxonomies::TOPIC => '' ),
+			)
+		);
+		$this->handle_quick_edit_save();
+
+		$this->assertSame( $status, get_post_status( $post_id ) );
+		$this->assertSame( '', get_post( $post_id )->post_title );
+		$this->assertSame( RequiredFields::FIELDS, RequiredFields::missing_stored( $post_id ) );
+	}
+
+	/**
+	 * Cases for test_quick_edit_unpublishes_an_incomplete_resource().
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function unpublished_statuses(): array {
+		return array(
+			'draft'   => array( 'draft' ),
+			'private' => array( 'private' ),
+		);
+	}
+
+	/**
+	 * No worse: a published resource an unguarded path left without a summary still saves an edit
+	 * that opens no new gap, and is refused one that does, with the message naming every field
+	 * it would lack.
+	 */
+	public function test_quick_edit_of_an_incomplete_published_resource_is_judged_no_worse(): void {
+		$post_id = $this->published();
+		delete_post_meta( $post_id, Meta::SUMMARY );
+
+		$this->quick_edit( $post_id, array( 'post_title' => 'Retitled' ) );
+		$this->handle_quick_edit_save();
+
+		$this->assertSame( 'Retitled', get_post( $post_id )->post_title );
+		$this->assertSame( 'publish', get_post_status( $post_id ) );
+
+		$this->_last_response = '';
+		$this->quick_edit( $post_id, array( 'post_title' => ' ' ) );
+
+		try {
+			$this->_handleAjax( 'inline-save' );
+			$this->fail( 'Quick Edit was not refused.' );
+		} catch ( WPAjaxDieStopException $refusal ) {
+			$this->assertSame( RequiredFields::admin_message( array( 'title', 'summary' ) ), $refusal->getMessage() );
+		}
+
+		$this->assertSame( 'Retitled', get_post( $post_id )->post_title );
+	}
+
+	/**
 	 * A draft resource with a type, titled "A draft", with a topic and a summary when asked.
 	 *
 	 * @param bool $complete Whether to store a topic and a summary too.
