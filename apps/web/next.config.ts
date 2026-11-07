@@ -68,16 +68,22 @@ const nextConfig: NextConfig = {
   // `quality` on the lead alone was tried first: WebP at 65 saved 3 KB and no
   // LCP, and WebP reaches AVIF's 18 KB only at about 35, which smears the
   // photograph's texture into blocks. A browser whose `Accept` names no AVIF
-  // gets the source's own format, resized and re-encoded at the same quality
-  // (a JPEG stays a JPEG; Next.js's `images.formats` docs and
-  // `imageOptimizerTransform` in `next/dist/server/image-optimizer/transform.js`),
-  // rather than WebP: such a browser downloads more, which is the trade the
-  // single format makes. The costs are on Vercel: AVIF encodes more slowly,
-  // so the first request for each width waits longer until the optimiser has
-  // cached it. The optimiser's cache key includes the output format, so each
-  // width of an image is one AVIF transformation against the plan's
-  // allowance, and a second only if a browser without AVIF asks for that
-  // width, where two formats made it two whenever both kinds of browser came
+  // gets a still image resized and re-encoded at the same quality, as JPEG
+  // when the source is WebP or AVIF and in the source's own format otherwise
+  // (a JPEG stays a JPEG, a PNG a PNG), never as WebP:
+  // `imageOptimizerTransform` in
+  // `next/dist/server/image-optimizer/transform.js` (Next.js 16.4.5)
+  // downgrades a still WebP or AVIF to JPEG when no configured format
+  // matched, where the `images.formats` docs say only "the original format".
+  // An animated WebP, PNG or GIF, a BMP, HEIC, ICO, ICNS or JXL, and an image
+  // the encoder fails on reach every browser as they are. A browser without
+  // AVIF downloads more, which is the trade the single format makes. The
+  // costs are on Vercel: AVIF encodes more slowly, so the first request for
+  // each width waits longer until the optimiser has cached it. The
+  // optimiser's cache key includes the output format, so each width of an
+  // image is one AVIF transformation against the plan's allowance, and a
+  // second only if a browser without AVIF asks for that width, where two
+  // formats made it two whenever both kinds of browser came
   // (apps/web/README.md, "Images").
   images: {
     localPatterns: [{ pathname: "/media/**", search: "" }],
