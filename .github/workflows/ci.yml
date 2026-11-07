@@ -11,7 +11,10 @@
 # performance gates on the end-to-end build: the axe scan runs inside the
 # end-to-end suite, the specimen's screenshots in Playwright's Docker image,
 # and Lighthouse CI against the same build. It needs no secrets: it builds
-# against a placeholder CMS URL and makes no CMS calls at build time.
+# against a placeholder CMS URL and makes no CMS calls at build time. Every
+# step of it blocks a merge; on main and on manual dispatch every step but
+# Lighthouse also blocks the front end's deploy, and a Lighthouse miss there
+# is a warning instead, until issue #76 calibrates it (see the step).
 #
 # The deploy job runs after the gate, only on main and on manual dispatch, and
 # syncs the plugin, from wp-content/plugins/resource-hub-wp, to the Cloudways
@@ -521,7 +524,8 @@ jobs:
       # They need that build, not a passing end-to-end run, so they run
       # whenever the end-to-end step ran, pass or fail: a failing spec must
       # not hide a screenshot diff or a budget. A failure in any of them
-      # still fails the job.
+      # still fails the job, except a Lighthouse miss on a push or a manual
+      # dispatch, which is a warning (see the Lighthouse step).
 
       # Joins the background pull started above and fails here, with its log,
       # if it failed.
@@ -567,11 +571,65 @@ jobs:
       # right on the slowest and gentler than a calibrated gate on the rest.
       # Calibrating it is issue #76 (branch lhci/snapshot-calibration). The
       # medians go to the job summary; the reports are an artifact below.
+      #
+      # Until #76 lands, Lighthouse decides merges, not deploys. The runners
+      # vary about 2-3x in CPU speed, so TBT on identical code ranges about
+      # 80 to 300 ms between runs, and on 2026-11-07 main's run 42362572282
+      # failed it twice on slow runners after the same code had passed on its
+      # pull request, which skipped the production deploy. So on a pull
+      # request a miss fails this job as before, and on a push or a manual
+      # dispatch continue-on-error keeps the job, and with it deploy-web,
+      # going: the step's outcome is still failure, its conclusion success,
+      # and the next step reports the miss. The test is the two events that
+      # deploy, not "anything but a pull request", so a trigger added later
+      # blocks by default. The budgets are the same on every event.
       - name: Run Lighthouse CI on the front end
+        id: lighthouse
         if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
+        continue-on-error: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
         env:
           RH_E2E_PREBUILT: '1'
         run: pnpm web:test:lighthouse
+
+      # Runs only when Lighthouse failed and continue-on-error let the job go
+      # on (outcome failure, conclusion success), so never on a pull request,
+      # where the failed step already fails the job. It names each missed
+      # budget in a warning annotation and in the job summary, from the
+      # failed assertions `lhci assert` saves (apps/web/.lighthouseci/, which
+      # e2e/lighthouse.mts empties before each run, so nothing is stale). When
+      # the step failed with no missed budget on record (a stage before the
+      # assertions failed, so the file is missing, or every assertion passed
+      # and the report upload failed), the warning says that instead. Its
+      # `title=` holds no comma or colon, which would need escaping as
+      # annotation properties. A warning here is a finding to look at, not
+      # noise: if the same URL and metric miss again on the next run, treat
+      # it as a regression (docs/runbooks/deploy.md).
+      - name: Report a Lighthouse miss that does not block the deploy
+        if: ${{ !cancelled() && steps.lighthouse.outcome == 'failure' && steps.lighthouse.conclusion == 'success' }}
+        env:
+          RESULTS: apps/web/.lighthouseci/assertion-results.json
+          ISSUE_URL: ${{ github.server_url }}/${{ github.repository }}/issues/76
+        run: |
+          misses=''
+          if [ -s "$RESULTS" ]; then
+            misses=$(jq -r '
+              def num: if . == null then "n/a" elif . >= 10 then (. | round | tostring) else ((. * 1000 | round) / 1000 | tostring) end;
+              [ .[] | select(.passed | not) | select(.level == "error")
+                | "\(.url | sub("^[a-z]+://[^/]+"; "")) \(.auditId)\(if .auditProperty then ":" + .auditProperty else "" end) \(.actual | num) (budget \(.operator) \(.expected))" ]
+              | join("; ")' "$RESULTS") || misses=''
+          fi
+          if [ -n "$misses" ]; then
+            what="Missed budget: $misses."
+          else
+            what="Lighthouse failed without a missed budget on record (a stage before the assertions, or the report upload, failed); its step's log says why."
+          fi
+          advice="Lighthouse does not gate the production deploy until #76 calibrates it, so the deploy went ahead. This is a finding to look at: if the same URL and metric miss again on the next run, treat it as a regression."
+          echo "::warning title=Lighthouse failed; the deploy was not blocked::$what $advice ($ISSUE_URL)"
+          {
+            echo "### Lighthouse failed (not blocking the deploy)"
+            echo
+            echo "$what ${advice/\#76/[#76]($ISSUE_URL)} The reports are in the web-lighthouse-reports artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Traces are kept only for failed tests (trace: retain-on-failure): the
       # end-to-end run's in Playwright's default output directory, and the
@@ -855,8 +913,11 @@ jobs:
   deploy-web:
     name: Deploy the front end to Vercel
     # The front end goes live only after the CMS it reads (ADR 0051; see
-    # docs/runbooks/deploy.md), and only when its own lint, typecheck, tests
-    # and build have passed on this commit.
+    # docs/runbooks/deploy.md), and only when its own lint, typecheck, unit
+    # and end-to-end tests (axe and the document-size check included), build,
+    # screenshots and brand-image check have passed on this commit. A
+    # Lighthouse miss is reported but does not hold it back until issue #76
+    # (see the web job's Lighthouse step).
     needs: [ deploy, web ]
     # Main only, on a push or a manual dispatch. Unlike the CMS deploy, a tag
     # dispatch does not deploy the front end: a deploy hook always builds the
