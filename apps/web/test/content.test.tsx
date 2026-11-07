@@ -296,7 +296,7 @@ describe("images", () => {
     expect(output).toContain('height="683"');
     expect(output).toContain('alt="A photo"');
     expect(output).toContain('class="wp-image-16"');
-    expect(output).toContain('sizes="(max-width: 40rem) 100vw, 40rem"');
+    expect(output).toContain('sizes="(max-width: 44rem) 100vw, 42rem"');
     expect(output).toContain("url=%2Fmedia%2F2026%2F11%2Fphoto.jpg&amp;w=");
     expect(output).not.toContain("cms.example");
     expect(output).not.toContain("w=1024&");

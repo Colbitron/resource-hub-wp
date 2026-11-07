@@ -4,6 +4,7 @@ import type { AxeResults } from "axe-core";
 import { mockCms } from "./mock-cms/client.mts";
 import { appSiteOrigin, E2E_REVALIDATE_SECRET, MOCK_CMS_HOST, mockCmsOrigin, mockCmsPort } from "./mock-cms/config.mts";
 import { RESOURCES, TERMS } from "./mock-cms/seed.mts";
+import { platformFonts } from "./platform-fonts.mts";
 import { postRevalidate } from "./revalidation.mts";
 
 /**
@@ -200,6 +201,9 @@ test.describe("what the page renders", () => {
     // `preload` alone leaves the image at Low priority in Chromium; both the link and the <img> ask for High.
     await expect(page.locator('link[rel="preload"][as="image"]')).toHaveAttribute("fetchpriority", "high");
     await expect(featured).toHaveAttribute("fetchpriority", "high");
+    // `sizes` is the column's width written out (`CONTENT_SIZES` in lib/content/render.tsx); the body's images carry the same string.
+    await expect(featured).toHaveAttribute("sizes", "(max-width: 44rem) 100vw, 42rem");
+    await expect(article.locator(".rh-resource__body figure img")).toHaveAttribute("sizes", "(max-width: 44rem) 100vw, 42rem");
 
     await expect(article.locator(".rh-resource__summary")).toHaveText(resource.summary);
 
@@ -664,6 +668,40 @@ test.describe("accessibility and layout", () => {
     await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("main")).toBeFocused();
+  });
+
+  test("the featured image never renders wider than its `sizes` claims, at 1280px and at 360px", async ({ page }) => {
+    // The column is `--rh-measure`, 65ch, and `sizes` is that width written
+    // out in rem (`CONTENT_SIZES` in lib/content/render.tsx): 42rem above a
+    // 44rem viewport, 100vw below it. A `sizes` under the rendered width
+    // would have the browser pick a candidate too small for the box, so a
+    // change to the measure or the typeface that moves 65ch past 42rem
+    // fails here until the string follows. The long-form resource's upload
+    // is 1600 wide, so the column, not the file, bounds the image.
+    const rootFontSize = (): Promise<number> => page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
+    const image = page.locator(".rh-resource__media img");
+    await expect(image).toHaveAttribute("sizes", "(max-width: 44rem) 100vw, 42rem");
+    // A `ch` is the font's, so the column is measured once the page is drawn in Figtree, not in the fallback face.
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    const title = page.locator("h1");
+    await expect
+      .poll(async () => (await platformFonts(page, "h1")).filter((family) => !/^Figtree\b/.test(family)).length, { message: "the title was not drawn in Figtree" })
+      .toBe(0);
+    expect((await platformFonts(page, "h1")).length).toBeGreaterThan(0);
+    await expect(title).toBeVisible();
+    const wide = await image.boundingBox();
+    expect(wide).not.toBeNull();
+    expect(wide!.width).toBeLessThanOrEqual(42 * (await rootFontSize()));
+    // The column is 65ch of Figtree, under 42rem by less than half a rem: the ceiling is tight, not slack.
+    expect(wide!.width).toBeGreaterThan(41 * (await rootFontSize()));
+
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
+    const narrow = await image.boundingBox();
+    expect(narrow).not.toBeNull();
+    expect(narrow!.width).toBeLessThanOrEqual(360);
   });
 
   test("at 360px nothing scrolls horizontally, no table cell breaks a word, and the page does not shift as it loads", async ({ page }) => {

@@ -160,13 +160,24 @@ export interface RenderContentOptions {
 }
 
 /**
- * `sizes` for a content image rendered through `next/image`. The content
- * column is `--rh-measure` (65ch in the shared tokens), about 40rem of text
- * at the system font, and `sizes` cannot read a CSS variable, so it is
- * written out, rounded up: a larger estimate fetches a few more bytes, a
- * smaller one a blurrier image.
+ * `sizes` for an image in the content column: the body's images here and
+ * the resource page's featured image (`components/ResourceArticle.tsx`),
+ * one string so the two agree.
+ *
+ * The column is `--rh-measure`, 65ch in the shared tokens, and `sizes`
+ * cannot read a CSS variable or a `ch`, so the width is written out. A `ch`
+ * is the advance of "0" in the column's font: in Figtree at the regular
+ * weight it is 0.6408 em (10.25 px at 16 px, measured in Chromium on the
+ * file in `packages/ui/fonts/`), so 65ch is 41.65rem, rounded up to 42rem.
+ * Below that plus the shell's two 1rem gutters, 44rem, the column is the
+ * viewport less the gutters, which `100vw` overstates by 2rem. The rule is
+ * that `sizes` never understates the rendered width: a larger estimate
+ * fetches a few more bytes, a smaller one a blurrier image. The resource
+ * page's spec measures the featured image against this value at 1280 px,
+ * so a change to the measure or the typeface fails there until this string
+ * follows.
  */
-const CONTENT_SIZES = "(max-width: 40rem) 100vw, 40rem";
+export const CONTENT_SIZES = "(max-width: 44rem) 100vw, 42rem";
 
 /**
  * How many elements deep a body may nest before it renders as plain text:
