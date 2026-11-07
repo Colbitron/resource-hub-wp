@@ -61,10 +61,14 @@ jobs:
           SHA: ${{ github.event.deployment.sha }}
           PREVIEW_URL: ${{ github.event.deployment_status.environment_url }}
         run: |
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The deployment's sha is not a full commit SHA."
+            exit 1
+          fi
+          pulls=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls")
           # $sha is jq's variable, bound with --arg, not the shell's.
           # shellcheck disable=SC2016
-          number=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" \
-            --jq --arg sha "$SHA" '[.[] | select(.state == "open" and .head.sha == $sha)][0].number // empty')
+          number=$(printf '%s' "$pulls" | jq -r --arg sha "$SHA" '[.[] | select(.state == "open" and .head.sha == $sha)][0].number // empty')
           if [ -z "$number" ]; then
             echo "No open pull request has commit $SHA as its head; nothing to measure."
             exit 0
@@ -201,8 +205,19 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: Fail if nothing reached the pull request
-        if: steps.measure.outputs.reported != 'true'
+      # Two cases turn the job red: nothing reached the pull request, and
+      # the secret reached another origin (the script's `leak` output, set
+      # after the comment that names the origin is posted). A measurement
+      # failure that is in the comment (the script's exit 2) stays green.
+      - name: Fail if nothing reached the pull request or the secret went elsewhere
+        if: steps.measure.outputs.reported != 'true' || steps.measure.outputs.leak == 'true'
+        env:
+          REPORTED: ${{ steps.measure.outputs.reported }}
+          NUMBER: ${{ needs.pr.outputs.number }}
         run: |
-          echo "::error::The preview Lighthouse run posted nothing on pull request #${{ needs.pr.outputs.number }}; its log is above."
+          if [ "$REPORTED" != 'true' ]; then
+            echo "::error::The preview Lighthouse run posted nothing on pull request #$NUMBER; its log is above."
+          else
+            echo "::error::The preview's page requested another origin, which received the bypass header; the comment on pull request #$NUMBER names it."
+          fi
           exit 1

@@ -27,7 +27,9 @@
  * all could not be and the reasons reached the comment; 1 otherwise (bad
  * arguments, the secret not set, the comment not written or posted, the
  * secret found in an output, or sent to another origin). The workflow
- * turns 2 into a green job and 1 into a red one.
+ * turns 2 into a green job and 1 into a red one: through its `reported`
+ * output when the comment never got out, and its `leak` output when the
+ * secret went to another origin, which is reported in the comment first.
  *
  * The secret: never printed, and never allowed to leave this process in
  * anything it writes. Lighthouse records its settings in each report, so
@@ -43,6 +45,7 @@
  * so a run with a request to another origin (Vercel's preview toolbar
  * would be one) has sent the secret there: such runs are reported in the
  * comment but their reports are not written, and the process exits 1.
+ * The runs a failed `lhci collect` finished are checked the same way.
  */
 
 import { spawnSync } from "node:child_process";
@@ -141,8 +144,13 @@ async function warm(url: string, secret: string): Promise<void> {
   throw new Error(`${path} answered ${response.status} while warming.`);
 }
 
-/** Runs `lhci collect` for one path and returns its runs; the raw directory is cleared first and holds only them. */
-function collect(origin: string, path: string, secret: string): PreviewLhr[] {
+/**
+ * Runs `lhci collect` for one path and returns its runs, with the reason
+ * when it failed: the runs it finished before failing carried the header,
+ * so they are returned for the origin check whatever happened. The raw
+ * directory is cleared first and holds only this path's runs.
+ */
+function collect(origin: string, path: string, secret: string): { runs: PreviewLhr[]; failure: string | null } {
   rmSync(RAW_DIR, { recursive: true, force: true });
   const env: Record<string, string> = { RH_PREVIEW_ORIGIN: origin, RH_PREVIEW_PATH: path, [SECRET_VARIABLE]: secret };
   for (const key of CHILD_ENV_KEYS) {
@@ -155,13 +163,15 @@ function collect(origin: string, path: string, secret: string): PreviewLhr[] {
     stdio: "inherit",
     env: env as NodeJS.ProcessEnv,
   });
-  if (result.status !== 0) throw new Error(`lhci collect exited with ${result.status ?? result.signal} on ${path}; its output is in the log.`);
   const runs = readdirSync(RAW_DIR)
     .filter((name) => /^lhr-.*\.json$/.test(name))
     .sort()
     .map((name) => JSON.parse(readFileSync(join(RAW_DIR, name), "utf8")) as PreviewLhr);
-  if (runs.length === 0) throw new Error(`lhci collect wrote no runs for ${path}.`);
-  return runs;
+  if (result.status !== 0) {
+    return { runs, failure: `lhci collect exited with ${result.status ?? result.signal} on ${path}; its output is in the log.` };
+  }
+  if (runs.length === 0) return { runs, failure: `lhci collect wrote no runs for ${path}.` };
+  return { runs, failure: null };
 }
 
 function containsSecret(text: string, secret: string): boolean {
@@ -251,7 +261,7 @@ async function main(): Promise<number> {
     try {
       await warm(url, secret);
       console.log(`Warmed ${sample.path}; collecting ${RUNS} runs.`);
-      results.push({ url, runs: collect(options.origin, sample.path, secret), failure: null });
+      results.push({ url, ...collect(options.origin, sample.path, secret) });
     } catch (error) {
       if (error instanceof FatalError) throw error;
       results.push({ url, runs: [], failure: error instanceof Error ? error.message : String(error) });
@@ -290,7 +300,8 @@ async function main(): Promise<number> {
     console.log(`Wrote the comment to ${options.commentFile}.`);
   }
   if (options.pr !== null) await post(options.pr, body);
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, "reported=true\n");
+  // `leak` is how the workflow turns a green-by-default job red for this one case.
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `reported=true\n${failure === null ? "" : "leak=true\n"}`);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, body);
 
   console.log(`\n${body}`);
