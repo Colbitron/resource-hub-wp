@@ -1,9 +1,10 @@
 /**
  * "Resource details" sidebar panel for the block editor.
  *
- * Edits the `summary` and `source_url` meta fields through the post entity, so
- * they save with the post and go through the sanitizers and auth callback the
- * plugin registered with `register_post_meta()`. PHP enqueues this script only
+ * Edits the `summary`, `source_url` and `related_picks` meta fields through the
+ * post entity, so they save with the post and go through the sanitizers and
+ * auth callback the plugin registered with `register_post_meta()`. The picks
+ * control is in `related-picks.js`. PHP enqueues this script only
  * on the editor for the `resource` post type; the post-type check below is a
  * second guard for any editor that loads it anyway.
  */
@@ -20,11 +21,16 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 // The Types panel's radio buttons ship in this bundle, the one script PHP
 // loads on the resource editor.
 import '../resource-type';
+import RelatedPicks from './related-picks';
 
 const POST_TYPE = 'resource';
 
 // Mirrors MetaRules::SUMMARY_MAX_LENGTH and the REST schema's maxLength.
 const SUMMARY_MAX_LENGTH = 300;
+
+// One empty list for a resource with no picks yet, so the control gets the
+// same array on every render.
+const NO_PICKS = [];
 
 function ResourceDetailsPanel() {
 	const postType = useSelect(
@@ -80,6 +86,12 @@ function ResourceDetailsPanel() {
 				value={ sourceUrl }
 				onChange={ ( value ) =>
 					setMeta( { ...meta, source_url: value } )
+				}
+			/>
+			<RelatedPicks
+				picks={ meta.related_picks ?? NO_PICKS }
+				onChange={ ( picks ) =>
+					setMeta( { ...meta, related_picks: picks } )
 				}
 			/>
 		</PluginDocumentSettingPanel>

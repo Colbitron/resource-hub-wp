@@ -23,7 +23,8 @@ src/
   Cli/                   the two WP-CLI commands
   Seed/                  the seeder behind `wp resource-hub seed`
 blocks/related-resources/  the block scaffold (editor only; the render callback is slice 4)
-editor/                  block-editor scripts: resource details panel, type radios, revalidation notice
+editor/                  block-editor scripts: resource details panel with the related picks control,
+                         type radios, revalidation notice
 admin/status-page/       the status page's picker script
 tests/phpunit/           PHPUnit, run inside the wp-env tests container
 tests/e2e/               Playwright against the wp-env tests site
@@ -79,7 +80,7 @@ Things to know:
 
 ## What is not built yet
 
-The block's render callback and its marker, and the editor's picker for `related_picks`, are the rest of slice 4; the related route (`GET /resource-hub/v1/related/{id}?count=n`) and the `related_picks` meta exist, and the front end does not read them yet. The block directory holds an editor scaffold only. The CMS block theme is slice 5. The spec for both is in the slice-4 issue linked from the root README's status table.
+The block's render callback and its marker are the rest of slice 4; the related route (`GET /resource-hub/v1/related/{id}?count=n`) and the `related_picks` meta exist, with the editor's control for the picks in the Resource details panel, and the front end does not read them yet. The block directory holds an editor scaffold only. The CMS block theme is slice 5. The spec for both is in the slice-4 issue linked from the root README's status table.
 
 ## Possible next steps
 
