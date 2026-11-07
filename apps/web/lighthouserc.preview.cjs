@@ -14,6 +14,8 @@
  * writes its own redacted copies instead of LHCI's filesystem target.
  *
  * - `RH_PREVIEW_ORIGIN`: the preview's origin, `https://…vercel.app`.
+ * - `RH_PREVIEW_PATH`, optional: one path of the list, when the script
+ *   collects the URLs one at a time so one failure costs one row.
  * - `VERCEL_PROTECTION_BYPASS`: the project's protection bypass secret, sent
  *   as `x-vercel-protection-bypass`. Lighthouse sets extra headers with
  *   `Network.setExtraHTTPHeaders`, so the page's own requests (scripts,
@@ -25,15 +27,20 @@ const { PREVIEW_URLS } = require("./e2e/preview-urls.mts");
 
 const origin = process.env.RH_PREVIEW_ORIGIN;
 const bypass = process.env.VERCEL_PROTECTION_BYPASS;
+const only = process.env.RH_PREVIEW_PATH;
 if (!origin || !bypass) {
   throw new Error("lighthouserc.preview.cjs needs RH_PREVIEW_ORIGIN and VERCEL_PROTECTION_BYPASS in the environment.");
+}
+const samples = only ? PREVIEW_URLS.filter((sample) => sample.path === only) : PREVIEW_URLS;
+if (samples.length === 0) {
+  throw new Error(`RH_PREVIEW_PATH is not a path in e2e/preview-urls.mts: ${only}`);
 }
 
 module.exports = {
   ci: {
     collect: {
       ...base.ci.collect,
-      url: PREVIEW_URLS.map((sample) => `${origin}${sample.path}`),
+      url: samples.map((sample) => `${origin}${sample.path}`),
       settings: {
         ...base.ci.collect.settings,
         extraHeaders: { "x-vercel-protection-bypass": bypass },

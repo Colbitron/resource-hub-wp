@@ -10,22 +10,24 @@
  * protection bypass secret (locally the value of `VERC_DEP_PROT` in
  * `.env.local`), always; `GITHUB_TOKEN` and `GITHUB_REPOSITORY` with `--pr`.
  *
- * In order: it requests each URL in `e2e/preview-urls.mts` once with the
+ * For each URL in `e2e/preview-urls.mts`, in order: one request with the
  * bypass header, so Lighthouse measures the page a reader gets rather than
- * ISR's first render, and stops if one does not answer 200 (a redirect, a
- * 401 or a 403 is the preview refusing the header: the secret is missing or
- * wrong). Then `lhci collect` with `lighthouserc.preview.cjs`, the gate's
- * settings on the preview. Then it reads the raw runs from `.lighthouseci/`,
- * writes redacted copies to `lighthouse-preview-results/` (the workflow's
- * artifact), builds the comment (`lighthouse-preview-summary.mts`) and
- * writes or posts it. A failure anywhere in the measurement is reported in
- * the comment and still written or posted, with whatever rows were
- * measured, so the pull request shows what went wrong without a red check.
+ * ISR's first render, which must answer 200 (a redirect, a 401 or a 403 is
+ * the preview refusing the header: the secret is missing or wrong); then
+ * `lhci collect` for that URL alone, with `lighthouserc.preview.cjs`, the
+ * gate's settings on the preview. A URL that fails either step gets a row
+ * saying why, and the others are still measured, so one page that stopped
+ * answering never blanks the table. Then every run is checked for requests
+ * to origins other than the preview's, where the header would have gone
+ * too (below); the clean runs are written as redacted copies to
+ * `lighthouse-preview-results/` (the workflow's artifact); and the comment
+ * (`lighthouse-preview-summary.mts`) is written or posted.
  *
- * Exit codes: 0 when measured and reported; 2 when the measurement failed
- * but the failure reached the comment; 1 otherwise (bad arguments, the
- * secret not set, the comment not written or posted, the secret found in
- * an output). The workflow turns 2 into a green job and 1 into a red one.
+ * Exit codes: 0 when every URL was measured and reported; 2 when some or
+ * all could not be and the reasons reached the comment; 1 otherwise (bad
+ * arguments, the secret not set, the comment not written or posted, the
+ * secret found in an output, or sent to another origin). The workflow
+ * turns 2 into a green job and 1 into a red one.
  *
  * The secret: never printed, and never allowed to leave this process in
  * anything it writes. Lighthouse records its settings in each report, so
@@ -33,8 +35,14 @@
  * `configSettings.extraHeaders`; the copies written for the artifact have
  * that field redacted, and every file there and the comment body are
  * searched for the value (and its URL-encoded form) before anything is
- * written or posted. A hit deletes the directory and exits 1. The raw
- * directory is gitignored and never uploaded.
+ * written or posted. A hit, or an error while the copies are being
+ * written, deletes the directory, so the artifact step never finds
+ * unchecked files. The raw directory is gitignored and never uploaded.
+ * `lhci` and Chrome get a minimal environment, so the GitHub token never
+ * reaches them. Chrome sends the header on every request the page makes,
+ * so a run with a request to another origin (Vercel's preview toolbar
+ * would be one) has sent the secret there: such runs are reported in the
+ * comment but their reports are not written, and the process exits 1.
  */
 
 import { spawnSync } from "node:child_process";
@@ -43,7 +51,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
-import { findStickyComment, previewComment, type PreviewLhr } from "./lighthouse-preview-summary.mts";
+import { findStickyComment, foreignOrigins, previewComment, type PreviewLhr, type PreviewResult } from "./lighthouse-preview-summary.mts";
 import { PREVIEW_URLS } from "./preview-urls.mts";
 
 const APP_DIR = new URL("..", import.meta.url).pathname;
@@ -51,6 +59,8 @@ const RAW_DIR = join(APP_DIR, ".lighthouseci");
 const REPORT_DIR = join(APP_DIR, "lighthouse-preview-results");
 const HEADER = "x-vercel-protection-bypass";
 const SECRET_VARIABLE = "VERCEL_PROTECTION_BYPASS";
+/** What `lhci`, and through it Chrome, may see of this process's environment. */
+const CHILD_ENV_KEYS = ["PATH", "HOME", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "PLAYWRIGHT_BROWSERS_PATH", "CHROME_PATH"];
 
 const require = createRequire(import.meta.url);
 /** The runs per URL, read from the gate's config, which the preview config spreads. */
@@ -131,49 +141,65 @@ async function warm(url: string, secret: string): Promise<void> {
   throw new Error(`${path} answered ${response.status} while warming.`);
 }
 
-function collect(origin: string, secret: string): void {
+/** Runs `lhci collect` for one path and returns its runs; the raw directory is cleared first and holds only them. */
+function collect(origin: string, path: string, secret: string): PreviewLhr[] {
+  rmSync(RAW_DIR, { recursive: true, force: true });
+  const env: Record<string, string> = { RH_PREVIEW_ORIGIN: origin, RH_PREVIEW_PATH: path, [SECRET_VARIABLE]: secret };
+  for (const key of CHILD_ENV_KEYS) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  // Next.js's types make NODE_ENV a required key of ProcessEnv; lhci does not need it.
   const result = spawnSync("pnpm", ["exec", "lhci", "collect", "--config=./lighthouserc.preview.cjs"], {
     cwd: APP_DIR,
     stdio: "inherit",
-    env: { ...process.env, RH_PREVIEW_ORIGIN: origin, [SECRET_VARIABLE]: secret },
+    env: env as NodeJS.ProcessEnv,
   });
-  if (result.status !== 0) throw new Error(`lhci collect exited with ${result.status ?? result.signal}; its output is in the log.`);
-}
-
-function readRuns(): PreviewLhr[] {
-  return readdirSync(RAW_DIR)
+  if (result.status !== 0) throw new Error(`lhci collect exited with ${result.status ?? result.signal} on ${path}; its output is in the log.`);
+  const runs = readdirSync(RAW_DIR)
     .filter((name) => /^lhr-.*\.json$/.test(name))
     .sort()
     .map((name) => JSON.parse(readFileSync(join(RAW_DIR, name), "utf8")) as PreviewLhr);
+  if (runs.length === 0) throw new Error(`lhci collect wrote no runs for ${path}.`);
+  return runs;
 }
 
 function containsSecret(text: string, secret: string): boolean {
   return text.includes(secret) || text.includes(encodeURIComponent(secret));
 }
 
-/** Writes each run with the header redacted, then proves no file in the directory holds the secret. */
+/**
+ * Writes each run with the header redacted, then proves no file in the
+ * directory holds the secret. Any error on the way deletes the directory,
+ * so nothing unchecked is left for the artifact step.
+ */
 function writeReports(runs: readonly PreviewLhr[], secret: string): void {
   rmSync(REPORT_DIR, { recursive: true, force: true });
-  mkdirSync(REPORT_DIR, { recursive: true });
-  runs.forEach((run, index) => {
-    const copy = { ...run } as PreviewLhr & { configSettings?: { extraHeaders?: unknown } };
-    if (copy.configSettings) {
-      copy.configSettings = { ...copy.configSettings, extraHeaders: { [HEADER]: "[redacted]" } };
+  try {
+    mkdirSync(REPORT_DIR, { recursive: true });
+    runs.forEach((run, index) => {
+      const copy = { ...run } as PreviewLhr & { configSettings?: { extraHeaders?: unknown } };
+      if (copy.configSettings) {
+        copy.configSettings = { ...copy.configSettings, extraHeaders: { [HEADER]: "[redacted]" } };
+      }
+      const slug = new URL(run.requestedUrl).pathname.replace(/^\/|\/$/g, "").replace(/[^a-z0-9]+/gi, "-") || "root";
+      writeFileSync(join(REPORT_DIR, `lhr-${String(index + 1).padStart(2, "0")}-${slug}.json`), JSON.stringify(copy));
+    });
+    for (const name of readdirSync(REPORT_DIR)) {
+      if (containsSecret(readFileSync(join(REPORT_DIR, name), "utf8"), secret)) {
+        throw new FatalError(`The report ${name} contained the bypass secret after redaction; the reports were deleted.`);
+      }
     }
-    const slug = new URL(run.requestedUrl).pathname.replace(/^\/|\/$/g, "").replace(/[^a-z0-9]+/gi, "-") || "root";
-    writeFileSync(join(REPORT_DIR, `lhr-${String(index + 1).padStart(2, "0")}-${slug}.json`), JSON.stringify(copy));
-  });
-  for (const name of readdirSync(REPORT_DIR)) {
-    if (containsSecret(readFileSync(join(REPORT_DIR, name), "utf8"), secret)) {
-      rmSync(REPORT_DIR, { recursive: true, force: true });
-      throw new FatalError(`The report ${name} contained the bypass secret after redaction; the reports were deleted and nothing was posted.`);
-    }
+  } catch (error) {
+    rmSync(REPORT_DIR, { recursive: true, force: true });
+    throw error instanceof FatalError ? error : new FatalError(`The reports could not be written and were deleted: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 interface GitHubComment {
   id: number;
   body?: string | null;
+  user?: { login?: string | null } | null;
 }
 
 /** Creates the comment on the pull request, or edits the one carrying the marker. */
@@ -219,24 +245,44 @@ async function main(): Promise<number> {
   const options = parseOptions(process.argv.slice(2));
   const secret = readSecret();
 
-  let failure: string | null = null;
-  let runs: PreviewLhr[] = [];
-  try {
-    for (const sample of PREVIEW_URLS) {
-      await warm(`${options.origin}${sample.path}`, secret);
+  const results: PreviewResult[] = [];
+  for (const sample of PREVIEW_URLS) {
+    const url = `${options.origin}${sample.path}`;
+    try {
+      await warm(url, secret);
+      console.log(`Warmed ${sample.path}; collecting ${RUNS} runs.`);
+      results.push({ url, runs: collect(options.origin, sample.path, secret), failure: null });
+    } catch (error) {
+      if (error instanceof FatalError) throw error;
+      results.push({ url, runs: [], failure: error instanceof Error ? error.message : String(error) });
     }
-    console.log(`Warmed ${PREVIEW_URLS.length} URLs on ${options.origin}; collecting ${RUNS} runs each.`);
-    rmSync(RAW_DIR, { recursive: true, force: true });
-    collect(options.origin, secret);
-    runs = readRuns();
-    if (runs.length === 0) throw new Error("lhci collect wrote no runs.");
-    writeReports(runs, secret);
-  } catch (error) {
-    if (error instanceof FatalError) throw error;
-    failure = error instanceof Error ? error.message : String(error);
   }
 
-  const body = previewComment({ previewUrl: options.origin, sha: options.sha, runsPerUrl: RUNS, runs, failure });
+  // Every request Chrome made carried the header, so a run that reached
+  // another origin sent the secret there. Its numbers are still reported,
+  // its report is not written, and the process ends with 1 below.
+  const leaks = new Map<string, Set<string>>();
+  const clean: PreviewLhr[] = [];
+  for (const result of results) {
+    for (const run of result.runs) {
+      const origins = foreignOrigins(run, options.origin);
+      if (origins.length === 0) {
+        clean.push(run);
+        continue;
+      }
+      const seen = leaks.get(result.url) ?? new Set<string>();
+      for (const origin of origins) seen.add(origin);
+      leaks.set(result.url, seen);
+    }
+  }
+  let failure: string | null = null;
+  if (leaks.size > 0) {
+    const where = [...leaks].map(([url, origins]) => `${new URL(url).pathname} → ${[...origins].join(", ")}`).join("; ");
+    failure = `Requests went to origins other than the preview's, where the bypass header went too: ${where}. Those runs' reports were not kept. The page must request nothing but the preview itself for this run to be safe.`;
+  }
+  writeReports(clean, secret);
+
+  const body = previewComment({ previewUrl: options.origin, sha: options.sha, runsPerUrl: RUNS, results, failure });
   if (containsSecret(body, secret)) throw new FatalError("The comment body contained the bypass secret; nothing was written or posted.");
 
   if (options.commentFile !== null) {
@@ -248,8 +294,10 @@ async function main(): Promise<number> {
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, body);
 
   console.log(`\n${body}`);
-  if (failure !== null) {
-    console.error(`The measurement failed: ${failure}`);
+  if (failure !== null) throw new FatalError(failure);
+  const failed = results.filter((result) => result.failure !== null);
+  if (failed.length > 0) {
+    console.error(`${failed.length} of ${results.length} URLs could not be measured; the comment says why.`);
     return 2;
   }
   return 0;
