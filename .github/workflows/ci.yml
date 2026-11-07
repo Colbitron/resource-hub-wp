@@ -424,6 +424,8 @@ jobs:
             echo "apt_dir=$RUNNER_TEMP/playwright-apt"
             echo "docker_image=$docker_image"
           } >> "$GITHUB_OUTPUT"
+          # The inner sh expands $1, $2 and $? itself, so the single quotes are intended.
+          # shellcheck disable=SC2016
           nohup sh -c 'docker pull --platform linux/amd64 "$1"; echo $? > "$2"' sh "$docker_image" \
             "$RUNNER_TEMP/playwright-image-pull.status" > "$RUNNER_TEMP/playwright-image-pull.log" 2>&1 &
 
@@ -886,6 +888,8 @@ jobs:
       - name: Activate the plugin
         run: |
           dir=$(printf '%q' "$WP_ROOT")
+          # $dir is meant to expand on the runner; printf %q has quoted it for the remote shell.
+          # shellcheck disable=SC2029
           ssh deploy "cd $dir && { wp plugin is-active resource-hub-wp || wp plugin activate resource-hub-wp; }"
 
       # Activation clears the rewrite rules only when the plugin was inactive,
@@ -896,6 +900,8 @@ jobs:
       - name: Flush rewrite rules
         run: |
           dir=$(printf '%q' "$WP_ROOT")
+          # $dir is meant to expand on the runner; printf %q has quoted it for the remote shell.
+          # shellcheck disable=SC2029
           ssh deploy "cd $dir && wp rewrite flush"
 
       # The site's own home URL, read over SSH, so no hostname is committed and
@@ -904,6 +910,8 @@ jobs:
       - name: Smoke-check the REST root
         run: |
           dir=$(printf '%q' "$WP_ROOT")
+          # $dir is meant to expand on the runner; printf %q has quoted it for the remote shell.
+          # shellcheck disable=SC2029
           home=$(ssh deploy "cd $dir && wp option get home --skip-plugins --skip-themes")
           case "$home" in
             https://*) ;;
