@@ -56,6 +56,7 @@
 	--rh-font-sans: var(--rh-font-figtree, "Figtree"), system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 	--rh-weight-heading: 700;
 	--rh-tracking-heading: -0.02em;
+	--rh-tracking-label: 0.06em;
 	--rh-text-sm: 0.875rem;
 	--rh-text-base: 1rem;
 	--rh-text-md: 1.125rem;

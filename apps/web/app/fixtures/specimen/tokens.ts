@@ -33,6 +33,9 @@ export const FONT_TOKENS = ["--rh-font-sans"] as const;
 /** How a heading differs from body text in the same face. */
 export const HEADING_TOKENS = ["--rh-weight-heading", "--rh-tracking-heading"] as const;
 
+/** The tracking of a small upper-case label: a type name, a filter group's name. */
+export const LABEL_TOKENS = ["--rh-tracking-label"] as const;
+
 export const TEXT_SIZE_TOKENS = [
   "--rh-text-sm",
   "--rh-text-base",
@@ -67,6 +70,7 @@ export const SPECIMEN_TOKENS: readonly string[] = [
   ...MARK_TOKENS,
   ...FONT_TOKENS,
   ...HEADING_TOKENS,
+  ...LABEL_TOKENS,
   ...TEXT_SIZE_TOKENS,
   ...LEADING_TOKENS,
   ...SPACE_TOKENS,

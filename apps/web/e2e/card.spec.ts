@@ -1,7 +1,15 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// The fixture page renders a few <ResourceCard>s inside the page shell. It is
-// a route only under RH_FIXTURES=1, which playwright.config.ts sets.
+/**
+ * The resource row (`components/ResourceCard.tsx`, `packages/ui/card.css`)
+ * on the fixture page at /fixtures/cards/, which renders four rows with
+ * fixed props inside the page shell: the shell's landmarks, the skip link,
+ * one focusable element per row (its title link) and the link's hit area
+ * over the whole row, the type mark's colour by accent and the neutral
+ * fallback, the row's two columns where they fit and one where they do not,
+ * and no horizontal scroll at 360 px. The route exists only under
+ * RH_FIXTURES=1, which playwright.config.ts sets.
+ */
 const FIXTURE_PATH = "/fixtures/cards/";
 
 /** Anything the keyboard can land on by Tab. */
@@ -9,9 +17,6 @@ const FOCUSABLE =
   'a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])';
 
 async function openFixture(page: Page) {
-  // No CMS is behind /media/ here, so the image optimizer would fail on every
-  // card image. Abort those requests: the cards must hold their shape without.
-  await page.route("**/_next/image**", (route) => route.abort());
   await page.goto(FIXTURE_PATH);
 }
 
@@ -70,14 +75,81 @@ test("each card has exactly one focusable element, its title link", async ({ pag
   }
 });
 
-test("the card's link covers the whole card", async ({ page }) => {
+test("the row's link covers the whole row", async ({ page }) => {
   await openFixture(page);
   const card = page.locator(".rh-card").first();
   const box = await card.boundingBox();
   if (!box) throw new Error("card has no box");
-  // Click the bottom-right corner of the card, far from the title text.
+  // Click the bottom-right corner of the row, far from the title text.
   await page.mouse.click(box.x + box.width - 8, box.y + box.height - 8);
   await expect(page).toHaveURL(/\/resources\/guide\/planning-a-content-model\/$/);
+});
+
+/** The colour an element's `::before` is painted, and the colour a token resolves to on this page. */
+async function markColour(page: Page, index: number): Promise<{ dot: string; attribute: string | null }> {
+  return page.locator(".rh-card__type").nth(index).evaluate((node) => ({
+    dot: getComputedStyle(node, "::before").backgroundColor,
+    attribute: node.getAttribute("data-accent"),
+  }));
+}
+
+async function tokenColour(page: Page, token: string): Promise<string> {
+  return page.evaluate((name) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${name})`;
+    document.body.append(probe);
+    const colour = getComputedStyle(probe).color;
+    probe.remove();
+    return colour;
+  }, token);
+}
+
+test("the type mark is a dot in the accent's colour, and the ink for a type the table does not know", async ({ page }) => {
+  await openFixture(page);
+  // The fixture's rows: Guide (neutral), Webinar (coral), Report (neutral), Article (mint).
+  expect(await markColour(page, 1)).toEqual({ dot: await tokenColour(page, "--rh-mark-coral"), attribute: "coral" });
+  expect(await markColour(page, 3)).toEqual({ dot: await tokenColour(page, "--rh-mark-mint"), attribute: "mint" });
+  const ink = await tokenColour(page, "--rh-color-text");
+  expect(await markColour(page, 0)).toEqual({ dot: ink, attribute: "neutral" });
+  expect(await markColour(page, 2)).toEqual({ dot: ink, attribute: "neutral" });
+  // The dot is a filled circle beside the printed name, never text.
+  const dot = await page.locator(".rh-card__type").first().evaluate((node) => {
+    const style = getComputedStyle(node, "::before");
+    return { shape: style.borderRadius, width: style.width, content: style.content };
+  });
+  expect(dot.shape).toBe("50%");
+  expect(dot.content).toBe('""');
+  expect(Number.parseFloat(dot.width)).toBeGreaterThan(0);
+});
+
+test.describe("the row is two columns where they fit and one where they do not", () => {
+  test("at 1280px the meta line is a column beside the body", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await openFixture(page);
+    const row = page.locator(".rh-card").first();
+    const meta = await row.locator(".rh-card__meta").boundingBox();
+    const body = await row.locator(".rh-card__body").boundingBox();
+    if (!meta || !body) throw new Error("the row has no boxes");
+    expect(body.x).toBeGreaterThan(meta.x + meta.width);
+    expect(Math.abs(body.y - meta.y)).toBeLessThan(8);
+  });
+
+  test("at 360px the body wraps under the meta line, which spans the width", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 740 });
+    await openFixture(page);
+    const row = page.locator(".rh-card").first();
+    const meta = await row.locator(".rh-card__meta").boundingBox();
+    const body = await row.locator(".rh-card__body").boundingBox();
+    const rowBox = await row.boundingBox();
+    if (!meta || !body || !rowBox) throw new Error("the row has no boxes");
+    expect(body.y).toBeGreaterThan(meta.y + meta.height - 1);
+    expect(meta.width).toBeCloseTo(rowBox.width, 0);
+    // The type and the date share the line.
+    const type = await row.locator(".rh-card__type").boundingBox();
+    const time = await row.locator("time").boundingBox();
+    if (!type || !time) throw new Error("the meta line has no boxes");
+    expect(Math.abs(type.y - time.y)).toBeLessThan(8);
+  });
 });
 
 test("nothing scrolls horizontally at 360px", async ({ page }) => {
@@ -89,30 +161,16 @@ test("nothing scrolls horizontally at 360px", async ({ page }) => {
   }));
   expect(widths.scroll).toBeLessThanOrEqual(widths.client);
 
-  // No card, title or media box is wider than the viewport either.
+  // No row, title or meta line is wider than the viewport either.
   const overflowing = await page
-    .locator(".rh-card, .rh-card__title, .rh-card__media")
+    .locator(".rh-card, .rh-card__title, .rh-card__meta")
     .evaluateAll((nodes) =>
       nodes.filter((node) => node.getBoundingClientRect().right > document.documentElement.clientWidth).length,
     );
   expect(overflowing).toBe(0);
 });
 
-test.describe("the media box keeps a 16:9 aspect ratio", () => {
-  for (const width of [360, 1280]) {
-    test(`at ${width}px, whatever the image's own shape`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 900 });
-      await openFixture(page);
-      const boxes = page.locator(".rh-card__media");
-      // Three cards carry images with ratios 3:2, 8:3 and 1:1; the fourth has none.
-      await expect(boxes).toHaveCount(3);
-      for (const box of await boxes.all()) {
-        await expect(box).toHaveCSS("aspect-ratio", "16 / 9");
-        const rect = await box.boundingBox();
-        if (!rect) throw new Error("media box has no box");
-        expect(rect.width).toBeGreaterThan(0);
-        expect(rect.width / rect.height).toBeCloseTo(16 / 9, 1);
-      }
-    });
-  }
+test("the row carries no image", async ({ page }) => {
+  await openFixture(page);
+  await expect(page.locator(".rh-card img")).toHaveCount(0);
 });

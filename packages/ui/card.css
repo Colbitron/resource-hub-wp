@@ -1,110 +1,160 @@
 /*
- * The resource card. Class names are part of the contract (ADR 0033; see
- * `packages/ui/README.md`, and `DESIGN.md` for the design): the front end's
- * <ResourceCard> and the CMS render the same markup.
+ * The resource row: one resource in a list. Class names are part of the
+ * contract (ADR 0033; see `packages/ui/README.md`, and `DESIGN.md` for the
+ * design): the front end's <ResourceCard> and the CMS render the same markup.
  *
  * Built only on the tokens in tokens.css, which the consumer loads first.
  *
  * Markup:
- *   <article class="rh-card">
- *     <div class="rh-card__media"><img …></div>            (optional)
- *     <div class="rh-card__body">
- *       <p class="rh-card__meta"><span class="rh-card__type">…</span><time>…</time></p>
- *       <h2 class="rh-card__title"><a class="rh-card__link" href="…">…</a></h2>
- *       <p class="rh-card__summary">…</p>
- *       <ul class="rh-card__topics"><li class="rh-card__topic">…</li></ul>
- *     </div>
- *   </article>
+ *   <ul class="rh-card-grid" role="list">
+ *     <li>
+ *       <article class="rh-card">
+ *         <p class="rh-card__meta">
+ *           <span class="rh-card__type" data-accent="mint">…</span>
+ *           <time datetime="…">…</time>
+ *         </p>
+ *         <div class="rh-card__body">
+ *           <h2 class="rh-card__title"><a class="rh-card__link" href="…">…</a></h2>
+ *           <p class="rh-card__summary">…</p>                      (optional)
+ *           <ul class="rh-card__topics" role="list">
+ *             <li class="rh-card__topic">…</li>
+ *           </ul>                                                   (optional)
+ *         </div>
+ *       </article>
+ *     </li>
+ *   </ul>
  *
- * The title's link is the card's only interactive element. Its ::after covers
- * the whole card, so the card is clickable without nesting anything in the
- * link, and the focus ring is drawn around the card through the same box.
+ * The row has no image: the list is typographic, and the list's one image is
+ * the front end's lead above it. The meta line comes before the body, as a
+ * sibling, so the row can lay the two out side by side without a wrapper.
+ *
+ * The type mark is the `::before` of `.rh-card__type`: a dot in the accent
+ * `data-accent` names, one of the five `--rh-mark-*` tokens (`coral`,
+ * `cobalt`, `lemon`, `mint`, `grape`), or the ink when the attribute is
+ * absent or names anything else (`neutral`). The dot always sits beside the
+ * printed type name, which is what says the type; the colour only hints
+ * (DESIGN.md, "Colors"). Under forced colours every dot takes the text
+ * colour.
+ *
+ * The title's link is the row's only interactive element. Its ::after covers
+ * the whole row, so the row is clickable without nesting anything in the
+ * link, and the focus ring is drawn around the row through the same box.
  *
  * The trade-off of that stretched link (DESIGN.md): the overlay sits above the
  * summary and the topics, so their text cannot be selected with the mouse; a
- * drag starts on the link. Accepted, because the card is a link to the page
+ * drag starts on the link. Accepted, because the row is a link to the page
  * that holds the same text. The alternative, if selection is ever wanted, is
  * to lift the summary above the overlay (`position: relative; z-index: 1`):
  * its text becomes selectable, but a click on it no longer navigates.
  *
- * In a .rh-card-grid every card in a row is as tall as the tallest: each grid
- * item stretches to the row, and is itself a one-cell grid the card fills.
+ * Layout: the row wraps rather than breaking at a width (DESIGN.md,
+ * "Layout"). The meta line asks for a 9rem column and the body for at least
+ * 24rem; where both fit on one line (a container of about 35rem, so a tablet
+ * and up) the row is two columns, the meta a narrow column at the left. Below
+ * that the body wraps under the meta line and each takes the whole width,
+ * the type and the date side by side. The body's flex-grow is far larger
+ * than the meta's, so beside the body the meta keeps its 9rem and alone on
+ * its line it grows to the width; no media query.
  */
 
 .rh-card-grid {
-	display: grid;
-	/* min(100%, …) keeps a column from being wider than the viewport at phone width. */
-	grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
-	gap: var(--rh-space-5);
+	display: flex;
+	flex-direction: column;
 	margin: 0;
 	padding: 0;
 	list-style: none;
 }
 
 .rh-card-grid > * {
-	display: grid;
 	min-width: 0;
+	border-bottom: var(--rh-border-width) solid var(--rh-color-border);
 }
 
 .rh-card {
 	position: relative;
 	display: flex;
-	flex-direction: column;
+	flex-wrap: wrap;
+	gap: var(--rh-space-2) var(--rh-space-6);
 	min-width: 0;
-	background: var(--rh-color-surface);
-	border: var(--rh-border-width) solid var(--rh-color-border);
-	border-radius: var(--rh-radius);
+	padding: var(--rh-space-5) 0;
 	color: var(--rh-color-text);
 	font-family: var(--rh-font-sans);
 	line-height: var(--rh-leading-body);
 	overflow-wrap: anywhere;
 }
 
-.rh-card:hover {
-	border-color: var(--rh-color-text-muted);
-}
-
-.rh-card__media {
-	/* A reserved box: the image fills it, so loading causes no layout shift. */
-	aspect-ratio: 16 / 9;
-	overflow: hidden;
-	background: var(--rh-color-surface-raised);
-	border-bottom: var(--rh-border-width) solid var(--rh-color-border);
-	border-radius: var(--rh-radius) var(--rh-radius) 0 0;
-}
-
-.rh-card__media > img {
-	display: block;
-	width: 100%;
-	height: 100%;
-	object-fit: cover;
-}
-
-.rh-card__body {
-	display: flex;
-	flex-direction: column;
-	gap: var(--rh-space-2);
-	padding: var(--rh-space-4);
-}
+/* The meta line: the type with its mark, and the date, in a column that never grows. */
 
 .rh-card__meta {
 	display: flex;
+	flex: 1 0 9rem;
 	flex-wrap: wrap;
+	/* As a column beside a taller body, its lines stay at the top rather than spreading over the height. */
+	align-content: flex-start;
+	align-items: baseline;
 	gap: var(--rh-space-1) var(--rh-space-3);
+	max-width: 100%;
 	margin: 0;
 	color: var(--rh-color-text-muted);
 	font-size: var(--rh-text-sm);
+	font-variant-numeric: tabular-nums;
 }
 
 .rh-card__type {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--rh-space-2);
 	color: var(--rh-color-text);
 	font-weight: 600;
+	letter-spacing: var(--rh-tracking-label);
+	text-transform: uppercase;
+}
+
+/* The type mark: a dot before the name, in the accent `data-accent` names, or the ink. */
+
+.rh-card__type::before {
+	content: "";
+	flex: none;
+	width: var(--rh-space-2);
+	height: var(--rh-space-2);
+	border-radius: 50%;
+	background: var(--rh-color-text);
+}
+
+.rh-card__type[data-accent="coral"]::before {
+	background: var(--rh-mark-coral);
+}
+
+.rh-card__type[data-accent="cobalt"]::before {
+	background: var(--rh-mark-cobalt);
+}
+
+.rh-card__type[data-accent="lemon"]::before {
+	background: var(--rh-mark-lemon);
+}
+
+.rh-card__type[data-accent="mint"]::before {
+	background: var(--rh-mark-mint);
+}
+
+.rh-card__type[data-accent="grape"]::before {
+	background: var(--rh-mark-grape);
+}
+
+/* The body: the title, the summary and the topics, beside the meta line where they fit. */
+
+.rh-card__body {
+	display: flex;
+	flex: 999 1 24rem;
+	flex-direction: column;
+	gap: var(--rh-space-2);
+	min-width: 0;
 }
 
 .rh-card__title {
 	margin: 0;
 	font-family: var(--rh-font-sans);
-	font-size: var(--rh-text-md);
+	font-size: var(--rh-text-lg);
 	font-weight: var(--rh-weight-heading);
 	letter-spacing: var(--rh-tracking-heading);
 	line-height: var(--rh-leading-tight);
@@ -117,6 +167,7 @@
 
 .rh-card__link:hover {
 	text-decoration: underline;
+	text-decoration-thickness: var(--rh-border-width-strong);
 	text-underline-offset: 0.15em;
 }
 
@@ -139,22 +190,51 @@
 .rh-card__summary {
 	margin: 0;
 	max-width: var(--rh-measure);
+	color: var(--rh-color-text-muted);
 }
+
+/* Topics: plain small text, each after the first led by a short rule, never a chip. */
 
 .rh-card__topics {
 	display: flex;
 	flex-wrap: wrap;
-	gap: var(--rh-space-1) var(--rh-space-2);
-	margin: var(--rh-space-1) 0 0;
+	align-items: center;
+	gap: var(--rh-space-1) var(--rh-space-3);
+	margin: 0;
 	padding: 0;
 	list-style: none;
 	color: var(--rh-color-text-muted);
 	font-size: var(--rh-text-sm);
+	font-weight: 600;
 }
 
 .rh-card__topic {
-	padding: 0 var(--rh-space-2);
-	border: var(--rh-border-width) solid var(--rh-color-border);
-	border-radius: var(--rh-radius-sm);
-	background: var(--rh-color-surface-raised);
+	display: inline-flex;
+	align-items: center;
+	gap: var(--rh-space-3);
+}
+
+.rh-card__topic + .rh-card__topic::before {
+	content: "";
+	flex: none;
+	width: var(--rh-space-2);
+	height: var(--rh-border-width);
+	background: var(--rh-color-border-strong);
+}
+
+/*
+ * Forced colours (Windows High Contrast and the like) force every
+ * background to the system canvas, which would erase the dot and the rule.
+ * Each opts out of that adjustment and paints itself in the system text
+ * colour instead, so it stays visible and follows the reader's palette.
+ */
+
+@media (forced-colors: active) {
+	/* `[data-accent]` matches the per-accent rules' specificity, so this wins by order. */
+	.rh-card__type::before,
+	.rh-card__type[data-accent]::before,
+	.rh-card__topic + .rh-card__topic::before {
+		forced-color-adjust: none;
+		background: CanvasText;
+	}
 }

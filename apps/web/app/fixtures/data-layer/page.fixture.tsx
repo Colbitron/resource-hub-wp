@@ -1,7 +1,7 @@
 import { connection } from "next/server";
 
-import { ResourceCard, type ResourceCardProps } from "@/components/ResourceCard";
-import { toCard } from "@/lib/wp/cards";
+import { ResourceCard } from "@/components/ResourceCard";
+import { toCard, type CardData } from "@/lib/wp/cards";
 import { NO_SUCH_PAGE } from "@/lib/wp/fetch";
 import { getResourceById, getResourceBySlug, listResources, type ResourceListing } from "@/lib/wp/resources";
 import type { WpResource } from "@/lib/wp/schemas/rest";
@@ -28,8 +28,8 @@ import type { WpResource } from "@/lib/wp/schemas/rest";
 /** A resource in the mock's seed with a featured image and a rich body. */
 const SEEDED_SLUG = "revalidation-from-the-editors-chair";
 
-function cards(resources: readonly WpResource[]): ResourceCardProps[] {
-  return resources.map(toCard).filter((card): card is ResourceCardProps => card !== null);
+function cards(resources: readonly WpResource[]): CardData[] {
+  return resources.map(toCard).filter((card): card is CardData => card !== null);
 }
 
 function Listing({ id, label, listing }: { id: string; label: string; listing: ResourceListing | typeof NO_SUCH_PAGE | null }) {
@@ -47,7 +47,7 @@ function Listing({ id, label, listing }: { id: string; label: string; listing: R
       <p data-testid={`${id}-totals`}>
         {`${listing.total} resources on ${listing.totalPages} pages`}
       </p>
-      <ul className="rh-card-grid">
+      <ul className="rh-card-grid" role="list">
         {cards(listing.items).map((card) => (
           <li key={card.href}>
             <ResourceCard {...card} headingLevel="h3" />
