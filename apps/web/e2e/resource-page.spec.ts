@@ -212,8 +212,8 @@ test.describe("what the page renders", () => {
     await expect(page.locator('link[rel="preload"][as="image"]')).toHaveAttribute("fetchpriority", "high");
     await expect(featured).toHaveAttribute("fetchpriority", "high");
     // `sizes` is the column's width written out (`CONTENT_SIZES` in lib/content/render.tsx); the body's images carry the same string.
-    await expect(featured).toHaveAttribute("sizes", "(max-width: 44rem) 100vw, 42rem");
-    await expect(article.locator(".rh-resource__body figure img")).toHaveAttribute("sizes", "(max-width: 44rem) 100vw, 42rem");
+    await expect(featured).toHaveAttribute("sizes", "(max-width: 44rem) calc(100vw - 2rem), 42rem");
+    await expect(article.locator(".rh-resource__body figure img")).toHaveAttribute("sizes", "(max-width: 44rem) calc(100vw - 2rem), 42rem");
 
     await expect(article.locator(".rh-resource__summary")).toHaveText(resource.summary);
 
@@ -683,7 +683,7 @@ test.describe("accessibility and layout", () => {
   test("the featured image never renders wider than its `sizes` claims, at 1280px and at 360px", async ({ page }) => {
     // The column is `--rh-measure`, 65ch, and `sizes` is that width written
     // out in rem (`CONTENT_SIZES` in lib/content/render.tsx): 42rem above a
-    // 44rem viewport, 100vw below it. A `sizes` under the rendered width
+    // 44rem viewport, the viewport less the two 1rem gutters below it. A `sizes` under the rendered width
     // would have the browser pick a candidate too small for the box, so a
     // change to the measure or the typeface that moves 65ch past 42rem
     // fails here until the string follows. The long-form resource's upload
@@ -692,7 +692,7 @@ test.describe("accessibility and layout", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
     const image = page.locator(".rh-resource__media img");
-    await expect(image).toHaveAttribute("sizes", "(max-width: 44rem) 100vw, 42rem");
+    await expect(image).toHaveAttribute("sizes", "(max-width: 44rem) calc(100vw - 2rem), 42rem");
     // A `ch` is the font's, so the column is measured once the page is drawn in Figtree, not in the fallback face.
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
     const title = page.locator("h1");
@@ -711,7 +711,10 @@ test.describe("accessibility and layout", () => {
     await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
     const narrow = await image.boundingBox();
     expect(narrow).not.toBeNull();
-    expect(narrow!.width).toBeLessThanOrEqual(360);
+    // Below 44rem the claim is `calc(100vw - 2rem)`, and the column is exactly that: the viewport less the shell's gutters.
+    const column = (await page.evaluate(() => document.documentElement.clientWidth)) - 2 * (await rootFontSize());
+    expect(narrow!.width).toBeLessThanOrEqual(column);
+    expect(narrow!.width).toBeGreaterThan(column - 1);
   });
 
   test("at 360px nothing scrolls horizontally, no table cell breaks a word, and the page does not shift as it loads", async ({ page }) => {

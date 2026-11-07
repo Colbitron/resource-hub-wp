@@ -169,15 +169,16 @@ export interface RenderContentOptions {
  * is the advance of "0" in the column's font: in Figtree at the regular
  * weight it is 0.6408 em (10.25 px at 16 px, measured in Chromium on the
  * file in `packages/ui/fonts/`), so 65ch is 41.65rem, rounded up to 42rem.
- * Below that plus the shell's two 1rem gutters, 44rem, the column is the
- * viewport less the gutters, which `100vw` overstates by 2rem. The rule is
- * that `sizes` never understates the rendered width: a larger estimate
- * fetches a few more bytes, a smaller one a blurrier image. The resource
- * page's spec measures the featured image against this value at 1280 px,
- * so a change to the measure or the typeface fails there until this string
- * follows.
+ * Below that plus the shell's two gutters, 44rem, the column is the
+ * viewport less the gutters, `--rh-space-4` (1rem) a side in `shell.css`,
+ * written out as `calc(100vw - 2rem)` for the same reason. The rule is that
+ * `sizes` never understates the rendered width: a larger estimate fetches a
+ * few more bytes, a smaller one a blurrier image. The resource page's spec
+ * measures the featured image against this value at 1280 and 360 px, so a
+ * change to the measure, the typeface or the gutter fails there until this
+ * string follows.
  */
-export const CONTENT_SIZES = "(max-width: 44rem) 100vw, 42rem";
+export const CONTENT_SIZES = "(max-width: 44rem) calc(100vw - 2rem), 42rem";
 
 /**
  * How many elements deep a body may nest before it renders as plain text:
