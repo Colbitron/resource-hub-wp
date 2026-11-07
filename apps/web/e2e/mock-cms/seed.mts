@@ -164,10 +164,11 @@ export const MEDIA: MediaSeed[] = [
     // The library's lead (resource 20, the newest featured), so the sampled
     // `/resources/` measures an image as its LCP, as a real lead is: a
     // generated landscape textured at a few pixels' scale, so that like a
-    // photo it stays heavy when resized (132 KB here, about 29 KB as the
-    // optimiser's 750-wide WebP). The flat test PNGs above encode to a few
-    // hundred bytes, under the bits per pixel Chrome needs to count an image
-    // as the LCP, which leaves Lighthouse measuring a heading or a summary.
+    // photo it stays heavy when resized (132 KB here, about 18 KB as the
+    // optimiser's 750-wide AVIF and 31 KB as WebP). The flat test PNGs above
+    // encode to a few hundred bytes, under the bits per pixel Chrome needs to
+    // count an image as the LCP, which leaves Lighthouse measuring a heading
+    // or a summary.
     // No sizes, so the original is used.
     id: 106,
     file: "2026/11/ridgelines-at-dusk.jpg",

@@ -52,6 +52,20 @@ Every route is ISR, rendered on its first request and stored until a revalidatio
 
 Images are served through the same-origin `/media/…` rewrite and rendered with `next/image` through Vercel's image optimizer, which resizes them per device and serves modern formats; the CMS host is never in `images.remotePatterns`, and `images.localPatterns` allows `/media/**` with no query string, so no one can vary the URL to spend the optimiser's allowance. Every CMS image renders with a width and a height inside a fixed-aspect box, so a late image moves nothing. The owner's Vercel plan includes 5,000 optimized images a month, which is the number to watch; the fallback if that ever becomes a problem is proxying the originals and WordPress's generated sizes through Cloudflare with no transformations. An image in a body on another host stays a plain lazy `<img>`; an image that names the CMS host but is not an upload is dropped (`lib/content/render.tsx`).
 
+The optimiser serves AVIF, with WebP for a browser that does not accept it (`images.formats` in `next.config.ts`), and the CSS ships inline in the head (`experimental.inlineCss`), both for the LCP of the two sampled pages led by an image, the library and the resource page. On those pages Lighthouse's simulated LCP waits for every request that finished before the image painted, the framework's scripts included, not just the image: the scripts' 150 KB are most of it, the five render-blocking CSS files kept them off the browser's six connections until the CSS was in, and the image's own bytes counted only as bandwidth taken from the scripts. Measured with `pnpm web:test:lighthouse` (mobile, median of three), with `.next/cache/images` cleared before each run:
+
+| Change | Library LCP | Resource LCP | LCP image (library / resource) |
+| --- | ---: | ---: | --- |
+| None (WebP, CSS as files) | 2473 ms | 2328 ms | 31.5 KB / 1.9 KB WebP |
+| AVIF | 2326 ms | 2321 ms | 18.4 KB / 1.8 KB AVIF |
+| `quality={65}` on the two images | 2468 ms | 2319 ms | 28.3 KB / 1.9 KB WebP |
+| `sizes` from the gutter, `calc(100vw - 2rem)` | 2470 ms | 2320 ms | unchanged: Lighthouse's 412 px phone still picks the 750 width |
+| No font preload | 2321 ms | 2323 ms | unchanged |
+| CSS inline | 2320 ms | 2171 ms | unchanged |
+| AVIF and CSS inline (shipped) | 2181 ms | 2170 ms | 18.4 KB / 1.8 KB AVIF |
+
+The text-led pages' LCP and every page's FCP fell from about 903 to about 621 ms with the CSS inline. The font preload stays: removing it saved the library as much as AVIF did but nothing on the resource page, and it is what puts Figtree on the first paint (`packages/ui/DESIGN.md`, "Font display"). AVIF costs on Vercel: it encodes more slowly than WebP, so the first request for each width of an image waits longer until the optimiser has cached it, and an image served in both formats counts as two transformations against the plan's allowance. Inline CSS costs about 6 KB more HTML per page that a returning reader cannot cache apart from the page, and a second copy of the CSS in the RSC payload.
+
 ## Status
 
 The listings, the single resource, the CMS's pages, the data layer, the content renderer and the revalidation route are in, all ISR. The related section that swaps the block marker for a `<RelatedResources>` component is slice 4 ([issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50)). CI lints, typechecks, builds and runs the unit and end-to-end tests, then the design gates on the same build: axe, the specimen's screenshots and Lighthouse CI ([`e2e/README.md`](e2e/README.md#the-design-gates)).
