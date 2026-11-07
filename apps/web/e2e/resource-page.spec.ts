@@ -317,7 +317,7 @@ test.describe("the CMS's address", () => {
 
   test("is nowhere in the RSC payloads a client navigation is built from, prefetched or fetched on the click", async ({ page }) => {
     // From the type listing, as a reader would arrive. The row is prefetched
-    // while the listing is open (its route tree and page segment; ADR 0053),
+    // while the listing is open (its route tree and page segment; ADR 0043),
     // so the click is served from those responses and fetches nothing new,
     // or fetches the page's payload when the prefetch has not landed. Every
     // RSC response for the resource's path is read, whichever way it came.

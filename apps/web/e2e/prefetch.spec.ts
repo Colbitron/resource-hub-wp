@@ -7,7 +7,7 @@ import { mockCms } from "./mock-cms/client.mts";
 import { RESOURCES, TERMS } from "./mock-cms/seed.mts";
 
 /**
- * What the build prerenders, and what that buys the client (ADR 0053;
+ * What the build prerenders, and what that buys the client (ADR 0043;
  * `lib/prerender.ts`): the harness builds the app while the mock is up, so
  * the library, each type's first page, the root and every seeded resource
  * (14, within the 50 newest) are prerendered and in the build's prefetch-hint
@@ -131,6 +131,24 @@ test.describe("the prerendered set", () => {
 });
 
 test.describe("prefetching from the library", () => {
+  test("the library's route tree carries no static siblings, so the router cannot predict a row as the library's catch-all", async ({ page }) => {
+    // With `experimental.optimisticRouting` on (the default) the server
+    // writes each dynamic segment's static siblings into the tree
+    // (`{"n":"rest","t":"oc","k":"","s":["page","topic"]}`) and the client
+    // predicts from them; with it off (`next.config.ts`) the tuple has no
+    // `s`. This holds whichever way the prefetch race goes, where the
+    // `$oc$rest` check below only catches the race when it is lost.
+    const tree = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === "/resources/" && response.request().headers()["next-router-segment-prefetch"] === "/_tree",
+    );
+    await page.goto("/resources/");
+    const payload = await (await tree).text();
+    const rest = /\{"n":"rest","t":"oc","k":""[^}]*\}/.exec(payload)?.[0];
+    expect(rest, `the library's route tree should name its catch-all segment; got:\n${payload}`).toBeDefined();
+    expect(rest).not.toContain('"s":');
+    expect(payload).not.toContain('"s":["page","topic"]');
+  });
+
   test("a cold load of /resources/ prefetches a visible row's route tree and page segment before any click", async ({ page }) => {
     const fetched = await recordRscRequests(page);
     await page.goto("/resources/");
