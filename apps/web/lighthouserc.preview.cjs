@@ -28,11 +28,12 @@
  * load it, and with the header on every request it would carry the
  * bypass secret to that origin. Blocking it in Chrome means the request is
  * never made, so the measurement also matches what a production visitor
- * loads. The script's origin check (`e2e/preview-lighthouse.mts`) stays
- * as strict as before: this block is the fix, the check is the safety
- * net for anything else a page might request. The warm-up requests need
- * no block: they are single `fetch` calls for the HTML and load nothing
- * it references.
+ * loads. The script's origin check (`e2e/preview-lighthouse.mts`) is the
+ * safety net for anything else a page might request; its one exemption is
+ * a request that matches these patterns and looks blocked as Lighthouse
+ * records one (`foreignOrigins` in `e2e/lighthouse-preview-summary.mts`).
+ * The warm-up requests need no block: they are single `fetch` calls for
+ * the HTML and load nothing it references.
  */
 
 const base = require("./lighthouserc.cjs");

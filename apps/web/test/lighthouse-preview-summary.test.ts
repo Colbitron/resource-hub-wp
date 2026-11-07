@@ -179,26 +179,75 @@ describe("foreignOrigins", () => {
     expect(foreignOrigins(lhr(PAGE, {}), `${ORIGIN}/`)).toEqual([]);
   });
 
-  it("ignores a request the run's blockedUrlPatterns made Chrome abort, as Lighthouse records it, and nothing else", () => {
-    // The signature of a blocked request on 2026-11-07: Lighthouse 13 lists
-    // it with status -1, no protocol and no bytes.
-    const aborted = { url: "https://vercel.live/_next-live/feedback/feedback.js", resourceType: "Script", statusCode: -1, protocol: "", transferSize: 0 };
-    const withBlock = (requests: object[], patterns = ["https://vercel.live/*"]): PreviewLhr => ({
+  describe("a request the run's blockedUrlPatterns name", () => {
+    // How Lighthouse 13 listed the blocked toolbar request on 2026-11-07:
+    // the record's defaults, finished, and over in 0.013 ms.
+    const blocked = {
+      url: "https://vercel.live/_next-live/feedback/feedback.js",
+      resourceType: "Script",
+      statusCode: -1,
+      protocol: "",
+      transferSize: 0,
+      finished: true,
+      networkRequestTime: 365.267,
+      networkEndTime: 365.28,
+    };
+    const LIVE = ["https://vercel.live"];
+    const withBlock = (requests: object[], patterns: string[] | null = ["https://vercel.live/*"]): PreviewLhr => ({
       ...lhr(PAGE, { requests: requests as never }),
       configSettings: { blockedUrlPatterns: patterns },
     });
-    expect(foreignOrigins(withBlock([aborted]), ORIGIN)).toEqual([]);
-    // The same request answered (the block did not work) counts.
-    expect(foreignOrigins(withBlock([{ ...aborted, statusCode: 204, protocol: "h2", transferSize: 157 }]), ORIGIN)).toEqual(["https://vercel.live"]);
-    expect(foreignOrigins(withBlock([{ ...aborted, statusCode: -1, protocol: "h2" }]), ORIGIN)).toEqual(["https://vercel.live"]);
-    // A failed request to an origin no pattern names counts: it may have been sent.
-    expect(foreignOrigins(withBlock([{ ...aborted, url: "https://other.example/x.js" }]), ORIGIN)).toEqual(["https://other.example"]);
-    // Without the pattern the aborted signature alone is not enough.
-    expect(foreignOrigins(withBlock([aborted], []), ORIGIN)).toEqual(["https://vercel.live"]);
-    expect(foreignOrigins(lhr(PAGE, { requests: [aborted] }), ORIGIN)).toEqual(["https://vercel.live"]);
-    // Patterns are Chrome's: `*` is a wildcard, the rest literal.
-    expect(foreignOrigins(withBlock([aborted], ["https://vercel.live/_next-live/*.js"]), ORIGIN)).toEqual([]);
-    expect(foreignOrigins(withBlock([aborted], ["https://vercel.live/other/*"]), ORIGIN)).toEqual(["https://vercel.live"]);
+
+    it("is skipped when it looks blocked: defaults, finished, over within a millisecond", () => {
+      expect(foreignOrigins(withBlock([blocked]), ORIGIN)).toEqual([]);
+      expect(foreignOrigins(withBlock([{ ...blocked, networkEndTime: blocked.networkRequestTime + 0.999 }]), ORIGIN)).toEqual([]);
+    });
+
+    it("counts when it was answered, or carries a protocol or bytes", () => {
+      expect(foreignOrigins(withBlock([{ ...blocked, statusCode: 204, protocol: "h2", transferSize: 157 }]), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(withBlock([{ ...blocked, protocol: "h2" }]), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(withBlock([{ ...blocked, transferSize: 12 }]), ORIGIN)).toEqual(LIVE);
+    });
+
+    it("counts when it was still in flight, took long enough to have been sent, or lacks the fields", () => {
+      expect(foreignOrigins(withBlock([{ ...blocked, finished: false }]), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(withBlock([{ ...blocked, networkEndTime: blocked.networkRequestTime + 1 }]), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(withBlock([{ ...blocked, networkEndTime: blocked.networkRequestTime + 40 }]), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(withBlock([{ ...blocked, networkEndTime: blocked.networkRequestTime - 1 }]), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(withBlock([{ ...blocked, statusCode: undefined }]), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(withBlock([{ ...blocked, finished: undefined }]), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(withBlock([{ ...blocked, networkRequestTime: undefined }]), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(withBlock([{ ...blocked, networkEndTime: undefined }]), ORIGIN)).toEqual(LIVE);
+    });
+
+    it("counts a look-alike request to an origin no pattern names, and without patterns at all", () => {
+      expect(foreignOrigins(withBlock([{ ...blocked, url: "https://other.example/x.js" }]), ORIGIN)).toEqual(["https://other.example"]);
+      expect(foreignOrigins(withBlock([blocked], []), ORIGIN)).toEqual(LIVE);
+      // Lighthouse's default for the setting.
+      expect(foreignOrigins(withBlock([blocked], null), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(lhr(PAGE, { requests: [blocked] }), ORIGIN)).toEqual(LIVE);
+    });
+
+    it("matches the whole URL, narrower than Chrome's substring match, and fails closed", () => {
+      expect(foreignOrigins(withBlock([{ ...blocked, url: "https://vercel.live.evil.com/_next-live/x.js" }]), ORIGIN)).toEqual(["https://vercel.live.evil.com"]);
+      expect(foreignOrigins(withBlock([{ ...blocked, url: "https://evil.example/?u=https://vercel.live/x.js" }]), ORIGIN)).toEqual(["https://evil.example"]);
+      expect(foreignOrigins(withBlock([{ ...blocked, url: "https://vercel.live@evil.example/x.js" }]), ORIGIN)).toEqual(["https://evil.example"]);
+      expect(foreignOrigins(withBlock([{ ...blocked, url: "https://vercel.live:8443/x.js" }]), ORIGIN)).toEqual(["https://vercel.live:8443"]);
+      expect(foreignOrigins(withBlock([{ ...blocked, url: "http://vercel.live/x.js" }]), ORIGIN)).toEqual(["http://vercel.live"]);
+      expect(foreignOrigins(withBlock([{ ...blocked, url: "https://vercelXlive/x.js" }]), ORIGIN)).toEqual(["https://vercelxlive"]);
+      expect(foreignOrigins(withBlock([blocked], ["https://vercel.live/_next-live/*.js"]), ORIGIN)).toEqual([]);
+      expect(foreignOrigins(withBlock([blocked], ["https://vercel.live/other/*"]), ORIGIN)).toEqual(LIVE);
+      // Regex metacharacters in a pattern are literal.
+      expect(foreignOrigins(withBlock([blocked], ["https://vercel.live/(_next-live)/*+?.js"]), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(withBlock([{ ...blocked, url: "https://vercel.live/(_next-live)/a+?.js" }], ["https://vercel.live/(_next-live)/*+?.js"]), ORIGIN)).toEqual([]);
+    });
+
+    it("works with several patterns, and skips only the blocked request in a run that also has a real foreign one", () => {
+      const patterns = ["https://other.example/*", "https://vercel.live/*"];
+      expect(foreignOrigins(withBlock([blocked], patterns), ORIGIN)).toEqual([]);
+      const real = { url: "https://cms.example/wp-content/uploads/x.png", resourceType: "Image", statusCode: 200, protocol: "h2", transferSize: 900, finished: true, networkRequestTime: 100, networkEndTime: 180 };
+      expect(foreignOrigins(withBlock([blocked, real, { url: IMAGE, resourceType: "Image", transferSize: 1 }], patterns), ORIGIN)).toEqual(["https://cms.example"]);
+    });
   });
 });
 

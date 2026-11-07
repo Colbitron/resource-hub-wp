@@ -42,10 +42,13 @@
  * unchecked files. The raw directory is gitignored and never uploaded.
  * `lhci` and Chrome get a minimal environment, so the GitHub token never
  * reaches them. Chrome sends the header on every request the page makes,
- * so a run with a request to another origin (Vercel's preview toolbar
- * would be one) has sent the secret there: such runs are reported in the
- * comment but their reports are not written, and the process exits 1.
- * The runs a failed `lhci collect` finished are checked the same way.
+ * so a run with a request to another origin has sent the secret there:
+ * such runs are reported in the comment but their reports are not
+ * written, and the process exits 1. The one exemption is a request that
+ * matches the config's own `blockedUrlPatterns` (Vercel's preview
+ * toolbar) and looks blocked as Lighthouse records one: the record's
+ * defaults, finished, and over within a millisecond. The runs a failed
+ * `lhci collect` finished are checked the same way.
  */
 
 import { spawnSync } from "node:child_process";

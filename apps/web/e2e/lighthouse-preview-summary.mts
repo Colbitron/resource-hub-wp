@@ -37,8 +37,8 @@ export interface PreviewAudit {
 /** The parts of a Lighthouse result the comment reads; a superset of the gate's `Lhr`. */
 export interface PreviewLhr extends Lhr {
   finalDisplayedUrl?: string;
-  /** The settings the run was made with; `blockedUrlPatterns` are the URLs Chrome was told to abort. */
-  configSettings?: { blockedUrlPatterns?: string[] };
+  /** The settings the run was made with; `blockedUrlPatterns` are the URLs Chrome was told to block (`null` by default). */
+  configSettings?: { blockedUrlPatterns?: string[] | null };
   /** Set when the run failed as a whole; `NO_ERROR` otherwise. */
   runtimeError?: { code: string; message?: string };
   audits: Record<string, PreviewAudit | undefined>;
@@ -71,9 +71,11 @@ interface NetworkItem {
   url: string;
   resourceType?: string;
   transferSize?: number;
+  networkRequestTime?: number;
   networkEndTime?: number;
   statusCode?: number;
   protocol?: string;
+  finished?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -165,20 +167,33 @@ export function lcpImageBytes(lhr: PreviewLhr): number | null {
   return [...images].sort((a, b) => (a.networkEndTime ?? 0) - (b.networkEndTime ?? 0))[0].transferSize;
 }
 
-/** A Chrome URL-blocking pattern (`Network.setBlockedURLs`: `*` matches anything) as a regular expression. */
+/**
+ * A `blockedUrlPatterns` entry as a regular expression: `*` matches
+ * anything, the rest is literal, and the whole URL must match. Chrome's
+ * own matching (`Network.setBlockedURLs`) is an unanchored substring match
+ * with implicit stars, so this is narrower than Chrome's and fails closed:
+ * a URL Chrome blocked that this does not match still counts as foreign.
+ */
 function blockPattern(pattern: string): RegExp {
   return new RegExp(`^${pattern.split("*").map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`);
 }
 
 /**
- * Whether the run's own `blockedUrlPatterns` match the request and Chrome
- * aborted it before anything was sent: Lighthouse still lists such a
- * request, with no status, protocol or bytes. A request that matches a
- * pattern but shows any of those went out and counts.
+ * Whether the request matches one of the run's own `blockedUrlPatterns`
+ * and looks like one Chrome blocked: Lighthouse lists such a request with
+ * the record's defaults (status -1, no protocol, no bytes), finished, and
+ * ending within a millisecond of starting. The audit does not carry
+ * Chrome's error text, and a request that was sent and then reset or
+ * timed out has the same defaults, so the duration is what tells them
+ * apart: a request to another origin cannot be sent and fail inside a
+ * millisecond. Anything else fails closed and counts.
  */
 function abortedByBlock(item: NetworkItem, patterns: readonly string[]): boolean {
   if (!patterns.some((pattern) => blockPattern(pattern).test(item.url))) return false;
-  return item.statusCode === -1 && !item.protocol && !item.transferSize;
+  if (item.statusCode !== -1 || item.protocol || item.transferSize || item.finished !== true) return false;
+  if (typeof item.networkRequestTime !== "number" || typeof item.networkEndTime !== "number") return false;
+  const duration = item.networkEndTime - item.networkRequestTime;
+  return duration >= 0 && duration < 1;
 }
 
 /**
@@ -186,14 +201,15 @@ function abortedByBlock(item: NetworkItem, patterns: readonly string[]): boolean
  * Lighthouse sends its extra headers on every request the page makes, so
  * a request to another origin carried the bypass secret there. Only
  * network origins count: `data:` URLs (elided by Lighthouse) and the like
- * have none, and neither does a request the run's `blockedUrlPatterns`
- * made Chrome abort before it was sent (`abortedByBlock`); one that
- * matches a pattern but went out anyway counts, so the check also proves
- * the block worked.
+ * have none, and neither does a request that matches the run's own
+ * `blockedUrlPatterns` and looks blocked (`abortedByBlock`): the one
+ * exemption, so the toolbar block in `lighthouserc.preview.cjs` can work.
+ * A request that matches a pattern but was answered, or took long enough
+ * to have been sent, counts, as does every other foreign request.
  */
 export function foreignOrigins(lhr: PreviewLhr, origin: string): string[] {
   const own = new URL(origin).origin;
-  const patterns = lhr.configSettings?.blockedUrlPatterns ?? [];
+  const patterns = (lhr.configSettings?.blockedUrlPatterns ?? []).filter((pattern): pattern is string => typeof pattern === "string");
   const found = new Set<string>();
   for (const item of networkItems(lhr)) {
     let parsed: URL;
