@@ -57,21 +57,28 @@ const nextConfig: NextConfig = {
   // `search: ""` refuses query strings, so no one can vary the URL to spend the
   // optimiser's allowance.
   //
-  // AVIF first, WebP for a browser that does not accept it: the library's
-  // 1600×900 lead photograph is 18 KB as the 750-wide AVIF a phone gets
-  // against 31 KB as WebP, at the same default quality of 75 (Next.js scales
-  // AVIF's encoder quality to match WebP's look), with no visible difference
-  // at 360 or 1280 px. On Lighthouse's simulated slow 4G that is about 140 ms
-  // of the library's LCP. A lower `quality` on the lead alone was tried
-  // first: WebP at 65 saved 3 KB and no LCP, and WebP reaches AVIF's 18 KB
-  // only at about 35, which smears the photograph's texture into blocks. The
-  // costs are on Vercel: AVIF encodes more slowly, so the first request for
-  // each width waits longer until the optimiser has cached it, and each
-  // format is a separate transformation against the plan's allowance
+  // AVIF only: the library's 1600×900 lead photograph is 18 KB as the
+  // 750-wide AVIF a phone gets against 31 KB as WebP, at the same default
+  // quality of 75 (Next.js scales AVIF's encoder quality to match WebP's
+  // look), with no visible difference at 360 or 1280 px. On Lighthouse's
+  // simulated slow 4G that is about 140 ms of the library's LCP. A lower
+  // `quality` on the lead alone was tried first: WebP at 65 saved 3 KB and no
+  // LCP, and WebP reaches AVIF's 18 KB only at about 35, which smears the
+  // photograph's texture into blocks. A browser whose `Accept` names no AVIF
+  // gets the source's own format, resized and re-encoded at the same quality
+  // (a JPEG stays a JPEG; Next.js's `images.formats` docs and
+  // `imageOptimizerTransform` in `next/dist/server/image-optimizer/transform.js`),
+  // rather than WebP: such a browser downloads more, which is the trade the
+  // single format makes. The costs are on Vercel: AVIF encodes more slowly,
+  // so the first request for each width waits longer until the optimiser has
+  // cached it. The optimiser's cache key includes the output format, so each
+  // width of an image is one AVIF transformation against the plan's
+  // allowance, and a second only if a browser without AVIF asks for that
+  // width, where two formats made it two whenever both kinds of browser came
   // (apps/web/README.md, "Images").
   images: {
     localPatterns: [{ pathname: "/media/**", search: "" }],
-    formats: ["image/avif", "image/webp"],
+    formats: ["image/avif"],
   },
 
   // /media/… is the CMS's uploads directory, one to one (ADR 0040); see
