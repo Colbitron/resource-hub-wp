@@ -71,6 +71,13 @@ for (const { label, path } of SAMPLED_URLS.filter((sample) => sample.imageLed &&
     expect(await response!.headerValue("content-encoding"), `${path} was not sent gzipped`).toBe("gzip");
 
     const sizes = await response!.request().sizes();
+    // A size the browser did not report must not pass the limit below
+    // unmeasured: Playwright stores the header size as 0 when Chromium's
+    // extra-info event has no `headersText` (`setResponseHeadersSize` in
+    // playwright-core's `coreBundle.js`), and counts a missing body size as
+    // the Content-Length, which a streamed page lacks, or 0 (`internalSizes`).
+    expect(sizes.responseHeadersSize, `${path}'s header size was not reported`).toBeGreaterThan(0);
+    expect(sizes.responseBodySize, `${path}'s body size was not reported`).toBeGreaterThan(0);
     const transferSize = sizes.responseHeadersSize + sizes.responseBodySize;
     test.info().annotations.push({ type: "transfer size", description: `${transferSize} of ${FIRST_ROUND_TRIP_BYTES} bytes` });
     expect(

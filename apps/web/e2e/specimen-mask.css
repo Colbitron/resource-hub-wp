@@ -3,15 +3,26 @@
  * (`stylePath`), never served. The images Next.js's optimiser serves, the
  * lead's and the resource's featured image and the resource body's figure
  * (`/_next/image?…`, AVIF in Chromium), get their pixels from an image
- * codec, not from the design: the
- * same files decode thousands of pixels apart at the diagram's edges under
- * amd64 emulation and on CI's native amd64. Each draws none of its own
- * pixels (its content is moved out of its box) and fills its own box with
+ * codec, not from the design: the same files decode thousands of pixels
+ * apart at the diagram's edges under amd64 emulation and on CI's native
+ * amd64. Each draws none of its own pixels in its box and fills the box with
  * #ff00ff, Playwright's mask colour, so its size, position and rounded
  * corners (--rh-radius, clipped by the image or its frame) stay in the
- * comparison. Playwright's `mask` option would paint a plain rectangle over
- * the bounding box instead and hide the corners. The committed brand PNGs
- * are served unoptimised and are not matched here.
+ * comparison.
+ *
+ * The `object-position` length draws the image's content 100,000 px left of
+ * its box, off the page, leaving the box its background. That works on the
+ * two images with the default `object-fit: fill` as on the lead's `cover`
+ * one: a percentage or keyword position places the content in the space the
+ * box has beside it, which a filled box has none of, but a length is an
+ * offset from the box's edge whatever the fit. Measured in Chromium on
+ * 2026-11-07: with this rule each image's box was #ff00ff but for its
+ * anti-aliased edge, and with `object-position: 0% 0%` instead the images
+ * drew all their pixels again.
+ *
+ * Playwright's `mask` option would paint a plain rectangle over the bounding
+ * box instead and hide the corners. The committed brand PNGs are served
+ * unoptimised and are not matched here.
  */
 img[src^="/_next/image"] {
 	object-position: -100000px 0 !important;
