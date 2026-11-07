@@ -39,15 +39,15 @@ Next.js 16 has two caching models. Cache Components (`cacheComponents: true`, th
 
 ### 2026-11-07: prerender a bounded set at build
 
-**What changed.** The build prerenders a bounded set from the CMS: the 50 most recent resources plus the 10 most recent of each type, the root `/`, the library `/resources/` and each type's first page. Each route's `generateStaticParams` probes the CMS and returns the paths that answered; any failure falls back to `[]`, and the build script empties the fetch cache first so the probe reads live. Everything else stays on-demand ISR, with `dynamicParams`, `revalidate` and the tags unchanged.
+**What changed.** The build prerenders a bounded set from the CMS: the 50 most recent resources plus the 10 most recent of each type, the root `/`, the library `/resources/` and each type's first page. Each route's `generateStaticParams` probes the CMS and returns the paths that answered; any failure falls back to `[]`, and the build script empties the fetch cache first so the probe reads live. Everything else stays on-demand ISR, its tags and `revalidate` unchanged.
 
-**Why.** Next.js 16 writes its prefetch-hint manifest only for routes with a prerendered path, and an ISR route without an entry has prefetch disabled on every segment. With `[]` everywhere, `<Link>` fetched nothing for any library row: a click from the library to a resource measured a median of 454 ms on a throttled mobile profile, against 61 ms with the row prefetched.
+**Why.** Next.js 16 writes its prefetch-hint manifest only for routes with a prerendered path, and an ISR route without an entry has prefetch disabled on every segment. With `[]` everywhere, `<Link>` fetched nothing for any library row: a click from the library to a resource measured 454 ms on a throttled mobile profile, against 61 ms once prefetched.
 
-**How the rule's purpose still holds.** The rule existed so a deploy could never fail because the CMS was down, and it still cannot: a CMS that is absent, down, slow or unreadable costs one warning per route and no prerendered page, and every page renders on its first request as before. What the rule gave up is that the build is a function of the code alone.
+**How the rule's purpose still holds.** The build still never fails because of the CMS: one that is absent, down, slow or unreadable costs one warning per route and no prerendered page, and every page renders on its first request as before. What the rule gave up is that the build is a function of the code alone.
 
 **Options weighed.**
 
-- Prerender nothing, the status quo: it is what disabled prefetching.
+- Prerender nothing: it is what disabled prefetching.
 - Prerender everything: grows without bound with what editors add.
 - `prefetch={true}` on the row links: about 43 KB per visible row against about 6 KB, and an ISR render per prefetch for an unopened row.
 - A bounded set with a fallback to `[]`: chosen.
@@ -56,6 +56,6 @@ Next.js 16 has two caching models. Cache Components (`cacheComponents: true`, th
 
 - Every build that can reach the CMS reads it, about 40 to 140 requests, previews included; a preview whose reads fail falls back and still deploys.
 - An event fired during a build clears the live deployment only, so the new deployment's prerendered pages carry pre-event data until the next event or the hourly interval.
-- The set is fixed at build; a deploy whose build the CMS did not answer keeps prefetch off until the next one.
+- The set is fixed at build; a deploy the CMS did not answer keeps prefetch off until the next one.
 
-The budgets, the partial results, the param decoding and the measurements are in [`docs/architecture/caching.md`](../architecture/caching.md), "Prefetching".
+The budgets, partial results, param decoding and measurements are in [`docs/architecture/caching.md`](../architecture/caching.md), "Prefetching".
