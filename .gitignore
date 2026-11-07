@@ -1,6 +1,11 @@
-.env
-.env.local
-.env*.local
+# Environment files, including what `vercel env pull` writes. Secrets never go in
+# git; a .env.example with names and no values is the documented exception.
+.env*
+!.env.example
+
+# The Vercel CLI's project link (project and org IDs) from `vercel deploy` or `vercel link`.
+.vercel
+
 node_modules/
 vendor/
 .DS_Store
