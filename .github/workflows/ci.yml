@@ -13,10 +13,11 @@
 # and Lighthouse CI against the same build. It needs no secrets: it builds
 # against a placeholder CMS URL and makes no CMS calls at build time. Every
 # step of it blocks a merge into main, and on main every step also blocks the
-# front end's deploy, except Lighthouse: a Lighthouse miss on a pull request
-# into main, a push to main or a manual dispatch on main is a warning, until
-# issue #76 calibrates it (see the step). Accessibility stays gated by the
-# axe scan, which blocks both.
+# front end's deploy, except a Lighthouse budget miss: on a pull request into
+# main, a push to main or a manual dispatch on main a missed budget is a
+# warning, until issue #76 calibrates it (see the step). Any other Lighthouse
+# failure, such as a broken harness, still blocks. WCAG A and AA
+# accessibility stays gated by the axe scan, which blocks both.
 #
 # The deploy job runs after the gate, only on main and on manual dispatch, and
 # syncs the plugin, from wp-content/plugins/resource-hub-wp, to the Cloudways
@@ -526,9 +527,9 @@ jobs:
       # They need that build, not a passing end-to-end run, so they run
       # whenever the end-to-end step ran, pass or fail: a failing spec must
       # not hide a screenshot diff or a budget. A failure in any of them
-      # still fails the job, except a Lighthouse miss on a pull request into
-      # main, a push to main or a manual dispatch on main, which is a warning
-      # (see the Lighthouse step).
+      # still fails the job, except a Lighthouse budget miss on a pull request
+      # into main, a push to main or a manual dispatch on main, which is a
+      # warning (see the Lighthouse step).
 
       # Joins the background pull started above and fails here, with its log,
       # if it failed.
@@ -584,14 +585,18 @@ jobs:
       # PR #79 failed it at 201 and 209 ms against the 200 ms budget with no
       # runtime change, which blocked its merge until a rerun. So on a pull
       # request into main, a push to main or a manual dispatch on main,
-      # continue-on-error keeps the job going, and with it the merge or
-      # deploy-web: the step's outcome is still failure, its conclusion
-      # success, and the next step reports the miss. The test names the
-      # events, not "always", so a dispatch on another branch still fails on
-      # a miss, and a trigger added later blocks by default. Leaving this out
-      # of the gate is safe for accessibility because the axe scan inside the
-      # end-to-end suite still blocks on every WCAG 2.0-2.2 A and AA
-      # violation in light and dark, and the document-size check, the
+      # continue-on-error lets the step's failure through to the next step:
+      # its outcome is still failure, its conclusion success. That step
+      # passes the job, and with it the merge or deploy-web, only when the
+      # failure is a missed budget on record, and fails it on any other
+      # Lighthouse failure. The test names the events, not "always", so a
+      # dispatch on another branch still fails on a miss, and a trigger added
+      # later blocks by default. Leaving the budgets out of the gate is safe
+      # for WCAG A and AA accessibility, which stays gated by the axe scan
+      # inside the end-to-end suite on every WCAG 2.0-2.2 A and AA rule in
+      # light and dark; Lighthouse's accessibility score also counts
+      # best-practice rules that axe's WCAG tags leave out, and a miss there
+      # is a warning like any other budget. The document-size check, the
       # screenshots and every other step still block. The budgets are the
       # same on every event.
       - name: Run Lighthouse CI on the front end
@@ -609,21 +614,28 @@ jobs:
       # runs on a dispatch off main or a pull request into another branch,
       # where the failed step fails the job, nor when an earlier step already
       # failed the job, where the merge or the deploy is blocked anyway and
-      # saying otherwise would be false. Its wording follows the event: on a
-      # pull request the miss does not block the merge, and on main it does
-      # not hold the deploy back (deploy-web still has its own needs and head
-      # check, so it says no more than that). It names each missed budget in
-      # a warning annotation and in the job summary, from the failed
-      # assertions `lhci assert` saves
-      # (apps/web/.lighthouseci/, which e2e/lighthouse.mts empties before each
-      # run, so nothing is stale). When the step failed with no missed budget on record (a stage before the
-      # assertions failed, so the file is missing, or every assertion passed
-      # and the report upload failed), the warning says that instead. Its
-      # `title=` holds no comma or colon, which would need escaping as
+      # saying otherwise would be false. It reads the failed assertions
+      # `lhci assert` saves (apps/web/.lighthouseci/, which e2e/lighthouse.mts
+      # empties before each run, so nothing is stale).
+      #
+      # Only a missed budget is a warning. When the file names at least one
+      # failed error-level assertion, the step writes a warning annotation
+      # and a job-summary line naming each URL and metric that missed, and
+      # passes; its wording follows the event: on a pull request the miss
+      # does not block the merge, and on main it does not hold the deploy
+      # back (deploy-web still has its own needs and head check, so it says
+      # no more than that). When no failed assertion is on record (the file
+      # is missing because a stage before the assertions failed, such as a
+      # syntax error in lighthouserc.cjs or lighthouse.mts, Chromium failing
+      # to launch or a build-stamp mismatch; or every assertion passed and
+      # the report upload failed; or jq could not read the file), Lighthouse
+      # is broken rather than slow, so the step writes an error and exits 1,
+      # which fails the job on every event, the deploy on main included. The
+      # `title=` values hold no comma or colon, which would need escaping as
       # annotation properties. A warning here is a finding to look at, not
       # noise: if the same URL and metric miss again on the next run, treat
       # it as a regression (docs/runbooks/deploy.md).
-      - name: Report a Lighthouse miss that does not block the merge or the deploy
+      - name: Report a Lighthouse budget miss, or fail on any other Lighthouse failure
         if: ${{ success() && steps.lighthouse.outcome == 'failure' }}
         env:
           RESULTS: apps/web/.lighthouseci/assertion-results.json
@@ -645,11 +657,17 @@ jobs:
                 | "\(.url | sub("^[a-z]+://[^/]+"; "")) \(.auditId)\(if .auditProperty then ":" + .auditProperty else "" end) \(.actual | num) (budget \(.operator) \(.expected))" ]
               | join("; ")' "$RESULTS") || misses=''
           fi
-          if [ -n "$misses" ]; then
-            what="Missed budget: $misses."
-          else
-            what="Lighthouse failed without a missed budget on record (a stage before the assertions, or the report upload, failed); its step's log says why."
+          if [ -z "$misses" ]; then
+            what="Lighthouse failed without a missed budget on record (a stage before the assertions, or the report upload, failed); its step's log says why. Only a missed budget is a warning until #76, so this fails the job."
+            echo "::error title=Lighthouse failed without a missed budget::$what"
+            {
+              echo "### Lighthouse failed (blocking)"
+              echo
+              echo "${what/\#76/[#76]($ISSUE_URL)}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
+          what="Missed budget: $misses."
           advice="Lighthouse does not gate merges into main or the production deploy until #76 calibrates it, so $effect. This is a finding to look at: if the same URL and metric miss again on the next run, treat it as a regression."
           echo "::warning title=Lighthouse failed but did not block the $gated::$what $advice ($ISSUE_URL)"
           {
@@ -943,8 +961,9 @@ jobs:
     # docs/runbooks/deploy.md), and only when its own lint, typecheck, unit
     # and end-to-end tests (axe and the document-size check included), build,
     # screenshots and brand-image check have passed on this commit. A
-    # Lighthouse miss is reported but does not hold it back until issue #76
-    # (see the web job's Lighthouse step).
+    # Lighthouse budget miss is reported but does not hold it back until
+    # issue #76; any other Lighthouse failure does (see the web job's
+    # Lighthouse step).
     needs: [ deploy, web ]
     # Main only, on a push or a manual dispatch. Unlike the CMS deploy, a tag
     # dispatch does not deploy the front end: a deploy hook always builds the
