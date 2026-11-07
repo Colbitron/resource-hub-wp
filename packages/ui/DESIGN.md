@@ -211,7 +211,7 @@ With the calculated `size-adjust`, DejaVu Sans and Noto Sans moved the 360 px li
 
 - **Do** build on tokens; **don't** write a colour, size or space as a raw value in a component stylesheet.
 - **Do** import a stylesheet from the component that renders its markup; **don't** import one from `layout.tsx`.
-- **Do** print the type's name beside its mark; **don't** use a mark as text, as a text background, or beside a link.
+- **Do** print the type's name beside its mark, with the dot before the name and outside its link where the name is one; **don't** use a mark as text, as a text background or as part of a link, and **don't** draw an accent as a line except the quote's coral bar.
 - **Do** underline links; **don't** rely on colour alone for any state.
 - **Do** keep every list typographic, on the one surface, with rules for structure; **don't** box, fill or pill a row, a filter, a page number or a topic.
 - **Do** box a quote, a table and a code block inside an article as insets, so they read as what they are; **don't** box anything a reader activates, and **don't** put a photograph, a fill or a shadow behind the page.
