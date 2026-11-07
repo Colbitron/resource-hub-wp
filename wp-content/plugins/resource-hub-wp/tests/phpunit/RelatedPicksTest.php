@@ -312,6 +312,22 @@ final class RelatedPicksTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Over REST core casts every string `rest_is_integer()` accepts with `(int)` before the sanitizer
+	 * runs, so a digit string past PHP_INT_MAX is stored as PHP_INT_MAX and `'1e3'` as 1000, where a
+	 * PHP caller's write would drop both. Pinned as it is: no post has either ID, and the related route
+	 * skips missing picks.
+	 */
+	public function test_rest_write_casts_oversized_and_exponent_strings(): void {
+		$post = $this->resource();
+		$this->as_editor();
+
+		$response = $this->update( $post, array( 'meta' => array( Meta::RELATED_PICKS => array( '99999999999999999999', '1e3' ) ) ) );
+
+		$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+		$this->assertSame( array( PHP_INT_MAX, 1000 ), get_post_meta( $post, Meta::RELATED_PICKS, true ) );
+	}
+
+	/**
 	 * Over REST the schema refuses what the sanitizer would drop or cut, with a 400 in core's `WP_Error`
 	 * shape whose message names the field. The code is the one `rest_validate_value_from_schema()` gives
 	 * for the failing keyword, which core's meta fields return as is rather than wrapping in `rest_invalid_param`.

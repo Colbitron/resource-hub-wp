@@ -192,19 +192,20 @@ final class Meta {
 	}
 
 	/**
-	 * Whether a write is a `resource`'s `related_picks` list that holds the post's own ID. The post
-	 * type is checked first: another post type may use the same key for its own purpose, and its
-	 * values are not ours to change.
+	 * Whether a write is a `resource`'s `related_picks` list that holds the post's own ID. The checks
+	 * run cheapest first, because the filters see every post meta write on the site: the key, then
+	 * the value's shape, then whether it holds the ID, and the post type last, the only one that
+	 * reads the post. The post type still decides: another post type may use the same key for its
+	 * own purpose, and its values are not ours to change.
 	 *
 	 * @param string $meta_key   Meta key being written.
 	 * @param mixed  $meta_value The sanitized value.
 	 * @param int    $object_id  The post.
 	 */
 	private static function names_itself( string $meta_key, mixed $meta_value, int $object_id ): bool {
-		if ( PostType::NAME !== get_post_type( $object_id ) ) {
-			return false;
-		}
-
-		return self::RELATED_PICKS === $meta_key && is_array( $meta_value ) && in_array( $object_id, $meta_value, true );
+		return self::RELATED_PICKS === $meta_key
+			&& is_array( $meta_value )
+			&& in_array( $object_id, $meta_value, true )
+			&& PostType::NAME === get_post_type( $object_id );
 	}
 }

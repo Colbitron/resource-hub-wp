@@ -145,9 +145,10 @@ final class RelatedCacheTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * A force delete of a published resource bumps again once the row is gone (`deleted_post`), so a list
-	 * computed while the delete ran is not served afterwards. `delete_post` fires just before core removes
-	 * the row, after `before_delete_post`'s bump.
+	 * A force delete of a published resource bumps again once the row is gone and core has cleaned the
+	 * post caches (`after_delete_post`), so a list computed while the delete ran is not served afterwards.
+	 * The salt is recorded at the last `deleted_post` callback: the row is gone there, but core's
+	 * `clean_post_cache()` has not run, so a bump there would come too early.
 	 */
 	public function test_force_delete_bumps_after_the_row_is_gone(): void {
 		$published = $this->resource( 'publish' );
@@ -156,13 +157,41 @@ final class RelatedCacheTest extends WP_UnitTestCase {
 			$during = RelatedCache::salt();
 		};
 
-		add_action( 'delete_post', $record );
+		add_action( 'deleted_post', $record, PHP_INT_MAX );
 		wp_delete_post( $published, true );
-		remove_action( 'delete_post', $record );
+		remove_action( 'deleted_post', $record, PHP_INT_MAX );
 
 		$this->assertNotSame( '', $during );
 		$this->assertNull( get_post( $published ) );
-		$this->assertNotSame( $during, RelatedCache::salt(), 'No bump after the row was deleted.' );
+		$this->assertNotSame( $during, RelatedCache::salt(), 'No bump after core cleaned the post caches.' );
+	}
+
+	/**
+	 * A published resource saved as another post type bumps, since it leaves every list; a draft
+	 * resource saved as another type does not.
+	 */
+	public function test_a_published_resource_changed_to_another_post_type_bumps(): void {
+		$published = $this->resource( 'publish' );
+		$draft     = $this->resource( 'draft' );
+
+		$this->assert_bumps(
+			static fn() => wp_update_post(
+				array(
+					'ID'        => $published,
+					'post_type' => 'post',
+				)
+			),
+			'a published resource saved as a post'
+		);
+		$this->assert_keeps(
+			static fn() => wp_update_post(
+				array(
+					'ID'        => $draft,
+					'post_type' => 'post',
+				)
+			),
+			'a draft resource saved as a post'
+		);
 	}
 
 	/**
@@ -248,27 +277,32 @@ final class RelatedCacheTest extends WP_UnitTestCase {
 
 	/**
 	 * Deleting a topic reaches `deleted_term_relationships` for each resource that had it, before
-	 * `delete_resource_topic`, as the class comment says.
+	 * `delete_resource_topic`, as the class comment says, and the plugin's relationship hook has
+	 * already bumped the salt by then. The salt is recorded after every callback on the relationship
+	 * hook and before every callback on the term hook, so the term hook's own bump is not counted.
 	 */
 	public function test_deleting_a_topic_removes_each_relationship_first(): void {
 		$topic     = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TOPIC ) );
 		$published = $this->resource( 'publish' );
 		wp_set_object_terms( $published, $topic, Taxonomies::TOPIC );
+		$before  = RelatedCache::salt();
 		$order   = array();
 		$removed = static function () use ( &$order ): void {
-			$order[] = 'relationship';
+			$order[] = array( 'relationship', RelatedCache::salt() );
 		};
 		$deleted = static function () use ( &$order ): void {
-			$order[] = 'term';
+			$order[] = array( 'term', RelatedCache::salt() );
 		};
 
-		add_action( 'deleted_term_relationships', $removed );
-		add_action( 'delete_' . Taxonomies::TOPIC, $deleted );
+		add_action( 'deleted_term_relationships', $removed, PHP_INT_MAX );
+		add_action( 'delete_' . Taxonomies::TOPIC, $deleted, PHP_INT_MIN );
 		wp_delete_term( $topic, Taxonomies::TOPIC );
-		remove_action( 'deleted_term_relationships', $removed );
-		remove_action( 'delete_' . Taxonomies::TOPIC, $deleted );
+		remove_action( 'deleted_term_relationships', $removed, PHP_INT_MAX );
+		remove_action( 'delete_' . Taxonomies::TOPIC, $deleted, PHP_INT_MIN );
 
-		$this->assertSame( array( 'relationship', 'term' ), $order );
+		$this->assertSame( array( 'relationship', 'term' ), array_column( $order, 0 ) );
+		$this->assertNotSame( $before, $order[0][1], 'The relationship hook did not bump the salt.' );
+		$this->assertSame( $order[0][1], $order[1][1], 'The salt changed between the relationship and the term hook.' );
 	}
 
 	/**

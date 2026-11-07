@@ -23,8 +23,9 @@ use WP_Post;
  * bumped here:
  *
  * - from `wp_after_insert_post` when a resource was or becomes published, which covers a publish,
- *   an unpublish, a trash, and a change of picks or topics saved with a published resource;
- * - from `before_delete_post` and `deleted_post` when a published resource is force-deleted;
+ *   an unpublish, a trash, and a change of picks or topics saved with a published resource, and
+ *   when a published resource is saved as another post type;
+ * - from `before_delete_post` and `after_delete_post` when a published resource is force-deleted;
  * - from `set_object_terms` and `deleted_term_relationships` when a published resource's topics
  *   change outside a post save (`wp_set_object_terms()`, `wp_remove_object_terms()` and the
  *   functions built on them). A draft's topics are left alone, because no list shows a draft;
@@ -32,7 +33,9 @@ use WP_Post;
  *   renamed or removed empties the lists too. Deleting a topic reaches the relationship hook
  *   first: `wp_delete_term()` calls `wp_remove_object_terms()` for each resource that had the
  *   topic, which fires `deleted_term_relationships` once per resource, and only then fires
- *   `delete_resource_topic`. (Topics have no default term, so core never reassigns them through
+ *   `delete_resource_topic`. These three hooks are belt-and-braces: the route returns post IDs,
+ *   not term names, and a delete is covered per relationship, but topics are made and renamed
+ *   rarely, so the extra bumps cost next to nothing. (Topics have no default term, so core never reassigns them through
  *   `wp_set_object_terms()` here; if one is ever added, `set_object_terms` covers that path.)
  *
  * Each bump empties every related list at once. Coarse, but cheap, and the lists are small. A
@@ -72,7 +75,7 @@ final class RelatedCache {
 	public function register(): void {
 		add_action( 'wp_after_insert_post', array( $this, 'on_after_insert' ), 10, 4 );
 		add_action( 'before_delete_post', array( $this, 'on_delete' ), 10, 2 );
-		add_action( 'deleted_post', array( $this, 'on_delete' ), 10, 2 );
+		add_action( 'after_delete_post', array( $this, 'on_delete' ), 10, 2 );
 		add_action( 'set_object_terms', array( $this, 'on_set_terms' ), 10, 4 );
 		add_action( 'deleted_term_relationships', array( $this, 'on_removed_terms' ), 10, 3 );
 
@@ -133,9 +136,10 @@ final class RelatedCache {
 	}
 
 	/**
-	 * `wp_after_insert_post`: bumps when a resource was or becomes published. Autosaves and revisions
-	 * are their own post type and are ignored; so is a save that leaves a resource unpublished before
-	 * and after, since no list could have shown it.
+	 * `wp_after_insert_post`: bumps when a resource was or becomes published, and when a published
+	 * resource was saved as another post type, which takes it out of every list as an unpublish
+	 * does. Autosaves and revisions are their own post type and are ignored; so is a save that leaves
+	 * a resource unpublished before and after, since no list could have shown it.
 	 *
 	 * @param int          $post_id     Post ID.
 	 * @param WP_Post      $post        The post as saved.
@@ -145,11 +149,17 @@ final class RelatedCache {
 	public function on_after_insert( int $post_id, WP_Post $post, bool $update, ?WP_Post $post_before ): void {
 		unset( $post_id, $update );
 
+		if ( PostType::NAME === $post_before?->post_type && 'publish' === $post_before->post_status ) {
+			$this->bump();
+
+			return;
+		}
+
 		if ( PostType::NAME !== $post->post_type || wp_is_post_autosave( $post ) || wp_is_post_revision( $post ) ) {
 			return;
 		}
 
-		if ( 'publish' === $post->post_status || 'publish' === $post_before?->post_status ) {
+		if ( 'publish' === $post->post_status ) {
 			$this->bump();
 		}
 	}
@@ -203,14 +213,18 @@ final class RelatedCache {
 	}
 
 	/**
-	 * `before_delete_post` and `deleted_post`: bumps when a published resource is force-deleted. One
-	 * in the trash was already removed from every list by the bump its trashing caused.
+	 * `before_delete_post` and `after_delete_post`: bumps when a published resource is force-deleted.
+	 * One in the trash was already removed from every list by the bump its trashing caused.
 	 *
-	 * Both hooks bump. `deleted_post` runs once the row is gone, so it is the bump that makes the
-	 * delete correct: a list computed while the delete ran, with the row still there, was stored
-	 * under a salt that this bump turns over. `before_delete_post` runs before core removes the
-	 * resource's meta, terms and comments, so the cached lists stop being served the moment the
-	 * delete starts rather than when it ends. Both get the post as it was before the delete.
+	 * Both hooks bump. `after_delete_post` is the bump that makes the delete correct: it runs once
+	 * the row is gone and after core's `clean_post_cache()`, which turns over the `posts` stamp that
+	 * WP_Query's `post-queries` cache is keyed on. `deleted_post` would be too early: it fires after
+	 * the row is deleted but before that cleaning, so a list computed between the two could read the
+	 * deleted post from a still-valid query cache and be stored under the new salt. A list computed
+	 * any time before `after_delete_post` was stored under a salt that this bump turns over.
+	 * `before_delete_post` runs before core removes the resource's meta, terms and comments, so the
+	 * cached lists stop being served the moment the delete starts rather than when it ends. Both get
+	 * the post as it was before the delete.
 	 *
 	 * @param int     $post_id Post ID.
 	 * @param WP_Post $post    The post being deleted, as it was before the delete.
