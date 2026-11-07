@@ -1,10 +1,12 @@
 ---
-status: accepted
+status: accepted; the fourth rule, "the build never needs the CMS", superseded by 0053 (2026-11-07)
 date: 2026-11-05
 merges: 0023, and the cores of 0046 and 0050 (2026-11-06)
 ---
 
 # The caching model: the `fetch` Data Cache with tags, the only HTTP cache, cleared by the union of each event's states, with a build that never needs the CMS
+
+> **Superseded in part by [ADR 0053](0053-prerender-a-bounded-set-with-a-build-that-never-fails-for-the-cms.md) (2026-11-07):** the fourth rule below, that the build never needs the CMS and `generateStaticParams` returns `[]` everywhere, is replaced. The build now prerenders a bounded set (the library, each type's first page, the root, and the newest resources) when the CMS answers, and falls back to prerendering nothing when it does not, so the rule that survives is that a build never *fails* for a CMS reason. The other three rules, the options and the consequences stand as written.
 
 Next.js 16 has two caching models. Cache Components (`cacheComponents: true`, the `create-next-app` default) caches with `'use cache'`, `cacheLife` and `cacheTag` and treats every uncached fetch as request-time data. The previous model caches individual `fetch` calls with `next: { tags, revalidate }` and the route segment `revalidate`, and invalidates them with `revalidateTag` and `revalidatePath`. The front end uses the previous model, and four rules follow from it.
 
