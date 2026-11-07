@@ -39,23 +39,23 @@ Next.js 16 has two caching models. Cache Components (`cacheComponents: true`, th
 
 ### 2026-11-07: prerender a bounded set at build
 
-**What changed.** The build prerenders a bounded set from the CMS: the 50 most recently published resources plus the 10 most recent of each type (each slug once), the root `/`, the library `/resources/` and each type's first page. Each route's `generateStaticParams` probes the CMS for its own reads and returns the paths that answered; any failure falls back to `[]`, and the build script empties the fetch cache first so the probe reads live. Everything else stays on-demand ISR: topic listings, later pages and other CMS pages grow with what editors add, and `dynamicParams`, `revalidate` and the tags are unchanged.
+**What changed.** The build prerenders a bounded set from the CMS: the 50 most recent resources plus the 10 most recent of each type, the root `/`, the library `/resources/` and each type's first page. Each route's `generateStaticParams` probes the CMS and returns the paths that answered; any failure falls back to `[]`, and the build script empties the fetch cache first so the probe reads live. Everything else stays on-demand ISR, with `dynamicParams`, `revalidate` and the tags unchanged.
 
-**Why.** Next.js 16 writes its prefetch-hint manifest only for routes with a prerendered path, and an ISR route without an entry has prefetch disabled on every segment. With `[]` everywhere, `<Link>` fetched nothing for any library row: a click from the library to a resource measured a median of 454 ms on a throttled mobile profile, against 61 ms with the row prefetched. The same `[]` kept the pages a reader opens first off the CDN until their first visitor.
+**Why.** Next.js 16 writes its prefetch-hint manifest only for routes with a prerendered path, and an ISR route without an entry has prefetch disabled on every segment. With `[]` everywhere, `<Link>` fetched nothing for any library row: a click from the library to a resource measured a median of 454 ms on a throttled mobile profile, against 61 ms with the row prefetched.
 
 **How the rule's purpose still holds.** The rule existed so a deploy could never fail because the CMS was down, and it still cannot: a CMS that is absent, down, slow or unreadable costs one warning per route and no prerendered page, and every page renders on its first request as before. What the rule gave up is that the build is a function of the code alone.
 
 **Options weighed.**
 
 - Prerender nothing, the status quo: it is what disabled prefetching.
-- Prerender everything: grows without bound with what editors add, and takes as long as the CMS is slow.
-- `prefetch={true}` on the row links: about 43 KB per visible row against about 6 KB, and an ISR render per prefetch for a row no reader has opened.
+- Prerender everything: grows without bound with what editors add.
+- `prefetch={true}` on the row links: about 43 KB per visible row against about 6 KB, and an ISR render per prefetch for an unopened row.
 - A bounded set with a fallback to `[]`: chosen.
 
 **Consequences.**
 
-- Every build that can reach the CMS reads it, about 40 to 140 requests, previews included; a preview whose reads fail prerenders nothing and still deploys.
-- An event fired while a build runs clears the live deployment only, so the new deployment's prerendered pages carry pre-event data until the next event or the hourly interval.
+- Every build that can reach the CMS reads it, about 40 to 140 requests, previews included; a preview whose reads fail falls back and still deploys.
+- An event fired during a build clears the live deployment only, so the new deployment's prerendered pages carry pre-event data until the next event or the hourly interval.
 - The set is fixed at build; a deploy whose build the CMS did not answer keeps prefetch off until the next one.
 
-The budgets, the partial results, the decoding of params and the measurements are in [`docs/architecture/caching.md`](../architecture/caching.md), "Prefetching".
+The budgets, the partial results, the param decoding and the measurements are in [`docs/architecture/caching.md`](../architecture/caching.md), "Prefetching".
