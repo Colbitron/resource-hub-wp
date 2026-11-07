@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Bash(gh *adr-approved*)",
+      "Bash(gh api *labels*)",
+      "Bash(gh api *Labelable*)"
+    ]
+  }
+}

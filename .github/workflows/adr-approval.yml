@@ -1,0 +1,93 @@
+# Flags a pull request that changes an architecture decision record without
+# the owner's approval. ADRs record the decisions that are expensive to undo,
+# so no agent creates, amends, supersedes or deletes a file under docs/adr/
+# unless Colby approved it in the conversation (root CLAUDE.md, "Standards and
+# workflow"). A pull request that adds, modifies, renames or deletes anything
+# under docs/adr/ needs the `adr-approved` label, which only Colby applies;
+# a rename counts when either its old or its new path is under docs/adr/.
+# Without the label this check fails; with it, or with no ADR change, it
+# passes.
+#
+# The limit, stated plainly: this is a visible signal, not an enforcement.
+# Agents run `gh` with Colby's own credentials, so GitHub cannot tell his
+# label from one an agent applied; the label is an explicit, visible act, not
+# an identity check. The agent-side guard is the deny rules in
+# .claude/settings.json, which stop the usual `gh` commands from touching the
+# label. Branch protection is unavailable on this plan (the API answers 403),
+# so a red check flags the pull request but does not technically block a
+# merge. Merges are done by Colby, or on his word.
+#
+# A separate workflow, not a job in ci.yml: ci.yml's `pull_request` trigger
+# runs the full gate once per push, and a label change must not re-run it.
+# This job reads the pull request through the API (the file list, paginated,
+# and the labels as they are now, not as the event saw them, so a re-run
+# after the label is removed fails), and checks nothing out. It uses only the
+# run's own read-only token, no secrets.
+name: ADR approval
+
+# `edited` covers a change of base branch, which changes the file list; it
+# also fires on title and body edits, which is harmless for a job this small.
+# The job never skips itself with an `if:`, because a skipped job reports as
+# a passing check and would hide an earlier failure.
+on:
+  pull_request:
+    types: [ opened, synchronize, reopened, labeled, unlabeled, edited ]
+
+concurrency:
+  group: adr-approval-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  adr-approval:
+    name: ADR changes are approved
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      # The pull request files API lists at most 3,000 files. If it lists
+      # fewer than the pull request's `changed_files`, the check fails closed
+      # rather than pass on a partial list. Paths are printed through jq's
+      # JSON encoding so a crafted file name cannot inject a workflow command.
+      - name: Check ADR changes against the adr-approved label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          pr_json="$(gh api "repos/${REPO}/pulls/${PR_NUMBER}")"
+          files_json="$(gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/files")"
+
+          changed="$(jq -r '.changed_files' <<<"${pr_json}")"
+          listed="$(jq -s 'map(length) | add // 0' <<<"${files_json}")"
+          if (( listed < changed )); then
+            echo "::error title=ADR approval::The files API listed ${listed} of ${changed} changed files, so ADR changes cannot be ruled out."
+            echo "ADR approval: could not list every changed file (${listed} of ${changed}); failing closed." >>"${GITHUB_STEP_SUMMARY}"
+            exit 1
+          fi
+
+          adr_paths="$(jq -s -c '[.[][] | .filename, (.previous_filename // empty)] | map(select(startswith("docs/adr/"))) | unique' <<<"${files_json}")"
+          count="$(jq 'length' <<<"${adr_paths}")"
+          approved="$(jq -r 'any(.labels[]; .name == "adr-approved")' <<<"${pr_json}")"
+
+          if (( count == 0 )); then
+            echo "ADR approval: no file under docs/adr/ changed; no approval needed." | tee -a "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          echo "ADR paths changed:"
+          jq -r '.[] | "  " + tojson' <<<"${adr_paths}"
+
+          if [[ "${approved}" == "true" ]]; then
+            echo "ADR approval: ${count} path(s) under docs/adr/ changed, approved with the adr-approved label." | tee -a "${GITHUB_STEP_SUMMARY}"
+            exit 0
+          fi
+
+          echo "::error title=ADR approval::${count} path(s) under docs/adr/ changed without the adr-approved label. Only Colby applies it."
+          echo "ADR approval: ${count} path(s) under docs/adr/ changed without the adr-approved label; only Colby applies it." >>"${GITHUB_STEP_SUMMARY}"
+          exit 1
