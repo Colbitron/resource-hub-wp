@@ -256,13 +256,37 @@ test.describe("the lead", () => {
     expect(await cardTitles(page)).toContain(texturized(FEATURED[0].title));
   });
 
-  test("a newly featured resource becomes the lead; with nothing featured, the list stands alone", async ({ page, request }) => {
+  test("a newly featured resource becomes the lead through its resource event; with nothing featured, the list stands alone", async ({
+    page,
+    request,
+  }) => {
+    // Render and store the library first, so the change below is seen through the cache.
+    await page.goto("/resources/");
+    expect(await leadTitle(page)).toBe(texturized(FEATURED[0].title));
+
     const title = `A featured webinar ${RUN}`;
     const created = await cms.createResource({ title, slug: `featured-webinar-${RUN}`, type: "webinar", featured: true });
     try {
-      await clearAppCache(request);
+      // Before the event the stored library keeps its lead: the mock changed, the app's cache did not.
       await page.goto("/resources/");
-      expect(await leadTitle(page)).toBe(title);
+      expect(await leadTitle(page)).toBe(texturized(FEATURED[0].title));
+
+      // Flagging a resource is reported as an update of that resource, never a
+      // term event (flags send none), so this one resource event, and no
+      // `clearAppCache`, must clear the lead's tags. The mock creates the
+      // resource already flagged; the event stands for the save that flagged it.
+      const { origin } = await cms.state();
+      const where = { slug: created.slug, types: ["webinar"], topics: [] };
+      const updated = await revalidate(request, [
+        { type: "resource", event: "update", id: created.id, rest_url: `${origin}/wp-json/wp/v2/resources/${created.id}`, ...where, previous: where },
+      ]);
+      expect(((await updated.json()) as { revalidated: string[] }).revalidated).toContain("/resources/");
+      await expect
+        .poll(async () => {
+          await page.goto("/resources/");
+          return leadTitle(page);
+        }, { message: "the lead after the update event", timeout: 10_000 })
+        .toBe(title);
       expect(await cardTitles(page)).not.toContain(title);
       expect(await cardTitles(page)).toHaveLength(PER_PAGE - 1);
       await expect(page.getByText("15 resources")).toBeVisible();
