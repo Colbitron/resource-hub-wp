@@ -9,7 +9,7 @@ import { Pagination } from "@/components/Pagination";
 import { ResourceCard } from "@/components/ResourceCard";
 import { listingPath, validListing, type ListingFilter, type ListingRequest } from "@/lib/routes";
 import { plainText, toCard, type CardData } from "@/lib/wp/cards";
-import { NO_SUCH_PAGE } from "@/lib/wp/fetch";
+import { CmsError, NO_SUCH_PAGE } from "@/lib/wp/fetch";
 import { listResources, type ResourceListing } from "@/lib/wp/resources";
 import { FEATURED_FLAG_SLUG, getTermBySlug, listTerms } from "@/lib/wp/terms";
 import type { WpTerm } from "@/lib/wp/schemas/rest";
@@ -78,6 +78,11 @@ import "./listing.css";
  * - With a lead the list is headed "Latest" and the rows take `h3`; without
  *   one the rows sit under the `h1` as `h2`s. The empty state shows only on
  *   a page with no lead, so the page never says it is empty beside one.
+ * - A failed lead read is not a failed page: the lead is decoration over the
+ *   list, so a `CmsError` from the flag lookup or the flag's listing is
+ *   logged once and the page renders without a lead, which ISR stores like
+ *   any render until the next event or the interval. Any other error still
+ *   throws, and a failure of the list itself is still the page's 500.
  *
  * The routes are ISR (ADR 0043: `export const revalidate = 3600`, the data
  * layer's interval as a literal, and `generateStaticParams` returning `[]`, so
@@ -197,6 +202,19 @@ async function leadCard(): Promise<CardData | null> {
   return featured.items.map(toCard).find((card) => card !== null) ?? null;
 }
 
+/** `leadCard`, with a CMS failure logged and answered as no lead, so the list still renders. */
+async function leadOrNone(): Promise<CardData | null> {
+  try {
+    return await leadCard();
+  } catch (caught) {
+    if (!(caught instanceof CmsError)) {
+      throw caught;
+    }
+    console.error(`ListingPage: rendering the library without its lead; ${caught.message}`);
+    return null;
+  }
+}
+
 export async function ListingPage({ request }: { request: ListingRequest }) {
   const valid = validListing(request);
   if (valid === null) {
@@ -209,7 +227,7 @@ export async function ListingPage({ request }: { request: ListingRequest }) {
     filterTerms(filter),
     listTerms("resource_type"),
     listTerms("resource_topic"),
-    hasLead(valid) ? leadCard() : null,
+    hasLead(valid) ? leadOrNone() : null,
   ]);
   if (listing === null || listing === NO_SUCH_PAGE || terms === null) {
     return <DataNotFound />;

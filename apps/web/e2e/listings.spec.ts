@@ -285,6 +285,30 @@ test.describe("the lead", () => {
     }
   });
 
+  test("a failed lead read leaves the library: a 200 with every row of page 1 and no lead", async ({ page, request }) => {
+    // The flag's lookup is the lead's first read and no other read on the page
+    // makes it, so a fault there fails the lead alone.
+    await cms.addFault({ path: "/wp-json/wp/v2/resource_flag", status: 500 });
+    try {
+      await cms.resetRequests();
+      const response = await page.goto("/resources/");
+      expect(response?.status()).toBe(200);
+      // The fault was met: the front end did ask for the flag.
+      const { byPath } = await cms.requests();
+      expect(Object.keys(byPath).some((requested) => requested.startsWith("/wp-json/wp/v2/resource_flag?"))).toBe(true);
+
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText("Resources");
+      await expect(page.locator(".rh-lead")).toHaveCount(0);
+      await expect(page.getByRole("heading", { level: 2, name: /Featured|Latest/ })).toHaveCount(0);
+      expect(await cardTitles(page)).toEqual(seededTitles().slice(0, PER_PAGE));
+      await expect(page.locator("h2.rh-card__title")).toHaveCount(PER_PAGE);
+      await expect(page.getByText("14 resources")).toBeVisible();
+    } finally {
+      await cms.clearFaults();
+      await clearAppCache(request);
+    }
+  });
+
   test("a lead whose own place is on a later page is a row there, and the pages stay the CMS's", async ({ page, request }) => {
     // Keep one featured resource, the seed's oldest, and publish enough newer
     // ones to push it onto page 2: it leads page 1 all the same, page 1 keeps
