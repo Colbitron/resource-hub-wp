@@ -374,11 +374,17 @@ test.describe( 'Required fields', () => {
 		);
 		expect( await isSavingLocked( page ) ).toBe( true );
 
-		// Draft: the save would unpublish, so it is not locked.
+		const summary = page.getByLabel( 'Summary' );
+		await expect( summary ).toHaveAttribute( 'aria-invalid', 'true' );
+
+		// Draft: the save would unpublish, so it is not locked, and the gap is
+		// a warning, not an error: that save goes ahead.
 		await chooseStatus( page, 'Draft' );
 		await expect( notice( page ) ).toContainText(
 			'This resource needs a summary before it can be published again. It can be saved unpublished now.'
 		);
+		await expect( notice( page ) ).toHaveClass( /is-warning/ );
+		await expect( summary ).not.toHaveAttribute( 'aria-invalid' );
 		await expect( saveButton( page ) ).toHaveText( 'Save' );
 		await expect( saveButton( page ) ).not.toHaveAttribute(
 			'aria-disabled',
@@ -386,13 +392,15 @@ test.describe( 'Required fields', () => {
 		);
 		expect( await isSavingLocked( page ) ).toBe( false );
 
-		// Published again: locked again.
+		// Published again: locked again, and an error again.
 		await chooseStatus( page, 'Published' );
 		await expect( saveButton( page ) ).toHaveAttribute(
 			'aria-disabled',
 			'true'
 		);
 		expect( await isSavingLocked( page ) ).toBe( true );
+		await expect( notice( page ) ).toHaveClass( /is-error/ );
+		await expect( summary ).toHaveAttribute( 'aria-invalid', 'true' );
 
 		// Draft, and save: the resource is unpublished without its summary.
 		await chooseStatus( page, 'Draft' );
@@ -459,10 +467,17 @@ test.describe( 'Required fields', () => {
 			expect( refused.status ).not.toBe( 'publish' );
 
 			// The status edit stays "publish" after the failure, so the lock
-			// holds; setting it back to Draft lifts it.
+			// holds and core hides "Save draft"; the notice gives the way out,
+			// and setting the status back to Draft lifts the lock.
 			expect( await isSavingLocked( page ) ).toBe( true );
+			await expect( notice( page ) ).toContainText(
+				'This resource needs a summary before it can be published. Set the status back to Draft to save it as a draft.'
+			);
 			await chooseStatus( page, 'Draft' );
 			expect( await isSavingLocked( page ) ).toBe( false );
+			await expect( notice( page ) ).toContainText(
+				'This resource needs a summary before it can be published. Drafts can still be saved.'
+			);
 		} finally {
 			await page.evaluate( () =>
 				window.wp.data.dispatch( 'core/editor' ).enablePublishSidebar()
@@ -589,6 +604,26 @@ test.describe( 'Required fields', () => {
 			'aria-required',
 			'true'
 		);
+
+		// The Code editor replaces the canvas with a plain title, and the
+		// visual editor comes back in a new canvas: each title is required.
+		const switchMode = ( mode ) =>
+			page.evaluate(
+				( next ) =>
+					window.wp.data
+						.dispatch( 'core/editor' )
+						.switchEditorMode( next ),
+				mode
+			);
+		await switchMode( 'text' );
+		await expect(
+			page.locator( 'iframe[name="editor-canvas"]' )
+		).toHaveCount( 0 );
+		await expect(
+			page.locator( '.editor-post-title__input' )
+		).toHaveAttribute( 'aria-required', 'true' );
+		await switchMode( 'visual' );
+		await expect( title ).toHaveAttribute( 'aria-required', 'true' );
 	} );
 
 	test( "the notice's actions move focus to the control that fills the field", async ( {

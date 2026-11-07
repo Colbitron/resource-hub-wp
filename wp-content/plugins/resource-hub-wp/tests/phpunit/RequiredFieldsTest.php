@@ -624,6 +624,102 @@ final class RequiredFieldsTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The autosave check holds whatever case the route is requested in, since core matches routes
+	 * without regard to case and the check keys on the handler core matched, not the URL: a
+	 * crafted autosave that would publish a draft without a summary is refused on each spelling,
+	 * through `rest_do_request()`, and nothing is written.
+	 *
+	 * @dataProvider autosave_routes
+	 *
+	 * @param string $route The route, with `%d` for the resource ID.
+	 */
+	public function test_autosave_that_would_publish_an_incomplete_draft_is_refused_in_any_case( string $route ): void {
+		$post_id = $this->draft_resource( false );
+		wp_set_object_terms( $post_id, $this->topic, Taxonomies::TOPIC );
+
+		$request = new WP_REST_Request( 'POST', sprintf( $route, $post_id ) );
+		$request->set_body_params( array( 'status' => 'publish' ) );
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( RequiredFields::SUMMARY_MISSING, $response->get_data()['code'] );
+		$this->assertSame( 'draft', get_post_status( $post_id ) );
+	}
+
+	/**
+	 * Cases for test_autosave_that_would_publish_an_incomplete_draft_is_refused_in_any_case().
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function autosave_routes(): array {
+		return array(
+			'lowercase'           => array( '/wp/v2/resources/%d/autosaves' ),
+			'mixed-case base'     => array( '/wp/v2/Resources/%d/autosaves' ),
+			'uppercase namespace' => array( '/WP/v2/resources/%d/autosaves' ),
+			'uppercase'           => array( '/WP/V2/RESOURCES/%d/AUTOSAVES' ),
+		);
+	}
+
+	/**
+	 * The same refusal through `serve_request()`, which is how core serves a `?rest_route=` request
+	 * (`rest_api_loaded()` passes the query variable as the path): `?rest_route=/WP/v2/Resources/
+	 * {id}/autosaves` with `status: publish` does not publish a draft without a summary.
+	 */
+	public function test_autosave_served_from_a_mixed_case_rest_route_is_refused(): void {
+		$post_id = $this->draft_resource( false );
+		wp_set_object_terms( $post_id, $this->topic, Taxonomies::TOPIC );
+
+		$server = rest_get_server();
+
+		// `serve_request()` reads the method and the body from the superglobals. Both go back to
+		// the test library's values: `GET` (`tests_reset__SERVER()`) and an empty `$_POST`.
+		$_SERVER['REQUEST_METHOD'] = 'POST';
+		$_POST                     = array( 'status' => 'publish' );
+
+		try {
+			$server->serve_request( '/WP/v2/Resources/' . $post_id . '/autosaves' );
+		} finally {
+			$_SERVER['REQUEST_METHOD'] = 'GET';
+			$_POST                     = array();
+		}
+
+		$body = json_decode( $server->sent_body, true );
+
+		$this->assertSame( 400, $server->status );
+		$this->assertSame( RequiredFields::SUMMARY_MISSING, $body['code'] );
+		$this->assertSame( 'draft', get_post_status( $post_id ) );
+	}
+
+	/**
+	 * An autosave of a pending resource passes even when it sends `status: publish` and the
+	 * resource lacks a topic and a summary: core writes the resource itself only for a stored
+	 * draft or auto-draft, so for a pending one it writes an autosave revision and the resource
+	 * stays pending.
+	 */
+	public function test_autosave_of_a_pending_resource_passes(): void {
+		$post_id = $this->draft_resource( false );
+		wp_update_post(
+			array(
+				'ID'          => $post_id,
+				'post_status' => 'pending',
+			)
+		);
+
+		$response = $this->send(
+			'POST',
+			'/wp/v2/resources/' . $post_id . '/autosaves',
+			array(
+				'status'  => 'publish',
+				'content' => 'Still typing',
+			)
+		);
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'pending', get_post_status( $post_id ) );
+		$this->assertNotFalse( wp_get_post_autosave( $post_id, get_current_user_id() ) );
+	}
+
+	/**
 	 * Unpublishing is never refused: a published resource that lacks a summary, sent to draft or
 	 * private with its title blanked and its topics cleared too, saves.
 	 *

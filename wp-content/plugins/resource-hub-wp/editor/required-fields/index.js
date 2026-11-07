@@ -10,10 +10,11 @@
  *
  * - One persistent `core/notices` notice, never dismissible, that names what
  *   is missing in plain words and offers one action per field that moves
- *   focus to its control (`focus.js`). It is a warning while the resource is
- *   an incomplete draft, and an error while it is published or scheduled, is
- *   being published (its edited status is `publish` or `future`), or has the
- *   pre-publish sidebar open; it follows every edit.
+ *   focus to its control (`focus.js`). It is a warning while the next save
+ *   would leave the resource unpublished (an incomplete draft, or a published
+ *   resource switched to Draft or Private), and an error while its edited
+ *   status is `publish` or `future` or the pre-publish sidebar is open; it
+ *   follows every edit.
  * - A `PluginPrePublishPanel` checklist, open when something is missing, so
  *   the pre-publish sidebar says why its Publish button is off.
  * - The inline state on the Topics panel, through the same
@@ -34,9 +35,10 @@
  * in the same step, before the lock can follow, so the server's refusal shows
  * in the editor's own "Publishing failed" notice next to this one; the status
  * edit stays `publish` after a failed save, so the lock then holds until the
- * field is filled or the status is set back to Draft. The lock is the
- * convenience; the server is the check. Trashing is not a save and is never
- * locked.
+ * field is filled or the status is set back to Draft, and core hides "Save
+ * draft" for that status, so the notice says to set it back to Draft. The
+ * lock is the convenience; the server is the check. Trashing is not a save
+ * and is never locked.
  */
 import { Button } from '@wordpress/components';
 import { useDispatch } from '@wordpress/data';
@@ -89,7 +91,13 @@ function listOf( nouns ) {
 }
 
 /**
- * The notice's text, by the saved status and the edited one.
+ * The notice's text, by the saved status and the edited one. A resource not
+ * yet public whose edited status is public (a failed publish with the
+ * pre-publish checks off, or Published chosen in the Status panel) cannot
+ * save as a draft until the status is set back to Draft: core hides "Save
+ * draft" then and the lock holds, so the text says so. While the pre-publish
+ * sidebar is the only cause, its Cancel button is the way out, and drafts
+ * still save once it is closed.
  *
  * @param {string[]} missing      The missing keys, in FIELDS order.
  * @param {boolean}  isPublic     Whether the saved post is published or scheduled.
@@ -115,6 +123,17 @@ function noticeText( missing, isPublic, willBePublic ) {
 			/* translators: %s: what the resource lacks, such as "a title and a topic". */
 			__(
 				'This resource needs %s before it can be updated. The published version stays as it is until then.',
+				'resource-hub'
+			),
+			list
+		);
+	}
+
+	if ( willBePublic ) {
+		return sprintf(
+			/* translators: %s: what the resource lacks, such as "a title and a topic". */
+			__(
+				'This resource needs %s before it can be published. Set the status back to Draft to save it as a draft.',
 				'resource-hub'
 			),
 			list

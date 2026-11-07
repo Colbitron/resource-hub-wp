@@ -171,9 +171,11 @@ export function missingFrom( { title, types, topics, summary } ) {
  *   `publish` or `future`. With `isPublishing` it decides the lock, so a
  *   published resource switched to Draft or Private saves.
  * - `isPublishing`: the pre-publish sidebar is open, a publish attempt.
- * - `isUrgent`: any of the three. A missing field is then an error (in the
- *   notice, the panels' states and `aria-invalid`), not an incomplete draft's
- *   warning.
+ * - `isUrgent`: `willBePublic` or `isPublishing`, so the next save would
+ *   publish or keep the resource public. A missing field is then an error (in
+ *   the notice, the panels' states and `aria-invalid`), not a warning; a
+ *   published resource switched to Draft or Private is a warning, because
+ *   that save goes ahead.
  *
  * @return {{isResource: boolean, missing: string[], isPublic: boolean, willBePublic: boolean, isPublishing: boolean, isUrgent: boolean}}
  * Whether the post is a resource, which fields it lacks as edited, and its
@@ -224,6 +226,6 @@ export function useRequiredFields() {
 		isPublic,
 		willBePublic,
 		isPublishing,
-		isUrgent: isPublic || willBePublic || isPublishing,
+		isUrgent: willBePublic || isPublishing,
 	};
 }

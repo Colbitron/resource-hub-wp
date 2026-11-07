@@ -51,10 +51,11 @@ use WP_Term;
  * without a type: neither handler publishes it, unpublishes it or gives it a type, so an edit
  * there leaves it no worse. Such a resource can arise only through the unguarded paths below.
  * Guarded: REST saves, autosaves that would publish (in RequiredFields), Quick Edit, Bulk Edit,
- * and type deletion from the Types screen and REST (UsedTypes). Not guarded: the classic `post.php` form submission, WP-CLI, and PHP calls to
- * `wp_insert_post()` and the like, the seeder among them; XML-RPC is off (XmlRpc). The
- * revalidation hook never sends an event whose top-level `types` isn't exactly one element, so
- * the front end never receives an invalid state from any of the unguarded paths.
+ * and type deletion from the Types screen and REST (UsedTypes). Not guarded: the classic
+ * `post.php` form submission, WP-CLI, and PHP calls to `wp_insert_post()` and the like, the
+ * seeder among them; XML-RPC is off (XmlRpc). The revalidation hook never sends an event whose
+ * top-level `types` isn't exactly one element, so the front end never receives an invalid state
+ * from any of the unguarded paths.
  */
 final class OneType {
 	/**

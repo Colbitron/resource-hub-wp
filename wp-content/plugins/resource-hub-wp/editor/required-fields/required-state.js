@@ -5,8 +5,9 @@
  * A `Notice` with the word "Required" in it, not a colour or an asterisk, so
  * the state reads the same to a screen reader, in high contrast and in the
  * panel's own typography; it is a warning while the resource is an
- * incomplete draft (drafts save) and an error while it is published or
- * scheduled or being published (`isUrgent` in `rules.js`). It is silent: the
+ * incomplete draft or is being unpublished (that save goes ahead) and an
+ * error while its edited status is `publish` or `future` or the pre-publish
+ * sidebar is open (`isUrgent` in `rules.js`). It is silent: the
  * editor's one notice for the whole list is what is spoken, so a panel's
  * state does not announce itself a second time. It renders nothing once the
  * field is set.
@@ -17,9 +18,9 @@
  * - `aria-required="true"`, always, since the field is required to publish;
  * - the state's id in `aria-describedby`, ahead of the control's own help,
  *   while the field is missing;
- * - `aria-invalid="true"` while the field is missing and the resource is
- *   published, scheduled or being published, and never for a draft that is
- *   simply incomplete.
+ * - `aria-invalid="true"` while the field is missing and the edited status is
+ *   `publish` or `future` or the pre-publish sidebar is open, and never for a
+ *   draft that is simply incomplete or a resource being unpublished.
  * The attributes are set on the DOM element rather than passed as props
  * because the three controls are components that do not take them: core's
  * Topics selector, `RadioControl` (whose extra props go to each radio, where

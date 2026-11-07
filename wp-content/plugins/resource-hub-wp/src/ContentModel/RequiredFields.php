@@ -11,6 +11,7 @@ namespace ResourceHub\ContentModel;
 
 use stdClass;
 use WP_Error;
+use WP_REST_Autosaves_Controller;
 use WP_REST_Request;
 
 /**
@@ -46,18 +47,22 @@ use WP_REST_Request;
  *
  * Autosaves are judged before the route's callback runs (`rest_dispatch_request`), not on
  * `rest_pre_insert_resource`, because core's autosaves controller ignores an error from that
- * filter and saves anyway. The route writes the resource itself, status included, for an
- * author's own draft (`WP_REST_Autosaves_Controller::create_item()` calls `wp_update_post()`),
- * so a crafted `POST /wp/v2/resources/{id}/autosaves` with `status: publish` could otherwise
- * publish a draft unchecked. An autosave passes when the stored status is public (the route then
- * writes an autosave revision, never the resource) or when the status it sends, or the stored
- * one if it sends none, is not public; otherwise it is judged like any other save, on what that
- * write would store: the title from the request or storage, and the topics and summary from
- * storage, since the route writes neither terms nor meta to the resource. The type is judged the
- * same way, for OneType, whose `rest_pre_insert_resource` check the route ignores too: from
- * storage, by `OneType::problem()` on the stored types, so a `resource_type` the autosave sends
- * does not count. It is judged first and alone, with OneType's code and message, as a REST save
- * reports OneType's error before this rule's. The check lives here rather than behind a second
+ * filter and saves anyway. The route writes the resource itself, status included, for an author's
+ * own draft (`WP_REST_Autosaves_Controller::create_item()` calls `wp_update_post()`), so a crafted
+ * `POST /wp/v2/resources/{id}/autosaves` with `status: publish` could otherwise publish a draft
+ * unchecked. The request is recognised by the handler core matched, not by its URL: core matches
+ * routes without regard to case, so `/WP/v2/Resources/{id}/autosaves` and `?rest_route=/WP/...`
+ * reach the same handler, the autosaves controller's `create_item` on the route pattern the
+ * resource post type registers (`is_resource_autosave()`). An autosave passes when the stored
+ * status is neither `draft` nor `auto-draft` (core's `$is_draft`: the route then writes an
+ * autosave revision, never the resource) or when the status it sends, or the stored one if it
+ * sends none, is not public; otherwise it is judged like any other save, on what that write would
+ * store: the title from the request or storage, and the topics and summary from storage, since the
+ * route writes neither terms nor meta to the resource. The type is judged the same way, for
+ * OneType, whose `rest_pre_insert_resource` check the route ignores too: from storage, by
+ * `OneType::problem()` on the stored types, so a `resource_type` the autosave sends does not
+ * count. It is judged first and alone, with OneType's code and message, as a REST save reports
+ * OneType's error before this rule's. The check lives here rather than behind a second
  * `rest_dispatch_request` hook in OneType so the autosave route and its status test have one
  * definition. The editor's own periodic autosave never sends a public status, so it always passes.
  *
@@ -122,6 +127,12 @@ final class RequiredFields {
 	private const BLANK_CHARACTERS = '/[\p{Z}\t\n\x0B\f\r\x{200B}-\x{200D}\x{FEFF}]+/u';
 
 	/**
+	 * The stored statuses whose author's autosave core writes to the resource itself rather than
+	 * to a revision (`$is_draft` in `WP_REST_Autosaves_Controller::create_item()`).
+	 */
+	private const DRAFT_STATUSES = array( 'draft', 'auto-draft' );
+
+	/**
 	 * ID of the resource the running Quick Edit saves, or 0 for none.
 	 *
 	 * @var int
@@ -135,21 +146,22 @@ final class RequiredFields {
 	 */
 	public function register(): void {
 		add_filter( 'rest_pre_insert_' . PostType::NAME, array( $this, 'check_rest_save' ), 10, 2 );
-		add_filter( 'rest_dispatch_request', array( $this, 'check_autosave' ), 10, 2 );
+		add_filter( 'rest_dispatch_request', array( $this, 'check_autosave' ), 10, 4 );
 		add_action( 'wp_ajax_inline-save', array( $this, 'guard_quick_edit' ), 0 );
 	}
 
 	/**
 	 * Rule: the post as the save would leave it has no missing field for its status, or the save
 	 * is refused. An earlier error passes through, and so does an autosave, which check_autosave()
-	 * has judged before the route ran.
+	 * has judged before the route ran: this filter is the resource's own, so an autosave handler
+	 * here is the resource's autosave route.
 	 *
 	 * @param stdClass|WP_Error $prepared_post The post core is about to save, or an earlier error.
 	 * @param WP_REST_Request   $request       The REST request.
 	 * @return stdClass|WP_Error The post unchanged, or the refusal.
 	 */
 	public function check_rest_save( $prepared_post, WP_REST_Request $request ) {
-		if ( ! $prepared_post instanceof stdClass || self::is_autosave( $request ) ) {
+		if ( ! $prepared_post instanceof stdClass || self::is_autosave_handler( $request->get_attributes() ) ) {
 			return $prepared_post;
 		}
 
@@ -185,25 +197,28 @@ final class RequiredFields {
 	}
 
 	/**
-	 * Rule: an autosave that would write a public status onto a resource that is not public is
-	 * refused while the resource, as that write would leave it, does not have exactly one stored
-	 * type (OneType's rule and error, judged first) or lacks a field. Hooked to
+	 * Rule: an autosave that would write a public status onto a stored `draft` or `auto-draft`
+	 * resource is refused while the resource, as that write would leave it, does not have exactly
+	 * one stored type (OneType's rule and error, judged first) or lacks a field. Hooked to
 	 * `rest_dispatch_request`, which runs after the route's permission check and before its
 	 * callback, so a refusal is the response and nothing is written. Any other request, and an
 	 * autosave that passes, is left to the route.
 	 *
-	 * @param mixed           $result  Null, or a response an earlier filter chose.
-	 * @param WP_REST_Request $request The REST request.
+	 * @param mixed                $result  Null, or a response an earlier filter chose.
+	 * @param WP_REST_Request      $request The REST request.
+	 * @param string               $route   The route pattern core matched.
+	 * @param array<string, mixed> $handler The handler core matched.
 	 * @return mixed The result unchanged, or the refusal.
 	 */
-	public function check_autosave( $result, WP_REST_Request $request ) {
-		if ( null !== $result || 'POST' !== $request->get_method() || ! self::is_autosave( $request ) ) {
+	public function check_autosave( $result, WP_REST_Request $request, $route = '', $handler = array() ) {
+		if ( null !== $result || ! is_string( $route ) || ! self::is_resource_autosave( $handler, $route ) ) {
 			return $result;
 		}
 
 		$existing = get_post( (int) $request['id'] );
 
-		if ( ! $existing || PostType::NAME !== $existing->post_type || in_array( $existing->post_status, OneType::PUBLIC_STATUSES, true ) ) {
+		// Core writes the resource itself only for a stored draft; any other autosave is a revision.
+		if ( ! $existing || PostType::NAME !== $existing->post_type || ! in_array( $existing->post_status, self::DRAFT_STATUSES, true ) ) {
 			return $result;
 		}
 
@@ -260,8 +275,9 @@ final class RequiredFields {
 	 * Rule: while Quick Edit saves a resource, a save that would leave it `publish` or `future`
 	 * without a title, a topic or a summary ends with the message before anything is written;
 	 * for a resource already published or scheduled, only when the save would leave a field
-	 * missing that is not missing in storage. Hooked to `wp_insert_post_data`, late, only while that handler runs. OneType's own Quick Edit
-	 * guard runs at the same priority and may end the request first; either message fits.
+	 * missing that is not missing in storage. Hooked to `wp_insert_post_data`, late, only while
+	 * that handler runs. OneType's own Quick Edit guard runs at the same priority and may end the
+	 * request first; either message fits.
 	 *
 	 * @param array<string, mixed> $data    The post fields core is about to write, slashed.
 	 * @param array<string, mixed> $postarr The post data passed to `wp_insert_post()`.
@@ -454,12 +470,46 @@ final class RequiredFields {
 	}
 
 	/**
-	 * Whether the request is to a resource's autosaves route.
+	 * Whether a matched REST handler creates an autosave: its callback is `create_item` on an
+	 * autosaves controller. Core matches routes without regard to case, so the handler, not the
+	 * URL, is what says which route a request reached. The request's attributes are its matched
+	 * handler, so a filter given only the request passes those.
 	 *
-	 * @param WP_REST_Request $request The REST request.
+	 * @param mixed $handler The matched handler, or the request's attributes.
 	 */
-	private static function is_autosave( WP_REST_Request $request ): bool {
-		return 1 === preg_match( '#^/wp/v2/' . PostType::REST_BASE . '/\d+/autosaves/?$#', $request->get_route() );
+	private static function is_autosave_handler( $handler ): bool {
+		$callback = is_array( $handler ) ? ( $handler['callback'] ?? null ) : null;
+
+		return is_array( $callback )
+			&& isset( $callback[0], $callback[1] )
+			&& $callback[0] instanceof WP_REST_Autosaves_Controller
+			&& 'create_item' === $callback[1];
+	}
+
+	/**
+	 * Whether a matched handler and route are the creation of a resource's autosave: an autosave
+	 * handler (`is_autosave_handler()`) on the route pattern the `resource` post type's autosaves
+	 * controller registers, `/{rest_namespace}/{rest_base}/(?P<id>[\d]+)/autosaves`. The pattern is
+	 * the registered one, not the requested URL, and the controller keeps its post type private,
+	 * so the pattern is what names the parent post type. It is compared without regard to case,
+	 * as core matches it. The controller instance is not compared: re-registering the post type
+	 * replaces the instance its object hands out, but not the one already on the route.
+	 *
+	 * @param mixed  $handler The matched handler.
+	 * @param string $route   The matched route pattern.
+	 */
+	private static function is_resource_autosave( $handler, string $route ): bool {
+		$post_type = get_post_type_object( PostType::NAME );
+
+		if ( ! $post_type || ! self::is_autosave_handler( $handler ) ) {
+			return false;
+		}
+
+		$namespace = $post_type->rest_namespace ? $post_type->rest_namespace : 'wp/v2';
+		$base      = $post_type->rest_base ? $post_type->rest_base : $post_type->name;
+		$pattern   = '/' . trim( (string) $namespace, '/' ) . '/' . trim( (string) $base, '/' ) . '/(?P<id>[\d]+)/autosaves';
+
+		return 0 === strcasecmp( $pattern, $route );
 	}
 
 	/**

@@ -7,11 +7,19 @@
  * documents), and adding a state inside the canvas would put plugin markup
  * among the blocks. What is feasible is the two attributes that need no
  * other element: `aria-required="true"` and, while the title is missing and
- * the resource is published, scheduled or being published, `aria-invalid`,
- * by the same rule as the panels' controls (`required-state.js`). The notice above
- * the canvas is what names the missing title in words. The canvas renders
- * after the editor, so the lookup retries for a moment, and once the title is
- * found the canvas is watched so a re-rendered title gets the attributes too.
+ * the edited status is `publish` or `future` or the pre-publish sidebar is
+ * open, `aria-invalid`, by the same rule as the panels' controls
+ * (`required-state.js`). The notice above the canvas is what names the
+ * missing title in words.
+ *
+ * The canvas renders after the editor, so the lookup retries for a moment.
+ * Once the title is found, its document is watched so a re-rendered title
+ * gets the attributes too. The canvas can also be replaced: switching to the
+ * Code editor removes the iframe and renders a plain title in the editor's
+ * own document, and switching back mounts a new iframe. So the editor's
+ * document is watched as well, and when the title found is no longer the one
+ * whose document is watched, the lookup starts again and the new document is
+ * watched instead.
  */
 import { useEffect } from '@wordpress/element';
 
@@ -37,7 +45,8 @@ export function RequiredTitle() {
 		}
 
 		let timer;
-		let observer;
+		let watched = null;
+		let inner = null;
 
 		const apply = () => {
 			const title = findTitle();
@@ -55,16 +64,31 @@ export function RequiredTitle() {
 			return title;
 		};
 
+		// Watches the title's document, unless it is the editor's own, which
+		// `outer` already watches.
+		const watch = ( title ) => {
+			const owner = title.ownerDocument;
+
+			if ( owner === watched ) {
+				return;
+			}
+
+			inner?.disconnect();
+			inner = null;
+			watched = owner;
+
+			if ( owner !== document && owner.defaultView ) {
+				inner = new owner.defaultView.MutationObserver( apply );
+				inner.observe( owner.body, { childList: true, subtree: true } );
+			}
+		};
+
 		const start = ( retries ) => {
+			window.clearTimeout( timer );
 			const title = apply();
 
 			if ( title ) {
-				const view = title.ownerDocument.defaultView;
-				observer = new view.MutationObserver( apply );
-				observer.observe( title.ownerDocument.body, {
-					childList: true,
-					subtree: true,
-				} );
+				watch( title );
 			} else if ( retries > 0 ) {
 				timer = window.setTimeout(
 					() => start( retries - 1 ),
@@ -73,11 +97,25 @@ export function RequiredTitle() {
 			}
 		};
 
+		// The editor's document: the canvas iframe is added, removed and
+		// replaced here, and the Code editor's title renders here.
+		const outer = new window.MutationObserver( () => {
+			const title = findTitle();
+
+			if ( ! title || title.ownerDocument !== watched ) {
+				start( RETRIES );
+			} else if ( watched === document ) {
+				apply();
+			}
+		} );
+		outer.observe( document.body, { childList: true, subtree: true } );
+
 		start( RETRIES );
 
 		return () => {
 			window.clearTimeout( timer );
-			observer?.disconnect();
+			outer.disconnect();
+			inner?.disconnect();
 		};
 	}, [ isResource, isInvalid ] );
 
