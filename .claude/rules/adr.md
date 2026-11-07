@@ -25,7 +25,7 @@ The last three are the guards themselves, so a PR that weakens one needs the lab
 
 ## How a record changes
 
-Records are append-only in substance, after Nygard: a decision's text is never rewritten to say something else.
+Records are append-only in substance, after Nygard: a decision's text is never rewritten to say something else. One record was rewritten to match the mechanism on `main` before this rule, and the rewrite is noted in its `merges:` (0025, on absorbing 0035); from now on a refinement goes in `## Amendments` instead.
 
 - **Reversed:** a new ADR at the next free number, `status: accepted`, saying which record it supersedes and why. The old record is kept with its text unchanged; only its status becomes `superseded by NNNN`.
 - **Refined:** a dated amendment in the record itself, keeping the original text as written. Add an `## Amendments` section at the end, one `### YYYY-MM-DD` entry per amendment saying what changed and why, and set `amended:` in the frontmatter.
@@ -35,14 +35,14 @@ Each of these needs the approval above, a deletion included.
 
 ## Frontmatter
 
-As in the existing records:
+As in the existing records, plus `amended:`, which this rule introduces:
 
 ```yaml
 ---
 status: accepted           # or: superseded by NNNN
 date: 2026-11-04           # the day the decision was accepted; never changes
-amended: 2026-11-10        # optional: the latest amendment's date, or a list with one per amendment; each matches an entry under ## Amendments
-merges: 0009 (2026-11-06)  # optional: each absorbed record with the date it was absorbed
+amended: 2026-11-10        # optional, introduced by this rule: the latest amendment's date, or a list with one per amendment; each matches an entry under ## Amendments
+merges: 0009 (2026-11-06)  # optional, free text: each absorbed record with the date it was absorbed, and any note, e.g. 0035 (2026-11-06); rewritten 2026-11-06 for the mechanism on main
 ---
 ```
 
@@ -50,7 +50,7 @@ merges: 0009 (2026-11-06)  # optional: each absorbed record with the date it was
 
 Neither guard is a lock.
 
-- **The check**, "ADR approval / ADR changes are approved" (`.github/workflows/adr-approval.yml`), fails a PR that adds, modifies, renames (either path) or deletes a guarded path without the label. It runs on `pull_request_target`, so GitHub runs the copy of the workflow on `main`, not the PR's: a PR cannot delete the check or grade itself with an edited copy. A change to the workflow takes effect only once it is on `main`; the PR that edits it is checked by `main`'s copy, and the PR that introduced it got no run at all, because `main` had no copy yet. It runs on a PR with a merge conflict too (GitHub's docs: `pull_request_target` workflows "will run even if the pull request has a merge conflict"). Its safety rests on no checkout, a token restricted to `pull-requests: read`, and inputs only through `env`; never add a checkout of the PR's head to it. What remains, as its header comment says: agents run `gh` with Colby's credentials, so GitHub cannot tell who applied the label; branch protection is unavailable on this plan, so a red check does not block a merge; and a direct push to `main` is not a PR and gets no check, though changes reach `main` only through merged PRs and CI pushes nothing there.
+- **The check**, "ADR approval / ADR changes are approved" (`.github/workflows/adr-approval.yml`), fails a PR that adds, modifies, renames (either path) or deletes a guarded path without the label. It runs on `pull_request_target`, so GitHub runs the copy of the workflow on `main`, not the PR's: a PR cannot delete the check or grade itself with an edited copy. A change to the workflow takes effect only once it is on `main`; the PR that edits it is checked by `main`'s copy, and the PR that introduced it got no run at all, because `main` had no copy yet. A re-run keeps the original event's commit, so it runs the workflow as `main` had it then, while the labels and the file list are still read live. It runs on a PR with a merge conflict too (GitHub's docs: `pull_request_target` workflows "will run even if the pull request has a merge conflict"). Its safety rests on no checkout, a token pinned to `pull-requests: read`, and inputs only through `env`; never add a checkout of the PR's head to it. Root `CLAUDE.md`, which holds the one-sentence approval rule, is not a guarded path, so a PR can weaken that sentence without the label; read any diff to it. What remains, as its header comment says: agents run `gh` with Colby's credentials, so GitHub cannot tell who applied the label; branch protection is unavailable on this plan, so a red check does not block a merge; and a direct push to `main` is not a PR and gets no check, though changes reach `main` only through merged PRs and CI pushes nothing there.
 - **The deny rules** in `.claude/settings.json` stop the common `gh` forms: any `gh` command that names the label (`gh pr edit --add-label` or `--remove-label`, `gh pr create --label`, `gh issue edit`, `gh label edit` or `delete`, `gh api .../labels/adr-approved`), and any `gh api` call whose command text contains `labels` (the REST label endpoints) or `Labelable` (the GraphQL label mutations). They match the command's text, so they do not stop:
   - `gh api -X PATCH .../issues/N --input file.json` with a `labels` payload;
   - a GraphQL mutation that sets `labelIds` (such as `updatePullRequest`), or a query read from a file with `-F query=@file`;

@@ -18,7 +18,10 @@
 # cannot delete this check or grade itself with an edited copy; a change to
 # this file takes effect only once it is on main, and the pull request that
 # introduces or edits it is checked by main's copy (the one that introduces
-# it gets no run at all, because main has no copy yet). It also runs when the
+# it gets no run at all, because main has no copy yet). A run uses main's
+# copy as of its event: a re-run keeps the original event's commit, so it
+# runs that commit's copy of this file, not main's latest, while the labels
+# and the file list are still read live. It also runs when the
 # pull request has a merge conflict, where `pull_request` runs nothing.
 #
 # What its safety rests on, because this trigger runs with the base
@@ -26,8 +29,11 @@
 # - No checkout. The job reads the pull request through the API and never
 #   runs, builds or installs anything from it.
 # - A read-only token: `permissions` below restricts it to
-#   `pull-requests: read`. Without that key the token would default to
-#   write, so keep it.
+#   `pull-requests: read`. Without that key the token takes the repository's
+#   workflow-permissions setting, read here today (Settings > Actions >
+#   Workflow permissions) but a setting anyone with admin can flip. The key
+#   stays because it pins the scope to `pull-requests: read` regardless, and
+#   drops `contents` to none.
 # - Inputs only through `env`: the run script interpolates no
 #   pull-request-controlled string (title, body, branch name, file names);
 #   it gets the repository and the pull request's number, and reads the rest
