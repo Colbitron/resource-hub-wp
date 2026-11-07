@@ -11,7 +11,7 @@
  * CI after the end-to-end run; then the stamp must say so, or the run stops
  * before starting anything. The mock is up before the build because the
  * build prerenders the library, the type listings, the root and the newest
- * resources from the CMS it can reach (ADR 0053; `lib/prerender.ts`), and
+ * resources from the CMS it can reach (ADR 0043; `lib/prerender.ts`), and
  * Lighthouse should measure the same build the end-to-end run tests. Then it
  * clears the fetch cache, starts `next start` on the harness's port (refusing
  * a port something already answers on, and failing at once if either server
@@ -121,10 +121,10 @@ async function main(): Promise<number> {
   if (prebuilt()) {
     assertPrebuilt();
   } else {
-    if (run("pnpm", ["exec", "next", "build"], env) !== 0) return 1;
+    if (run("pnpm", ["build"], env) !== 0) return 1;
     writeBuildStamp({ ...process.env, ...env });
   }
-  if (run("node", ["e2e/clear-fetch-cache.mts"]) !== 0) return 1;
+  if (run("node", ["scripts/clear-fetch-cache.mts"]) !== 0) return 1;
 
   const appServer = startServer("pnpm", ["exec", "next", "start", "--port", String(webPort())], env);
   await waitFor(`${app}/`, appServer, 60_000);

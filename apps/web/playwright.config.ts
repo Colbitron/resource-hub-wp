@@ -21,7 +21,7 @@ import {
 // hosted CMS in a test: e2e/README.md has the ports, the env vars and the
 // control endpoints. The mock must be up before the build: `next build`
 // prerenders the library, the type listings, the root and the seeded
-// resources from it (ADR 0053; lib/prerender.ts), and WP_API_URL also sets
+// resources from it (ADR 0043; lib/prerender.ts), and WP_API_URL also sets
 // the /media/ rewrite, which here maps to the mock's uploads.
 const WEB_PORT = webPort();
 const MOCK_PORT = mockCmsPort();
@@ -141,13 +141,15 @@ export default defineConfig({
       env: { RH_MOCK_CMS_PORT: String(MOCK_PORT) },
     },
     {
-      // The fetch Data Cache is deleted between the build and the start, so no
-      // entry outlives the process whose revalidated tags it would need
-      // (e2e/clear-fetch-cache.mts, e2e/README.md). A build here is stamped
+      // `pnpm build` deletes the fetch Data Cache before `next build`, so the
+      // prerender probes read the mock live, and it is deleted again between
+      // the build and the start, so no entry outlives the process whose
+      // revalidated tags it would need (scripts/clear-fetch-cache.mts,
+      // e2e/README.md). A build here is stamped
       // (e2e/build-stamp.mts); RH_E2E_PREBUILT=1 skips the build and starts
       // the one already in .next (config.mts, `prebuilt`) only when its stamp
       // says it is this harness's build for these ports.
-      command: `${prebuilt() ? "node e2e/build-stamp.mts check" : "pnpm exec next build && node e2e/build-stamp.mts write"} && node e2e/clear-fetch-cache.mts && pnpm exec next start --port ${WEB_PORT}`,
+      command: `${prebuilt() ? "node e2e/build-stamp.mts check" : "pnpm build && node e2e/build-stamp.mts write"} && node scripts/clear-fetch-cache.mts && pnpm exec next start --port ${WEB_PORT}`,
       url: `http://localhost:${WEB_PORT}/`,
       reuseExistingServer,
       timeout: 180_000,
