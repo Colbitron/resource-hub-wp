@@ -30,8 +30,10 @@ const nextConfig: NextConfig = {
   // (ADR 0024).
   trailingSlash: true,
 
-  // Every route's CSS, about 6 KB compressed, ships inline in <head> rather
-  // than as five render-blocking files. On a page whose LCP is an image,
+  // Every route's CSS ships inline in <head> rather than as five
+  // render-blocking files: on the harness's build the library's <style> is
+  // 14,029 bytes raw and 2,964 gzipped, the resource page's 11,699 and 2,655,
+  // and a CMS page's 10,104 and 2,467. On a page whose LCP is an image,
   // Lighthouse's simulation charges every request that finished before the
   // image painted, including the framework's scripts, and the five files held
   // the browser's connections while those scripts waited. Inline, the scripts
@@ -40,6 +42,12 @@ const nextConfig: NextConfig = {
   // returning reader cannot cache apart from the HTML, and a second copy of it
   // in the RSC payload; a client navigation still uses <link> tags.
   // apps/web/README.md, "Images", has the measurements.
+  //
+  // The flag is experimental and acts only in a production build, so a
+  // `next dev` page is no evidence either way. On any Next.js upgrade, re-run
+  // `pnpm web:test:lighthouse` and read the built HTML's <head>. If the flag
+  // stops inlining, e2e/harness.spec.ts ("the CSS ships inline in <head>, not
+  // as stylesheet links") fails on the harness's production build.
   experimental: { inlineCss: true },
 
   // next/image optimises only same-origin /media/… sources, which the rewrite
