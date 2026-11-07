@@ -279,9 +279,10 @@ export interface GetResourcesByIdsOptions {
 
 /**
  * The published resources among `ids`, in the order given (`include` with
- * `orderby=include`): for the related section, after the plugin's related
- * route has chosen and ordered them. That route is not built yet (issue #50;
- * the contract is in `packages/ui/README.md`). An ID that is not published
+ * `orderby=include`): for the related section (`components/RelatedSection.tsx`),
+ * after the plugin's related route (`getRelated` in `related.ts`) has chosen
+ * and ordered them (issue #50; the contract is in `packages/ui/README.md`).
+ * An ID that is not published
  * is simply absent. Repeated IDs are asked for once; no IDs is an empty list
  * without a request. Throws a `RangeError` on a value that is not a post ID,
  * on more than 100 IDs, or on a bad `hostSlug`: the caller passes IDs from a

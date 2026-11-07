@@ -33,10 +33,19 @@ export function plainText(html: string): string {
   return DomUtils.textContent(parseDocument(html)).replace(/\s+/g, " ").trim();
 }
 
-/** `title.rendered` as plain text, or `UNTITLED` when that is nothing but whitespace and zero-width characters. */
+/**
+ * True when `title.rendered` shows something: its plain text is more than
+ * whitespace and zero-width characters. The one notion of an empty title:
+ * a listing's row falls back to `UNTITLED` for such a resource, and a
+ * related list leaves it out (`toRelatedCard` in `related.ts`).
+ */
+export function hasVisibleTitle(rendered: string): boolean {
+  return plainText(rendered).replace(ZERO_WIDTH, "").trim() !== "";
+}
+
+/** `title.rendered` as plain text, or `UNTITLED` when it has no visible title (`hasVisibleTitle`). */
 function cardTitle(rendered: string): string {
-  const text = plainText(rendered);
-  return text.replace(ZERO_WIDTH, "").trim() === "" ? UNTITLED : text;
+  return hasVisibleTitle(rendered) ? plainText(rendered) : UNTITLED;
 }
 
 function embeddedTerm(

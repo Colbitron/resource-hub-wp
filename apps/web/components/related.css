@@ -1,0 +1,29 @@
+/*
+ * The related list (RelatedList.tsx): a heading on a strong rule and the
+ * rows of the shared card.css under it, the shape of the listing's "Latest"
+ * section (packages/ui/DESIGN.md, "Components": the related block's
+ * fallback has this shape, and the front end's own list keeps the heading
+ * and renders rows in place of the links). Built on the shared tokens.
+ *
+ * `rh-related` is the class the contract gives the block marker's wrapper
+ * (packages/ui/README.md, "Block marker"), and the one the content pass
+ * puts on the fallback it renders; the front end's list carries the same
+ * class so the two render under one rule, inside a body (prose.css keeps
+ * the body's own rules off it) and outside one alike. The heading's class
+ * is the front end's own.
+ */
+
+.rh-related {
+	margin-top: var(--rh-space-7);
+}
+
+.rh-related__heading {
+	margin: 0;
+	padding-bottom: var(--rh-space-2);
+	border-bottom: var(--rh-border-width-strong) solid var(--rh-color-text);
+	font-family: var(--rh-font-sans);
+	font-size: var(--rh-text-md);
+	font-weight: var(--rh-weight-heading);
+	letter-spacing: var(--rh-tracking-heading);
+	line-height: var(--rh-leading-tight);
+}

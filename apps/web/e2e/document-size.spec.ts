@@ -31,7 +31,7 @@ import { SAMPLED_URLS } from "./sampled-urls.mts";
  * nothing else notices. `apps/web/README.md`, "Images", has the measurements.
  *
  * **Exempting a page from it** (`wholeDocumentGuard: false`) is an owner
- * decision, not a loosened threshold. By the owner's decision of 2026-11-08
+ * decision, not a loosened threshold. By the owner's decision of 2026-11-07
  * (issue #85), a page may be exempt only when its size is the cost of
  * content that is wanted on it, never to make room for CSS or markup the
  * page does not need; a page that fails for that reason is a finding to fix.
@@ -43,12 +43,15 @@ import { SAMPLED_URLS } from "./sampled-urls.mts";
  * only by the discovery check below, by the ceiling below, and by the
  * Lighthouse LCP budget (`lighthouserc.cjs`), where a miss is a warning, not
  * a block, until issue #76 calibrates the CPU slowdown (`e2e/README.md`,
- * "Lighthouse CI"). No sampled page is exempt yet. The rule was written for
- * the resource page once it renders the related section (issue #50): on that
- * branch its HTML is about 16.8 KB on the harness's seed, one window
- * boundary over, and its simulated LCP went from 2,170 to 2,318 ms, inside
- * the 2,500 ms budget; the pull request that renders the section sets the
- * flag. These numbers are stated here only; the other documents point here.
+ * "Lighthouse CI"). One sampled page is exempt: the resource page, by the
+ * owner's decision of 2026-11-07, for its related section (issue #50), which
+ * is wanted content. The section's rows load `card.css` and `related.css`,
+ * which the page's own meta line does without, and on 2026-11-07, on the
+ * harness's seed, its HTML was 16,462 bytes (467 of headers), one window
+ * boundary over and well under the ceiling; its preloads ended 982 bytes in,
+ * inside the discovery check's limit; and its simulated LCP had gone from
+ * 2,170 to 2,318 ms with the section, inside the 2,500 ms budget. These
+ * numbers are stated here only; the other documents point here.
  *
  * **The ceiling** (every exempt page): its transfer size, counted the same
  * way, is at most 43,800 bytes. Lantern's window starts at ten segments and

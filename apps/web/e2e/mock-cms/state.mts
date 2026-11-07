@@ -530,6 +530,16 @@ export class MockState {
     return resource;
   }
 
+  /**
+   * The highest ID handed out so far, kept across resets: `nextId` never
+   * gives an ID twice in one process, as WordPress never does. IDs are in
+   * URLs the front end fetches (`/resource-hub/v1/related/{id}`,
+   * `/wp/v2/resources/{id}`), and the app's Data Cache keys by URL and is
+   * not cleared by a reset (e2e/README.md), so an ID reused after a reset
+   * would be served another test's cached answer for it.
+   */
+  private lastId = 0;
+
   private nextId(): number {
     const ids = [
       ...this.resources.map((r) => r.id),
@@ -537,7 +547,8 @@ export class MockState {
       ...this.media.map((m) => m.id),
       ...this.pages.map((p) => p.id),
     ];
-    return Math.max(0, ...ids) + 1;
+    this.lastId = Math.max(this.lastId, ...ids) + 1;
+    return this.lastId;
   }
 
   renameTerm(taxonomy: Taxonomy, id: number, patch: RenameTermInput): TermRecord {

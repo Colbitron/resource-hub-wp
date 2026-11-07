@@ -50,6 +50,11 @@ function wpError(status: number, code: string, message: string, extra: Record<st
   return { status, headers: { ...JSON_HEADERS }, body: { code, message, data: { status, ...extra } } };
 }
 
+/** WordPress's REST error body for `code` with `status`, for a fault that imitates one (`faults.mts`). */
+export function restError(status: number, code: string): MockResponse {
+  return wpError(status, code, code === "rest_no_route" ? "No route was found matching the URL and request method." : "An error.");
+}
+
 function noRoute(): MockResponse {
   return wpError(404, "rest_no_route", "No route was found matching the URL and request method.");
 }

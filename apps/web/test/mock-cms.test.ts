@@ -976,13 +976,21 @@ describe("faults (/__mock/faults)", () => {
   it("applies a fault with times to that many requests, the earliest matching fault first", async () => {
     await cms.addFault({ path: "/wp-json", status: 503, times: 1 });
     expect(await cms.addFault({ path: "/wp-json/wp/v2/resources/30", status: 502, times: 2 })).toEqual([
-      { path: "/wp-json", status: 503, delayMs: 0, remaining: 1 },
-      { path: "/wp-json/wp/v2/resources/30", status: 502, delayMs: 0, remaining: 2 },
+      { path: "/wp-json", status: 503, code: null, delayMs: 0, remaining: 1 },
+      { path: "/wp-json/wp/v2/resources/30", status: 502, code: null, delayMs: 0, remaining: 2 },
     ]);
     const statuses: number[] = [];
     for (let i = 0; i < 4; i += 1) statuses.push((await cms.get("/wp-json/wp/v2/resources/30")).status);
     expect(statuses).toEqual([503, 502, 502, 200]);
     expect(await cms.faults()).toEqual([]);
+  });
+
+  it("answers WordPress's REST error body when given a code with the status, as a CMS without the route does", async () => {
+    await cms.addFault({ path: "/wp-json/resource-hub/v1/related", status: 404, code: "rest_no_route" });
+    const response = await cms.get<{ code: string; data: { status: number } }>("/wp-json/resource-hub/v1/related/33?count=3");
+    expect(response.status).toBe(404);
+    expect(response.body).toMatchObject({ code: "rest_no_route", data: { status: 404 } });
+    expect(JSON.stringify(response.body)).not.toContain(server.origin);
   });
 
   it("delays a route without failing it when given only delayMs", async () => {
@@ -1007,6 +1015,8 @@ describe("faults (/__mock/faults)", () => {
       { path: "/wp-json", delayMs: 60_000 },
       { path: "/wp-json", status: 500, times: 0 },
       { path: "/wp-json" },
+      { path: "/wp-json", code: "rest_no_route" },
+      { path: "/wp-json", status: 404, code: "Not A Code" },
     ]) {
       await expect(cms.addFault(fault), JSON.stringify(fault)).rejects.toMatchObject({ status: 422 });
     }

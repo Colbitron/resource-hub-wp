@@ -32,7 +32,7 @@ const nextConfig: NextConfig = {
 
   // Every route's CSS ships inline in <head> rather than as five
   // render-blocking files: on the harness's build the library's <style> is
-  // 15,238 bytes raw and 3,173 gzipped, the resource page's 15,581 and 3,296,
+  // 15,238 bytes raw and 3,173 gzipped, the resource page's 17,449 and 3,505,
   // and a CMS page's 12,741 and 2,912. On a page whose LCP is an image,
   // Lighthouse's simulation charges every request that finished before the
   // image painted, including the framework's scripts, and the five files held

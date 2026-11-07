@@ -14,15 +14,26 @@ import type { FaultInput, FaultSummary } from "./types.mts";
  * `/wp-json/wp/v2/resources_x`, and `/wp-json` matches every REST route.
  * The earliest added fault that matches wins. With `times`, it applies to
  * that many requests and is then gone; without, until cleared.
+ *
+ * A fault with a `status` answers WordPress's fatal-error page by default.
+ * With a `code` as well, it answers the JSON error body WordPress's REST API
+ * writes, `{ code, message, data: { status } }`, instead: `{ status: 404,
+ * code: "rest_no_route" }` on a plugin route is what a CMS without that
+ * route (the plugin deactivated, or a deploy behind) answers.
  */
 
 /** The longest delay a fault may hold a request for: beyond the front end's ten-second timeout, short enough not to stall a run. */
 export const MAX_FAULT_DELAY_MS = 30_000;
 
+/** A WordPress error code, shaped as core and plugins write them. */
+const WP_ERROR_CODE = /^[a-z0-9_]{1,64}$/;
+
 /** A fault as the server applies it: `status` to answer instead of the route, after `delayMs`. */
 export interface Fault {
   readonly path: string;
   readonly status: number | null;
+  /** The REST error `code` to answer with `status`, or `null` for the fatal-error page. */
+  readonly code: string | null;
   readonly delayMs: number;
   /** Requests left before it expires, or `null` for no limit. */
   remaining: number | null;
@@ -44,12 +55,15 @@ export function parseFault(input: unknown): Fault {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     throw new FaultError("The body must be a JSON object.");
   }
-  const { path, status, delayMs, times } = input as FaultInput;
+  const { path, status, code, delayMs, times } = input as FaultInput;
   if (typeof path !== "string" || !path.startsWith("/") || path.startsWith("/__mock")) {
     throw new FaultError("path must be a path starting with / and outside /__mock/.");
   }
   if (status !== undefined && !isInteger(status, 400, 599)) {
     throw new FaultError("status must be an integer from 400 to 599.");
+  }
+  if (code !== undefined && (typeof code !== "string" || !WP_ERROR_CODE.test(code) || status === undefined)) {
+    throw new FaultError("code must be a WordPress error code (a-z, 0-9, _) and comes with a status.");
   }
   if (delayMs !== undefined && !isInteger(delayMs, 0, MAX_FAULT_DELAY_MS)) {
     throw new FaultError(`delayMs must be an integer from 0 to ${MAX_FAULT_DELAY_MS}.`);
@@ -63,6 +77,7 @@ export function parseFault(input: unknown): Fault {
   return {
     path: path.length > 1 ? path.replace(/\/+$/, "") : path,
     status: status ?? null,
+    code: code ?? null,
     delayMs: delayMs ?? 0,
     remaining: times ?? null,
   };
@@ -85,7 +100,7 @@ export class Faults {
   }
 
   list(): FaultSummary[] {
-    return this.faults.map(({ path, status, delayMs, remaining }) => ({ path, status, delayMs, remaining }));
+    return this.faults.map(({ path, status, code, delayMs, remaining }) => ({ path, status, code, delayMs, remaining }));
   }
 
   /** The fault that applies to a request for `pathname`, counted against its `times`; `null` when none does. */
