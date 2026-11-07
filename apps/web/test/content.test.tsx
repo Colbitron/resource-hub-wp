@@ -598,6 +598,45 @@ describe("the block marker", () => {
     expect(output).not.toContain("data-");
   });
 
+  describe("the fallback's rh-related class", () => {
+    // The contract gives the wrapper `rh-related`, and prose.css styles the
+    // fallback by it, so the pass adds it whatever class the CMS wrote. The
+    // `MARKER` fixture already carries it; these markers do not.
+    const WRAPPER = 'class="wp-block-resource-hub-related-resources rh-related"';
+    const BODY = "<h2>More on Headless delivery</h2>";
+    const withClass = (value: string | null) => MARKER.replace(`${WRAPPER} `, value === null ? "" : `class="${value}" `);
+
+    it("adds it to a wrapper with no class", () => {
+      expect(render(withClass(null))).toContain(`<div class="rh-related">${BODY}`);
+    });
+
+    it("adds it after the classes the CMS wrote", () => {
+      expect(render(withClass("foo"))).toContain(`<div class="foo rh-related">${BODY}`);
+    });
+
+    it("writes it once, in lower case, and drops any other app class", () => {
+      for (const value of ["RH-related", "rh-related rh-card", "rh-related RH-related"]) {
+        const output = render(withClass(value));
+        expect(output, value).toContain(`<div class="rh-related">${BODY}`);
+        expect(output.match(/rh-related/gi), value).toHaveLength(1);
+        expect(output, value).not.toContain("rh-card");
+      }
+    });
+
+    it("adds it to an invalid marker's fallback too", () => {
+      for (const name of ["data-count", "data-topic", "data-topic-id", "data-exclude"]) {
+        const html = withClass(null).replace(new RegExp(` ${name}="[^"]*"`), "");
+        expect(render(html), `${name} missing`).toContain(`<div class="rh-related">${BODY}`);
+      }
+    });
+
+    it("never adds it to a div that is not a marker, and strips it from one", () => {
+      expect(render('<div class="rh-related"><p>x</p></div>')).toBe("<div><p>x</p></div>");
+      expect(render('<div data-rh-block="other" class="foo rh-related"><p>x</p></div>')).toBe('<div class="foo"><p>x</p></div>');
+      expect(render("<div><p>x</p></div>")).toBe("<div><p>x</p></div>");
+    });
+  });
+
   it("renders the fallback and skips renderBlock for an invalid marker", () => {
     const renderBlock = vi.fn<RenderBlock>(() => <aside>never</aside>);
     const invalid = [
