@@ -1,0 +1,193 @@
+# Lighthouse on each pull request's Vercel preview, reported as one comment
+# on the pull request. Informational: it is not a required check, and a
+# measurement that fails is reported in the comment rather than as a red
+# job (see the measure job). The blocking gate stays in ci.yml, against
+# `next start` and the mock CMS, where it measures the code, not the
+# content; this run sees what the gate cannot: the CDN, HTTP/2 and TLS,
+# compression, the hosted image optimiser's AVIF sizes and the hosted CMS's
+# real images and pages. How it works, its URL list, its cost against the
+# image optimiser's allowance and how to make it blocking later are in
+# apps/web/e2e/README.md ("The design gates").
+#
+# Trigger: GitHub's deployment_status event, which Vercel sends when a
+# deployment it created on GitHub changes state. It fires only while the
+# Vercel project creates GitHub Deployments (its Git settings; they were
+# off when this workflow was written, so it stays idle until that is turned
+# on). GitHub runs a deployment_status workflow from the deployed commit,
+# so a pull request that changes this file runs its own version against
+# its own preview. The event carries no pull request number, so the first
+# job looks it up from the commit.
+name: Preview Lighthouse
+
+on:
+  deployment_status:
+
+# Nothing by default; each job states what it needs.
+permissions: {}
+
+jobs:
+  pr:
+    name: Find the pull request
+    # Only a finished, successful deployment that Vercel reported, and not a
+    # production one: Vercel names its environments "Preview" and
+    # "Production", with the project name appended in some setups, hence
+    # startsWith. A failed or pending status is not a preview to measure.
+    if: >-
+      github.event.deployment_status.state == 'success'
+      && !startsWith(github.event.deployment.environment, 'Production')
+      && github.event.deployment_status.creator.login == 'vercel[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Listing the pull requests of a commit needs only this.
+    permissions:
+      pull-requests: read
+    outputs:
+      number: ${{ steps.lookup.outputs.number }}
+      url: ${{ steps.lookup.outputs.url }}
+    steps:
+      # A deployment of a commit no open pull request has (a branch without
+      # one yet, or a merged one) ends here quietly: nothing to comment on.
+      # The preview URL is the status's environment_url, with target_url as
+      # the older name of the same field.
+      - name: Look up the open pull request for the deployed commit
+        id: lookup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.deployment.sha }}
+          PREVIEW_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+        run: |
+          number=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" --jq '[.[] | select(.state == "open")][0].number // empty')
+          if [ -z "$number" ]; then
+            echo "No open pull request has commit $SHA; nothing to measure."
+            exit 0
+          fi
+          case "$PREVIEW_URL" in
+            https://*) ;;
+            *)
+              echo "::error::The deployment status carries no https preview URL (got: $PREVIEW_URL)."
+              exit 1
+              ;;
+          esac
+          echo "Pull request #$number, preview $PREVIEW_URL."
+          {
+            echo "number=$number"
+            echo "url=$PREVIEW_URL"
+          } >> "$GITHUB_OUTPUT"
+
+  measure:
+    name: Measure the preview
+    needs: pr
+    if: needs.pr.outputs.number != ''
+    runs-on: ubuntu-latest
+    # Five runs per URL take about a minute per URL on these runners (the
+    # gate's timing in ci.yml), eight URLs here, plus the install.
+    timeout-minutes: 25
+    # One run per pull request: a newer preview of the same pull request
+    # cancels an older run, whose comment it would only overwrite.
+    concurrency:
+      group: preview-lighthouse-${{ needs.pr.outputs.number }}
+      cancel-in-progress: true
+    # contents to check out, pull-requests to comment; nothing else.
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      # An unset secret reads as an empty string, which would surface later as
+      # the preview refusing every request. Only the name is printed. GitHub
+      # masks ${{ secrets }} values in the log on its own; the mask is added
+      # again here in case the value ever reaches the log by another route.
+      - name: Check the bypass secret is set and mask it
+        env:
+          VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
+        run: |
+          [ -n "$VERCEL_PROTECTION_BYPASS" ] || {
+            echo "::error::Repository secret VERCEL_PROTECTION_BYPASS is empty or not set."
+            exit 1
+          }
+          echo "::add-mask::$VERCEL_PROTECTION_BYPASS"
+
+      # The deployed commit, which is what GitHub runs this workflow from.
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # The pnpm store is restored from the entry main's CI saved (the same
+      # path and key as ci.yml's "Locate the pnpm store"; see the comments
+      # there) and never saved: this job runs for pull requests only, and
+      # per-pull-request entries were what filled the repository's cache.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: |
+          store=$(pnpm store path --silent)
+          arch=$(node -p process.arch)
+          if [[ "$store" != /* ]] || [ -z "$arch" ]; then
+            echo "::error::Could not read the pnpm store path (got: $store) or Node's architecture (got: $arch)."
+            exit 1
+          fi
+          {
+            echo "path=$store"
+            echo "key-prefix=node-cache-$RUNNER_OS-$arch-pnpm-"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pnpm store
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-store.outputs.key-prefix }}${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ steps.pnpm-store.outputs.key-prefix }}
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Lighthouse runs Playwright's Chromium, as the gate does
+      # (apps/web/lighthouserc.cjs), so the two measure with the same browser.
+      - name: Install Playwright's browser
+        timeout-minutes: 15
+        run: pnpm --filter resource-hub-web exec playwright install --with-deps chromium
+
+      # Warms each sampled URL, measures it at the gate's settings and posts
+      # or updates the comment (apps/web/e2e/preview-lighthouse.mts). The
+      # script exits 2 when the measurement failed but the failure reached
+      # the comment, and 1 when nothing did. continue-on-error keeps the job
+      # green either way, so that a flaky preview or a missing page never
+      # shows as a failed check on the pull request; the step below fails
+      # the job only when the comment was not posted, which is the one case
+      # nothing else would surface.
+      - name: Measure the preview and comment on the pull request
+        id: measure
+        continue-on-error: true
+        env:
+          VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PREVIEW_URL: ${{ needs.pr.outputs.url }}
+          SHA: ${{ github.event.deployment.sha }}
+          NUMBER: ${{ needs.pr.outputs.number }}
+        run: |
+          pnpm --filter resource-hub-web exec node e2e/preview-lighthouse.mts \
+            --origin "$PREVIEW_URL" --sha "$SHA" --pr "$NUMBER"
+
+      # The redacted reports the script wrote (the header is replaced and the
+      # files checked for the secret before they are written). The raw runs
+      # in apps/web/.lighthouseci carry the header and are never uploaded.
+      - name: Upload the Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-preview-lighthouse-reports
+          path: apps/web/lighthouse-preview-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Fail if nothing reached the pull request
+        if: steps.measure.outputs.reported != 'true'
+        run: |
+          echo "::error::The preview Lighthouse run posted nothing on pull request #${{ needs.pr.outputs.number }}; its log is above."
+          exit 1
