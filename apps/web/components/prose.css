@@ -4,9 +4,8 @@
  * (PageArticle) share it, so the two read the same. WordPress's block classes
  * are kept on the markup but nothing here depends on them. A body never renders
  * an `h1`: when it has one, the pass shows every heading one level down, so the
- * levels here start at `h2`. Built on the shared tokens (see
- * packages/ui/README.md); the class is the front end's own, not part of the
- * contract.
+ * levels here start at `h2`. Built on the shared tokens (packages/ui/DESIGN.md);
+ * the class is the front end's own, not part of the contract.
  *
  * `anywhere` is kept for the places where an unbreakable token must not
  * widen the page: `pre`, and links and code inside table cells.
@@ -18,8 +17,9 @@
 .rh-prose h5,
 .rh-prose h6 {
 	margin: var(--rh-space-6) 0 var(--rh-space-3);
-	font-family: var(--rh-font-serif);
-	font-weight: 600;
+	font-family: var(--rh-font-sans);
+	font-weight: var(--rh-weight-heading);
+	letter-spacing: var(--rh-tracking-heading);
 	line-height: var(--rh-leading-tight);
 }
 

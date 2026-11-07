@@ -125,33 +125,22 @@ The slug is the identity. On the front end, a wrong type segment, an old slug fo
 
 ## Stylesheets
 
-The package also holds the stylesheets the CMS and the front end render with, so the two sides look the same from one source. The tokens and the class names are part of the contract: renaming one is a contract change, made on both sides in the same pull request.
+The package also holds the stylesheets the CMS and the front end render with, and the one typeface, so the two sides look the same from one source. The `--rh-` tokens and the `rh-` class names are part of the contract: renaming one is a contract change, made on both sides in the same pull request. The visual system itself (what each token is for, the colour scheme, the type, motion, the components, how each consumer loads the CSS and the font, and how to change it) is written up once, in [`DESIGN.md`](DESIGN.md); the values are in `tokens.css` and nowhere else.
 
 | File | Holds |
 |---|---|
-| `tokens.css` | Design tokens as custom properties on `:root`, all prefixed `--rh-` and named for their role (`--rh-color-text-muted`, `--rh-space-4`, `--rh-measure`), never for their value: colour (with a dark scheme under `prefers-color-scheme`, and `color-scheme: light dark`), type scale and system font stacks, spacing, radius and measure. Every other stylesheet builds on these and defines no colour or size of its own. |
+| `tokens.css` | Design tokens as custom properties on `:root`, all prefixed `--rh-` and named for their role, never for their value: colour as `light-dark()` pairs, the five mark accents, type, spacing, radius and measure. Every other stylesheet builds on these and defines no colour or size of its own. |
 | `card.css` | The resource card: `.rh-card` and its parts (`__media`, `__body`, `__meta`, `__type`, `__title`, `__link`, `__summary`, `__topics`, `__topic`) and the `.rh-card-grid` that lays cards out. The markup it expects is in the file's header comment. |
+| `fonts/` | Figtree, one variable `woff2` on the weight axis (latin subset, the official Google Fonts release via `@fontsource-variable/figtree`), with its SIL Open Font License beside it. Each consumer loads it its own way, as `DESIGN.md` describes; no visitor's browser ever asks Google for it. |
 
-Plain CSS, no framework, no preprocessor, no CSS-in-JS, no web fonts and no shared JavaScript. Tailwind and CSS Modules were rejected because WordPress renders the same markup from PHP: it cannot use utility classes without its own build step, or hashed class names at all. Class names are BEM-ish under an `rh-` prefix. Each consumer loads a stylesheet only where it is used: the front end imports it from the component that renders the markup, never from `layout.tsx`, and WordPress attaches it through `block.json`. `tokens.css` must be loaded before the others. Adding a component stylesheet means a new `exports` entry in `package.json`, a line in `files`, and a header comment with the markup it expects; `related.css` arrives with the related list (issue #50). Import by file name:
+`tokens.css` must be loaded before the others; how each consumer loads them is in `DESIGN.md` (Consumers and loading), and the block's `block.json` does not load them yet. Adding a component stylesheet means a new `exports` entry in `package.json`, a line in `files`, and a header comment with the markup it expects; `related.css` arrives with the related list (issue #50). Import by file name:
 
 ```js
 import '@colbitron/resource-hub-ui/tokens.css';
 import '@colbitron/resource-hub-ui/card.css';
 ```
 
-**Contrast.** Every text-on-background pair in both schemes meets WCAG AA: 4.5:1 for text, 3:1 for the focus ring. The ratios below were measured on 2026-11-05 and are only as current as the colour tokens in `tokens.css`; measure again after changing one.
-
-| Pair | Light | Dark |
-|---|---|---|
-| text on surface | 16.39 | 14.79 |
-| text on raised surface | 14.86 | 13.12 |
-| muted text on surface | 6.11 | 7.95 |
-| muted text on raised surface | 5.55 | 7.05 |
-| accent (links) on surface | 8.16 | 8.52 |
-| accent on raised surface | 7.40 | 7.56 |
-| accent text on accent | 8.16 | 8.34 |
-| focus ring against surface (non-text, 3:1) | 8.16 | 8.52 |
-| focus ring against raised surface (non-text, 3:1) | 7.40 | 7.56 |
+The package's tests (`pnpm --filter @colbitron/resource-hub-ui test`, or `pnpm test:schemas` from the root) also check the stylesheets: `test/contrast.test.js` resolves every colour token in both schemes and asserts WCAG AA for every text pair and 3:1 for the focus ring, and `test/design-doc.test.js` fails when a token in `tokens.css` has no sentence in `DESIGN.md`, or the other way round.
 
 ## Fixtures and test
 

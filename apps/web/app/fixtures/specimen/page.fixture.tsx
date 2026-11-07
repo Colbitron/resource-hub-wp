@@ -19,7 +19,9 @@ import { wpPageSchema, wpResourceSchema } from "@/lib/wp/schemas/rest";
 import {
   COLOR_TOKENS,
   FONT_TOKENS,
+  HEADING_TOKENS,
   LEADING_TOKENS,
+  MARK_TOKENS,
   LINE_TOKENS,
   MEASURE_TOKENS,
   RADIUS_TOKENS,
@@ -289,6 +291,15 @@ export default function SpecimenFixturePage() {
             </TokenRow>
           ))}
         </ul>
+        <h3 id="specimen-marks">Marks</h3>
+        <p>The five brand accents, for a small mark beside a printed type name only; never text.</p>
+        <ul className="rh-specimen__swatches" role="list" aria-labelledby="specimen-marks">
+          {MARK_TOKENS.map((token) => (
+            <TokenRow key={token} token={token}>
+              <span className="rh-specimen__swatch" style={{ background: cssVar(token) }} aria-hidden="true" />
+            </TokenRow>
+          ))}
+        </ul>
       </Section>
 
       <Section id="specimen-type" title="Type">
@@ -296,6 +307,20 @@ export default function SpecimenFixturePage() {
           {FONT_TOKENS.map((token) => (
             <TokenRow key={token} token={token}>
               <span className="rh-specimen__sample" style={{ fontFamily: cssVar(token), fontSize: "var(--rh-text-lg)" }}>
+                Resources for a headless library
+              </span>
+            </TokenRow>
+          ))}
+          {HEADING_TOKENS.map((token) => (
+            <TokenRow key={token} token={token}>
+              <span
+                className="rh-specimen__sample"
+                style={{
+                  fontSize: "var(--rh-text-lg)",
+                  fontWeight: token === "--rh-weight-heading" ? cssVar(token) : undefined,
+                  letterSpacing: token === "--rh-tracking-heading" ? cssVar(token) : undefined,
+                }}
+              >
                 Resources for a headless library
               </span>
             </TokenRow>

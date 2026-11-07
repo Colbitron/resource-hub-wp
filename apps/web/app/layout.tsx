@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import { Shell } from "@/components/Shell";
 import { siteUrl } from "@/lib/env";
 
+import { figtree } from "./fonts";
+
 /**
  * The site-wide metadata. `metadataBase` is the public origin from the
  * server-only `SITE_URL`, so every page's canonical `link`, `og:url` and
@@ -29,10 +31,14 @@ export function generateMetadata(): Metadata {
 
 // No stylesheet is imported here: the shell imports the shared tokens and its
 // own styles, so every page gets them through the component that uses them
-// (the rule is in `apps/web/CLAUDE.md`).
+// (`packages/ui/DESIGN.md`). The font is the one exception, because its
+// variable has to be set on <html>: `tokens.css` reads `--rh-font-figtree`
+// where it declares `--rh-font-sans`, on `:root`, so a class lower down the
+// tree would never reach it; and a font applied by the root layout is
+// preloaded on every route (app/fonts.ts).
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en">
+    <html lang="en" className={figtree.variable}>
       <body>
         <Shell>{children}</Shell>
       </body>

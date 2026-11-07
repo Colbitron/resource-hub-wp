@@ -7,12 +7,12 @@ import "./shell.css";
 /**
  * The page shell: skip link, header, `main` and footer around every page.
  *
- * This component, not `layout.tsx`, imports the shared tokens, because the rule
- * is that shared CSS is imported from the component that uses it (see
- * `packages/ui/README.md`): the shell's own styles build on the tokens, and the
- * root layout renders the shell around every page, so the tokens reach every
- * page. Page content is stacked under `main`, which carries `tabIndex={-1}` so
- * the skip link lands focus on it in every browser.
+ * This component, not `layout.tsx`, imports the shared tokens, because the
+ * rule is that shared CSS is imported from the component that uses it
+ * (packages/ui/DESIGN.md): the shell's own styles build on the tokens, and
+ * the root layout renders the shell around every page, so the tokens reach
+ * every page. Page content is stacked under `main`, which carries
+ * `tabIndex={-1}` so the skip link lands focus on it in every browser.
  */
 export function Shell({ children }: { children: ReactNode }) {
   return (

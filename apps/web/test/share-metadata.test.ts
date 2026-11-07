@@ -12,6 +12,10 @@ import { generateMetadata as rootMetadata } from "../app/layout";
 import { shareMetadata } from "../lib/share-metadata";
 import { wpPageSchema, wpResourceSchema, type WpResource } from "../lib/wp/schemas/rest";
 
+// The root layout loads Figtree through `next/font/local`, which only Next.js's
+// compiler can run; its metadata never reads the font, so the module is stood in.
+vi.mock("../app/fonts", () => ({ figtree: { className: "", variable: "", style: { fontFamily: "" } } }));
+
 /**
  * The X card rule (`lib/share-metadata.ts`): `summary_large_image` only with
  * an Open Graph image, `summary` otherwise, and only the card type, since X

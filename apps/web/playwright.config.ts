@@ -91,16 +91,20 @@ export default defineConfig({
             // pixel. The 50 is headroom for anti-aliasing at a glyph's or a
             // curve's edge landing a pixel apart between that emulation and
             // CI's native amd64, and a count, not a ratio, so it does not grow
-            // with the page (the specimen is 1280×7529 and 360×10443 px, where
-            // the old 0.1% allowed about 9,600 and 3,750 pixels). Measured then:
-            // the accent mutation above differs in 26,093 and 35,741 pixels, and
-            // a 3 px focus ring drawn at 2 px in 732. The focus ring has its
+            // with the page (the specimen is 1280×7748 and 360×11294 px, where
+            // the old 0.1% would allow about 9,900 and 4,070 pixels). Measured
+            // then, on the palette before Figtree and Colbination's colours: the
+            // accent mutation above differs in 26,093 and 35,741 pixels, and a
+            // 3 px focus ring drawn at 2 px in 732. The focus ring has its
             // own shot at 10 pixels (specimen.screenshot.ts).
             // Under QEMU emulation one full-page shot of the specimen takes a few
             // seconds, and toHaveScreenshot needs two; the default 5 s is too short.
             expect: { toHaveScreenshot: { timeout: 30_000, threshold: 0, maxDiffPixels: 50 } },
-            // Two full-page comparisons and a crop, under emulation, and
-            // writing the diffs when they fail: more than the default 30 s.
+            // The whole test (the warm-up load, the image poll, `document.fonts.ready`,
+            // the discarded capture, two full-page comparisons and a crop, and writing
+            // the diffs when they fail) runs past the default 30 s under emulation: a 1280 px
+            // shot measured between 10 and 50 s on an Apple-silicon laptop. The
+            // test gets its own budget; a hang still fails.
             timeout: 120_000,
             use: {
               ...devices["Desktop Chrome"],

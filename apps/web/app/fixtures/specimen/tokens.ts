@@ -13,12 +13,25 @@ export const COLOR_TOKENS = [
   "--rh-color-surface",
   "--rh-color-surface-raised",
   "--rh-color-border",
+  "--rh-color-border-strong",
   "--rh-color-accent",
   "--rh-color-accent-text",
   "--rh-color-focus",
 ] as const;
 
-export const FONT_TOKENS = ["--rh-font-sans", "--rh-font-serif"] as const;
+/** The five brand accents, for marks only; `lib/type-accents.ts` gives each type one. */
+export const MARK_TOKENS = [
+  "--rh-mark-coral",
+  "--rh-mark-cobalt",
+  "--rh-mark-lemon",
+  "--rh-mark-mint",
+  "--rh-mark-grape",
+] as const;
+
+export const FONT_TOKENS = ["--rh-font-sans"] as const;
+
+/** How a heading differs from body text in the same face. */
+export const HEADING_TOKENS = ["--rh-weight-heading", "--rh-tracking-heading"] as const;
 
 export const TEXT_SIZE_TOKENS = [
   "--rh-text-sm",
@@ -51,7 +64,9 @@ export const MEASURE_TOKENS = ["--rh-measure", "--rh-measure-wide"] as const;
 /** Every token the specimen shows, in page order. */
 export const SPECIMEN_TOKENS: readonly string[] = [
   ...COLOR_TOKENS,
+  ...MARK_TOKENS,
   ...FONT_TOKENS,
+  ...HEADING_TOKENS,
   ...TEXT_SIZE_TOKENS,
   ...LEADING_TOKENS,
   ...SPACE_TOKENS,

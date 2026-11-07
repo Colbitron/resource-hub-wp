@@ -11,7 +11,7 @@ The plugin models a filterable resources library: a `resource` post type with `r
 ├─ wp-content/plugins/resource-hub-wp/   the WordPress plugin (its own README.md and CLAUDE.md)
 ├─ wp-content/themes/resource-hub/       the CMS's block theme, planned for slice 5; not here yet
 ├─ apps/web/                             the Next.js front end (its own README.md and CLAUDE.md)
-├─ packages/ui/                          @colbitron/resource-hub-ui: the contract's JSON Schemas and shared styles
+├─ packages/ui/                          @colbitron/resource-hub-ui: the contract's JSON Schemas, shared styles and DESIGN.md
 ├─ docs/adr/                             the hard-to-reverse decisions, one sequence for the whole project
 ├─ docs/architecture/                    how revalidation and caching work, for contributors
 ├─ docs/runbooks/                        deploying, rolling back, rotating secrets
@@ -115,7 +115,7 @@ Log in at `http://localhost:8888/wp-admin` with `admin` / `password`. The plugin
 | `pnpm build` / `pnpm start` | Block build, once or watching |
 | `pnpm test:php` | PHPUnit in the tests container |
 | `pnpm test:e2e` / `pnpm test:e2e:debug` | Playwright against the tests site |
-| `pnpm test:schemas` | The contract schema test in `packages/ui` |
+| `pnpm test:schemas` | The `packages/ui` tests: the contract schemas, and the stylesheets' contrast and design-doc checks |
 | `pnpm web:dev` / `web:lint` / `web:typecheck` / `web:test` / `web:test:e2e` / `web:build` | The Next.js app in `apps/web` |
 
 The wp-env scripts run from the root, where `.wp-env.json` is; the rest delegate with `pnpm --filter` to the plugin package or the app, which also accept the same commands from their own directories.
@@ -130,7 +130,7 @@ A push to `main` deploys the CMS first, by rsync over SSH from CI after the gate
 
 ## Decisions
 
-Thirteen records under [`docs/adr/`](docs/adr/) hold the decisions that are expensive to undo. Everything else is explained where it lives: [`docs/architecture/revalidation.md`](docs/architecture/revalidation.md) (how a change reaches the front end), [`docs/architecture/caching.md`](docs/architecture/caching.md) (caching, URLs and redirects, with the measurements), the [deploy runbook](docs/runbooks/deploy.md), the contract in [`packages/ui/README.md`](packages/ui/README.md), and the docblocks.
+Thirteen records under [`docs/adr/`](docs/adr/) hold the decisions that are expensive to undo. Everything else is explained where it lives: [`docs/architecture/revalidation.md`](docs/architecture/revalidation.md) (how a change reaches the front end), [`docs/architecture/caching.md`](docs/architecture/caching.md) (caching, URLs and redirects, with the measurements), the [deploy runbook](docs/runbooks/deploy.md), the contract in [`packages/ui/README.md`](packages/ui/README.md), the visual system in [`packages/ui/DESIGN.md`](packages/ui/DESIGN.md), and the docblocks.
 
 - [0005](docs/adr/0005-hosted-wordpress-on-cloudways.md) The CMS is hosted on Cloudways so Vercel can reach it over HTTPS; PHP is pinned to 8.4 to match.
 - [0007](docs/adr/0007-one-post-type-with-a-type-taxonomy.md) One `resource` post type with a `resource_type` taxonomy, because core REST has no cross-type collection that filters by taxonomy; `featured` is a term in a code-managed `resource_flag` taxonomy, not meta, because term relationships are indexed and `hierarchical` is what keeps editors from creating flags.

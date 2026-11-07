@@ -1,7 +1,7 @@
 /*
  * The resource card. Class names are part of the contract (ADR 0033; see
- * `packages/ui/README.md`): the front end's <ResourceCard> and the CMS render
- * the same markup.
+ * `packages/ui/README.md`, and `DESIGN.md` for the design): the front end's
+ * <ResourceCard> and the CMS render the same markup.
  *
  * Built only on the tokens in tokens.css, which the consumer loads first.
  *
@@ -20,12 +20,12 @@
  * the whole card, so the card is clickable without nesting anything in the
  * link, and the focus ring is drawn around the card through the same box.
  *
- * The trade-off of that stretched link: the overlay sits above the summary
- * and the topics, so their text cannot be selected with the mouse; a drag
- * starts on the link. Accepted, because the card is a link to the page that
- * holds the same text. The alternative, if selection is ever wanted, is to
- * lift the summary above the overlay (`position: relative; z-index: 1`): its
- * text becomes selectable, but a click on it no longer navigates.
+ * The trade-off of that stretched link (DESIGN.md): the overlay sits above the
+ * summary and the topics, so their text cannot be selected with the mouse; a
+ * drag starts on the link. Accepted, because the card is a link to the page
+ * that holds the same text. The alternative, if selection is ever wanted, is
+ * to lift the summary above the overlay (`position: relative; z-index: 1`):
+ * its text becomes selectable, but a click on it no longer navigates.
  *
  * In a .rh-card-grid every card in a row is as tall as the tallest: each grid
  * item stretches to the row, and is itself a one-cell grid the card fills.
@@ -103,9 +103,10 @@
 
 .rh-card__title {
 	margin: 0;
-	font-family: var(--rh-font-serif);
+	font-family: var(--rh-font-sans);
 	font-size: var(--rh-text-md);
-	font-weight: 600;
+	font-weight: var(--rh-weight-heading);
+	letter-spacing: var(--rh-tracking-heading);
 	line-height: var(--rh-leading-tight);
 }
 

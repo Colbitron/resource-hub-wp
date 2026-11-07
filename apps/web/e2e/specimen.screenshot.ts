@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { platformFonts } from "./platform-fonts.mts";
+
 /**
  * Pixel baselines of the design specimen (`app/fixtures/specimen/`), the page
  * that shows every shared token, every component and the states between
@@ -38,6 +40,13 @@ for (const width of WIDTHS) {
       test.use({ viewport: { width, height: 800 }, colorScheme });
 
       test("the specimen matches its baseline", async ({ page }) => {
+        // Figtree is `display: swap` (app/fonts.ts): on a cold load under
+        // emulation the file can land after the first paint, and the page is
+        // laid out again in Figtree while the waits below run. One load first
+        // puts the file in the browser's cache, so the captured load draws
+        // Figtree from its first paint and has no swap to wait out.
+        await page.goto(SPECIMEN_PATH);
+        await page.evaluate(() => document.fonts.ready.then(() => undefined));
         await page.goto(SPECIMEN_PATH);
         // Every card image is eager; wait until each has decoded, and for the
         // fonts, so the capture never catches a half-loaded page.
@@ -50,6 +59,13 @@ for (const width of WIDTHS) {
           )
           .toBe(true);
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
+        // A page left in the fallback face would fail below as thousands of
+        // differing pixels; say what went wrong instead.
+        const headingFonts = await platformFonts(page, "h1");
+        expect(headingFonts.length, "the specimen's h1 was drawn with no font").toBeGreaterThan(0);
+        for (const family of headingFonts) {
+          expect(family, `the specimen was drawn in ${headingFonts.join(", ")}, not Figtree: the font had not loaded`).toMatch(/^Figtree\b/);
+        }
         // The states section's link, focused as a keyboard would, so the
         // baseline shows the focus ring (`:focus-visible`).
         const focused = page.locator("#specimen-focus");

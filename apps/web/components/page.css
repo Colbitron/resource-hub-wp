@@ -1,7 +1,7 @@
 /*
  * A WordPress page (PageArticle) and the welcome page (WelcomePage): a title
- * and a body in one column of `--rh-measure`, built on the shared tokens (see
- * packages/ui/README.md). The body's element rules are `.rh-prose` in
+ * and a body in one column of `--rh-measure`, built on the shared tokens
+ * (packages/ui/DESIGN.md). The body's element rules are `.rh-prose` in
  * prose.css. These classes are the front end's own, not part of the contract.
  */
 
