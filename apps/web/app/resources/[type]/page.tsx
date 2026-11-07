@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { ListingPage, listingMetadata } from "@/components/ListingPage";
+import { typeListingParams } from "@/lib/prerender";
 
 /**
  * `/resources/[type]/`: one type. The static siblings `topic/` and `page/`
@@ -12,8 +13,13 @@ import { ListingPage, listingMetadata } from "@/components/ListingPage";
 // The data layer's interval, as a literal: Next.js reads segment config statically.
 export const revalidate = 3600;
 
-export function generateStaticParams(): { type: string }[] {
-  return [];
+/**
+ * Each type's first page, prerendered as an entry to the library when the
+ * CMS answers at build, or `[]` when it does not (ADR 0043;
+ * `lib/prerender.ts`). Later pages and topic listings stay on demand.
+ */
+export function generateStaticParams(): Promise<{ type: string }[]> {
+  return typeListingParams();
 }
 
 export async function generateMetadata({ params }: PageProps<"/resources/[type]">): Promise<Metadata> {

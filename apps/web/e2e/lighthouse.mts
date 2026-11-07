@@ -5,14 +5,17 @@
  *
  *   node e2e/lighthouse.mts
  *
- * Builds the app with the test environment (`appServerEnv`) first and
- * stamps the build (`build-stamp.mts`), unless `RH_E2E_PREBUILT=1` says the
- * build in `.next` is already that one, as in CI after the end-to-end run;
- * then the stamp must say so, or the run stops before starting anything.
- * Then it clears the fetch cache, starts the mock and `next start` on the
- * harness's ports (refusing a port something already answers on, and
- * failing at once if either server exits while it waits), requests each URL
- * once so Lighthouse measures the
+ * Starts the mock first, then builds the app with the test environment
+ * (`appServerEnv`) and stamps the build (`build-stamp.mts`), unless
+ * `RH_E2E_PREBUILT=1` says the build in `.next` is already that one, as in
+ * CI after the end-to-end run; then the stamp must say so, or the run stops
+ * before starting anything. The mock is up before the build because the
+ * build prerenders the library, the type listings, the root and the newest
+ * resources from the CMS it can reach (ADR 0043; `lib/prerender.ts`), and
+ * Lighthouse should measure the same build the end-to-end run tests. Then it
+ * clears the fetch cache, starts `next start` on the harness's port (refusing
+ * a port something already answers on, and failing at once if either server
+ * exits while it waits), requests each URL once so Lighthouse measures the
  * cached page a reader gets rather than its first render, and runs
  * `lhci collect`, `lhci upload` (to `lighthouse-results/`) and `lhci assert`,
  * in that order, so the reports are written even when a budget fails. The
@@ -112,16 +115,17 @@ async function main(): Promise<number> {
     }
   }
 
+  const mockServer = startServer("node", ["e2e/mock-cms/main.mts"], { RH_MOCK_CMS_PORT: String(mockCmsPort()) });
+  await waitFor(`${mock}/__mock/health`, mockServer, 15_000);
+
   if (prebuilt()) {
     assertPrebuilt();
   } else {
-    if (run("pnpm", ["exec", "next", "build"], env) !== 0) return 1;
+    if (run("pnpm", ["build"], env) !== 0) return 1;
     writeBuildStamp({ ...process.env, ...env });
   }
-  if (run("node", ["e2e/clear-fetch-cache.mts"]) !== 0) return 1;
+  if (run("node", ["scripts/clear-fetch-cache.mts"]) !== 0) return 1;
 
-  const mockServer = startServer("node", ["e2e/mock-cms/main.mts"], { RH_MOCK_CMS_PORT: String(mockCmsPort()) });
-  await waitFor(`${mock}/__mock/health`, mockServer, 15_000);
   const appServer = startServer("pnpm", ["exec", "next", "start", "--port", String(webPort())], env);
   await waitFor(`${app}/`, appServer, 60_000);
 

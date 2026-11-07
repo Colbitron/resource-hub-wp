@@ -6,12 +6,14 @@ import { describe, expect, it } from "vitest";
 /**
  * The page route (ADR 0052) keeps the segment config its redirects rest on,
  * the same as the resource route (see `docs/architecture/caching.md`): an ISR
- * route with the data layer's interval as a literal and no params at build, so
- * the build never renders `/` from the CMS and each path is rendered on its
- * first request and stored, its 308s and 404s included, until a page event or
- * the interval clears it. There is no `app/page.tsx` beside it: a route with
- * no dynamic segment would be prerendered at build, and would claim `/` from
- * the catch-all. Measured on Next.js 16.4.5: a request-time API or a
+ * route with the data layer's interval as a literal and a
+ * `generateStaticParams` that prerenders `/` alone, and only when the CMS
+ * answers for it at build (ADR 0043; `lib/prerender.ts`), so every other
+ * path is rendered on its first request and stored, its 308s and 404s
+ * included, until a page event or the interval clears it. There is no
+ * `app/page.tsx` beside it: a route with no dynamic segment would be
+ * prerendered at build whether or not the CMS answers, and would claim `/`
+ * from the catch-all. Measured on Next.js 16.4.5: a request-time API or a
  * `no-store` fetch in an ISR route with no prerendered params is a runtime
  * 500. A not-found decision renders `DataNotFound`, as on the resource route,
  * so the 404's HTML is the not-found page (issue #46).
@@ -36,8 +38,9 @@ describe("the page route", () => {
     expect(code).toMatch(/^export const revalidate = 3600;$/m);
   });
 
-  it("exports a generateStaticParams that returns [], so the build never asks the CMS", () => {
-    const match = /export function generateStaticParams\(\)[^\n]*\{\s*return \[\];\s*\}/.exec(code);
+  it("exports a generateStaticParams that is the prerender module's root probe, which is [] when the CMS does not answer", () => {
+    expect(code).toMatch(/^import \{ rootPageParams \} from "@\/lib\/prerender";$/m);
+    const match = /export function generateStaticParams\(\)[^\n]*\{\s*return rootPageParams\(\);\s*\}/.exec(code);
     expect(match).not.toBeNull();
   });
 

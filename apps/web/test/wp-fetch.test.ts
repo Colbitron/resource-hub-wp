@@ -18,6 +18,7 @@ import {
   getResourceById,
   getResourceBySlug,
   getResourcesByIds,
+  listRecentResources,
   listResources,
   RESOURCES_PER_PAGE,
 } from "../lib/wp/resources";
@@ -356,6 +357,48 @@ describe("listResources", () => {
     handler = () => paged([], 0, 0);
     expect(await listResources({ page: 2 })).toBe(NO_SUCH_PAGE);
     expect(await listResources({ page: 1 })).toEqual({ items: [], total: 0, totalPages: 0, skipped: 0 });
+  });
+});
+
+describe("listRecentResources", () => {
+  it("reads the newest `count` across every type, newest first, with the library's tags", async () => {
+    const items = await listRecentResources({ count: 50 });
+    const call = only();
+    expect(call.url.pathname).toBe("/wp-json/wp/v2/resources");
+    expect(query(call)).toBe("_embed&per_page=50&orderby=date&order=desc");
+    expect(call.init.next?.tags).toEqual(["resources", "terms"]);
+    expect(call.init.cache).toBe("force-cache");
+    expect(items?.map((item) => item.slug)).toEqual(["a-field-guide-to-revalidation", "alt-text-at-scale"]);
+  });
+
+  it("resolves a type to its ID first and tags the list as that type's listing", async () => {
+    await listRecentResources({ type: "Webinar", count: 10 });
+    expect(calls).toHaveLength(2);
+    const [lookup, list] = calls;
+    expect(lookup.url.pathname).toBe("/wp-json/wp/v2/resource_type");
+    expect(query(lookup)).toBe("slug=webinar");
+    expect(query(list)).toBe("_embed&per_page=10&orderby=date&order=desc&resource_type=5");
+    expect(list.init.next?.tags).toEqual(["type:webinar", "terms"]);
+  });
+
+  it("is null for an unknown or reserved type, and reads no list for it", async () => {
+    expect(await listRecentResources({ type: "no-such-type", count: 10 })).toBeNull();
+    expect(await listRecentResources({ type: "topic", count: 10 })).toBeNull();
+    expect(calls.map((call) => call.url.pathname)).not.toContain("/wp-json/wp/v2/resources");
+  });
+
+  it("throws a RangeError on a count outside 1 to 100, without a request", async () => {
+    for (const count of [0, 101, 1.5, Number.NaN]) {
+      await expect(listRecentResources({ count })).rejects.toThrow(RangeError);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  it("throws a CmsError when the CMS fails, naming the endpoint and never the host", async () => {
+    handler = () => wpError(503, "service_unavailable");
+    const error = await cmsError(() => listRecentResources({ count: 50 }));
+    expect(error.status).toBe(503);
+    expect(error.endpoint).toBe("/wp/v2/resources");
   });
 });
 

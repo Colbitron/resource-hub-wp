@@ -7,13 +7,17 @@ import { CMS_REVALIDATE_SECONDS } from "../lib/wp/fetch";
 
 /**
  * The eight listing routes keep the segment config ISR rests on: the build
- * never needs the CMS (ADR 0043), and each listing is rendered on its first
- * request and stored (`docs/architecture/caching.md`). Next.js reads
- * `revalidate` statically, so it has to be a literal in each file and cannot
- * be imported; this test is what keeps those literals equal to the data
- * layer's interval. And a listing stays ISR only while it calls nothing that
- * makes the route dynamic (`connection()`, `headers()`, `cookies()`,
- * `searchParams`) and has a `generateStaticParams` for its dynamic segments.
+ * never fails for a CMS reason (ADR 0043), and each listing is
+ * rendered on its first request and stored (`docs/architecture/caching.md`),
+ * except the library and each type's first page, which the build prerenders
+ * when the CMS answers (`lib/prerender.ts`). Next.js reads `revalidate`
+ * statically, so it has to be a literal in each file and cannot be imported;
+ * this test is what keeps those literals equal to the data layer's interval.
+ * And a listing stays ISR only while it calls nothing that makes the route
+ * dynamic (`connection()`, `headers()`, `cookies()`, `searchParams`) and has
+ * a `generateStaticParams` for its dynamic segments: the two prerendered
+ * routes call the prerender module's probes, and the other six return `[]`,
+ * since topic listings and later pages grow with what editors add.
  */
 
 const LISTING_ROUTES = [
@@ -26,6 +30,12 @@ const LISTING_ROUTES = [
   "app/resources/[type]/topic/[topic]/page.tsx",
   "app/resources/[type]/topic/[topic]/page/[n]/page.tsx",
 ];
+
+/** The listings the build prerenders, through the probe in `lib/prerender.ts` each calls. */
+const PRERENDERED: Record<string, string> = {
+  "app/resources/[[...rest]]/page.tsx": "libraryParams",
+  "app/resources/[type]/page.tsx": "typeListingParams",
+};
 
 /** The literal the routes export. */
 const ROUTE_REVALIDATE = 3600;
@@ -54,9 +64,17 @@ describe("the listing routes", () => {
         expect(matches[0][1]).toBe(String(ROUTE_REVALIDATE));
       });
 
-      it("has a generateStaticParams", () => {
-        expect(code).toMatch(/^export (async )?function generateStaticParams\(/m);
-      });
+      const probe = PRERENDERED[route];
+      if (probe === undefined) {
+        it("has a generateStaticParams that returns [], since the listing grows with what editors add", () => {
+          expect(code).toMatch(/^export function generateStaticParams\(\)[^\n]*\{\s*return \[\];\s*\}/m);
+        });
+      } else {
+        it(`has a generateStaticParams that is the prerender module's ${probe}, which is [] when the CMS does not answer`, () => {
+          expect(code).toMatch(new RegExp(`^import \\{ ${probe} \\} from "@/lib/prerender";$`, "m"));
+          expect(code).toMatch(new RegExp(`^export function generateStaticParams\\(\\)[^\\n]*\\{\\s*return ${probe}\\(\\);\\s*\\}`, "m"));
+        });
+      }
 
       it("calls nothing that makes the route dynamic", () => {
         expect(code).not.toMatch(/\bconnection\s*\(/);

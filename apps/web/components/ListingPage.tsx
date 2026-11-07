@@ -7,11 +7,10 @@ import { FilterNav, type FilterTerm } from "@/components/FilterNav";
 import { ListingFocus } from "@/components/ListingFocus";
 import { Pagination } from "@/components/Pagination";
 import { ResourceCard } from "@/components/ResourceCard";
-import { listingPath, validListing, type ListingFilter, type ListingRequest } from "@/lib/routes";
-import { plainText, toCard, type CardData } from "@/lib/wp/cards";
-import { CmsError, NO_SUCH_PAGE } from "@/lib/wp/fetch";
-import { listResources, type ResourceListing } from "@/lib/wp/resources";
-import { FEATURED_FLAG_SLUG, getTermBySlug, listTerms } from "@/lib/wp/terms";
+import { loadListing } from "@/lib/listing-data";
+import { listingPath, validListing, type ListingRequest } from "@/lib/routes";
+import { plainText, toCard } from "@/lib/wp/cards";
+import type { ResourceListing } from "@/lib/wp/resources";
 import type { WpTerm } from "@/lib/wp/schemas/rest";
 
 import "./listing.css";
@@ -87,12 +86,18 @@ import "./listing.css";
  *   any render until the next event or the interval. Any other error still
  *   throws, and a failure of the list itself is still the page's 500.
  *
- * The routes are ISR (ADR 0043: `export const revalidate = 3600`, the data
- * layer's interval as a literal, and `generateStaticParams` returning `[]`, so
- * the build asks the CMS for nothing and each page renders on its first
- * request). Every fetch here is tagged by the data layer (the tags each event
- * clears are in `docs/architecture/caching.md`), so a revalidation event from
- * the CMS clears the page; nothing here reads `searchParams`, `headers()` or
+ * The routes are ISR (ADR 0043: `export const revalidate = 3600`,
+ * the data layer's interval as a literal, and a `generateStaticParams` that
+ * names the library and each type's first page when the CMS answers at build
+ * and nothing otherwise, so every other page renders on its first request).
+ * Every read the page makes goes through `loadListing` in
+ * `lib/listing-data.ts`, which the build-time probe in `lib/prerender.ts`
+ * calls too, so a page the build prerenders is rendered from reads the probe
+ * has already put in the Data Cache (that module is in `lib/`, not here,
+ * because a route importing it must not inline this component's CSS). Every
+ * fetch here is tagged by the data layer (the tags each event clears are in
+ * `docs/architecture/caching.md`), so a revalidation event from the CMS
+ * clears the page; nothing here reads `searchParams`, `headers()` or
  * `connection()`, which would make the route dynamic (ADR 0024 keeps filters
  * out of `searchParams`, and `connection()` with an empty
  * `generateStaticParams` measured as a 500 on every request; see
@@ -104,18 +109,6 @@ import "./listing.css";
 
 /** The segments of a listing route, as Next.js hands them to the page: `ListingRequest` in `lib/routes.ts`. */
 export type { ListingRequest };
-
-/** The terms a filter names, or `null` when one of them does not exist. */
-async function filterTerms(filter: ListingFilter): Promise<{ type?: WpTerm; topic?: WpTerm } | null> {
-  const [type, topic] = await Promise.all([
-    filter.type === undefined ? undefined : getTermBySlug("resource_type", filter.type),
-    filter.topic === undefined ? undefined : getTermBySlug("resource_topic", filter.topic),
-  ]);
-  if (type === null || topic === null) {
-    return null;
-  }
-  return { ...(type === undefined ? {} : { type }), ...(topic === undefined ? {} : { topic }) };
-}
 
 /**
  * The listing's name, from the terms it is filtered by: "Resources", "Webinar
@@ -155,24 +148,23 @@ function noneShowable(listing: ResourceListing, cardCount: number): boolean {
 
 /**
  * The metadata for the listing `request`: its title, its canonical URL, and
- * `noindex` when none of the page's resources can be shown. It reads the
- * same tagged fetches as the page, which the per-render memoization and the
- * Data Cache answer once.
+ * `noindex` when none of the page's resources can be shown. It calls the
+ * same `loadListing` as the page, which within a render runs once for both
+ * (`lib/listing-data.ts`), so the two make one set of reads and a lead that
+ * fails is logged once; a `CmsError` from a read the page depends on throws
+ * here as it does in the page, and the response is the same 500.
  */
 export async function listingMetadata(request: ListingRequest): Promise<Metadata> {
   const valid = validListing(request);
   if (valid === null) {
     return NOT_FOUND_METADATA;
   }
-  const [terms, listing] = await Promise.all([
-    filterTerms(valid.filter),
-    listResources({ ...valid.filter, page: valid.page }),
-  ]);
-  if (terms === null || listing === null || listing === NO_SUCH_PAGE) {
+  const data = await loadListing(valid);
+  if (data === null) {
     return NOT_FOUND_METADATA;
   }
-  const name = heading(terms);
-  const cardCount = listing.items.map(toCard).filter((card) => card !== null).length;
+  const name = heading(data.terms);
+  const cardCount = data.listing.items.map(toCard).filter((card) => card !== null).length;
   return {
     title: valid.page === 1 ? name : `${name}, page ${valid.page}`,
     // A path, which the root layout's `metadataBase` (from the server-only
@@ -180,43 +172,12 @@ export async function listingMetadata(request: ListingRequest): Promise<Metadata
     // local work (see apps/web/README.md). The CMS's absolute URLs are never
     // used (ADR 0040).
     alternates: { canonical: listingPath(valid.filter, valid.page) },
-    ...(noneShowable(listing, cardCount) ? { robots: { index: false } } : {}),
+    ...(noneShowable(data.listing, cardCount) ? { robots: { index: false } } : {}),
   };
 }
 
 /** The `<h1>`'s ID, which `ListingFocus` moves focus to after a client navigation. */
 const HEADING_ID = "rh-listing-heading";
-
-/** True when `valid` is the page the lead belongs to: the first page of the unfiltered library. */
-function hasLead(valid: { filter: ListingFilter; page: number }): boolean {
-  return valid.page === 1 && valid.filter.type === undefined && valid.filter.topic === undefined;
-}
-
-/**
- * The lead: the newest featured resource with a URL, or `null` when the CMS
- * has no `featured` flag term, nothing carries it, or none of the flagged
- * resources on its first page can be shown.
- */
-async function leadCard(): Promise<CardData | null> {
-  const featured = await listResources({ flag: FEATURED_FLAG_SLUG, page: 1 });
-  if (featured === null || featured === NO_SUCH_PAGE) {
-    return null;
-  }
-  return featured.items.map(toCard).find((card) => card !== null) ?? null;
-}
-
-/** `leadCard`, with a CMS failure logged and answered as no lead, so the list still renders. */
-async function leadOrNone(): Promise<CardData | null> {
-  try {
-    return await leadCard();
-  } catch (caught) {
-    if (!(caught instanceof CmsError)) {
-      throw caught;
-    }
-    console.error(`ListingPage: rendering the library without its lead; ${caught.message}`);
-    return null;
-  }
-}
 
 export async function ListingPage({ request }: { request: ListingRequest }) {
   const valid = validListing(request);
@@ -225,16 +186,11 @@ export async function ListingPage({ request }: { request: ListingRequest }) {
   }
   const { filter, page } = valid;
 
-  const [listing, terms, types, topics, lead] = await Promise.all([
-    listResources({ ...filter, page }),
-    filterTerms(filter),
-    listTerms("resource_type"),
-    listTerms("resource_topic"),
-    hasLead(valid) ? leadOrNone() : null,
-  ]);
-  if (listing === null || listing === NO_SUCH_PAGE || terms === null) {
+  const data = await loadListing(valid);
+  if (data === null) {
     return <DataNotFound />;
   }
+  const { listing, terms, types, topics, lead } = data;
 
   const cards = listing.items.map(toCard).filter((card) => card !== null);
   const rows = lead === null ? cards : cards.filter((card) => card.id !== lead.id);

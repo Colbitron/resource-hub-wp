@@ -4,6 +4,7 @@ import { DataNotFound, NOT_FOUND_METADATA } from "@/components/DataNotFound";
 import { PageArticle, pageMetadata } from "@/components/PageArticle";
 import { WelcomePage, welcomeMetadata } from "@/components/WelcomePage";
 import { pageForRequest } from "@/lib/page-request";
+import { rootPageParams } from "@/lib/prerender";
 
 /**
  * `/` and `/{segments}/`: the CMS's static front page at the root, every other
@@ -20,11 +21,13 @@ import { pageForRequest } from "@/lib/page-request";
  * The route is ISR, like the resource page and the listings
  * (ADRs 0043 and 0052; see `docs/architecture/caching.md`):
  * `revalidate = 3600`, the data layer's interval as a literal, and a
- * `generateStaticParams` returning `[]`, so the build renders nothing from the
- * CMS, `/` included (an optional catch-all with an empty `generateStaticParams`
- * is what keeps a root path out of the build, as `/resources/` is kept out),
- * and each path is rendered on its first request, stored, and served from the
- * route cache until a page event or the interval clears it. Every entry, a 200,
+ * `generateStaticParams` that prerenders `/` alone, and only when the CMS
+ * answers for it at build (`rootPageParams` in `lib/prerender.ts`; an
+ * optional catch-all is what lets a root path be prerendered conditionally
+ * rather than always, as a plain `app/page.tsx` would be). Every other page
+ * path, and `/` after a build the CMS was absent for, is rendered on its
+ * first request, stored, and served from the route cache until a page event
+ * or the interval clears it, as a prerendered one is. Every entry, a 200,
  * the welcome page, a 308 or a 404, is stored under the `pages` tag its lookups
  * carry, and a page event clears that tag and the paths it names, so the front
  * page swaps in at `/` on the event for it, a stored redirect at `/home/` or at
@@ -56,8 +59,13 @@ import { pageForRequest } from "@/lib/page-request";
 // The data layer's interval, as a literal: Next.js reads segment config statically.
 export const revalidate = 3600;
 
-export function generateStaticParams(): { path: string[] }[] {
-  return [];
+/**
+ * The site's root, `/` (`path: []`), prerendered when the CMS answers for
+ * it at build, or `[]` when it does not (ADR 0043; `lib/prerender.ts`). No
+ * other CMS page is prerendered.
+ */
+export function generateStaticParams(): Promise<{ path: string[] }[]> {
+  return rootPageParams();
 }
 
 export async function generateMetadata({ params }: PageProps<"/[[...path]]">): Promise<Metadata> {

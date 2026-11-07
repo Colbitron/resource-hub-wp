@@ -48,9 +48,10 @@ import type { WpResource } from "./wp/schemas/rest";
  *   layer's Data Cache makes that cheap.
  *
  * How the 308 reaches the wire: `resourceForRequest` calls Next.js's
- * `permanentRedirect()` from an ISR route (`revalidate = 3600`, a
- * `generateStaticParams` returning `[]`), which renders the decision once per
- * URL and stores whatever it was, a 200, a 308 or a 404, under the tags of the
+ * `permanentRedirect()` from an ISR route (`revalidate = 3600`, and a
+ * `generateStaticParams` that prerenders the newest resources when the CMS
+ * answers at build, ADR 0043), which renders the decision once per URL, at
+ * build or on the first request, and stores whatever it was, a 200, a 308 or a 404, under the tags of the
  * fetches that decided it, so the revalidation event for any change to the
  * resource clears a stored redirect at its old URL and a stored 404 at its new
  * one (measured; see `docs/architecture/caching.md`). The stored response

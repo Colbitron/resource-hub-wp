@@ -2,9 +2,10 @@
 status: accepted
 date: 2026-11-05
 merges: 0023, and the cores of 0046 and 0050 (2026-11-06)
+amended: 2026-11-07
 ---
 
-# The caching model: the `fetch` Data Cache with tags, the only HTTP cache, cleared by the union of each event's states, with a build that never needs the CMS
+# The caching model: the `fetch` Data Cache with tags, the only HTTP cache, cleared by the union of each event's states, with a build that never fails because of the CMS
 
 Next.js 16 has two caching models. Cache Components (`cacheComponents: true`, the `create-next-app` default) caches with `'use cache'`, `cacheLife` and `cacheTag` and treats every uncached fetch as request-time data. The previous model caches individual `fetch` calls with `next: { tags, revalidate }` and the route segment `revalidate`, and invalidates them with `revalidateTag` and `revalidatePath`. The front end uses the previous model, and four rules follow from it.
 
@@ -14,7 +15,7 @@ Next.js 16 has two caching models. Cache Components (`cacheComponents: true`, th
 
 **Every event clears the union of its current and previous state.** The route clears the tags and paths of both states and never diffs the two; which tags each event clears is in [`caching.md`](../architecture/caching.md#tags-and-what-each-event-clears) and the tag names in the [contract](../../packages/ui/README.md#semantics-the-schemas-assume). `terms` is produced by term events only and carried by every fetch that embeds or lists terms, so a rename reaches every page that shows the name, which the event cannot name. Tags are fixed from the request, never from the response, so a miss is cached under the tags a later publish clears. Pagination is covered by tags only.
 
-**The build never needs the CMS.** Every route is ISR with `generateStaticParams` returning `[]` and a route `revalidate` as the safety net, so `next build` renders nothing from WordPress. A build that rendered pages from the CMS would couple a front-end deploy to the CMS being up and in step and make preview builds fail for reasons unrelated to the change; with no page prerendered, the build is a function of the code alone, and the deploy order (CMS first) keeps the first renders correct.
+**The build never needs the CMS.** *Amended 2026-11-07 (see Amendments below).* Every route is ISR with `generateStaticParams` returning `[]` and a route `revalidate` as the safety net, so `next build` renders nothing from WordPress. A build that rendered pages from the CMS would couple a front-end deploy to the CMS being up and in step and make preview builds fail for reasons unrelated to the change; with no page prerendered, the build is a function of the code alone, and the deploy order (CMS first) keeps the first renders correct.
 
 ## Considered options
 
@@ -33,3 +34,28 @@ Next.js 16 has two caching models. Cache Components (`cacheComponents: true`, th
 - The data layer calls the fetch-tag functions in `lib/tags.ts` rather than build tags by hand, and a unit test checks every fetch's tags against a hand-written table.
 - Every resource event re-renders every stored listing (the filter bar's term lists carry `resources`), and every distinct junk path stores its own 404. Both are accepted; the tags, the stored responses, the measurements and the costs are in [`docs/architecture/caching.md`](../architecture/caching.md).
 - Moving to Cache Components later is a contained change: the migration guide maps each `fetch` option to its counterpart, and `revalidateTag` keeps working.
+
+## Amendments
+
+### 2026-11-07: prerender a bounded set at build
+
+**What changed.** The build prerenders a bounded set from the CMS: the 50 most recent resources plus the 10 most recent of each type, the root `/`, the library `/resources/` and each type's first page. Each route's `generateStaticParams` probes the CMS and returns the paths that answered; any failure falls back to `[]`, and the build script empties the fetch cache first so the probe reads live. Everything else stays on-demand ISR, its tags and `revalidate` unchanged.
+
+**Why.** Next.js 16 writes its prefetch-hint manifest only for routes with a prerendered path, and an ISR route without an entry has prefetch disabled on every segment. With `[]` everywhere, `<Link>` fetched nothing for any library row: a click from the library to a resource measured 454 ms on a throttled mobile profile, against 61 ms once prefetched.
+
+**How the rule's purpose still holds.** The build still never fails because of the CMS: one that is absent, down, slow or unreadable costs one warning per route and no prerendered page, and every page renders on its first request as before. What the rule gave up is that the build is a function of the code alone.
+
+**Options weighed.**
+
+- Prerender nothing: it is what disabled prefetching.
+- Prerender everything: grows without bound with what editors add.
+- `prefetch={true}` on the row links: about 43 KB per visible row against about 6 KB, and an ISR render per prefetch for an unopened row.
+- A bounded set with a fallback to `[]`: chosen.
+
+**Consequences.**
+
+- Every build that can reach the CMS reads it, about 40 to 140 requests, previews included; a preview whose reads fail falls back and still deploys.
+- An event fired during a build clears the live deployment only, so the new deployment's prerendered pages carry pre-event data until the next event or the hourly interval.
+- The set is fixed at build; a deploy the CMS did not answer keeps prefetch off until the next one.
+
+The budgets, partial results, param decoding and measurements are in [`docs/architecture/caching.md`](../architecture/caching.md), "Prefetching".
