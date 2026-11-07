@@ -31,7 +31,7 @@ import { SAMPLED_URLS } from "./sampled-urls.mts";
  * nothing else notices. `apps/web/README.md`, "Images", has the measurements.
  *
  * **Exempting a page from it** (`wholeDocumentGuard: false`) is an owner
- * decision, not a loosened threshold. By the owner's decision of 2026-11-08
+ * decision, not a loosened threshold. By the owner's decision of 2026-11-07
  * (issue #85), a page may be exempt only when its size is the cost of
  * content that is wanted on it, never to make room for CSS or markup the
  * page does not need; a page that fails for that reason is a finding to fix.
@@ -44,7 +44,7 @@ import { SAMPLED_URLS } from "./sampled-urls.mts";
  * Lighthouse LCP budget (`lighthouserc.cjs`), where a miss is a warning, not
  * a block, until issue #76 calibrates the CPU slowdown (`e2e/README.md`,
  * "Lighthouse CI"). One sampled page is exempt: the resource page, by the
- * owner's decision of 2026-11-08, for its related section (issue #50), which
+ * owner's decision of 2026-11-07, for its related section (issue #50), which
  * is wanted content. The section's rows load `card.css` and `related.css`,
  * which the page's own meta line does without, and on 2026-11-07, on the
  * harness's seed, its HTML was 16,462 bytes (467 of headers), one window

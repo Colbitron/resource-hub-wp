@@ -20,7 +20,7 @@ describe("SAMPLED_URLS", () => {
     // An exemption from the whole-document check is the owner's decision
     // (e2e/document-size.spec.ts's docblock); the change that makes one
     // updates this list with it. The resource page's is the owner's of
-    // 2026-11-08, for its related section.
+    // 2026-11-07, for its related section.
     const exempt = (key: "wholeDocumentGuard" | "discoveryGuard") =>
       SAMPLED_URLS.filter((sample) => sample[key] === false).map((sample) => sample.path);
     expect(exempt("wholeDocumentGuard")).toEqual(["/resources/article/taxonomies-versus-meta/"]);
