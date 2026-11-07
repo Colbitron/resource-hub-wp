@@ -189,6 +189,17 @@ export function relatedTags(hostSlug: string): string[] {
  * host is the one resource left out, the URL names no host, and two blocks
  * for one topic share one entry. The same tags as the topic's listing
  * (`listingTags({ topic })`), which the same events reach.
+ *
+ * The request names the topic by ID, which the REST filter takes, and these
+ * tags name it by the marker's slug, so the two could disagree: a marker
+ * whose `data-topic` is stale or wrong for its `data-topic-id`. Next.js
+ * keys a cached fetch by its URL, not its tags, so without more, a marker
+ * with slug `a` and one with slug `b` for the same ID would read one entry,
+ * whose tags need not name the slug of the render reading it, and an event
+ * for that topic might not clear what it shows. `getNewestInTopic`
+ * therefore also sends the canonical slug (as `rh_topic`, which core
+ * ignores), so the cache key always names the slug these tags are made
+ * from, and each entry is stored and cleared under its own slug's tag.
  */
 export function relatedBlockTags(topicSlug: string): string[] {
   return [topicTag(topicSlug), TERMS_TAG];

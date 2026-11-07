@@ -288,31 +288,22 @@
  * fallback alike, the wrapper the pass always marks with that class. Both
  * are a small collection in the listing's shape: the heading, the block's
  * own and a direct child of the wrapper, at whatever level the outline gave
- * it, small over a strong rule in the ink (the same rule as related.css,
- * repeated here because `.rh-prose h2` would otherwise outrank it), and the
- * rows of the shared card.css under it. The body's rules for headings,
- * paragraphs, lists and links reach into a row with more weight than
- * card.css's single classes, so the overrides below give a row back its own
- * spacing, sizes and link; the row's own rules do the rest.
+ * it, small over a strong rule in the ink, and the rows of the shared
+ * card.css under it. The wrapper's margin and the heading's rule are in
+ * related.css alone, whose heading selector names the body's case too,
+ * since `.rh-prose h2` would otherwise outrank it. The body's rules for
+ * headings, paragraphs, lists and links reach into a row with more weight
+ * than card.css's single classes, so the overrides below give a row back
+ * its own spacing, sizes and link; the row's own rules do the rest.
  *
- * The CMS's render callback fills the marker with the same row markup, so a
- * fallback renders as rows too. A marker that still holds a plain list of
- * links, the shape before the rows, keeps its old rendering: each link on a
- * row between hairlines, in the ink, semibold and underlined, with the
- * list's markers off (`list-style: none`, which Safari reads as no list;
- * that list carries no `role`, where the row markup's does).
+ * The CMS block (a sibling branch, issue #50) writes the same row markup
+ * inside the marker, so a fallback renders as rows too. A marker that
+ * still holds a plain list of links, the shape before the rows, keeps its
+ * old rendering: each link on a row between hairlines, in the ink,
+ * semibold and underlined, with the list's markers off (`list-style:
+ * none`, which Safari reads as no list; that list carries no `role`, where
+ * the row markup's does).
  */
-
-.rh-prose .rh-related {
-	margin-top: var(--rh-space-7);
-}
-
-.rh-prose .rh-related > :is(h2, h3, h4, h5, h6) {
-	margin: 0;
-	padding-bottom: var(--rh-space-2);
-	border-bottom: var(--rh-border-width-strong) solid var(--rh-color-text);
-	font-size: var(--rh-text-md);
-}
 
 /* The rows: the body's list, paragraph, heading and link rules kept off them. */
 

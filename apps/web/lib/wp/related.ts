@@ -1,5 +1,6 @@
 import "server-only";
 
+import { canonicalSlug } from "../routes";
 import { relatedBlockTags, relatedTags } from "../tags";
 import { hasVisibleTitle, toCard, type CardData } from "./cards";
 import { CmsError, cmsGet, cmsGetListOk } from "./fetch";
@@ -133,15 +134,27 @@ export interface NewestInTopicOptions {
   readonly count: number;
 }
 
+/** The query argument that puts the topic's slug in the block's request URL, for its cache key alone (`getNewestInTopic`). */
+export const RELATED_BLOCK_TOPIC_PARAM = "rh_topic";
+
 /**
  * The `count` most recently published resources in the topic `topicId`,
  * newest first, with `_embed`: the related-resources block's list before
  * the block leaves out the post it sits in and the rows `toRelatedCard`
  * refuses. One page of `count` at `orderby=date&order=desc`, core's default
- * order written out so the request says what it asks for. The block takes
- * both the ID and the slug from the marker (`packages/ui/README.md`, "Block
- * marker"), so no term lookup is made. The URL names no host, so every
- * block for one topic and count shares one Data Cache entry.
+ * order written out so the request says what it asks for. Core orders by
+ * `post_date` alone here, with no ID tie-break, where the CMS's own lists
+ * order by date DESC then ID DESC, so two resources published in the same
+ * second may come in a different order here than in the related route's
+ * topic fill. The block takes both the ID and the slug from the marker
+ * (`packages/ui/README.md`, "Block marker"), so no term lookup is made.
+ *
+ * The URL also carries the topic's canonical slug as `rh_topic`
+ * (`RELATED_BLOCK_TOPIC_PARAM`), which core ignores, as it ignores any
+ * query argument the route does not register: only so the Data Cache key,
+ * which is the URL, names the slug the tags are made from
+ * (`relatedBlockTags`). The URL names no host, so every block for one
+ * topic, slug and count shares one entry.
  *
  * Tagged `relatedBlockTags(topicSlug)`. Throws a `RangeError` on a
  * `topicId` that is not a term ID, a `count` outside 1 to 100, or a slug
@@ -162,6 +175,7 @@ export async function getNewestInTopic({ topicId, topicSlug, count }: NewestInTo
     orderby: "date",
     order: "desc",
     resource_topic: String(topicId),
+    [RELATED_BLOCK_TOPIC_PARAM]: canonicalSlug(topicSlug),
   });
   const { data } = await cmsGetListOk({
     path: "/wp/v2/resources",
@@ -181,7 +195,8 @@ export async function getNewestInTopic({ topicId, topicSlug, count }: NewestInTo
  * alone: a related row is a recommendation, and a row that says "Untitled
  * resource", or names no type, recommends nothing. The listings keep their
  * fallback, since there every published resource must be reachable. The
- * related section shows fewer rows for it.
+ * related section shows fewer rows for it; the block over-fetches a little
+ * to keep its count (`RELATED_BLOCK_SPARE`, `components/RelatedResources.tsx`).
  */
 export function toRelatedCard(resource: WpResource): CardData | null {
   return hasVisibleTitle(resource.title.rendered) ? toCard(resource) : null;

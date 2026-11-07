@@ -17,7 +17,11 @@ import { postRevalidate } from "./revalidation.mts";
  * of the marker or the CMS in the HTML, at most five markers swapped and one
  * fetch per topic; and the fallback, the CMS's own rows, when the block's
  * read fails, checked on a CMS page, whose own reads are other routes than
- * the resources collection the fault is on.
+ * the resources collection the fault is on; a stray `rh-card__link` in a
+ * marker stripped of its class, with every row link's stretched `::after`
+ * inside its row and the block; and a swapped block kept as stored until a
+ * resource event in its topic or the topic's rename event refreshes it,
+ * through the app's real cache.
  *
  * Changes to the mock are followed by the event the CMS would send, because
  * the app's Data Cache does not see the mock change (e2e/README.md); what a
@@ -59,22 +63,41 @@ interface MarkerOptions {
   readonly heading?: string | null;
   /** The rows the CMS put in it: the row markup of `card.css`, or the block's first shape, a plain list of links. */
   readonly shape?: "cards" | "links";
+  /** Markup put straight inside the wrapper, after the heading: for a body that writes into a marker. */
+  readonly extra?: string;
 }
 
-/** A marker as the plugin's render callback writes it, with one row linking to a seeded resource on the CMS's origin. */
-function marker({ topic, count = 3, heading = `More on ${topic}`, shape = "cards" }: MarkerOptions): string {
+/** A marker as the CMS block (a sibling branch, issue #50) writes it, with one row linking to a seeded resource on the CMS's origin. */
+function marker({ topic, count = 3, heading = `More on ${topic}`, shape = "cards", extra = "" }: MarkerOptions): string {
   const origin = mockCmsOrigin();
   const href = `${origin}/resources/case-study/one-content-model-five-channels/`;
   const rows =
     shape === "cards"
-      ? '<ul class="rh-card-grid" role="list"><li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">Case study</span><time datetime="2026-10-28T09:00:00+00:00">Oct 28, 2026</time></p>' +
+      ? '<ul class="rh-card-grid" role="list"><li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">Case study</span><time datetime="2026-10-28T09:00:00Z">Oct 28, 2026</time></p>' +
         `<div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="${href}">One content model, five channels</a></h3>` +
         '<p class="rh-card__summary">A publisher\'s move to a model that feeds every channel.</p><ul class="rh-card__topics" aria-label="Topics" role="list"><li class="rh-card__topic">Content modelling</li></ul></div></article></li></ul>'
       : `<ul><li><a href="${href}">One content model, five channels</a></li></ul>`;
   return (
     `<div class="wp-block-resource-hub-related-resources rh-related" data-rh-block="related-resources" data-count="${count}" data-topic="${topic}" data-topic-id="${topicId(topic)}" data-exclude="1">` +
-    `${heading === null ? "" : `<h2>${heading}</h2>`}${rows}</div>`
+    `${heading === null ? "" : `<h2>${heading}</h2>`}${extra}${rows}</div>`
   );
+}
+
+/** A schema-valid resource event for `id` in the mock's current state, with `previous` null, as a publish carries it. */
+async function resourceEvent(event: "publish" | "update", id: number) {
+  const { origin, resources } = await cms.state();
+  const resource = resources.find((candidate) => candidate.id === id);
+  if (resource === undefined || resource.type === null) throw new Error(`the mock has no typed resource ${id}`);
+  return {
+    type: "resource",
+    event,
+    id,
+    slug: resource.slug,
+    rest_url: `${origin}/wp-json/wp/v2/resources/${id}`,
+    types: [resource.type],
+    topics: resource.topics,
+    previous: null,
+  };
 }
 
 async function revalidate(request: APIRequestContext, events: unknown[]): Promise<void> {
@@ -267,5 +290,96 @@ test.describe("the swap on a CMS page, and the fallback when the block's read fa
     await page.goto(created.path);
     await expect(fallback(page).getByRole("link", { name: "One content model, five channels" })).toBeVisible();
     await expect(fallback(page).locator(".rh-card")).toHaveCount(0);
+  });
+});
+
+test.describe("containment of the rows' stretched links", () => {
+  test("a stray rh-card__link straight inside a marker loses the class, and every row link's ::after stays inside the block", async ({ page, request }) => {
+    const stray = '<a class="rh-card__link" href="/resources/">Stray link</a>';
+    const created = await cms.createPage({
+      title: "A marker with a stray link",
+      slug: unique("stray-link"),
+      content: `<p>Intro.</p>${marker({ topic: "content-modelling", extra: stray })}`,
+    });
+    // The fallback is what renders the marker's own contents.
+    await cms.addFault({ path: "/wp-json/wp/v2/resources", status: 500 });
+    const html = await (await request.get(created.path)).text();
+    expect(html).toContain('<a href="/resources/">Stray link</a>');
+
+    await page.goto(created.path);
+    const rows = fallback(page);
+    await expect(rows).toHaveCount(1);
+    const strayLink = rows.getByRole("link", { name: "Stray link" });
+    await expect(strayLink).not.toHaveAttribute("class", /./);
+    await expect(rows).toHaveCSS("position", "relative");
+
+    const boxes = await rows.evaluate((block) => {
+      const outer = block.getBoundingClientRect();
+      return [...block.querySelectorAll("a")].map((link) => {
+        const after = getComputedStyle(link, "::after");
+        // The ::after's containing block is the link's nearest positioned ancestor.
+        let holder: Element | null = link.parentElement;
+        while (holder !== null && getComputedStyle(holder).position === "static") holder = holder.parentElement;
+        const box = holder?.getBoundingClientRect();
+        return {
+          text: link.textContent,
+          stretched: after.position === "absolute" && after.content !== "none",
+          holder: holder === null ? null : `${holder.tagName.toLowerCase()}.${holder.className}`,
+          inside:
+            box !== undefined &&
+            block.contains(holder) &&
+            box.top >= outer.top &&
+            box.left >= outer.left &&
+            box.bottom <= outer.bottom &&
+            box.right <= outer.right,
+        };
+      });
+    });
+    // The stray link stretches nothing; the row's link stretches over its row alone, inside the block.
+    expect(boxes.find((box) => box.text === "Stray link")?.stretched).toBe(false);
+    const stretched = boxes.filter((box) => box.stretched);
+    expect(stretched, JSON.stringify(boxes)).toHaveLength(1);
+    expect(stretched[0]).toMatchObject({ holder: "article.rh-card", inside: true });
+  });
+});
+
+test.describe("freshness through the app's cache", () => {
+  test("a resource event in the block's topic refreshes a swapped block, which stays as stored until then", async ({ page, request }) => {
+    const created = await cms.createPage({ title: "A block kept fresh", slug: unique("fresh-block"), content: marker({ topic: "headless-delivery" }) });
+    await page.goto(created.path);
+    const before = await titles(swapped(page));
+    expect(before).toHaveLength(3);
+
+    const title = `Newest in headless delivery ${RUN}`;
+    const resource = await cms.createResource({ title, type: "article", slug: unique("newest-headless"), topics: ["headless-delivery"] });
+    // No event yet: the page and its block's read are served as stored.
+    await page.reload();
+    expect(await titles(swapped(page))).toEqual(before);
+
+    await revalidate(request, [await resourceEvent("publish", resource.id)]);
+    await page.reload();
+    expect(await titles(swapped(page))).toEqual([title, ...before.slice(0, 2)]);
+  });
+
+  test("a topic rename refreshes a swapped block's heading and row labels after the term's event", async ({ page, request }) => {
+    const topic = TERMS.find((term) => term.taxonomy === "resource_topic" && term.slug === "accessibility");
+    if (topic === undefined) throw new Error("no seeded accessibility topic");
+    const created = await cms.createPage({ title: "A block for a renamed topic", slug: unique("renamed-topic"), content: marker({ topic: "accessibility", heading: null }) });
+    await page.goto(created.path);
+    const block = swapped(page);
+    await expect(block.getByRole("heading", { level: 2 })).toHaveText("More on Accessibility");
+
+    const name = `Inclusive design ${RUN}`;
+    await cms.renameTerm("resource_topic", topic.id, { name });
+    await page.reload();
+    await expect(block.getByRole("heading", { level: 2 })).toHaveText("More on Accessibility");
+
+    await revalidate(request, [
+      { type: "term", taxonomy: "resource_topic", event: "update", id: topic.id, slug: topic.slug, name, previous: { slug: topic.slug, name: topic.name } },
+    ]);
+    await page.reload();
+    await expect(block.getByRole("heading", { level: 2 })).toHaveText(`More on ${name}`);
+    await expect(block.locator(".rh-card__topic", { hasText: name }).first()).toBeVisible();
+    await expect(block.locator(".rh-card__topic", { hasText: /^Accessibility$/ })).toHaveCount(0);
   });
 });

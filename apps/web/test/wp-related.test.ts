@@ -6,7 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { toCard, UNTITLED } from "../lib/wp/cards";
 import { CmsError } from "../lib/wp/fetch";
-import { getNewestInTopic, getRelated, inRelatedOrder, RELATED_BLOCK_SPARE, RELATED_COUNT, toRelatedCard } from "../lib/wp/related";
+import {
+  getNewestInTopic,
+  getRelated,
+  inRelatedOrder,
+  RELATED_BLOCK_SPARE,
+  RELATED_BLOCK_TOPIC_PARAM,
+  RELATED_COUNT,
+  toRelatedCard,
+} from "../lib/wp/related";
 import { MAX_RELATED_ITEMS } from "../lib/wp/schemas/related";
 import { wpResourceSchema, type WpResource } from "../lib/wp/schemas/rest";
 
@@ -193,9 +201,24 @@ describe("getNewestInTopic", () => {
     const items = await getNewestInTopic({ topicId: 11, topicSlug: "Performance", count: 9 });
     expect(items.map((item) => item.id)).toEqual((RESOURCES as { id: number }[]).map((item) => item.id));
     expect(calls).toHaveLength(1);
-    expect(calls[0].url.href).toBe(`${API}/wp/v2/resources?_embed&per_page=9&orderby=date&order=desc&resource_topic=11`);
+    expect(calls[0].url.href).toBe(`${API}/wp/v2/resources?_embed&per_page=9&orderby=date&order=desc&resource_topic=11&rh_topic=performance`);
     expect(calls[0].init.next).toEqual({ revalidate: 3600, tags: ["topic:performance", "terms"] });
     expect(calls[0].init.cache).toBe("force-cache");
+  });
+
+  it("puts the canonical slug in the URL, so two markers for one topic ID with different slugs never share a cache entry under the wrong topic tag", async () => {
+    handler = () => paged(RESOURCES);
+    await getNewestInTopic({ topicId: 11, topicSlug: "performance", count: 9 });
+    await getNewestInTopic({ topicId: 11, topicSlug: "Stale-Slug", count: 9 });
+    expect(calls).toHaveLength(2);
+    // The cache key (the URL) differs exactly where the tags do.
+    expect(calls[0].url.searchParams.get(RELATED_BLOCK_TOPIC_PARAM)).toBe("performance");
+    expect(calls[1].url.searchParams.get(RELATED_BLOCK_TOPIC_PARAM)).toBe("stale-slug");
+    expect(calls[0].url.href).not.toBe(calls[1].url.href);
+    expect(calls[0].init.next?.tags).toContain("topic:performance");
+    expect(calls[1].init.next?.tags).toContain("topic:stale-slug");
+    // The same ID filters both: the extra argument is the cache key's alone.
+    expect(calls.map((call) => call.url.searchParams.get("resource_topic"))).toEqual(["11", "11"]);
   });
 
   it("asks for a bounded few more than the block shows", () => {

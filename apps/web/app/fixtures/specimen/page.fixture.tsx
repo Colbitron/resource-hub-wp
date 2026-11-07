@@ -217,6 +217,13 @@ function cms() {
 }
 
 /**
+ * The block marker as the pass's own fallback: the specimen is fixture data
+ * and makes no CMS read, so the two articles render the marker as the CMS
+ * sent it, which is also what a reader sees when the block's read fails.
+ */
+const showFallback: RenderBlock = (_props, fallback) => fallback;
+
+/**
  * The long-form resource's shape (the seed's ID 30) with a short body that
  * has one of each thing the article styles: a paragraph, a list, a quote,
  * a heading, a figure with an upload (through `/media/`, lazy as on the
@@ -228,13 +235,6 @@ function cms() {
  * specimen makes no CMS read, so it shows that rendering rather than the
  * swapped `<RelatedResources>`.
  */
-/**
- * The block marker as the pass's own fallback: the specimen is fixture data
- * and makes no CMS read, so the two articles render the marker as the CMS
- * sent it, which is also what a reader sees when the block's read fails.
- */
-const showFallback: RenderBlock = (_props, fallback) => fallback;
-
 function resourceFixture(): RenderedResource {
   const { site, uploads } = cms();
   const resource = wpResourceSchema.parse({
@@ -259,7 +259,7 @@ function resourceFixture(): RenderedResource {
   "resource_topic": [8, 11],
   "meta": { "summary": "When a value is a term and when it is a field." }
 }</code></pre>
-<div class="wp-block-resource-hub-related-resources rh-related" data-rh-block="related-resources" data-count="3" data-topic="content-modelling" data-topic-id="8" data-exclude="30"><h2>More on content modelling</h2><ul class="rh-card-grid" role="list"><li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">Case study</span><time datetime="2026-10-28T09:00:00+00:00">Oct 28, 2026</time></p><div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="${site}/resources/case-study/one-content-model-five-channels/">One content model, five channels</a></h3><p class="rh-card__summary">A publisher's move from page-shaped content to a model that feeds the web, email, apps and partners.</p><ul class="rh-card__topics" aria-label="Topics" role="list"><li class="rh-card__topic">Content modelling</li></ul></div></article></li><li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">Webinar</span><time datetime="2026-10-24T09:00:00+00:00">Oct 24, 2026</time></p><div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="${site}/resources/webinar/the-anatomy-of-a-resource/">The anatomy of a resource</a></h3><p class="rh-card__summary">Which fields belong in meta, which in taxonomies, and what to leave out until an editor asks.</p><ul class="rh-card__topics" aria-label="Topics" role="list"><li class="rh-card__topic">Content modelling</li><li class="rh-card__topic">Editorial workflow</li></ul></div></article></li></ul></div>
+<div class="wp-block-resource-hub-related-resources rh-related" data-rh-block="related-resources" data-count="3" data-topic="content-modelling" data-topic-id="8" data-exclude="30"><h2>More on content modelling</h2><ul class="rh-card-grid" role="list"><li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">Case study</span><time datetime="2026-10-28T09:00:00Z">Oct 28, 2026</time></p><div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="${site}/resources/case-study/one-content-model-five-channels/">One content model, five channels</a></h3><p class="rh-card__summary">A publisher's move from page-shaped content to a model that feeds the web, email, apps and partners.</p><ul class="rh-card__topics" aria-label="Topics" role="list"><li class="rh-card__topic">Content modelling</li></ul></div></article></li><li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">Webinar</span><time datetime="2026-10-24T09:00:00Z">Oct 24, 2026</time></p><div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="${site}/resources/webinar/the-anatomy-of-a-resource/">The anatomy of a resource</a></h3><p class="rh-card__summary">Which fields belong in meta, which in taxonomies, and what to leave out until an editor asks.</p><ul class="rh-card__topics" aria-label="Topics" role="list"><li class="rh-card__topic">Content modelling</li><li class="rh-card__topic">Editorial workflow</li></ul></div></article></li></ul></div>
 `,
     },
     excerpt: { rendered: "" },

@@ -184,13 +184,13 @@ export const MEDIA: MediaSeed[] = [
 /** The newest resource's date; each later row is one day older. Site time, no offset. */
 export const SEED_DATE = "2026-11-01T09:00:00";
 
-/** One row of a block marker's fallback, as the plugin's render callback writes it. */
+/** One row of a block marker's fallback, as the CMS block (a sibling branch, issue #50) writes it. */
 interface MarkerRow {
   type: string;
-  /** The `<time>`'s `datetime` and its text, as the callback prints the publication date. */
+  /** The `<time>`'s `datetime` (UTC with a `Z`, as the block's `gmdate('Y-m-d\TH:i:s\Z')`) and its text, the publication date. */
   datetime: string;
   dateText: string;
-  /** The resource's public path; the callback writes it on the CMS's origin (`{{origin}}`). */
+  /** The resource's public path; the block writes it on the CMS's origin (`{{origin}}`). */
   path: string;
   title: string;
   summary: string;
@@ -198,8 +198,9 @@ interface MarkerRow {
 }
 
 /**
- * The `resource-hub/related-resources` block as the plugin's render callback
- * emits it (issue #50; `packages/ui/README.md`, "Block marker"): the wrapper
+ * The `resource-hub/related-resources` block as the CMS block (a sibling
+ * branch, issue #50; `packages/ui/README.md`, "Block marker") writes it,
+ * imitated here until that branch lands: the wrapper
  * with its `data-*` attributes, the block's `<h2>`, and under it the row
  * markup of `packages/ui/card.css` (its header comment) for the resources
  * the CMS found, with `role="list"` on the two lists and no `data-accent`,
@@ -230,7 +231,7 @@ const RICH_CONTENT = `
 ${relatedMarker(10, 33, "Related resources", [
   {
     type: "Article",
-    datetime: "2026-10-31T09:00:00+00:00",
+    datetime: "2026-10-31T09:00:00Z",
     dateText: "Oct 31, 2026",
     path: "/resources/article/alt-text-at-scale/",
     title: "Alt text at scale",
@@ -239,7 +240,7 @@ ${relatedMarker(10, 33, "Related resources", [
   },
   {
     type: "Podcast",
-    datetime: "2026-10-27T09:00:00+00:00",
+    datetime: "2026-10-27T09:00:00Z",
     dateText: "Oct 27, 2026",
     path: "/resources/podcast/editorial-review-without-the-bottleneck/",
     title: "Editorial review without the bottleneck",
@@ -334,7 +335,7 @@ const LONG_CONTENT = `
 ${relatedMarker(8, 30, "More on content modelling", [
   {
     type: "Case study",
-    datetime: "2026-10-28T09:00:00+00:00",
+    datetime: "2026-10-28T09:00:00Z",
     dateText: "Oct 28, 2026",
     path: "/resources/case-study/one-content-model-five-channels/",
     title: "One content model, five channels",
@@ -343,7 +344,7 @@ ${relatedMarker(8, 30, "More on content modelling", [
   },
   {
     type: "Webinar",
-    datetime: "2026-10-24T09:00:00+00:00",
+    datetime: "2026-10-24T09:00:00Z",
     dateText: "Oct 24, 2026",
     path: "/resources/webinar/the-anatomy-of-a-resource/",
     title: "The anatomy of a resource",

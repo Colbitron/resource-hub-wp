@@ -100,20 +100,25 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   the fallback and `renderBlock` is not called; one whose `renderBlock`
  *   throws renders the fallback too. The post ID passed in `postId` wins
  *   over the marker's `data-exclude`.
- * - The marker's rows: the CMS's render callback fills the marker with the
- *   row markup of `packages/ui/card.css` (its header comment), so that the
- *   fallback, which renders when the marker is invalid, past the cap, or
- *   its block's fetch failed, is the same rows the swap would render. Inside
- *   the wrapper of a marker whose `data-*` attributes are valid, and only
- *   there, three things are kept that the rules above would drop: the
+ * - The marker's rows: the CMS block (a sibling branch, issue #50) writes
+ *   the row markup of `packages/ui/card.css` (its header comment) inside
+ *   the marker, so that the fallback, which renders when the marker is
+ *   invalid, past the cap, or its block's fetch failed, is the same rows
+ *   the swap would render.
+ *   Inside the wrapper of a marker whose `data-*` attributes are valid, and
+ *   only there, three things are kept that the rules above would drop: the
  *   `<article>` element, the class tokens in `CARD_CLASSES` (an exact list
- *   of the row's classes, not the `rh-` prefix), and on a `<ul>` or `<ol>`
- *   `role="list"` and an `aria-label` (the row's topics list). Nothing else
- *   changes inside: every URL, class and attribute still goes through the
- *   same checks, so a body cannot reach the app's other classes or any
- *   other role by writing a marker around them. A marker whose attributes
- *   are not valid is not the CMS's block, so its contents get the body's
- *   rules. A marker still holding a plain `<ul>` of links renders as before.
+ *   of the row's classes, not the `rh-` prefix), each only on its own
+ *   element and, but for the list's and the row's own, only inside an
+ *   `<article class="rh-card">` of that marker, so a stray `rh-card__link`
+ *   cannot stretch its `::after` over the page; and on a `<ul>` or `<ol>`
+ *   `role="list"`, plus `aria-label="Topics"` on the row's topics list
+ *   alone. Nothing else changes inside: every URL, class and attribute
+ *   still goes through the same checks, so a body cannot reach the app's
+ *   other classes or any other role by writing a marker around them. A
+ *   marker whose attributes are not valid is not the CMS's block, so its
+ *   contents get the body's rules, and so do a marker's inside another's.
+ *   A marker still holding a plain `<ul>` of links renders as before.
  * - Embeds: an `<iframe>`, `<video>` or `<audio>` becomes a link to its
  *   `src` (a `<video>` or `<audio>` without one, to its first usable
  *   `<source>`), and an embed block whose wrapper still holds the raw URL as
@@ -339,25 +344,52 @@ const MARKER_CLASS = "rh-related";
 const MARKER_CLASSES: ReadonlySet<string> = new Set([MARKER_CLASS]);
 const NO_CLASSES: ReadonlySet<string> = new Set();
 
+/** Where one class of the row markup may stand: the elements it belongs on, and whether only inside a row. */
+interface CardClassPlace {
+  readonly elements: ReadonlySet<string>;
+  /** Only inside an `<article class="rh-card">` of the same marker (`Context.cardRow`). */
+  readonly inRow: boolean;
+}
+
+const ROW_TITLE_ELEMENTS: ReadonlySet<string> = new Set(["h2", "h3", "h4", "h5", "h6"]);
+
 /**
- * The classes of the row markup the block's render callback puts inside the
- * marker (`packages/ui/card.css`, its header comment), kept only inside a
- * valid marker's wrapper (`Context.cardMarkup`): an exact list, so a body
- * can name none of the app's other `rh-` classes by writing a marker around
- * them. `rh-related` itself is the wrapper's and stays `MARKER_CLASSES`.
+ * The classes of the row markup the CMS block (a sibling branch, issue #50)
+ * writes inside the marker (`packages/ui/card.css`, its header comment),
+ * kept only inside a valid marker's wrapper (`Context.cardMarkup`), and
+ * each only on the element it belongs on: an exact list, so a body can name
+ * none of the app's other `rh-` classes by writing a marker around them.
+ * `rh-related` itself is the wrapper's and stays `MARKER_CLASSES`.
+ *
+ * Every class but the list's and the row's own is kept only inside an
+ * `<article class="rh-card">` of the same marker. That matters most for
+ * `rh-card__link`, whose `::after` is `position: absolute; inset: 0` and is
+ * contained by `.rh-card`, which `card.css` makes `position: relative`: a
+ * stray one directly inside a marker would stretch over the nearest
+ * positioned ancestor instead, the page's first viewport, which is what
+ * `APP_CLASS_PREFIX` keeps a body from doing. `related.css` also makes the
+ * wrapper itself `position: relative`, so even then nothing escapes the
+ * block.
  */
-const CARD_CLASSES: ReadonlySet<string> = new Set([
-  "rh-card-grid",
-  "rh-card",
-  "rh-card__meta",
-  "rh-card__type",
-  "rh-card__body",
-  "rh-card__title",
-  "rh-card__link",
-  "rh-card__summary",
-  "rh-card__topics",
-  "rh-card__topic",
+const CARD_CLASSES: ReadonlyMap<string, CardClassPlace> = new Map([
+  ["rh-card-grid", { elements: new Set(["ul", "ol"]), inRow: false }],
+  ["rh-card", { elements: new Set(["article"]), inRow: false }],
+  ["rh-card__meta", { elements: new Set(["p"]), inRow: true }],
+  ["rh-card__type", { elements: new Set(["span"]), inRow: true }],
+  ["rh-card__body", { elements: new Set(["div"]), inRow: true }],
+  ["rh-card__title", { elements: ROW_TITLE_ELEMENTS, inRow: true }],
+  ["rh-card__link", { elements: new Set(["a"]), inRow: true }],
+  ["rh-card__summary", { elements: new Set(["p"]), inRow: true }],
+  ["rh-card__topics", { elements: new Set(["ul"]), inRow: true }],
+  ["rh-card__topic", { elements: new Set(["li"]), inRow: true }],
 ]);
+
+/** The row's own class, which makes an `<article>` a row (`Context.cardRow`). */
+const CARD_ROW_CLASS = "rh-card";
+
+/** The topics list's class and the one name it may carry, as `CardTopics` writes them. */
+const CARD_TOPICS_CLASS = "rh-card__topics";
+const CARD_TOPICS_LABEL = "Topics";
 
 /** The one `role` a list inside a valid marker may carry: the row markup's `role="list"`. */
 const LIST_ROLES = new Set(["list"]);
@@ -413,11 +445,19 @@ interface Context {
   /** How many `<a>` elements the pass is inside; see `insideLink`. */
   links: number;
   /**
-   * How many valid markers' wrappers the pass is inside; see
-   * `insideCardMarkup`. Inside one, the row markup's element, classes,
-   * list role and list label are kept (`CARD_CLASSES`, `LIST_ROLES`).
+   * True inside the wrapper of a valid marker, and false again inside any
+   * marker nested in it, valid or not, until that one's own wrapper says
+   * otherwise (`markerChildren`); see `insideCardMarkup`. Inside one, the
+   * row markup's element, classes, list role and list label are kept
+   * (`CARD_CLASSES`, `LIST_ROLES`).
    */
-  cardMarkup: number;
+  cardMarkup: boolean;
+  /**
+   * True inside an `<article class="rh-card">` within the innermost valid
+   * marker (`rowChildren`): the only place the row's inner classes are kept
+   * (`CardClassPlace.inRow`). Reset at every marker's wrapper.
+   */
+  cardRow: boolean;
   /**
    * True when the body renders an `<h1>`: every body heading is then shown
    * one level down (`headingName`), so the page keeps its own `<h1>` as the
@@ -775,21 +815,37 @@ function hasClass(attributes: Attributes, name: string): boolean {
 }
 
 /**
+ * True when `token`, one of the row markup's classes, stands where it
+ * belongs: inside a valid marker, on its own element, and inside a row of
+ * that marker when it is one of the row's inner classes (`CARD_CLASSES`).
+ */
+function isPlacedCardClass(token: string, name: string, context: Context): boolean {
+  const place = CARD_CLASSES.get(token);
+  return (
+    place !== undefined &&
+    insideCardMarkup(context) &&
+    place.elements.has(name) &&
+    (!place.inRow || context.cardRow)
+  );
+}
+
+/**
  * The attributes any allowed element keeps: `class` (tokens of letters,
  * digits, `-` and `_`, none starting with `APP_CLASS_PREFIX` unless it is in
- * `appClasses`, or in `CARD_CLASSES` inside a valid marker), `id` (with
- * `ID_PREFIX`), `title`, `lang` and `dir`, each without a value or token
- * that names the CMS. Never `style`, and never an `on*` attribute, which
- * are not read at all.
+ * `appClasses`, or one of the row markup's classes where it belongs,
+ * `isPlacedCardClass`), `id` (with `ID_PREFIX`), `title`, `lang` and `dir`,
+ * each without a value or token that names the CMS. Never `style`, and
+ * never an `on*` attribute, which are not read at all. `name` is the
+ * element's lower-case name, as the pass renders it before any heading is
+ * shifted.
  */
-function globalProps(attributes: Attributes, context: Context, appClasses: ReadonlySet<string> = NO_CLASSES): Props {
+function globalProps(name: string, attributes: Attributes, context: Context, appClasses: ReadonlySet<string> = NO_CLASSES): Props {
   const props: Props = {};
-  const inMarker = insideCardMarkup(context);
   const classes = tokens(
     attributes.get("class"),
     (token) =>
       CLASS_TOKEN.test(token) &&
-      (!token.toLowerCase().startsWith(APP_CLASS_PREFIX) || appClasses.has(token) || (inMarker && CARD_CLASSES.has(token))) &&
+      (!token.toLowerCase().startsWith(APP_CLASS_PREFIX) || appClasses.has(token) || isPlacedCardClass(token, name, context)) &&
       !mentionsCms(token, context),
   );
   if (classes.length > 0) {
@@ -881,7 +937,7 @@ function link(node: Element, attributes: Attributes, context: Context): ReactEle
   if (target?.kind === "unwrap") {
     return createElement(Fragment, null, content);
   }
-  const props = globalProps(attributes, context);
+  const props = globalProps("a", attributes, context);
   if (target?.kind === "keep") {
     props.href = prefixFragment(target.href);
   }
@@ -916,7 +972,7 @@ function checked(props: Props, context: Context): Props {
 
 /** The attributes an allowed element renders with, by name. */
 function elementProps(name: string, attributes: Attributes, context: Context): Props {
-  const props = globalProps(attributes, context);
+  const props = globalProps(name, attributes, context);
   switch (name) {
     case "td":
     case "th": {
@@ -960,9 +1016,13 @@ function elementProps(name: string, attributes: Attributes, context: Context): P
  * A list's `role` and `aria-label`, inside a valid marker only
  * (`insideCardMarkup`): `role="list"`, which the row markup puts on its
  * lists because Safari drops list semantics under `list-style: none`, and
- * an `aria-label`, the name the row gives its topics list. Outside a marker
- * a body carries no role and no label, as before; no other role is ever
- * kept, so a body cannot make a list a landmark or a menu.
+ * `aria-label="Topics"`, exactly, on the row's topics list alone (a `<ul>`
+ * that kept `rh-card__topics`, so inside a row), the name `CardTopics`
+ * gives it. Any other label is dropped, so a body cannot give a list an
+ * arbitrary accessible name. Outside a marker a body carries no role and
+ * no label, as before; no other role is ever kept, so a body cannot make a
+ * list a landmark or a menu. `props` is the list's, its class already
+ * decided.
  */
 function listProps(attributes: Attributes, props: Props, context: Context): Props {
   if (!insideCardMarkup(context)) {
@@ -970,8 +1030,8 @@ function listProps(attributes: Attributes, props: Props, context: Context): Prop
   }
   const role = oneOf(attributes.get("role"), LIST_ROLES);
   if (role !== undefined) props.role = role;
-  const label = attributes.get("aria-label");
-  if (label !== undefined && label.trim() !== "") props["aria-label"] = label;
+  const isTopics = typeof props.className === "string" && props.className.split(" ").includes(CARD_TOPICS_CLASS);
+  if (isTopics && attributes.get("aria-label") === CARD_TOPICS_LABEL) props["aria-label"] = CARD_TOPICS_LABEL;
   return props;
 }
 
@@ -1087,16 +1147,35 @@ function linkChildren(node: Element, context: Context): ReactNode {
 
 /** True inside the wrapper of a marker whose attributes are valid: the row markup's element, classes, list role and label are kept there. */
 function insideCardMarkup(context: Context): boolean {
-  return context.cardMarkup > 0;
+  return context.cardMarkup;
 }
 
-/** `children` of a valid marker's wrapper, counted as inside one. */
-function cardChildren(node: Element, context: Context): ReactNode {
-  context.cardMarkup++;
+/**
+ * `children` of a marker's wrapper, in that marker's own scope: inside the
+ * row markup when `valid` (the marker's `data-*` attributes are), outside it
+ * when not, and outside any row either way, so what a marker's contents keep
+ * is decided by that marker alone and never by one around it.
+ */
+function markerChildren(node: Element, context: Context, valid: boolean): ReactNode {
+  const outer = { cardMarkup: context.cardMarkup, cardRow: context.cardRow };
+  context.cardMarkup = valid;
+  context.cardRow = false;
   try {
     return children(node, context);
   } finally {
-    context.cardMarkup--;
+    context.cardMarkup = outer.cardMarkup;
+    context.cardRow = outer.cardRow;
+  }
+}
+
+/** `children` of an `<article class="rh-card">` inside a valid marker, counted as inside a row (`Context.cardRow`). */
+function rowChildren(node: Element, context: Context): ReactNode {
+  const outer = context.cardRow;
+  context.cardRow = true;
+  try {
+    return children(node, context);
+  } finally {
+    context.cardRow = outer;
   }
 }
 
@@ -1119,7 +1198,7 @@ function image(attributes: Attributes, context: Context): ReactElement {
   if (source === null || mentionsCms(source.kind === "upload" ? source.path : source.href, context)) {
     return EMPTY;
   }
-  const props = globalProps(attributes, context);
+  const props = globalProps("img", attributes, context);
   props.alt = withoutCmsMentions(attributes.get("alt") ?? "", context);
   const width = matching(attributes.get("width"), DIMENSION);
   const height = matching(attributes.get("height"), DIMENSION);
@@ -1212,7 +1291,7 @@ function embedWrapper(node: Element, attributes: Attributes, context: Context): 
   } else if (target.kind === "unwrap") {
     shown = target.text;
   }
-  return createElement("div", checked(globalProps(attributes, context), context), shown);
+  return createElement("div", checked(globalProps("div", attributes, context), context), shown);
 }
 
 /**
@@ -1232,7 +1311,7 @@ type MarkerAttributes = Pick<RelatedBlockProps, "count" | "topic" | "topicId" | 
  * out of range. `exclude` is `context.postId` when it is given. Reads no
  * child of the marker, so it is cheap enough to run on every marker, valid
  * or not: whether the marker's contents get the row markup's allowances
- * (`cardChildren`) is decided by this alone.
+ * (`markerChildren`) is decided by this alone.
  */
 function markerAttributes(attributes: Attributes, context: Context): MarkerAttributes | null {
   const count = matching(attributes.get("data-count"), POSITIVE_INTEGER);
@@ -1272,8 +1351,8 @@ function markerProps(node: Element, attributes: MarkerAttributes, context: Conte
 
 /**
  * The block marker, as the contract in `packages/ui/README.md` states it,
- * with the row markup the plugin's render callback fills it with (issue
- * #50). The fallback is the wrapper with its `class` and its children
+ * with the row markup the CMS block (a sibling branch, issue #50) writes
+ * inside it. The fallback is the wrapper with its `class` and its children
  * through the pass; the `data-*` attributes are read here and never
  * rendered, so the marker stays on the server. The wrapper always carries
  * `rh-related`, the class the contract gives it, whether or not the CMS
@@ -1281,7 +1360,7 @@ function markerProps(node: Element, attributes: MarkerAttributes, context: Conte
  * related list whatever the block's markup; the `data-*` attributes are
  * what make it a marker, not the class. Inside the wrapper of a marker whose
  * attributes are valid, the children render with the row markup's
- * allowances (`cardChildren`, see the module comment), whether or not the
+ * allowances (`markerChildren`, see the module comment), whether or not the
  * marker is handed on: the fallback past the cap or inside a link is still
  * the CMS's rows.
  *
@@ -1299,14 +1378,14 @@ function marker(node: Element, attributes: Attributes, context: Context): ReactE
   if (props !== null) {
     context.markers++;
   }
-  const wrapperProps = globalProps(attributes, context, MARKER_CLASSES);
+  const wrapperProps = globalProps("div", attributes, context, MARKER_CLASSES);
   // The wrapper always carries the contract's class, once, after any the CMS wrote.
   const classes = typeof wrapperProps.className === "string" ? wrapperProps.className.split(" ") : [];
   wrapperProps.className = (classes.includes(MARKER_CLASS) ? classes : [...classes, MARKER_CLASS]).join(" ");
   const fallback = createElement(
     "div",
     checked(wrapperProps, context),
-    marked === null ? children(node, context) : cardChildren(node, context),
+    markerChildren(node, context, marked !== null),
   );
   if (props === null) {
     return fallback;
@@ -1520,7 +1599,8 @@ function replaceNode(node: DOMNode, context: Context): ReactElement | undefined 
   if (VOID_ELEMENTS.has(name)) {
     return createElement(name, props);
   }
-  const element = createElement(headingName(name, context), props, children(node, context));
+  const isRow = name === "article" && insideCardMarkup(context) && hasClass(attributes, CARD_ROW_CLASS);
+  const element = createElement(headingName(name, context), props, isRow ? rowChildren(node, context) : children(node, context));
   return name === "table" ? tableRegion(node, element, context) : element;
 }
 
@@ -1764,7 +1844,8 @@ export function renderContent(html: string, cms: CmsUrls, options: RenderContent
     postId: options.postId !== undefined && Number.isSafeInteger(options.postId) && options.postId > 0 ? options.postId : undefined,
     markers: 0,
     links: 0,
-    cardMarkup: 0,
+    cardMarkup: false,
+    cardRow: false,
     demoteHeadings: false,
     figureLabels: new Map(),
   };
