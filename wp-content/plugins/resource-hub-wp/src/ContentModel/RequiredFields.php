@@ -53,8 +53,13 @@ use WP_REST_Request;
  * writes an autosave revision, never the resource) or when the status it sends, or the stored
  * one if it sends none, is not public; otherwise it is judged like any other save, on what that
  * write would store: the title from the request or storage, and the topics and summary from
- * storage, since the route writes neither terms nor meta to the resource. The editor's own
- * periodic autosave never sends a public status, so it always passes.
+ * storage, since the route writes neither terms nor meta to the resource. The type is judged the
+ * same way, for OneType, whose `rest_pre_insert_resource` check the route ignores too: from
+ * storage, by `OneType::problem()` on the stored types, so a `resource_type` the autosave sends
+ * does not count. It is judged first and alone, with OneType's code and message, as a REST save
+ * reports OneType's error before this rule's. The check lives here rather than behind a second
+ * `rest_dispatch_request` hook in OneType so the autosave route and its status test have one
+ * definition. The editor's own periodic autosave never sends a public status, so it always passes.
  *
  * Quick Edit on the Resources list saves outside REST. It can blank the title, change the topics
  * (a flat taxonomy stays on in Quick Edit) and move the status, so while its handler runs a save
@@ -181,7 +186,8 @@ final class RequiredFields {
 
 	/**
 	 * Rule: an autosave that would write a public status onto a resource that is not public is
-	 * refused while the resource, as that write would leave it, lacks a field. Hooked to
+	 * refused while the resource, as that write would leave it, does not have exactly one stored
+	 * type (OneType's rule and error, judged first) or lacks a field. Hooked to
 	 * `rest_dispatch_request`, which runs after the route's permission check and before its
 	 * callback, so a refusal is the response and nothing is written. Any other request, and an
 	 * autosave that passes, is left to the route.
@@ -205,6 +211,13 @@ final class RequiredFields {
 
 		if ( ! in_array( $status, OneType::PUBLIC_STATUSES, true ) ) {
 			return $result;
+		}
+
+		// The type first and alone, as on a REST save, where OneType's error comes before this one.
+		$type_problem = OneType::problem( $status, count( OneType::stored_type_ids( $existing->ID ) ) );
+
+		if ( null !== $type_problem ) {
+			return $type_problem;
 		}
 
 		// The title as core's `prepare_item_for_database()` reads it: a string, or a non-empty `raw`.

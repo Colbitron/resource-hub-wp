@@ -519,6 +519,90 @@ final class RequiredFieldsTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A crafted autosave that would publish a draft with its title, topic and summary but no
+	 * stored type is refused with OneType's code and message: the `resource_type` it sends does
+	 * not count, because the route does not write terms to the resource. A draft with two stored
+	 * types is refused the same way, with OneType's other error. Nothing is written.
+	 */
+	public function test_autosave_that_would_publish_a_typeless_draft_is_refused(): void {
+		$post_id = $this->draft_resource( true );
+		wp_set_object_terms( $post_id, array(), Taxonomies::TYPE );
+
+		$response = $this->send(
+			'POST',
+			'/wp/v2/resources/' . $post_id . '/autosaves',
+			array(
+				'status'         => 'publish',
+				Taxonomies::TYPE => array( $this->type ),
+			)
+		);
+
+		$expected = OneType::problem( 'publish', 0 );
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( OneType::MISSING, $response->get_data()['code'] );
+		$this->assertSame( $expected->get_error_message(), $response->get_data()['message'] );
+		$this->assertSame( 'draft', get_post_status( $post_id ) );
+		$this->assertSame( array(), OneType::stored_type_ids( $post_id ) );
+
+		$second = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) );
+		wp_set_object_terms( $post_id, array( $this->type, $second ), Taxonomies::TYPE );
+
+		$two_types = $this->send(
+			'POST',
+			'/wp/v2/resources/' . $post_id . '/autosaves',
+			array(
+				'status'         => 'publish',
+				Taxonomies::TYPE => array( $this->type ),
+			)
+		);
+		$this->assertSame( 400, $two_types->get_status() );
+		$this->assertSame( OneType::TOO_MANY, $two_types->get_data()['code'] );
+		$this->assertSame( 'draft', get_post_status( $post_id ) );
+	}
+
+	/**
+	 * The same autosave of a draft with its title, topic, summary and one stored type passes, and
+	 * the route publishes it, as it would without this check.
+	 */
+	public function test_autosave_that_would_publish_a_draft_with_one_stored_type_passes(): void {
+		$post_id = $this->draft_resource( true );
+
+		$response = $this->send(
+			'POST',
+			'/wp/v2/resources/' . $post_id . '/autosaves',
+			array(
+				'status'         => 'publish',
+				Taxonomies::TYPE => array( $this->type ),
+			)
+		);
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'publish', get_post_status( $post_id ) );
+	}
+
+	/**
+	 * A normal autosave of a published resource passes even when the resource has no stored
+	 * type, as an unguarded path can leave it: the route writes a revision, never the resource.
+	 */
+	public function test_autosave_of_a_published_resource_without_a_type_passes(): void {
+		$post_id = $this->published_resource();
+		wp_set_object_terms( $post_id, array(), Taxonomies::TYPE );
+
+		$response = $this->send(
+			'POST',
+			'/wp/v2/resources/' . $post_id . '/autosaves',
+			array(
+				'title'   => 'Edited',
+				'content' => 'Still typing',
+			)
+		);
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'publish', get_post_status( $post_id ) );
+		$this->assertSame( 'Published', get_post( $post_id )->post_title );
+	}
+
+	/**
 	 * An autosave of a draft that sends no status, or a status that is not public, passes
 	 * whatever the draft lacks: it is a draft save.
 	 */

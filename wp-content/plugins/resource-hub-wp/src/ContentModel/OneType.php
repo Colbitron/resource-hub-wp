@@ -29,6 +29,13 @@ use WP_Term;
  * editor shows in its "Publishing failed" or "Updating failed" notice, worded to fit both a first
  * publish and an edit of a resource already published.
  *
+ * Core's autosaves route (`POST /wp/v2/resources/{id}/autosaves`) runs that filter but ignores its
+ * error, and writes the author's own draft itself, status included, without its terms. So a
+ * crafted autosave with `status: publish` and a `resource_type` it never stores would publish a
+ * typeless draft. `RequiredFields::check_autosave()` judges such an autosave before the route runs,
+ * with this class's `problem()` on the stored types (`stored_type_ids()`), and answers with the
+ * same code and message; an autosave that would not publish is left to the route.
+ *
  * Quick Edit and Bulk Edit on the Resources list save outside REST. Neither can change the type:
  * the taxonomy is off in Quick Edit (`show_in_quick_edit`), core's Quick Edit handler drops terms
  * of such a taxonomy from the request, and the Bulk Edit request has its `resource_type` terms
@@ -43,8 +50,8 @@ use WP_Term;
  * A resource already published or scheduled keeps its status through either handler, with or
  * without a type: neither handler publishes it, unpublishes it or gives it a type, so an edit
  * there leaves it no worse. Such a resource can arise only through the unguarded paths below.
- * Guarded: REST saves, Quick Edit, Bulk Edit, and type deletion from the Types screen and REST
- * (UsedTypes). Not guarded: the classic `post.php` form submission, WP-CLI, and PHP calls to
+ * Guarded: REST saves, autosaves that would publish (in RequiredFields), Quick Edit, Bulk Edit,
+ * and type deletion from the Types screen and REST (UsedTypes). Not guarded: the classic `post.php` form submission, WP-CLI, and PHP calls to
  * `wp_insert_post()` and the like, the seeder among them; XML-RPC is off (XmlRpc). The
  * revalidation hook never sends an event whose top-level `types` isn't exactly one element, so
  * the front end never receives an invalid state from any of the unguarded paths.
@@ -390,12 +397,13 @@ final class OneType {
 	}
 
 	/**
-	 * The IDs of the types stored on a post.
+	 * The IDs of the types stored on a post. Public so RequiredFields::check_autosave() counts the
+	 * stored types the same way.
 	 *
 	 * @param int $post_id Post ID.
 	 * @return int[]
 	 */
-	private static function stored_type_ids( int $post_id ): array {
+	public static function stored_type_ids( int $post_id ): array {
 		$terms = get_the_terms( $post_id, Taxonomies::TYPE );
 
 		if ( ! is_array( $terms ) ) {
