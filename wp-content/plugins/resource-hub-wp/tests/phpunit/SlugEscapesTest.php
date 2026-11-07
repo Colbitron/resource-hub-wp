@@ -27,6 +27,7 @@ use WP_UnitTestCase;
  */
 final class SlugEscapesTest extends WP_UnitTestCase {
 	use LegacySlugRows;
+	use RestTransports;
 
 	/**
 	 * How many slugs the property test generates.
@@ -668,6 +669,71 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 
 		$this->assertSame( 200, $saved->get_status() );
 		$this->assertSame( 'legacy-case-study', $this->stored_term_slug( $term_id ) );
+	}
+
+	/**
+	 * The 400 holds whatever case the route is requested in and however core is reached. Core
+	 * matches a path to a route without regard to case, so every spelling, as a request, a batch
+	 * item or a `?rest_route=` request, reaches the terms controller's update handler and gets
+	 * core's `duplicate_term_slug`; the status keys on that handler and on the path as core matches
+	 * it, so each is a 400 and the slug is unchanged.
+	 *
+	 * @dataProvider route_spellings
+	 *
+	 * @param string $transport How the request is sent, as RestTransports::send_via() takes it.
+	 * @param string $route     The route, with `%d` for the term's ID.
+	 */
+	public function test_rest_edit_of_a_colliding_legacy_term_is_a_400_in_any_case( string $transport, string $route ): void {
+		$this->term( Taxonomies::TOPIC, 'Case study', 'case-study' );
+		$term_id = $this->with_legacy_term_slug( 'case%2dstudy', fn(): int => $this->term( Taxonomies::TOPIC, 'Legacy', 'legacy' ) );
+
+		$response = $this->send_via( $transport, 'POST', sprintf( $route, $term_id ), array( 'description' => 'Only this.' ) );
+
+		$this->assertSame( 400, $response['status'] );
+		$this->assertSame( 'duplicate_term_slug', $response['body']['code'] );
+		$this->assertSame( 400, $response['body']['data']['status'] );
+		$this->assertSame( 'case%2dstudy', $this->stored_term_slug( $term_id ) );
+	}
+
+	/**
+	 * Cases for test_rest_edit_of_a_colliding_legacy_term_is_a_400_in_any_case(). A lowercase
+	 * namespace with a mixed-case base is matched among the namespace's own routes; an uppercase
+	 * namespace matches no namespace, so core tries every route.
+	 *
+	 * @return array<string, array{0: string, 1: string}>
+	 */
+	public function route_spellings(): array {
+		return array(
+			'lowercase'                    => array( 'dispatch', '/wp/v2/' . Taxonomies::TOPIC . '/%d' ),
+			'mixed case'                   => array( 'dispatch', '/WP/v2/Resource_Topic/%d' ),
+			'uppercase'                    => array( 'dispatch', '/WP/V2/RESOURCE_TOPIC/%d' ),
+			'lowercase namespace'          => array( 'dispatch', '/wp/v2/Resource_Topic/%d' ),
+			'mixed case, batch item'       => array( 'batch', '/WP/v2/Resource_Topic/%d' ),
+			'mixed case, rest_route query' => array( 'serve_request', '/WP/v2/Resource_Topic/%d' ),
+		);
+	}
+
+	/**
+	 * Another handler that answers POST on the single-topic pattern ahead of core's keeps its own
+	 * answer: core matches the request to it, not to the terms controller, so its status-less
+	 * `duplicate_term_slug` stays core's 500 even though the path is a topic's.
+	 */
+	public function test_rest_status_leaves_another_handler_on_the_path_alone(): void {
+		$term_id = $this->term( Taxonomies::TOPIC, 'Mine', 'mine' );
+
+		$this->with_handler_ahead_of_core(
+			'wp/v2',
+			'/' . Taxonomies::TOPIC . '/(?P<id>[\d]+)',
+			'POST',
+			static fn(): WP_Error => new WP_Error( 'duplicate_term_slug', 'Not this one.' ),
+			function () use ( $term_id ): void {
+				$response = $this->send_via( 'dispatch', 'POST', '/wp/v2/' . Taxonomies::TOPIC . '/' . $term_id, array( 'slug' => 'taken' ) );
+
+				$this->assertSame( 500, $response['status'] );
+				$this->assertSame( 'duplicate_term_slug', $response['body']['code'] );
+				$this->assertSame( 'Not this one.', $response['body']['message'] );
+			}
+		);
 	}
 
 	/**

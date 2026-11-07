@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace ResourceHub\ContentModel;
 
+use ResourceHub\Rest\RouteMatch;
 use WP_Error;
 use WP_REST_Request;
 use WP_Term;
@@ -48,7 +49,7 @@ final class ReservedTypeSlugs {
 	 */
 	public function register(): void {
 		add_filter( 'pre_insert_term', array( $this, 'refuse_insert' ), 10, 3 );
-		add_filter( 'rest_dispatch_request', array( $this, 'refuse_rest_update' ), 10, 2 );
+		add_filter( 'rest_dispatch_request', array( $this, 'refuse_rest_update' ), 10, 3 );
 		add_action( 'load-edit-tags.php', array( $this, 'refuse_admin_update' ) );
 		add_action( 'wp_ajax_inline-save-tax', array( $this, 'refuse_quick_edit' ), 0 );
 		add_filter( 'term_updated_messages', array( $this, 'admin_messages' ) );
@@ -159,21 +160,31 @@ final class ReservedTypeSlugs {
 	 * `rest_dispatch_request`, which runs after the route's permission check and before its
 	 * callback; returning an error answers the request with it.
 	 *
+	 * The request is an edit of a type when the route pattern core matched is the one the type's
+	 * terms controller registers ({@see RouteMatch::term_item()}) and the method is one that route
+	 * edits with. The hook is given that pattern, so the URL's spelling does not matter: core
+	 * matches a path to a pattern without regard to case, and `/WP/v2/Resource_Type/{id}` or
+	 * `?rest_route=/WP/v2/…` reaches the same handler. The type judged is `$request['id']`, the one
+	 * the controller edits: core reads parameters in its own order (a JSON body, a form body, the
+	 * query string, then the URL), so an `id` in the body or the query string names the term
+	 * edited whatever ID the path carries.
+	 *
 	 * @param mixed           $result  Null, or an earlier filter's result.
 	 * @param WP_REST_Request $request The REST request.
+	 * @param string          $route   The route pattern core matched.
 	 * @return mixed The result unchanged, or the refusal.
 	 */
-	public function refuse_rest_update( $result, WP_REST_Request $request ) {
+	public function refuse_rest_update( $result, WP_REST_Request $request, $route = '' ) {
 		if ( null !== $result || ! in_array( $request->get_method(), array( 'POST', 'PUT', 'PATCH' ), true ) ) {
 			return $result;
 		}
 
-		if ( ! preg_match( '#^/wp/v2/' . Taxonomies::TYPE . '/(\d+)$#', $request->get_route(), $matches ) ) {
+		if ( ! is_string( $route ) || ! RouteMatch::is( $route, RouteMatch::term_item( Taxonomies::TYPE ) ) ) {
 			return $result;
 		}
 
 		$reserved = self::reserved_after_update(
-			(int) $matches[1],
+			(int) $request['id'],
 			isset( $request['slug'] ) ? (string) $request['slug'] : null,
 			isset( $request['name'] ) ? (string) $request['name'] : null
 		);
