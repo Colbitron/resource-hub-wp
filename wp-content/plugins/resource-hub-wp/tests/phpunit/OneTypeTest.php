@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace ResourceHub\Tests;
 
+use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\OneType;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\Taxonomies;
@@ -28,7 +29,15 @@ final class OneTypeTest extends WP_UnitTestCase {
 	private array $types;
 
 	/**
-	 * Logs in an editor and creates two types.
+	 * A topic term ID, created per test: a public resource also needs a topic and a summary
+	 * (RequiredFields), so every save here that may publish sends both.
+	 *
+	 * @var int
+	 */
+	private int $topic;
+
+	/**
+	 * Logs in an editor and creates two types and a topic.
 	 */
 	public function set_up(): void {
 		parent::set_up();
@@ -39,6 +48,7 @@ final class OneTypeTest extends WP_UnitTestCase {
 			self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) ),
 			self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) ),
 		);
+		$this->topic = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TOPIC ) );
 	}
 
 	/**
@@ -53,9 +63,11 @@ final class OneTypeTest extends WP_UnitTestCase {
 	 */
 	public function test_create( string $status, int $count, int $http, ?string $code ): void {
 		$params = array(
-			'title'          => 'A resource',
-			'status'         => $status,
-			Taxonomies::TYPE => array_slice( $this->types, 0, $count ),
+			'title'           => 'A resource',
+			'status'          => $status,
+			'meta'            => array( Meta::SUMMARY => 'A summary' ),
+			Taxonomies::TYPE  => array_slice( $this->types, 0, $count ),
+			Taxonomies::TOPIC => array( $this->topic ),
 		);
 
 		if ( 'future' === $status ) {
@@ -169,8 +181,10 @@ final class OneTypeTest extends WP_UnitTestCase {
 			'POST',
 			'/wp/v2/resources/' . $post_id,
 			array(
-				'status'         => 'publish',
-				Taxonomies::TYPE => array( $this->types[0] ),
+				'status'          => 'publish',
+				'meta'            => array( Meta::SUMMARY => 'A summary' ),
+				Taxonomies::TYPE  => array( $this->types[0] ),
+				Taxonomies::TOPIC => array( $this->topic ),
 			)
 		);
 		$this->assertSame( 200, $published->get_status() );
@@ -207,6 +221,8 @@ final class OneTypeTest extends WP_UnitTestCase {
 			)
 		);
 		wp_set_object_terms( $post_id, $type_id, Taxonomies::TYPE );
+		wp_set_object_terms( $post_id, $this->topic, Taxonomies::TOPIC );
+		update_post_meta( $post_id, Meta::SUMMARY, 'A summary' );
 
 		return $post_id;
 	}

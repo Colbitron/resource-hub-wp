@@ -1,0 +1,491 @@
+<?php
+/**
+ * A resource has a title, a topic and a summary once it is public.
+ *
+ * @package ResourceHub
+ */
+
+declare(strict_types=1);
+
+namespace ResourceHub\Tests;
+
+use ResourceHub\ContentModel\Meta;
+use ResourceHub\ContentModel\OneType;
+use ResourceHub\ContentModel\PostType;
+use ResourceHub\ContentModel\RequiredFields;
+use ResourceHub\ContentModel\Taxonomies;
+use WP_REST_Request;
+use WP_REST_Response;
+use WP_UnitTestCase;
+
+/**
+ * The required-fields rule on REST saves, the path the block editor uses: each field judged from
+ * the request when it carries it and from storage when it does not.
+ */
+final class RequiredFieldsTest extends WP_UnitTestCase {
+	/**
+	 * A type term ID, created per test.
+	 *
+	 * @var int
+	 */
+	private int $type;
+
+	/**
+	 * A topic term ID, created per test.
+	 *
+	 * @var int
+	 */
+	private int $topic;
+
+	/**
+	 * Registers the meta again (the test library unregisters every meta key after each test, and
+	 * REST stores only registered meta), logs in an editor and creates a type and a topic.
+	 */
+	public function set_up(): void {
+		parent::set_up();
+
+		( new Meta() )->register();
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		$this->type  = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) );
+		$this->topic = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TOPIC ) );
+	}
+
+	/**
+	 * Titles that are blank by the rule: refused when publishing or scheduling, allowed as a draft.
+	 *
+	 * @dataProvider blank_titles
+	 *
+	 * @param string $title The title sent.
+	 */
+	public function test_blank_title_is_refused_only_for_a_public_status( string $title ): void {
+		foreach ( OneType::PUBLIC_STATUSES as $status ) {
+			$refused = $this->send( 'POST', '/wp/v2/resources', $this->complete( array( 'title' => $title ), $status ) );
+
+			$this->assertSame( 400, $refused->get_status(), $status );
+			$this->assertSame( RequiredFields::TITLE_MISSING, $refused->get_data()['code'], $status );
+		}
+
+		$this->assertSame( 0, (int) wp_count_posts( PostType::NAME )->publish );
+
+		$draft = $this->send( 'POST', '/wp/v2/resources', $this->complete( array( 'title' => $title ), 'draft' ) );
+		$this->assertSame( 201, $draft->get_status() );
+	}
+
+	/**
+	 * Cases for test_blank_title_is_refused_only_for_a_public_status() and test_is_blank().
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function blank_titles(): array {
+		return array(
+			'empty'                => array( '' ),
+			'whitespace'           => array( " \t\n " ),
+			'no-break space'       => array( '&nbsp;' ),
+			'no-break space, raw'  => array( "\u{00A0}" ),
+			'zero-width space'     => array( '&#8203;' ),
+			'zero-width, raw'      => array( "\u{200B}\u{200C}\u{200D}" ),
+			'empty element'        => array( '<em></em>' ),
+			'element of spaces'    => array( '<strong> &nbsp; </strong>' ),
+			'byte-order mark'      => array( "\u{FEFF}" ),
+			'byte-order mark, raw' => array( "\xEF\xBB\xBF" ),
+		);
+	}
+
+	/**
+	 * A title with anything to read passes, however it is dressed.
+	 *
+	 * @dataProvider good_titles
+	 *
+	 * @param string $title The title sent.
+	 */
+	public function test_good_title_is_accepted( string $title ): void {
+		$response = $this->send( 'POST', '/wp/v2/resources', $this->complete( array( 'title' => $title ), 'publish' ) );
+
+		$this->assertSame( 201, $response->get_status() );
+	}
+
+	/**
+	 * Cases for test_good_title_is_accepted().
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function good_titles(): array {
+		return array(
+			'plain'                   => array( 'A resource' ),
+			'one letter among blanks' => array( "\u{FEFF} &nbsp; a \u{200B}" ),
+			'entity with a glyph'     => array( '&amp;' ),
+			'inside an element'       => array( '<em>Emphasis</em>' ),
+		);
+	}
+
+	/**
+	 * The blank rule, stated on its own: each blank case is blank and each good case is not.
+	 */
+	public function test_is_blank(): void {
+		foreach ( $this->blank_titles() as $name => $case ) {
+			$this->assertTrue( RequiredFields::is_blank( $case[0] ), $name );
+		}
+
+		foreach ( $this->good_titles() as $name => $case ) {
+			$this->assertFalse( RequiredFields::is_blank( $case[0] ), $name );
+		}
+
+		// Not valid UTF-8, so not blank; the database refuses such a title on its own.
+		$this->assertFalse( RequiredFields::is_blank( "ab\xC3\x28cd" ) );
+	}
+
+	/**
+	 * No topic, and topic IDs that name no term, are refused for a public status and fine for a draft.
+	 *
+	 * @dataProvider no_topics
+	 *
+	 * @param array<int> $topics The `resource_topic` sent.
+	 */
+	public function test_no_topic_is_refused_only_for_a_public_status( array $topics ): void {
+		$refused = $this->send( 'POST', '/wp/v2/resources', $this->complete( array( Taxonomies::TOPIC => $topics ), 'publish' ) );
+		$this->assertSame( 400, $refused->get_status() );
+		$this->assertSame( RequiredFields::TOPIC_MISSING, $refused->get_data()['code'] );
+
+		$draft = $this->send( 'POST', '/wp/v2/resources', $this->complete( array( Taxonomies::TOPIC => $topics ), 'draft' ) );
+		$this->assertSame( 201, $draft->get_status() );
+	}
+
+	/**
+	 * Cases for test_no_topic_is_refused_only_for_a_public_status().
+	 *
+	 * @return array<string, array{0: array<int>}>
+	 */
+	public function no_topics(): array {
+		return array(
+			'none'       => array( array() ),
+			'unknown ID' => array( array( 999999 ) ),
+		);
+	}
+
+	/**
+	 * A request without the parameter at all, for a new resource, has no topic either.
+	 */
+	public function test_new_resource_without_the_topic_parameter_is_refused(): void {
+		$params = $this->complete( array(), 'publish' );
+		unset( $params[ Taxonomies::TOPIC ] );
+
+		$response = $this->send( 'POST', '/wp/v2/resources', $params );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( RequiredFields::TOPIC_MISSING, $response->get_data()['code'] );
+	}
+
+	/**
+	 * Summaries that are blank by the rule, `null` among them, are refused for a public status and
+	 * fine for a draft.
+	 *
+	 * @dataProvider blank_summaries
+	 *
+	 * @param mixed $summary The `meta.summary` sent.
+	 */
+	public function test_blank_summary_is_refused_only_for_a_public_status( $summary ): void {
+		$refused = $this->send( 'POST', '/wp/v2/resources', $this->complete( array( 'meta' => array( Meta::SUMMARY => $summary ) ), 'publish' ) );
+		$this->assertSame( 400, $refused->get_status() );
+		$this->assertSame( RequiredFields::SUMMARY_MISSING, $refused->get_data()['code'] );
+
+		$draft = $this->send( 'POST', '/wp/v2/resources', $this->complete( array( 'meta' => array( Meta::SUMMARY => $summary ) ), 'draft' ) );
+		$this->assertSame( 201, $draft->get_status() );
+	}
+
+	/**
+	 * Cases for test_blank_summary_is_refused_only_for_a_public_status().
+	 *
+	 * @return array<string, array{0: mixed}>
+	 */
+	public function blank_summaries(): array {
+		return array(
+			'empty'         => array( '' ),
+			'whitespace'    => array( "  \n" ),
+			'no-break'      => array( '&nbsp;' ),
+			'empty element' => array( '<em></em>' ),
+			'null'          => array( null ),
+		);
+	}
+
+	/**
+	 * A request that sends no `meta` for a new resource has no summary either, and one that sends
+	 * other meta but not the summary is judged on the summary's absence.
+	 */
+	public function test_new_resource_without_the_summary_is_refused(): void {
+		$params = $this->complete( array(), 'publish' );
+		unset( $params['meta'] );
+
+		$without_meta = $this->send( 'POST', '/wp/v2/resources', $params );
+		$this->assertSame( 400, $without_meta->get_status() );
+		$this->assertSame( RequiredFields::SUMMARY_MISSING, $without_meta->get_data()['code'] );
+
+		$params['meta'] = array( Meta::SOURCE_URL => 'https://example.com/' );
+
+		$other_meta = $this->send( 'POST', '/wp/v2/resources', $params );
+		$this->assertSame( 400, $other_meta->get_status() );
+		$this->assertSame( RequiredFields::SUMMARY_MISSING, $other_meta->get_data()['code'] );
+	}
+
+	/**
+	 * A complete resource is created, published, with all three stored.
+	 */
+	public function test_complete_resource_is_published(): void {
+		$response = $this->send( 'POST', '/wp/v2/resources', $this->complete( array(), 'publish' ) );
+
+		$this->assertSame( 201, $response->get_status() );
+
+		$post_id = $response->get_data()['id'];
+
+		$this->assertSame( 'publish', get_post_status( $post_id ) );
+		$this->assertSame( array( $this->topic ), wp_get_object_terms( $post_id, Taxonomies::TOPIC, array( 'fields' => 'ids' ) ) );
+		$this->assertSame( 'A summary', get_post_meta( $post_id, Meta::SUMMARY, true ) );
+		$this->assertSame( array(), RequiredFields::missing_stored( $post_id ) );
+	}
+
+	/**
+	 * With everything missing, the title's error leads and the others ride along, in order; the
+	 * type's rule (OneType) comes before all of them.
+	 */
+	public function test_every_missing_field_is_reported_in_order(): void {
+		$response = $this->send(
+			'POST',
+			'/wp/v2/resources',
+			array(
+				'status'         => 'publish',
+				Taxonomies::TYPE => array( $this->type ),
+			)
+		);
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( RequiredFields::TITLE_MISSING, $response->get_data()['code'] );
+		$this->assertSame(
+			array( RequiredFields::TOPIC_MISSING, RequiredFields::SUMMARY_MISSING ),
+			array_column( $response->get_data()['additional_errors'], 'code' )
+		);
+
+		$typeless = $this->send( 'POST', '/wp/v2/resources', array( 'status' => 'publish' ) );
+		$this->assertSame( OneType::MISSING, $typeless->get_data()['code'] );
+	}
+
+	/**
+	 * The messages are what the editor shows after "Publishing failed." or "Updating failed.", so
+	 * they are plain, name the panel, and quote no value.
+	 */
+	public function test_refusal_messages_are_plain(): void {
+		$title = $this->send( 'POST', '/wp/v2/resources', $this->complete( array( 'title' => '' ), 'publish' ) );
+		$this->assertSame( 'A resource needs a title to be published or scheduled. Add one at the top of the editor.', $title->get_data()['message'] );
+
+		$topic = $this->send( 'POST', '/wp/v2/resources', $this->complete( array( Taxonomies::TOPIC => array() ), 'publish' ) );
+		$this->assertSame( 'A resource needs at least one topic to be published or scheduled. Add one in the Topics panel.', $topic->get_data()['message'] );
+
+		$summary = $this->send( 'POST', '/wp/v2/resources', $this->complete( array( 'meta' => array( Meta::SUMMARY => '' ) ), 'publish' ) );
+		$this->assertSame( 'A resource needs a summary to be published or scheduled. Write one in the Resource details panel.', $summary->get_data()['message'] );
+	}
+
+	/**
+	 * A published resource cannot lose any of the three through REST: each refusal leaves the
+	 * stored value as it was, and a save that touches none of them, or restores one, goes through.
+	 */
+	public function test_published_resource_keeps_its_fields(): void {
+		$post_id = $this->published_resource();
+
+		$blanked = $this->send( 'POST', '/wp/v2/resources/' . $post_id, array( 'title' => '<em> </em>' ) );
+		$this->assertSame( 400, $blanked->get_status() );
+		$this->assertSame( RequiredFields::TITLE_MISSING, $blanked->get_data()['code'] );
+		$this->assertSame( 'Published', get_post( $post_id )->post_title );
+
+		$untopiced = $this->send( 'POST', '/wp/v2/resources/' . $post_id, array( Taxonomies::TOPIC => array() ) );
+		$this->assertSame( 400, $untopiced->get_status() );
+		$this->assertSame( RequiredFields::TOPIC_MISSING, $untopiced->get_data()['code'] );
+		$this->assertSame( array( $this->topic ), wp_get_object_terms( $post_id, Taxonomies::TOPIC, array( 'fields' => 'ids' ) ) );
+
+		$unsummarised = $this->send( 'POST', '/wp/v2/resources/' . $post_id, array( 'meta' => array( Meta::SUMMARY => '' ) ) );
+		$this->assertSame( 400, $unsummarised->get_status() );
+		$this->assertSame( RequiredFields::SUMMARY_MISSING, $unsummarised->get_data()['code'] );
+		$this->assertSame( 'A summary', get_post_meta( $post_id, Meta::SUMMARY, true ) );
+
+		$reslugged = $this->send( 'POST', '/wp/v2/resources/' . $post_id, array( 'slug' => 'elsewhere' ) );
+		$this->assertSame( 200, $reslugged->get_status() );
+
+		$other_topic = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TOPIC ) );
+		$retopiced   = $this->send( 'POST', '/wp/v2/resources/' . $post_id, array( Taxonomies::TOPIC => array( $other_topic ) ) );
+		$this->assertSame( 200, $retopiced->get_status() );
+		$this->assertSame( array( $other_topic ), wp_get_object_terms( $post_id, Taxonomies::TOPIC, array( 'fields' => 'ids' ) ) );
+	}
+
+	/**
+	 * A resource the unguarded paths published without a summary (or a topic, or a title) is judged
+	 * on what is stored: a REST save that does not supply the missing field is refused, and the
+	 * same save that supplies it goes through. `missing_stored()` names the gap for WP-CLI.
+	 */
+	public function test_published_resource_with_a_stored_gap_is_judged_on_storage(): void {
+		$post_id = $this->published_resource();
+		delete_post_meta( $post_id, Meta::SUMMARY );
+
+		$this->assertSame( array( 'summary' ), RequiredFields::missing_stored( $post_id ) );
+
+		$reslugged = $this->send( 'POST', '/wp/v2/resources/' . $post_id, array( 'slug' => 'elsewhere' ) );
+		$this->assertSame( 400, $reslugged->get_status() );
+		$this->assertSame( RequiredFields::SUMMARY_MISSING, $reslugged->get_data()['code'] );
+		$this->assertSame( 'published', get_post( $post_id )->post_name );
+
+		$repaired = $this->send(
+			'POST',
+			'/wp/v2/resources/' . $post_id,
+			array(
+				'slug' => 'elsewhere',
+				'meta' => array( Meta::SUMMARY => 'Now with a summary' ),
+			)
+		);
+		$this->assertSame( 200, $repaired->get_status() );
+		$this->assertSame( 'elsewhere', get_post( $post_id )->post_name );
+		$this->assertSame( array(), RequiredFields::missing_stored( $post_id ) );
+
+		wp_set_object_terms( $post_id, array(), Taxonomies::TOPIC );
+		wp_update_post(
+			array(
+				'ID'         => $post_id,
+				'post_title' => '',
+			)
+		);
+		$this->assertSame( array( 'title', 'topic' ), RequiredFields::missing_stored( $post_id ) );
+		$this->assertSame( RequiredFields::FIELDS, RequiredFields::missing_stored( 999999 ) );
+	}
+
+	/**
+	 * Publishing a draft is judged on the stored fields when the request does not send them, and
+	 * on the request's when it does, so a complete draft publishes with a status change alone.
+	 */
+	public function test_draft_is_published_from_stored_or_sent_fields(): void {
+		$bare = self::factory()->post->create(
+			array(
+				'post_type'   => PostType::NAME,
+				'post_status' => 'draft',
+				'post_title'  => 'A draft',
+			)
+		);
+		wp_set_object_terms( $bare, $this->type, Taxonomies::TYPE );
+
+		$refused = $this->send( 'POST', '/wp/v2/resources/' . $bare, array( 'status' => 'publish' ) );
+		$this->assertSame( 400, $refused->get_status() );
+		$this->assertSame( RequiredFields::TOPIC_MISSING, $refused->get_data()['code'] );
+		$this->assertSame( 'draft', get_post_status( $bare ) );
+
+		$sent = $this->send(
+			'POST',
+			'/wp/v2/resources/' . $bare,
+			array(
+				'status'          => 'publish',
+				'meta'            => array( Meta::SUMMARY => 'A summary' ),
+				Taxonomies::TOPIC => array( $this->topic ),
+			)
+		);
+		$this->assertSame( 200, $sent->get_status() );
+		$this->assertSame( 'publish', get_post_status( $bare ) );
+
+		$complete = self::factory()->post->create(
+			array(
+				'post_type'   => PostType::NAME,
+				'post_status' => 'draft',
+				'post_title'  => 'A complete draft',
+			)
+		);
+		wp_set_object_terms( $complete, $this->type, Taxonomies::TYPE );
+		wp_set_object_terms( $complete, $this->topic, Taxonomies::TOPIC );
+		update_post_meta( $complete, Meta::SUMMARY, 'A summary' );
+
+		$stored = $this->send( 'POST', '/wp/v2/resources/' . $complete, array( 'status' => 'publish' ) );
+		$this->assertSame( 200, $stored->get_status() );
+		$this->assertSame( 'publish', get_post_status( $complete ) );
+	}
+
+	/**
+	 * Scheduling is judged like publishing.
+	 */
+	public function test_scheduling_is_judged_like_publishing(): void {
+		$params         = $this->complete( array( 'meta' => array( Meta::SUMMARY => '' ) ), 'future' );
+		$params['date'] = gmdate( 'Y-m-d\TH:i:s', time() + DAY_IN_SECONDS );
+
+		$response = $this->send( 'POST', '/wp/v2/resources', $params );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( RequiredFields::SUMMARY_MISSING, $response->get_data()['code'] );
+	}
+
+	/**
+	 * An autosave of a published resource with a blank title is not judged: it writes a revision,
+	 * never the resource, and the resource keeps its title.
+	 */
+	public function test_autosave_is_not_judged(): void {
+		$post_id = $this->published_resource();
+
+		$response = $this->send(
+			'POST',
+			'/wp/v2/resources/' . $post_id . '/autosaves',
+			array(
+				'title'   => '',
+				'content' => 'Still typing',
+			)
+		);
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'Published', get_post( $post_id )->post_title );
+		$this->assertSame( 'publish', get_post_status( $post_id ) );
+	}
+
+	/**
+	 * Parameters for a resource with every required field, with the given ones replacing them.
+	 * The content keeps core from refusing a draft whose title, content and excerpt are all empty,
+	 * so a blank title reaches this rule.
+	 *
+	 * @param array<string, mixed> $overrides Parameters that replace the complete ones.
+	 * @param string               $status    Status sent.
+	 * @return array<string, mixed>
+	 */
+	private function complete( array $overrides, string $status ): array {
+		return $overrides + array(
+			'title'           => 'A resource',
+			'content'         => 'Some content.',
+			'status'          => $status,
+			'meta'            => array( Meta::SUMMARY => 'A summary' ),
+			Taxonomies::TYPE  => array( $this->type ),
+			Taxonomies::TOPIC => array( $this->topic ),
+		);
+	}
+
+	/**
+	 * A published resource with every required field, made outside REST, titled "Published" with
+	 * the slug `published` and the summary "A summary".
+	 */
+	private function published_resource(): int {
+		$post_id = self::factory()->post->create(
+			array(
+				'post_type'   => PostType::NAME,
+				'post_status' => 'publish',
+				'post_title'  => 'Published',
+				'post_name'   => 'published',
+				'post_author' => get_current_user_id(),
+			)
+		);
+		wp_set_object_terms( $post_id, $this->type, Taxonomies::TYPE );
+		wp_set_object_terms( $post_id, $this->topic, Taxonomies::TOPIC );
+		update_post_meta( $post_id, Meta::SUMMARY, 'A summary' );
+
+		return $post_id;
+	}
+
+	/**
+	 * Dispatches a REST request with body parameters as the current user.
+	 *
+	 * @param string               $method HTTP method.
+	 * @param string               $route  Route.
+	 * @param array<string, mixed> $params Body parameters.
+	 */
+	private function send( string $method, string $route, array $params ): WP_REST_Response {
+		$request = new WP_REST_Request( $method, $route );
+		$request->set_body_params( $params );
+
+		return rest_get_server()->dispatch( $request );
+	}
+}

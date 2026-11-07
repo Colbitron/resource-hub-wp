@@ -30,6 +30,14 @@ final class RelatedPicksTest extends WP_UnitTestCase {
 	private int $type;
 
 	/**
+	 * A topic term ID every resource here gets, so REST saves that keep it published pass the
+	 * required-fields rule; the factory gives each a title, and `resource()` stores a summary.
+	 *
+	 * @var int
+	 */
+	private int $topic;
+
+	/**
 	 * The core test case unregisters every meta key in tear_down(), so register ours again per test, and
 	 * start a fresh REST server: the posts controller caches its item schema, and the `meta` property's
 	 * per-field `context` comes from the keys registered when that schema was first built.
@@ -42,7 +50,8 @@ final class RelatedPicksTest extends WP_UnitTestCase {
 		( new Meta() )->register_fields();
 		$GLOBALS['wp_rest_server'] = null; // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound
 
-		$this->type = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) );
+		$this->type  = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) );
+		$this->topic = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TOPIC ) );
 	}
 
 	/**
@@ -476,7 +485,8 @@ final class RelatedPicksTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Creates a resource with one type.
+	 * Creates a resource with one type, a topic and a summary, so a REST save that keeps it published
+	 * passes OneType and RequiredFields.
 	 *
 	 * @param string $status Post status.
 	 * @return int Post ID.
@@ -489,6 +499,8 @@ final class RelatedPicksTest extends WP_UnitTestCase {
 			)
 		);
 		wp_set_object_terms( $id, $this->type, Taxonomies::TYPE );
+		wp_set_object_terms( $id, $this->topic, Taxonomies::TOPIC );
+		update_post_meta( $id, Meta::SUMMARY, 'A summary' );
 
 		return $id;
 	}

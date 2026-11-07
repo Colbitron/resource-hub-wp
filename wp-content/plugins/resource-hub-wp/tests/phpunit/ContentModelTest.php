@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace ResourceHub\Tests;
 
+use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\Taxonomies;
 use WP_REST_Request;
@@ -182,8 +183,11 @@ final class ContentModelTest extends WP_UnitTestCase {
 				'post_author' => $author_id,
 			)
 		);
-		// A published resource keeps exactly one type through every REST save (OneType).
+		// A published resource keeps one type, a topic and a summary through every REST save
+		// (OneType, RequiredFields).
 		wp_set_object_terms( $post_id, self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) ), Taxonomies::TYPE );
+		wp_set_object_terms( $post_id, self::factory()->term->create( array( 'taxonomy' => Taxonomies::TOPIC ) ), Taxonomies::TOPIC );
+		update_post_meta( $post_id, Meta::SUMMARY, 'A summary' );
 
 		wp_set_current_user( $author_id );
 

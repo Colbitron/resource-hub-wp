@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace ResourceHub\Tests;
 
+use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\SlugEscapes;
 use ResourceHub\ContentModel\Taxonomies;
@@ -37,6 +38,8 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 	 */
 	public function set_up(): void {
 		parent::set_up();
+		// The test library unregisters every meta key after each test; REST stores only registered meta.
+		( new Meta() )->register();
 
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
 	}
@@ -496,16 +499,20 @@ final class SlugEscapesTest extends WP_UnitTestCase {
 	 * slug and returns it.
 	 */
 	public function test_rest_create_and_update_resource(): void {
-		$type = $this->term( Taxonomies::TYPE, 'Webinar', 'webinar' );
+		$type  = $this->term( Taxonomies::TYPE, 'Webinar', 'webinar' );
+		$topic = $this->term( Taxonomies::TOPIC, 'Performance', 'performance' );
 
 		$created = $this->send(
 			'POST',
 			'/wp/v2/resources',
 			array(
-				'title'         => 'Case study',
-				'slug'          => 'case%2Dstudy',
-				'status'        => 'publish',
-				'resource_type' => array( $type ),
+				'title'          => 'Case study',
+				'slug'           => 'case%2Dstudy',
+				'status'         => 'publish',
+				// A public resource also needs a topic and a summary (RequiredFields).
+				'meta'           => array( Meta::SUMMARY => 'A summary' ),
+				'resource_type'  => array( $type ),
+				'resource_topic' => array( $topic ),
 			)
 		);
 
