@@ -13,12 +13,20 @@
  * harness's ports (refusing a port something already answers on, and
  * failing at once if either server exits while it waits), requests each URL
  * once so Lighthouse measures the
- * cached page a reader gets rather than its first render, and runs
- * `lhci collect`, `lhci upload` (to `lighthouse-results/`) and `lhci assert`,
- * in that order, so the reports are written even when a budget fails. The
- * exit code is the assertion's. Both servers are stopped at the end.
+ * cached page a reader gets rather than its first render, and calibrates the
+ * CPU slowdown: three quick Lighthouse runs of `/` (performance only) measure
+ * the host's `benchmarkIndex`, and their median sets the multiplier
+ * (`cpu-calibration.mts`, which stops the run on a host outside its bounds).
+ * The calibration costs about 30 s; its reports are discarded. Then it runs
+ * `lhci collect` with that multiplier, `lhci upload` (to
+ * `lighthouse-results/`) and `lhci assert`, in that order, so the reports are
+ * written even when a budget fails, and checks that every run used the
+ * calibrated multiplier. The exit code is the assertion's. Both servers are
+ * stopped at the end.
  *
- * The medians are printed, and appended to `$GITHUB_STEP_SUMMARY` in CI.
+ * The medians, with each URL's measured `benchmarkIndex` and multiplier and
+ * the calibration's formula and reference device, are printed, and appended
+ * to `$GITHUB_STEP_SUMMARY` in CI.
  */
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
@@ -29,7 +37,8 @@ import { createRequire } from "node:module";
 
 import { assertPrebuilt, writeBuildStamp } from "./build-stamp.mts";
 import { appServerEnv, appSiteOrigin, mockCmsOrigin, mockCmsPort, prebuilt, webPort } from "./mock-cms/config.mts";
-import { medianTable, type Lhr } from "./lighthouse-summary.mts";
+import { calibratedSlowdown, FORMULA, REFERENCE_DEVICE } from "./cpu-calibration.mts";
+import { median, medianTable, type Calibration, type Lhr } from "./lighthouse-summary.mts";
 import { SAMPLED_URLS } from "./sampled-urls.mts";
 
 const APP_DIR = new URL("..", import.meta.url).pathname;
@@ -39,6 +48,9 @@ const REPORT_DIR = join(APP_DIR, "lighthouse-results");
 const require = createRequire(import.meta.url);
 /** The runs per URL, read from the config the assertions use, for the summary's heading. */
 const RUNS: number = require("../lighthouserc.cjs").ci.collect.numberOfRuns;
+
+/** The calibration's runs: enough for a median, few enough to cost about 30 s. */
+const CALIBRATION_RUNS = 3;
 
 const children: ChildProcess[] = [];
 
@@ -93,12 +105,42 @@ async function waitFor(url: string, server: ChildProcess, timeoutMs: number): Pr
   throw new Error(`${url} did not answer within ${timeoutMs / 1000} s.`);
 }
 
-/** The median of each budgeted number per URL, from the raw runs `lhci collect` wrote. */
-function summary(): string {
-  const runs = readdirSync(RAW_DIR)
+/** The raw runs `lhci collect` wrote. */
+function rawRuns(): Lhr[] {
+  return readdirSync(RAW_DIR)
     .filter((name) => /^lhr-.*\.json$/.test(name))
     .map((name) => JSON.parse(readFileSync(join(RAW_DIR, name), "utf8")) as Lhr);
-  return medianTable(runs, RUNS);
+}
+
+/**
+ * Measures the host's `benchmarkIndex` with a few performance-only runs of
+ * `url` and returns the calibrated multiplier, or throws. The runs use the
+ * gate's own config, so the same Chromium and flags, with the URL, the run
+ * count and the categories overridden on the command line.
+ */
+function calibrate(url: string): Calibration {
+  rmSync(RAW_DIR, { recursive: true, force: true });
+  const status = run("pnpm", [
+    "exec",
+    "lhci",
+    "collect",
+    "--config=./lighthouserc.cjs",
+    `--url=${url}`,
+    `--numberOfRuns=${CALIBRATION_RUNS}`,
+    "--settings.onlyCategories=performance",
+  ]);
+  if (status !== 0) throw new Error("The calibration's Lighthouse runs failed; their output is above.");
+  const indexes = rawRuns()
+    .map((lhr) => lhr.environment?.benchmarkIndex)
+    .filter((value): value is number => typeof value === "number");
+  rmSync(RAW_DIR, { recursive: true, force: true });
+  const benchmarkIndex = median(indexes);
+  if (benchmarkIndex === null || indexes.length !== CALIBRATION_RUNS) {
+    throw new Error(`The calibration expected ${CALIBRATION_RUNS} benchmarkIndex values and read ${indexes.length}.`);
+  }
+  const multiplier = calibratedSlowdown(benchmarkIndex);
+  console.log(`\nCalibration: benchmarkIndex ${indexes.map(Math.round).join(", ")}; median ${Math.round(benchmarkIndex)}, so a CPU slowdown of ${multiplier}x.\n`);
+  return { benchmarkIndex, runs: CALIBRATION_RUNS, multiplier, formula: FORMULA, reference: REFERENCE_DEVICE };
 }
 
 async function main(): Promise<number> {
@@ -134,18 +176,28 @@ async function main(): Promise<number> {
     if (!response.ok) throw new Error(`${url} answered ${response.status} while warming.`);
   }
 
+  const started = Date.now();
+  const calibration = calibrate(`${app}/`);
+  const calibrated = Date.now();
+
   rmSync(RAW_DIR, { recursive: true, force: true });
   rmSync(REPORT_DIR, { recursive: true, force: true });
-  const started = Date.now();
   const config = "--config=./lighthouserc.cjs";
-  if (run("pnpm", ["exec", "lhci", "collect", config]) !== 0) return 1;
+  if (run("pnpm", ["exec", "lhci", "collect", config], { RH_LH_CPU_SLOWDOWN: String(calibration.multiplier) }) !== 0) return 1;
   const uploaded = run("pnpm", ["exec", "lhci", "upload", config]);
   const asserted = run("pnpm", ["exec", "lhci", "assert", config]);
 
-  const table = summary();
-  console.log(`\n${table}\nCollected in ${Math.round((Date.now() - started) / 1000)} s; reports in lighthouse-results/.`);
+  const runs = rawRuns();
+  const table = medianTable(runs, RUNS, calibration);
+  const seconds = (from: number, to: number) => Math.round((to - from) / 1000);
+  console.log(`\n${table}\nCalibrated in ${seconds(started, calibrated)} s and collected in ${seconds(calibrated, Date.now())} s; reports in lighthouse-results/.`);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, table);
 
+  const uncalibrated = runs.filter((lhr) => lhr.configSettings?.throttling?.cpuSlowdownMultiplier !== calibration.multiplier);
+  if (uncalibrated.length > 0) {
+    console.error(`${uncalibrated.length} runs did not use the calibrated ${calibration.multiplier}x CPU slowdown, so their TBT is not comparable.`);
+    return 1;
+  }
   return asserted !== 0 ? asserted : uploaded;
 }
 
