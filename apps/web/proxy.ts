@@ -110,7 +110,8 @@ export const config = {
   // which is reserved and a 404, except the revalidate route itself; any
   // other path with an upper-case ASCII letter, a percent escape or a
   // repeated slash (the redirect), a dot or a segment over 200 characters
-  // (not a page segment), except the favicon, which is a route, and outside
+  // (not a page segment), except the metadata files (`OWN_ROUTE_PATHS`: the
+  // favicon, the icons and the share image), which are routes, and outside
   // the uploads rewrite and the framework's assets, which are not pages and
   // which `lib/path-decision.ts` leaves alone regardless; and any other path
   // over the plugin's cap on a page path (2010 characters), which no
@@ -126,7 +127,7 @@ export const config = {
   matcher: [
     "/resources/:path*",
     "/api/((?!revalidate/?$).*)",
-    "/((?!_next/|api/|media/|favicon\\.ico$).*(?:[A-Z%.]|//|[^/]{201}).*)",
+    "/((?!_next/|api/|media/|(?:favicon\\.ico|icon\\.svg|icon\\.png|apple-icon\\.png|opengraph-image\\.png)$).*(?:[A-Z%.]|//|[^/]{201}).*)",
     "/((?!_next/|api/|media/).{2010,})",
   ],
 };

@@ -493,8 +493,8 @@ describe("pagePathProblem", () => {
 });
 
 describe("OWN_ROUTE_PATHS", () => {
-  it("are the revalidate route and the favicon, with the trailing slash every route path has and the file path has not", () => {
-    expect(OWN_ROUTE_PATHS).toEqual(["/api/revalidate/", "/favicon.ico"]);
+  it("are the revalidate route and the metadata files, with the trailing slash every route path has and a file path has not", () => {
+    expect(OWN_ROUTE_PATHS).toEqual(["/api/revalidate/", "/favicon.ico", "/icon.svg", "/icon.png", "/apple-icon.png", "/opengraph-image.png"]);
   });
 
   // The proxy runs before every route and before `public/`, so a route or a

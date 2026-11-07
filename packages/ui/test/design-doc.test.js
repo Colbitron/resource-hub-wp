@@ -41,6 +41,7 @@ describe( 'DESIGN.md and tokens.css', () => {
 		const headings = [ ...designDoc.matchAll( /^## (.+)$/gm ) ].map( ( match ) => match[ 1 ] );
 		assert.deepEqual( headings, [
 			'Overview',
+			'Brand',
 			'Colors',
 			'Theme and colour scheme',
 			'Typography',

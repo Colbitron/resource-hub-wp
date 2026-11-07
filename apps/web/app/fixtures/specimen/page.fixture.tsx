@@ -1,8 +1,12 @@
 import type { CSSProperties, ReactNode } from "react";
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 
+import appleIcon from "@/app/apple-icon.png";
 import NotFound from "@/app/not-found";
+import shareImage from "@/app/opengraph-image.png";
+import { BrandLockup, BrandMark } from "@/components/Brand";
 import { FilterNav, type FilterTerm } from "@/components/FilterNav";
 import { PageArticle } from "@/components/PageArticle";
 import { Pagination } from "@/components/Pagination";
@@ -66,6 +70,11 @@ import "./specimen.css";
  * the pixels are theirs; this page is not a heading-structure reference
  * (each route's own spec and the axe scan check that).
  *
+ * The brand section shows the mark at its sizes, the lockup with its clear
+ * space, and the two committed PNGs, the apple touch icon and the default
+ * share image, as the files `scripts/render-brand-images.mts` wrote them
+ * (static imports, `unoptimized`, so the pixels are the committed ones).
+ *
  * The states section shows what the other sections cannot: the focus ring
  * (the screenshot test focuses `#specimen-focus` before the capture), both
  * filter rows with a term selected, pagination at its first and last pages,
@@ -79,6 +88,9 @@ export const metadata: Metadata = {
   title: "Design specimen",
   robots: { index: false },
 };
+
+/** The mark at the smallest size it is used (a 16 px favicon), the lockup's, and larger. */
+const MARK_SIZES = [16, 24, 28, 48, 96];
 
 const TYPES: FilterTerm[] = [
   { slug: "article", name: "Article" },
@@ -304,6 +316,44 @@ export default function SpecimenFixturePage() {
             </TokenRow>
           ))}
         </ul>
+      </Section>
+
+      <Section id="specimen-brand" title="Brand">
+        <p>
+          Colbination&rsquo;s mark, in its own two colours in both schemes, and the lockup as the header renders it
+          (DESIGN.md, &ldquo;Brand&rdquo;).
+        </p>
+        <h3 id="specimen-brand-sizes">The mark at its sizes</h3>
+        <ul className="rh-specimen__marks" role="list" aria-labelledby="specimen-brand-sizes">
+          {MARK_SIZES.map((size) => (
+            <li key={size} className="rh-specimen__mark">
+              <BrandMark style={{ width: size, height: size }} />
+              <code className="rh-specimen__name">{size} px</code>
+            </li>
+          ))}
+        </ul>
+        <h3>The lockup and its clear space</h3>
+        <p>
+          The header&rsquo;s home link, at the type scale. The clear space around it is half the mark&rsquo;s width
+          on every side, drawn here as a dashed line.
+        </p>
+        <div className="rh-specimen__lockup">
+          <BrandLockup />
+        </div>
+        <h3>Icons and share image</h3>
+        <p>
+          The apple touch icon and the default share image: the committed PNGs that{" "}
+          <code>scripts/render-brand-images.mts</code> draws from the mark, the tokens and Figtree.
+        </p>
+        <div className="rh-specimen__images">
+          <Image src={appleIcon} alt="The apple touch icon: the mark on the paper surface" width={90} height={90} unoptimized />
+          <Image
+            src={shareImage}
+            alt="The default share image: the mark, the wordmark and the publisher's name on the paper surface"
+            className="rh-specimen__share"
+            unoptimized
+          />
+        </div>
       </Section>
 
       <Section id="specimen-type" title="Type">

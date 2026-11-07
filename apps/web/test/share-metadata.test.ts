@@ -9,6 +9,7 @@ import { pageMetadata } from "../components/PageArticle";
 import { resourceMetadata } from "../components/ResourceArticle";
 import { welcomeMetadata } from "../components/WelcomePage";
 import { generateMetadata as rootMetadata } from "../app/layout";
+import { DEFAULT_SHARE_IMAGE } from "../lib/share-image";
 import { shareMetadata } from "../lib/share-metadata";
 import { wpPageSchema, wpResourceSchema, type WpResource } from "../lib/wp/schemas/rest";
 
@@ -16,13 +17,19 @@ import { wpPageSchema, wpResourceSchema, type WpResource } from "../lib/wp/schem
 // compiler can run; its metadata never reads the font, so the module is stood in.
 vi.mock("../app/fonts", () => ({ figtree: { className: "", variable: "", style: { fontFamily: "" } } }));
 
+// The default share image's static import as Next.js resolves it; Vite would give a bare string, with no `src` (`share-image.test.ts`).
+vi.mock("@/app/opengraph-image.png", () => ({
+  default: { src: "/_next/static/media/opengraph-image.0123abcd.png", width: 1200, height: 630 },
+}));
+
 /**
  * The X card rule (`lib/share-metadata.ts`): `summary_large_image` only with
  * an Open Graph image, `summary` otherwise, and only the card type, since X
  * reads the title, description, image and alt from `og:*`. Then each builder
- * that sets Open Graph, so every route follows the rule; a listing, which
- * sets neither; and the root layout, which sets neither and so cannot leak a
- * card into a page.
+ * that sets Open Graph, each naming exactly one image, its own or the site's
+ * default (`lib/share-image.ts`), and so getting the large card; a listing,
+ * which sets neither and is left to the file-based share image; and the
+ * root layout, which sets neither and so cannot leak a card into a page.
  */
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures/wp");
@@ -65,7 +72,7 @@ describe("shareMetadata", () => {
     expect(shareMetadata({ title: "A", images: "/media/a.jpg" }).twitter).toEqual({ card: "summary_large_image" });
   });
 
-  it("falls back to the summary card with no image, never the large one", () => {
+  it("falls back to the summary card with no image, never the large one, though no route now writes Open Graph without one", () => {
     expect(shareMetadata({ title: "A" }).twitter).toEqual({ card: "summary" });
     expect(shareMetadata({ title: "A", images: [] }).twitter).toEqual({ card: "summary" });
   });
@@ -92,13 +99,13 @@ describe("the builders", () => {
     expect(metadata.openGraph?.images).toEqual([{ url: "/media/2026/11/share-1536x806.jpg", width: 1536, height: 806, alt: "A photo" }]);
   });
 
-  it("gives a resource with no featured image the summary card", () => {
+  it("gives a resource with no featured image the default share image and so the large card", () => {
     const metadata = resourceMetadata({ kind: "render", resource: withMedia([]), type: "guide", slug: "a-field-guide-to-revalidation" });
-    expect(metadata.twitter).toEqual({ card: "summary" });
-    expect(metadata.openGraph?.images).toBeUndefined();
+    expect(metadata.twitter).toEqual({ card: "summary_large_image" });
+    expect(metadata.openGraph?.images).toEqual([DEFAULT_SHARE_IMAGE]);
   });
 
-  it("gives a CMS page and the welcome page the summary card", () => {
+  it("gives a CMS page and the welcome page the default share image and so the large card", () => {
     const page = wpPageSchema.parse({
       id: 14,
       slug: "team",
@@ -110,11 +117,14 @@ describe("the builders", () => {
       content: { rendered: "<p>Us.</p>", protected: false },
       excerpt: { rendered: "<p>Who we are.</p>\n", protected: false },
     });
-    expect(pageMetadata({ kind: "render", page, path: "/about/team/" }).twitter).toEqual({ card: "summary" });
-    expect(welcomeMetadata.twitter).toEqual({ card: "summary" });
+    for (const metadata of [pageMetadata({ kind: "render", page, path: "/about/team/" }), welcomeMetadata]) {
+      expect(metadata.twitter).toEqual({ card: "summary_large_image" });
+      expect(metadata.openGraph?.images).toEqual([DEFAULT_SHARE_IMAGE]);
+    }
+    expect(DEFAULT_SHARE_IMAGE.url).toBe("/_next/static/media/opengraph-image.0123abcd.png");
   });
 
-  it("leaves Open Graph and twitter out of a listing, which X then gives no card", async () => {
+  it("leaves Open Graph and twitter out of a listing, so the file-based share image and Next.js's card from it apply", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(LIST, { status: 200, headers: { "Content-Type": "application/json; charset=UTF-8", ...LIST_HEADERS } })),

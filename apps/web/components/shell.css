@@ -120,25 +120,17 @@ video {
 	border-bottom: var(--rh-border-width) solid var(--rh-color-border);
 }
 
+/*
+ * The lockup alone, one row at every width from 320 px up. The header is
+ * as short as it can be without shrinking anything: the lockup's own
+ * height, at the tight line height, plus padding one step less than the
+ * gutter.
+ */
 .rh-header__inner {
 	display: flex;
-	align-items: baseline;
-	gap: var(--rh-space-4);
-	padding-top: var(--rh-space-4);
-	padding-bottom: var(--rh-space-4);
-}
-
-.rh-header__name {
-	color: var(--rh-color-text);
-	font-family: var(--rh-font-sans);
-	font-size: var(--rh-text-lg);
-	font-weight: var(--rh-weight-heading);
-	letter-spacing: var(--rh-tracking-heading);
-	text-decoration: none;
-}
-
-.rh-header__name:hover {
-	text-decoration: underline;
+	align-items: center;
+	padding-top: var(--rh-space-3);
+	padding-bottom: var(--rh-space-3);
 }
 
 .rh-main {
@@ -158,18 +150,27 @@ video {
 }
 
 /*
- * The footer's text, then the theme control: one row with the control at
- * the right where both fit, and the control on a row of its own, at the
- * left under the text, where they do not.
+ * The publisher line and the sentence, stacked, then the theme control:
+ * the control at the right of the text where both fit, and on a row of its
+ * own under the text, at the left, where they do not (a phone). The text
+ * block shrinks to the line before it wraps, so a long sentence wraps
+ * inside it and never pushes the page sideways.
  */
 .rh-footer__inner {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	justify-content: space-between;
-	gap: var(--rh-space-4);
-	padding-top: var(--rh-space-4);
-	padding-bottom: var(--rh-space-4);
+	gap: var(--rh-space-4) var(--rh-space-5);
+	padding-top: var(--rh-space-5);
+	padding-bottom: var(--rh-space-5);
+}
+
+.rh-footer__text {
+	display: flex;
+	flex-direction: column;
+	gap: var(--rh-space-1);
+	min-width: 0;
 }
 
 .rh-footer__theme {

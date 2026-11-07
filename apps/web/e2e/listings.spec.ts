@@ -4,6 +4,7 @@ import { clearAppCache } from "./app-cache.mts";
 import { mockCms } from "./mock-cms/client.mts";
 import { E2E_REVALIDATE_SECRET, MOCK_CMS_HOST, mockCmsOrigin } from "./mock-cms/config.mts";
 import { RESOURCES, TERMS } from "./mock-cms/seed.mts";
+import { postRevalidate } from "./revalidation.mts";
 
 /**
  * The listing routes under `/resources/` against the built app and the mock
@@ -22,7 +23,6 @@ import { RESOURCES, TERMS } from "./mock-cms/seed.mts";
  * once more while it re-renders.
  */
 
-const ROUTE = "/api/revalidate/";
 const PER_PAGE = 12;
 
 const cms = mockCms();
@@ -53,7 +53,7 @@ function termName(taxonomy: "resource_type" | "resource_topic", slug: string): s
 }
 
 async function revalidate(request: APIRequestContext, events: unknown[]): Promise<APIResponse> {
-  const response = await request.post(ROUTE, {
+  const response = await postRevalidate(request, {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${E2E_REVALIDATE_SECRET}` },
     data: JSON.stringify({ version: 1, events }),
   });
@@ -555,10 +555,13 @@ test("the keyboard reaches the filters and the pagination in order", async ({ pa
   expect(await focused()).toEqual({ text: "2", nav: "Pagination" });
   await page.keyboard.press("Tab");
   expect(await focused()).toEqual({ text: "Next", nav: "Pagination" });
-  // Past the page's content, the footer's theme control is the last stop
-  // (one stop: its checked radio, `theme.spec.ts`).
+  // Past the page's content, the footer: the publisher's link, then the
+  // theme control, the last stop (one stop: its checked radio, `theme.spec.ts`).
+  await page.keyboard.press("Tab");
+  expect(await focused()).toEqual({ text: "Colbination", nav: null });
   await page.keyboard.press("Tab");
   await expect(page.getByRole("contentinfo").getByRole("radio", { name: "System theme", exact: true })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
   await page.keyboard.press("Shift+Tab");
   expect(await focused()).toEqual({ text: "Next", nav: "Pagination" });
   await page.keyboard.press("Enter");

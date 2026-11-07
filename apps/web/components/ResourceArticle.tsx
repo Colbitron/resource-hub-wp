@@ -8,6 +8,7 @@ import { cmsUrls } from "@/lib/env";
 import type { RenderedResource } from "@/lib/redirects";
 import { resourceTopics, type ResourceTopic } from "@/lib/resource-topics";
 import { resourcePath, topicListingPath, typeListingPath } from "@/lib/routes";
+import { DEFAULT_SHARE_IMAGE } from "@/lib/share-image";
 import { shareMetadata } from "@/lib/share-metadata";
 import { sourceLink, type SourceLink } from "@/lib/source-link";
 import { toCard } from "@/lib/wp/cards";
@@ -98,18 +99,21 @@ function resourceView(rendered: RenderedResource): ResourceView {
  * The metadata for the resource: its title (the root layout's template adds
  * the site name), its summary as the description, or none rather than the
  * site's when it has no summary, its canonical path, and Open Graph fields
- * with the featured image's `/media/…` path when there is a trusted one.
- * That image is `openGraphImage`'s choice, not the page's: the same trust
- * rules, but the smallest same-shape size at least `OPEN_GRAPH_MIN_WIDTH`
- * (1200) wide, or the original when none is, since a link preview wants a
- * larger file than the 1024-wide `large` size the page and the card read
- * (`lib/wp/images.ts`). The canonical, `og:url` and `og:image` are paths,
- * which the root layout's `metadataBase`, from the server-only `SITE_URL`,
- * makes absolute on the public origin (see `apps/web/README.md`); with
- * `SITE_URL` unset, as in local work, the first two stay relative and
- * Next.js resolves `og:image` against the deployment's URL. The CMS's
- * absolute URLs are never used (ADR 0040). `shareMetadata` adds the X card
- * type: the large card with that image, the summary card without one.
+ * with the featured image's `/media/…` path when there is a trusted one,
+ * and the site's default share image otherwise, named here because an
+ * `openGraph` of its own drops the file-based one (`lib/share-image.ts`).
+ * That featured image is `openGraphImage`'s choice, not the page's: the
+ * same trust rules, but the smallest same-shape size at least
+ * `OPEN_GRAPH_MIN_WIDTH` (1200) wide, or the original when none is, since a
+ * link preview wants a larger file than the 1024-wide `large` size the page
+ * and the card read (`lib/wp/images.ts`). The canonical, `og:url` and
+ * `og:image` are paths, which the root layout's `metadataBase`, from the
+ * server-only `SITE_URL`, makes absolute on the public origin (see
+ * `apps/web/README.md`); with `SITE_URL` unset, as in local work, the first
+ * two stay relative and Next.js resolves `og:image` against the
+ * deployment's URL. The CMS's absolute URLs are never used (ADR 0040).
+ * `shareMetadata` adds the X card type, the large card, since there is
+ * always an image.
  */
 export function resourceMetadata(rendered: RenderedResource): Metadata {
   const view = resourceView(rendered);
@@ -124,18 +128,16 @@ export function resourceMetadata(rendered: RenderedResource): Metadata {
       ...(view.description === null ? {} : { description: view.description }),
       url: view.canonical,
       publishedTime: view.date,
-      ...(image === null
-        ? {}
-        : {
-            images: [
-              {
-                url: image.src,
-                width: image.width,
-                height: image.height,
-                ...(image.alt === "" ? {} : { alt: image.alt }),
-              },
-            ],
-          }),
+      images: [
+        image === null
+          ? DEFAULT_SHARE_IMAGE
+          : {
+              url: image.src,
+              width: image.width,
+              height: image.height,
+              ...(image.alt === "" ? {} : { alt: image.alt }),
+            },
+      ],
     }),
   };
 }

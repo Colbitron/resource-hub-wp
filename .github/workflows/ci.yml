@@ -546,8 +546,12 @@ jobs:
       # writes one. On a failure the actual and diff images are in the traces
       # artifact below, from the project's own output directory. When CI and
       # a laptop disagree on a baseline, apps/web/e2e/README.md says what to
-      # do. Skipped when the image's pull failed (the step above has already
-      # failed the job), so a broken registry never starts a second pull.
+      # do. The same run first checks the committed brand images
+      # (apps/web/app/*.png, favicon.ico) against a fresh render in the same
+      # container (apps/web/scripts/render-brand-images.mts), and fails, naming
+      # the file, when one is stale. Skipped when the image's pull failed (the
+      # step above has already failed the job), so a broken registry never
+      # starts a second pull.
       - name: Run the front end's screenshot tests
         if: ${{ !cancelled() && steps.image.outcome == 'success' }}
         env:

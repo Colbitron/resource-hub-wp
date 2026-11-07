@@ -2,6 +2,7 @@ import { expect, test, type APIRequestContext, type APIResponse, type Page } fro
 
 import { mockCms } from "./mock-cms/client.mts";
 import { appSiteOrigin, E2E_REVALIDATE_SECRET, mockCmsOrigin, mockCmsPort } from "./mock-cms/config.mts";
+import { postRevalidate } from "./revalidation.mts";
 
 /**
  * The CMS's pages on the front end (ADR 0052; `packages/ui/README.md`) against
@@ -23,7 +24,6 @@ import { appSiteOrigin, E2E_REVALIDATE_SECRET, mockCmsOrigin, mockCmsPort } from
  * because the app's Data Cache does not see the mock change (e2e/README.md).
  */
 
-const ROUTE = "/api/revalidate/";
 const WELCOME = { id: 60, slug: "welcome", title: "Welcome to the hub" };
 const ABOUT = { id: 61, slug: "about" };
 const TEAM = { id: 62, slug: "team", title: "The team" };
@@ -62,7 +62,7 @@ function pageEvent(event: string, id: number, path: string, previous: string | n
 }
 
 async function revalidate(request: APIRequestContext, events: unknown[]): Promise<void> {
-  const response = await request.post(ROUTE, {
+  const response = await postRevalidate(request, {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${E2E_REVALIDATE_SECRET}` },
     data: JSON.stringify({ version: 1, events }),
   });
@@ -200,9 +200,13 @@ test.describe("pages at their paths", () => {
     expect(html).toContain(`<link rel="canonical" href="${appSiteOrigin()}${path}"`);
     expect(html).toContain('<meta name="description" content="Who writes the resources."');
     expect(html).toContain('<meta property="og:type" content="website"');
-    // Pages carry no image, so the summary card, never the large one.
-    expect(html).toContain('<meta name="twitter:card" content="summary"/>');
-    expect(html).not.toContain("summary_large_image");
+    // Pages carry the site's default share image, their one og:image, so the large card, and Next.js's copy of the image.
+    expect(html.match(/<meta property="og:image"/g)).toHaveLength(1);
+    const image = /<meta property="og:image" content="([^"]+)"/.exec(html)?.[1];
+    expect(image).toMatch(/\/_next\/static\/media\/opengraph-image\.[^./]+\.png$/);
+    expect(html).toContain('<meta name="twitter:card" content="summary_large_image"/>');
+    expect(html).not.toContain('<meta name="twitter:card" content="summary"/>');
+    expect(html).toContain(`<meta name="twitter:image" content="${image}"/>`);
     await expectPage(await get(request, `/${ABOUT.slug}/`), "About", `/${ABOUT.slug}/`);
   });
 
@@ -430,7 +434,7 @@ test("in Chromium, a front page set and unset lands on the current page at every
 
 test.describe("the page route's answer to a page event", () => {
   test("lists the two paths and nothing of the library's", async ({ request }) => {
-    const response = await request.post(ROUTE, {
+    const response = await postRevalidate(request, {
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${E2E_REVALIDATE_SECRET}` },
       data: JSON.stringify({ version: 1, events: [pageEvent("update", TEAM.id, "/company/team/", "/about/team/")] }),
     });
