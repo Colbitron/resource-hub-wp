@@ -559,12 +559,21 @@ jobs:
           RH_E2E_PREBUILT: '1'
         run: pnpm web:test:screenshots
 
-      # Lighthouse CI, mobile, five runs per sampled URL with the CPU slowdown
-      # calibrated to this runner's benchmarkIndex (apps/web/lighthouserc.cjs,
-      # e2e/cpu-calibration.mts): performance at least 0.95, accessibility 1,
-      # LCP at most 2500 ms, CLS at most 0.05, TBT at most 200 ms, on the
-      # medians. The medians, the benchmarkIndex and the multiplier go to the
-      # job summary; the reports are an artifact below.
+      # Lighthouse CI, mobile, five runs per sampled URL (apps/web/lighthouserc.cjs):
+      # performance at least 0.95, accessibility 1, LCP at most 2500 ms, CLS at
+      # most 0.05, TBT at most 200 ms, on the medians. The CPU slowdown is
+      # calibrated to this runner on the work a page load does
+      # (e2e/cpu-calibration.mts): three performance-only runs of a frozen copy
+      # of the built / (e2e/calibration-page/) measure the runner's raw
+      # main-thread time W, and the multiplier is REFERENCE_MS / W. The
+      # benchmarkIndex method it replaced over-throttled these runners: on four
+      # runner CPU types the index did not predict the page work, and one at
+      # an index of about 3,700 did 2.7x a laptop's at about 4,000. On two of
+      # them the snapshot put TBT at 96 to 242 ms and performance at 0.95 to
+      # 0.98, against the laptop's 87 to 207 ms and 0.95 to 1.00
+      # (apps/web/e2e/README.md has the details). The medians, W, the
+      # multiplier and the index (reported only) go to the job summary; the
+      # reports are an artifact below.
       - name: Run Lighthouse CI on the front end
         if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
         env:

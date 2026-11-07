@@ -14,35 +14,38 @@
  * failing at once if either server exits while it waits), requests each URL
  * once so Lighthouse measures the
  * cached page a reader gets rather than its first render, and calibrates the
- * CPU slowdown: three quick Lighthouse runs of `/` (performance only) measure
- * the host's `benchmarkIndex`, and their median sets the multiplier
- * (`cpu-calibration.mts`, which stops the run on a host outside its bounds).
- * The calibration costs about 30 s; its reports are discarded. Then it runs
+ * CPU slowdown: three quick Lighthouse runs (performance only) of the
+ * calibration page, a frozen copy of the built `/` served from its own small
+ * server on a port the system chooses (`calibration-page.mts`), measure the
+ * host's raw main-thread time on it, and their median W sets the multiplier,
+ * `REFERENCE_MS / W` (`cpu-calibration.mts`, which stops the run on a host
+ * outside its bounds). A snapshot that no longer has every file its page
+ * requests stops the run too. The calibration costs about 30 s; its reports
+ * are discarded. Then it runs
  * `lhci collect` with that multiplier, `lhci upload` (to
  * `lighthouse-results/`) and `lhci assert`, in that order, so the reports are
  * written even when a budget fails, and checks that every run used the
  * calibrated multiplier. The exit code is the assertion's. Both servers are
  * stopped at the end.
  *
- * The medians, with each URL's measured `benchmarkIndex` and multiplier and
- * the calibration's formula and reference device, are printed, and appended
- * to `$GITHUB_STEP_SUMMARY` in CI.
+ * The medians, with each URL's raw main-thread time, `benchmarkIndex` and
+ * multiplier and the calibration's W, formula and reference device, are
+ * printed, and appended to `$GITHUB_STEP_SUMMARY` in CI. The index is
+ * reported only; it does not set the multiplier.
  */
 
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { appendFileSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { appendFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { createRequire } from "node:module";
 
-import { assertPrebuilt, writeBuildStamp } from "./build-stamp.mts";
-import { appServerEnv, appSiteOrigin, mockCmsOrigin, mockCmsPort, prebuilt, webPort } from "./mock-cms/config.mts";
-import { calibratedSlowdown, FORMULA, REFERENCE_DEVICE } from "./cpu-calibration.mts";
-import { median, medianTable, type Calibration, type Lhr } from "./lighthouse-summary.mts";
+import { startCalibrationServer } from "./calibration-page.mts";
+import { calibratedSlowdown, FORMULA, multiplierFor, REFERENCE_DEVICE, REFERENCE_MS } from "./cpu-calibration.mts";
+import { APP_DIR, performanceRuns, prepareApp, RAW_DIR, rawRuns, run, startServers, stopServers } from "./lab.mts";
+import { median, medianTable, rawTaskTime, type Calibration } from "./lighthouse-summary.mts";
+import { appSiteOrigin } from "./mock-cms/config.mts";
 import { SAMPLED_URLS } from "./sampled-urls.mts";
 
-const APP_DIR = new URL("..", import.meta.url).pathname;
-const RAW_DIR = join(APP_DIR, ".lighthouseci");
 const REPORT_DIR = join(APP_DIR, "lighthouse-results");
 
 const require = createRequire(import.meta.url);
@@ -52,120 +55,45 @@ const RUNS: number = require("../lighthouserc.cjs").ci.collect.numberOfRuns;
 /** The calibration's runs: enough for a median, few enough to cost about 30 s. */
 const CALIBRATION_RUNS = 3;
 
-const children: ChildProcess[] = [];
-
-function run(command: string, args: string[], env: Record<string, string> = {}): number {
-  const result = spawnSync(command, args, { cwd: APP_DIR, stdio: "inherit", env: { ...process.env, ...env } });
-  return result.status ?? 1;
-}
-
-/** Starts a long-running server in its own process group, so stopping it stops what it spawned too. */
-function startServer(command: string, args: string[], env: Record<string, string>): ChildProcess {
-  const child = spawn(command, args, {
-    cwd: APP_DIR,
-    stdio: ["ignore", "inherit", "inherit"],
-    env: { ...process.env, ...env },
-    detached: true,
-  });
-  children.push(child);
-  return child;
-}
-
-function stopServers(): void {
-  for (const child of children.splice(0)) {
-    if (child.pid !== undefined && child.exitCode === null) {
-      try {
-        process.kill(-child.pid, "SIGTERM");
-      } catch {
-        // Already gone.
-      }
-    }
-  }
-}
-
-async function answers(url: string): Promise<boolean> {
-  try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
-    return response.ok;
-  } catch {
-    return false;
-  }
-}
-
-/** Waits until `url` answers, failing at once if `server`, which should answer it, exits first. */
-async function waitFor(url: string, server: ChildProcess, timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (server.exitCode !== null || server.signalCode !== null) {
-      throw new Error(`The server for ${url} exited (${server.exitCode ?? server.signalCode}) before it answered; its output is above.`);
-    }
-    if (await answers(url)) return;
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`${url} did not answer within ${timeoutMs / 1000} s.`);
-}
-
-/** The raw runs `lhci collect` wrote. */
-function rawRuns(): Lhr[] {
-  return readdirSync(RAW_DIR)
-    .filter((name) => /^lhr-.*\.json$/.test(name))
-    .map((name) => JSON.parse(readFileSync(join(RAW_DIR, name), "utf8")) as Lhr);
-}
-
 /**
- * Measures the host's `benchmarkIndex` with a few performance-only runs of
- * `url` and returns the calibrated multiplier, or throws. The runs use the
- * gate's own config, so the same Chromium and flags, with the URL, the run
- * count and the categories overridden on the command line.
+ * Measures this host's raw main-thread time on the calibration page with a
+ * few performance-only runs and returns the calibrated multiplier, or
+ * throws: on a host outside the bounds, on a run without the number, and on
+ * a snapshot missing a file its page requested.
  */
-function calibrate(url: string): Calibration {
-  rmSync(RAW_DIR, { recursive: true, force: true });
-  const status = run("pnpm", [
-    "exec",
-    "lhci",
-    "collect",
-    "--config=./lighthouserc.cjs",
-    `--url=${url}`,
-    `--numberOfRuns=${CALIBRATION_RUNS}`,
-    "--settings.onlyCategories=performance",
-  ]);
-  if (status !== 0) throw new Error("The calibration's Lighthouse runs failed; their output is above.");
-  const indexes = rawRuns()
-    .map((lhr) => lhr.environment?.benchmarkIndex)
-    .filter((value): value is number => typeof value === "number");
-  rmSync(RAW_DIR, { recursive: true, force: true });
-  const benchmarkIndex = median(indexes);
-  if (benchmarkIndex === null || indexes.length !== CALIBRATION_RUNS) {
-    throw new Error(`The calibration expected ${CALIBRATION_RUNS} benchmarkIndex values and read ${indexes.length}.`);
+async function calibrate(): Promise<Calibration> {
+  const server = await startCalibrationServer();
+  let lhrs;
+  try {
+    lhrs = await performanceRuns(server.url, CALIBRATION_RUNS);
+  } finally {
+    await server.close();
   }
-  const multiplier = calibratedSlowdown(benchmarkIndex);
-  console.log(`\nCalibration: benchmarkIndex ${indexes.map(Math.round).join(", ")}; median ${Math.round(benchmarkIndex)}, so a CPU slowdown of ${multiplier}x.\n`);
-  return { benchmarkIndex, runs: CALIBRATION_RUNS, multiplier, formula: FORMULA, reference: REFERENCE_DEVICE };
+  if (server.missing.length > 0) {
+    throw new Error(
+      `The calibration page requested files its snapshot lacks (${server.missing.join(", ")}); regenerate it (e2e/README.md, "Lighthouse CI").`,
+    );
+  }
+  const times = lhrs.map(rawTaskTime).filter((value): value is number => value !== null);
+  const workMs = median(times);
+  if (workMs === null || times.length !== CALIBRATION_RUNS) {
+    throw new Error(`The calibration expected ${CALIBRATION_RUNS} raw main-thread times and read ${times.length}.`);
+  }
+  const indexes = lhrs.map((lhr) => lhr.environment?.benchmarkIndex).filter((value): value is number => typeof value === "number");
+  const benchmarkIndex = median(indexes);
+  const multiplier = calibratedSlowdown(workMs);
+  const calculator = benchmarkIndex === null ? null : multiplierFor(benchmarkIndex);
+  console.log(
+    `\nCalibration: raw main-thread time ${times.map(Math.round).join(", ")} ms; median W = ${Math.round(workMs)} ms, so a CPU slowdown of ${REFERENCE_MS} / ${Math.round(workMs)} = ${multiplier}x. ` +
+      `benchmarkIndex ${indexes.map(Math.round).join(", ")} (median ${benchmarkIndex === null ? "n/a" : Math.round(benchmarkIndex)}; the calculator would give ${calculator === null ? "none" : `${calculator.toFixed(1)}x`}), for information only.\n`,
+  );
+  return { workMs, runs: CALIBRATION_RUNS, referenceMs: REFERENCE_MS, multiplier, benchmarkIndex, formula: FORMULA, reference: REFERENCE_DEVICE };
 }
 
 async function main(): Promise<number> {
-  const env = appServerEnv();
+  if (!(await prepareApp())) return 1;
+  await startServers();
   const app = appSiteOrigin();
-  const mock = mockCmsOrigin();
-
-  for (const url of [`${mock}/__mock/health`, `${app}/`]) {
-    if (await answers(url)) {
-      throw new Error(`Something already answers at ${url}; stop it or choose other ports (RH_WEB_PORT, RH_MOCK_CMS_PORT).`);
-    }
-  }
-
-  if (prebuilt()) {
-    assertPrebuilt();
-  } else {
-    if (run("pnpm", ["exec", "next", "build"], env) !== 0) return 1;
-    writeBuildStamp({ ...process.env, ...env });
-  }
-  if (run("node", ["e2e/clear-fetch-cache.mts"]) !== 0) return 1;
-
-  const mockServer = startServer("node", ["e2e/mock-cms/main.mts"], { RH_MOCK_CMS_PORT: String(mockCmsPort()) });
-  await waitFor(`${mock}/__mock/health`, mockServer, 15_000);
-  const appServer = startServer("pnpm", ["exec", "next", "start", "--port", String(webPort())], env);
-  await waitFor(`${app}/`, appServer, 60_000);
 
   // One request per URL renders each ISR listing and fills the Data Cache,
   // as a reader after the first would find it.
@@ -177,7 +105,7 @@ async function main(): Promise<number> {
   }
 
   const started = Date.now();
-  const calibration = calibrate(`${app}/`);
+  const calibration = await calibrate();
   const calibrated = Date.now();
 
   rmSync(RAW_DIR, { recursive: true, force: true });

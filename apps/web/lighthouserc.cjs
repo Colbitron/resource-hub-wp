@@ -10,9 +10,10 @@
  *   screen and simulated slow 4G. No preset is named, because LHCI's presets
  *   are `desktop`, `perf` and `experimental`.
  * - The CPU slowdown is calibrated to the host rather than Lighthouse's
- *   constant 4x: `lighthouse.mts` measures the host's `benchmarkIndex` before
- *   the runs and passes the multiplier in `RH_LH_CPU_SLOWDOWN`
- *   (`e2e/cpu-calibration.mts` has the method, its sources and its bounds).
+ *   constant 4x: `lighthouse.mts` measures the host's raw main-thread time
+ *   on a frozen copy of the built `/` (`e2e/calibration-page/`) before the
+ *   runs and passes the multiplier in `RH_LH_CPU_SLOWDOWN`
+ *   (`e2e/cpu-calibration.mts` has the method, its evidence and its bounds).
  *   Unset, as when `lhci collect` runs alone, Lighthouse's 4x applies and the
  *   TBT is the runner's, not the code's.
  * - Five runs per URL; every assertion reads the median of the five, which

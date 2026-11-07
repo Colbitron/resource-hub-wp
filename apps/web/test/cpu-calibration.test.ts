@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { calibratedSlowdown, MAX_MULTIPLIER, MIN_MULTIPLIER, multiplierFor, slowdownFromEnv } from "../e2e/cpu-calibration.mts";
+import {
+  calibratedSlowdown,
+  DERIVATION,
+  FORMULA,
+  MAX_MULTIPLIER,
+  MIN_MULTIPLIER,
+  multiplierFor,
+  REFERENCE_MS,
+  slowdownFromEnv,
+} from "../e2e/cpu-calibration.mts";
 
 // The CPU slowdown the Lighthouse gate calibrates to its host
-// (e2e/cpu-calibration.mts): Lighthouse's CPU slowdown calculator's formula,
-// rounded and bounded.
+// (e2e/cpu-calibration.mts): the calibration page's reference main-thread
+// time over the host's own, rounded and bounded.
 
 describe("multiplierFor", () => {
   it("is the calculator's piecewise line through its knots", () => {
@@ -31,20 +40,51 @@ describe("multiplierFor", () => {
   });
 });
 
+describe("REFERENCE_MS", () => {
+  it("is the derivation host's calculator multiplier times its raw time, rounded", () => {
+    expect(REFERENCE_MS).toBe(Math.round(multiplierFor(DERIVATION.benchmarkIndex)! * DERIVATION.rawMs));
+  });
+
+  it("comes from a measured host the calculator covers, on a desktop-class index", () => {
+    expect(DERIVATION.rawMs).toBeGreaterThan(0);
+    expect(multiplierFor(DERIVATION.benchmarkIndex)).toBeGreaterThan(MIN_MULTIPLIER);
+    expect(Number.isInteger(REFERENCE_MS)).toBe(true);
+  });
+
+  it("is named, with its inputs, in the formula the summary prints", () => {
+    expect(FORMULA).toContain(`REFERENCE_MS is ${REFERENCE_MS} ms`);
+    expect(FORMULA).toContain(`benchmarkIndex of ${DERIVATION.benchmarkIndex}`);
+    expect(FORMULA).toContain(`that host's ${DERIVATION.rawMs} ms`);
+  });
+});
+
 describe("calibratedSlowdown", () => {
-  it("rounds to one decimal, as the calculator prints it", () => {
-    expect(calibratedSlowdown(2050)).toBe(6.2);
-    expect(calibratedSlowdown(4100)).toBe(15);
+  it("is REFERENCE_MS over the host's raw time, rounded to one decimal", () => {
+    expect(calibratedSlowdown(REFERENCE_MS / 4)).toBe(4);
+    expect(calibratedSlowdown(REFERENCE_MS / 3.44)).toBe(3.4);
+    expect(calibratedSlowdown(REFERENCE_MS / 3.46)).toBe(3.5);
+    expect(calibratedSlowdown(REFERENCE_MS / 14.26)).toBe(14.3);
   });
 
-  it("accepts the bounds themselves", () => {
-    expect(calibratedSlowdown(150)).toBe(MIN_MULTIPLIER);
-    expect(calibratedSlowdown(1300 + 17 * 233)).toBe(MAX_MULTIPLIER);
+  it("accepts the bounds themselves, after rounding", () => {
+    expect(calibratedSlowdown(REFERENCE_MS)).toBe(MIN_MULTIPLIER);
+    expect(calibratedSlowdown(REFERENCE_MS / 0.96)).toBe(MIN_MULTIPLIER);
+    expect(calibratedSlowdown(REFERENCE_MS / MAX_MULTIPLIER)).toBe(MAX_MULTIPLIER);
+    expect(calibratedSlowdown(REFERENCE_MS / 20.04)).toBe(MAX_MULTIPLIER);
   });
 
-  it("stops, naming the index and the range, on a host the method does not cover", () => {
-    expect(() => calibratedSlowdown(120)).toThrow(/benchmarkIndex is 120, which calibrates to no multiplier .*1x to 20x/);
-    expect(() => calibratedSlowdown(6000)).toThrow(/benchmarkIndex is 6000, which calibrates to 23\.2x; the gate accepts 1x to 20x/);
+  it("stops, naming the time and the range, on a host slower than the reference device or too fast for 20x", () => {
+    const range = new RegExp(`1x to 20x \\(about ${Math.round(REFERENCE_MS / 20)} to ${REFERENCE_MS} ms, against a reference of ${REFERENCE_MS} ms\\)`);
+    expect(() => calibratedSlowdown(REFERENCE_MS * 1.1)).toThrow(/calibrates to 0\.9x/);
+    expect(() => calibratedSlowdown(REFERENCE_MS * 1.1)).toThrow(range);
+    expect(() => calibratedSlowdown(REFERENCE_MS / 21)).toThrow(/calibrates to 21x; the gate accepts/);
+    expect(() => calibratedSlowdown(REFERENCE_MS / 21)).toThrow(range);
+  });
+
+  it("stops on a time that is not a positive number", () => {
+    for (const rawMs of [0, -50, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => calibratedSlowdown(rawMs), String(rawMs)).toThrow(/calibrates to no multiplier/);
+    }
   });
 });
 

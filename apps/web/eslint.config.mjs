@@ -21,6 +21,9 @@ const eslintConfig = defineConfig([
     // A local `vercel build` writes the deployment's functions and static
     // files here (gitignored), which are not this app's sources.
     ".vercel/**",
+    // The calibration page's snapshot of the app's own build output
+    // (e2e/write-calibration-page.mts), minified and never edited by hand.
+    "e2e/calibration-page/**",
   ]),
 ]);
 
