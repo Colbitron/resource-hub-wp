@@ -29,7 +29,12 @@ namespace ResourceHub\ContentModel;
  * The rules all fields obey live in {@see MetaRules}. One of `related_picks`'s clauses, that a
  * resource is never its own pick, needs the post ID, which core's sanitize callback is not given,
  * so it is applied from the `add_post_metadata` and `update_post_metadata` filters here on every
- * write path (`update_post_meta()`, the REST meta fields, the block editor).
+ * write path (`update_post_meta()`, the REST meta fields, the block editor). The filters run for
+ * every meta write on the site, so they act only on a `resource` post's `related_picks`.
+ *
+ * {@see Meta::register()} does both halves, once, from `init`. The fields alone are registered by
+ * {@see Meta::register_fields()}, which the tests call again after core's test case unregisters
+ * every meta key, without adding a second copy of the filters.
  */
 final class Meta {
 	/**
@@ -51,6 +56,16 @@ final class Meta {
 	 * Registers the three fields and the filters behind `related_picks`. Hooked to `init`.
 	 */
 	public function register(): void {
+		$this->register_fields();
+
+		add_filter( 'add_post_metadata', array( $this, 'drop_self_on_add' ), 10, 5 );
+		add_filter( 'update_post_metadata', array( $this, 'drop_self_on_update' ), 10, 5 );
+	}
+
+	/**
+	 * Registers the three fields only.
+	 */
+	public function register_fields(): void {
 		register_post_meta(
 			PostType::NAME,
 			self::SUMMARY,
@@ -114,21 +129,19 @@ final class Meta {
 				),
 			)
 		);
-
-		add_filter( 'add_post_metadata', array( $this, 'drop_self_on_add' ), 10, 5 );
-		add_filter( 'update_post_metadata', array( $this, 'drop_self_on_update' ), 10, 5 );
 	}
 
 	/**
 	 * `add_post_metadata`: writes a `related_picks` list that names its own post again without it.
 	 *
 	 * Core fires the filter after the sanitize callback. When an earlier filter already answered
-	 * (`$check` is not null), when the key is not `related_picks`, or when the list does not hold
-	 * the post's ID, the write proceeds untouched (`$check` is returned as is). Otherwise the write
-	 * is redone through `add_metadata()` with the ID removed; that call passes through this filter
-	 * again, finds nothing to remove, and completes, so the result is the second write's. The
-	 * `$check` guard is what makes that safe: once this method has answered, a second copy of it on
-	 * the same hook (another instance registered, as the tests do) sees a result and leaves it alone,
+	 * (`$check` is not null), when the post is not a `resource`, when the key is not
+	 * `related_picks`, or when the list does not hold the post's ID, the write proceeds untouched
+	 * (`$check` is returned as is). Otherwise the write is redone through `add_metadata()` with the
+	 * ID removed; that call passes through this filter again, finds nothing to remove, and
+	 * completes, so the result is the second write's. The `$check` guard is what makes that safe:
+	 * once this method has answered, any later filter on the hook that does the same, such as a
+	 * second copy of this one if `register()` ever ran twice, sees a result and leaves it alone,
 	 * instead of redoing a unique write that now fails.
 	 *
 	 * @param mixed  $check      Whether an earlier filter short-circuited the write; null to proceed.
@@ -149,10 +162,12 @@ final class Meta {
 	/**
 	 * `update_post_metadata`: the same for an update. See {@see Meta::drop_self_on_add()}.
 	 *
-	 * One difference: when the list without the ID is what is stored already, the write reports
-	 * success instead of being redone. `update_metadata()` answers an unchanged value with `false`,
-	 * which core's REST meta fields turn into a 500, and the editor saving `[ 5, self ]` over a
-	 * stored `[ 5 ]` has changed nothing.
+	 * One difference: when no `$prev_value` is given and the list without the ID is the one value
+	 * stored already, the write reports success instead of being redone. `update_metadata()`
+	 * answers an unchanged value with `false`, which core's REST meta fields turn into a 500, and
+	 * the editor saving `[ 5, self ]` over a stored `[ 5 ]` has changed nothing. The test is core's
+	 * own, from `update_metadata()`: it applies only when `$prev_value` is empty and exactly one row
+	 * exists. With a `$prev_value`, the write is redone with it and core decides, as it would have.
 	 *
 	 * @param mixed  $check      Whether an earlier filter short-circuited the write; null to proceed.
 	 * @param int    $object_id  The post.
@@ -168,7 +183,8 @@ final class Meta {
 
 		$picks = MetaRules::without_self( $meta_value, $object_id );
 
-		if ( get_post_meta( $object_id, $meta_key, true ) === $picks ) {
+		// Core's unchanged-value test from update_metadata(), answered with success instead of `false`.
+		if ( empty( $prev_value ) && array( $picks ) === get_metadata_raw( 'post', $object_id, $meta_key, false ) ) {
 			return true;
 		}
 
@@ -176,13 +192,19 @@ final class Meta {
 	}
 
 	/**
-	 * Whether a write is a `related_picks` list that holds the post's own ID.
+	 * Whether a write is a `resource`'s `related_picks` list that holds the post's own ID. The post
+	 * type is checked first: another post type may use the same key for its own purpose, and its
+	 * values are not ours to change.
 	 *
 	 * @param string $meta_key   Meta key being written.
 	 * @param mixed  $meta_value The sanitized value.
 	 * @param int    $object_id  The post.
 	 */
 	private static function names_itself( string $meta_key, mixed $meta_value, int $object_id ): bool {
+		if ( PostType::NAME !== get_post_type( $object_id ) ) {
+			return false;
+		}
+
 		return self::RELATED_PICKS === $meta_key && is_array( $meta_value ) && in_array( $object_id, $meta_value, true );
 	}
 }

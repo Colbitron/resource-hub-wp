@@ -33,13 +33,24 @@ final class RelatedPicksTest extends WP_UnitTestCase {
 	 * The core test case unregisters every meta key in tear_down(), so register ours again per test, and
 	 * start a fresh REST server: the posts controller caches its item schema, and the `meta` property's
 	 * per-field `context` comes from the keys registered when that schema was first built.
+	 *
+	 * The fields only: the self-drop filters under test are the ones the plugin hooked at `init`, so each
+	 * write runs the one handler production runs, not a second copy as well.
 	 */
 	public function set_up(): void {
 		parent::set_up();
-		( new Meta() )->register();
+		( new Meta() )->register_fields();
 		$GLOBALS['wp_rest_server'] = null; // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound
 
 		$this->type = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) );
+	}
+
+	/**
+	 * Drops the server built for this test, so its schema does not outlive the meta keys it was built from.
+	 */
+	public function tear_down(): void {
+		$GLOBALS['wp_rest_server'] = null; // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound
+		parent::tear_down();
 	}
 
 	/**
@@ -93,6 +104,9 @@ final class RelatedPicksTest extends WP_UnitTestCase {
 			'null items are dropped'                => array( array( null, 6 ), array( 6 ) ),
 			'nested arrays are dropped'             => array( array( array( 5 ), 6 ), array( 6 ) ),
 			'strings with more than digits'         => array( array( '7 ', ' 7', '1e3', '-1', 'abc', '', '7.0' ), array() ),
+			'leading zeros are not the value'       => array( array( '007', '0', '000' ), array( 7 ) ),
+			'digits up to PHP_INT_MAX are kept'     => array( array( (string) PHP_INT_MAX ), array( PHP_INT_MAX ) ),
+			'digits past PHP_INT_MAX are dropped'   => array( array( '9223372036854775808', '99999999999999999999', 6 ), array( 6 ) ),
 			'keys are dropped'                      => array(
 				array(
 					'a' => 5,
@@ -139,6 +153,17 @@ final class RelatedPicksTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A non-unique `add_post_meta()` drops it too.
+	 */
+	public function test_non_unique_add_post_meta_drops_the_post_itself(): void {
+		$post  = $this->resource();
+		$other = $this->resource();
+
+		$this->assertNotFalse( add_post_meta( $post, Meta::RELATED_PICKS, array( $post, $other ) ) );
+		$this->assertSame( array( array( $other ) ), get_post_meta( $post, Meta::RELATED_PICKS, false ) );
+	}
+
+	/**
 	 * A list that is only the post itself stores an empty list, read back as the default.
 	 */
 	public function test_a_list_of_only_the_post_itself_is_empty(): void {
@@ -159,6 +184,73 @@ final class RelatedPicksTest extends WP_UnitTestCase {
 
 		$this->assertTrue( update_post_meta( $post, Meta::RELATED_PICKS, array( $other, $post ) ) );
 		$this->assertSame( array( $other ), get_post_meta( $post, Meta::RELATED_PICKS, true ) );
+	}
+
+	/**
+	 * With a `$prev_value` that is not what is stored, the update is core's to answer, and core answers
+	 * `false` and writes nothing; the unchanged-value shortcut does not turn that into success.
+	 */
+	public function test_an_update_with_a_mismatched_prev_value_fails_as_in_core(): void {
+		$post  = $this->resource();
+		$other = $this->resource();
+		$third = $this->resource();
+		update_post_meta( $post, Meta::RELATED_PICKS, array( $other ) );
+
+		$this->assertFalse( update_post_meta( $post, Meta::RELATED_PICKS, array( $other, $post ), array( $third ) ) );
+		$this->assertSame( array( $other ), get_post_meta( $post, Meta::RELATED_PICKS, true ) );
+	}
+
+	/**
+	 * With a matching `$prev_value`, the update is redone without the post itself and replaces that row.
+	 */
+	public function test_an_update_with_a_matching_prev_value_drops_the_post_itself(): void {
+		$post  = $this->resource();
+		$other = $this->resource();
+		$third = $this->resource();
+		update_post_meta( $post, Meta::RELATED_PICKS, array( $other ) );
+
+		$this->assertTrue( update_post_meta( $post, Meta::RELATED_PICKS, array( $third, $post ), array( $other ) ) );
+		$this->assertSame( array( $third ), get_post_meta( $post, Meta::RELATED_PICKS, true ) );
+	}
+
+	/**
+	 * A `related_picks` key on another post type is not this field, and the filters leave it as written,
+	 * the post's own ID included.
+	 */
+	public function test_the_same_key_on_another_post_type_is_untouched(): void {
+		$post = self::factory()->post->create( array( 'post_status' => 'publish' ) );
+
+		$this->assertNotFalse( update_post_meta( $post, Meta::RELATED_PICKS, array( $post, 5 ) ) );
+		$this->assertSame( array( $post, 5 ), get_post_meta( $post, Meta::RELATED_PICKS, true ) );
+
+		$this->assertNotFalse( add_post_meta( $post, Meta::RELATED_PICKS, array( $post ) ) );
+		$this->assertSame( array( array( $post, 5 ), array( $post ) ), get_post_meta( $post, Meta::RELATED_PICKS, false ) );
+	}
+
+	/**
+	 * The plugin hooks one self-drop handler on each filter, and these tests add none of their own.
+	 */
+	public function test_each_filter_has_one_handler(): void {
+		global $wp_filter;
+
+		$methods = array(
+			'add_post_metadata'    => 'drop_self_on_add',
+			'update_post_metadata' => 'drop_self_on_update',
+		);
+
+		foreach ( $methods as $hook => $method ) {
+			$handlers = 0;
+
+			foreach ( $wp_filter[ $hook ]->callbacks as $callbacks ) {
+				foreach ( $callbacks as $callback ) {
+					if ( is_array( $callback['function'] ) && $callback['function'][0] instanceof Meta && $method === $callback['function'][1] ) {
+						++$handlers;
+					}
+				}
+			}
+
+			$this->assertSame( 1, $handlers, $hook );
+		}
 	}
 
 	/**
@@ -201,6 +293,22 @@ final class RelatedPicksTest extends WP_UnitTestCase {
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( array( $draft ), get_post_meta( $post, Meta::RELATED_PICKS, true ) );
+	}
+
+	/**
+	 * Over REST the schema counts a numeric string and an integral float as integers, and core casts both
+	 * to ints before the sanitizer runs, so both are stored.
+	 */
+	public function test_rest_write_casts_numeric_strings_and_integral_floats(): void {
+		$post  = $this->resource();
+		$other = $this->resource();
+		$third = $this->resource();
+		$this->as_editor();
+
+		$response = $this->update( $post, array( 'meta' => array( Meta::RELATED_PICKS => array( (string) $other, (float) $third ) ) ) );
+
+		$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+		$this->assertSame( array( $other, $third ), get_post_meta( $post, Meta::RELATED_PICKS, true ) );
 	}
 
 	/**
@@ -279,6 +387,28 @@ final class RelatedPicksTest extends WP_UnitTestCase {
 
 		foreach ( $list->get_data() as $item ) {
 			$this->assertArrayNotHasKey( Meta::RELATED_PICKS, $item['meta'] );
+		}
+	}
+
+	/**
+	 * Asking for `meta` or `meta.related_picks` with `_fields` does not bring the picks into an anonymous
+	 * read: the context filter runs first. `_fields` is applied on `rest_post_dispatch`, as `serve_request()`
+	 * applies it, so the response is the one an anonymous client would get.
+	 */
+	public function test_anonymous_fields_reads_never_include_the_picks(): void {
+		$post  = $this->resource();
+		$other = $this->resource();
+		update_post_meta( $post, Meta::RELATED_PICKS, array( $other ) );
+		wp_set_current_user( 0 );
+
+		foreach ( array( 'meta', 'meta.' . Meta::RELATED_PICKS ) as $fields ) {
+			$request = new WP_REST_Request( 'GET', '/wp/v2/' . PostType::REST_BASE . '/' . $post );
+			$request->set_query_params( array( '_fields' => $fields ) );
+			$server   = rest_get_server();
+			$response = apply_filters( 'rest_post_dispatch', rest_ensure_response( $server->dispatch( $request ) ), $server, $request ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+
+			$this->assertSame( 200, $response->get_status(), $fields );
+			$this->assertArrayNotHasKey( Meta::RELATED_PICKS, (array) ( $response->get_data()['meta'] ?? array() ), $fields );
 		}
 	}
 

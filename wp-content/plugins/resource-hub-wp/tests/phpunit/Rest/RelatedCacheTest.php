@@ -21,36 +21,43 @@ use WP_UnitTestCase;
  */
 final class RelatedCacheTest extends WP_UnitTestCase {
 	/**
-	 * The salt is the plugin's and core's `terms` stamps, in that order, and the key names the ID and count.
+	 * The salt is the plugin's own stamp alone, and the key names the ID and count.
 	 */
 	public function test_salt_and_key(): void {
-		$this->assertSame( array( wp_cache_get_last_changed( 'resource_hub' ), wp_cache_get_last_changed( 'terms' ) ), RelatedCache::salt() );
+		$this->assertSame( wp_cache_get_last_changed( 'resource_hub' ), RelatedCache::salt() );
 		$this->assertSame( 'related:12:3', RelatedCache::key( 12, 3 ) );
 		$this->assertSame( DAY_IN_SECONDS, RelatedCache::EXPIRY );
 	}
 
 	/**
-	 * A set entry is read back under the same salt and missed once the plugin's salt is bumped.
+	 * A computed list is stored and read back under the same salt, and computed again once the plugin's
+	 * salt is bumped. Another count is another entry.
 	 */
-	public function test_set_then_get_then_miss_after_a_bump(): void {
-		$cache = new RelatedCache();
-		$items = array(
+	public function test_remember_stores_then_hits_then_misses_after_a_bump(): void {
+		$cache   = new RelatedCache();
+		$calls   = 0;
+		$items   = array(
 			array(
 				'id'     => 5,
 				'source' => 'pick',
 			),
 		);
+		$compute = static function () use ( &$calls, $items ): array {
+			++$calls;
 
-		$this->assertNull( $cache->get( 12, 3 ) );
+			return $items;
+		};
 
-		$cache->set( 12, 3, $items );
+		$this->assertSame( $items, $cache->remember( 12, 3, $compute ) );
+		$this->assertSame( $items, $cache->remember( 12, 3, $compute ) );
+		$this->assertSame( 1, $calls, 'The second read is a hit.' );
 
-		$this->assertSame( $items, $cache->get( 12, 3 ) );
-		$this->assertNull( $cache->get( 12, 4 ), 'Another count is another entry.' );
+		$cache->remember( 12, 4, $compute );
+		$this->assertSame( 2, $calls, 'Another count is another entry.' );
 
 		$cache->bump();
-
-		$this->assertNull( $cache->get( 12, 3 ) );
+		$cache->remember( 12, 3, $compute );
+		$this->assertSame( 3, $calls, 'A bump makes the entry a miss.' );
 	}
 
 	/**
@@ -58,9 +65,49 @@ final class RelatedCacheTest extends WP_UnitTestCase {
 	 */
 	public function test_an_empty_list_is_a_hit(): void {
 		$cache = new RelatedCache();
-		$cache->set( 12, 3, array() );
+		$calls = 0;
+		$empty = static function () use ( &$calls ): array {
+			++$calls;
 
-		$this->assertSame( array(), $cache->get( 12, 3 ) );
+			return array();
+		};
+
+		$this->assertSame( array(), $cache->remember( 12, 3, $empty ) );
+		$this->assertSame( array(), $cache->remember( 12, 3, $empty ) );
+		$this->assertSame( 1, $calls );
+	}
+
+	/**
+	 * A bump that lands while a list is being computed leaves that list under the old salt, so the next
+	 * read misses and computes again instead of serving what was computed from the old content.
+	 */
+	public function test_a_bump_during_the_compute_makes_the_next_read_miss(): void {
+		$cache = new RelatedCache();
+		$stale = array(
+			array(
+				'id'     => 5,
+				'source' => 'topic',
+			),
+		);
+		$fresh = array(
+			array(
+				'id'     => 6,
+				'source' => 'topic',
+			),
+		);
+
+		$during = $cache->remember(
+			12,
+			3,
+			static function () use ( $cache, $stale ): array {
+				$cache->bump();
+
+				return $stale;
+			}
+		);
+
+		$this->assertSame( $stale, $during, 'The request that computed the list still gets it.' );
+		$this->assertSame( $fresh, $cache->remember( 12, 3, static fn(): array => $fresh ) );
 	}
 
 	/**
@@ -95,6 +142,27 @@ final class RelatedCacheTest extends WP_UnitTestCase {
 		$published = $this->resource( 'publish' );
 
 		$this->assert_bumps( static fn() => wp_delete_post( $published, true ), 'force delete' );
+	}
+
+	/**
+	 * A force delete of a published resource bumps again once the row is gone (`deleted_post`), so a list
+	 * computed while the delete ran is not served afterwards. `delete_post` fires just before core removes
+	 * the row, after `before_delete_post`'s bump.
+	 */
+	public function test_force_delete_bumps_after_the_row_is_gone(): void {
+		$published = $this->resource( 'publish' );
+		$during    = '';
+		$record    = static function () use ( &$during ): void {
+			$during = RelatedCache::salt();
+		};
+
+		add_action( 'delete_post', $record );
+		wp_delete_post( $published, true );
+		remove_action( 'delete_post', $record );
+
+		$this->assertNotSame( '', $during );
+		$this->assertNull( get_post( $published ) );
+		$this->assertNotSame( $during, RelatedCache::salt(), 'No bump after the row was deleted.' );
 	}
 
 	/**
@@ -155,6 +223,77 @@ final class RelatedCacheTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Topics set on or removed from a published resource outside a post save bump. The same on a draft,
+	 * a type set on a published resource, and a topic on another post type do not.
+	 */
+	public function test_topic_relationship_changes_bump_on_published_resources_only(): void {
+		$topic     = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TOPIC ) );
+		$type      = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) );
+		$published = $this->resource( 'publish' );
+		$draft     = $this->resource( 'draft' );
+		$page      = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+			)
+		);
+
+		$this->assert_bumps( static fn() => wp_set_object_terms( $published, $topic, Taxonomies::TOPIC ), 'topic set on a published resource' );
+		$this->assert_bumps( static fn() => wp_remove_object_terms( $published, $topic, Taxonomies::TOPIC ), 'topic removed from a published resource' );
+		$this->assert_keeps( static fn() => wp_set_object_terms( $draft, $topic, Taxonomies::TOPIC ), 'topic set on a draft' );
+		$this->assert_keeps( static fn() => wp_remove_object_terms( $draft, $topic, Taxonomies::TOPIC ), 'topic removed from a draft' );
+		$this->assert_keeps( static fn() => wp_set_object_terms( $published, $type, Taxonomies::TYPE ), 'type set on a published resource' );
+		$this->assert_keeps( static fn() => wp_set_object_terms( $page, $topic, Taxonomies::TOPIC ), 'topic set on a page' );
+	}
+
+	/**
+	 * Deleting a topic reaches `deleted_term_relationships` for each resource that had it, before
+	 * `delete_resource_topic`, as the class comment says.
+	 */
+	public function test_deleting_a_topic_removes_each_relationship_first(): void {
+		$topic     = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TOPIC ) );
+		$published = $this->resource( 'publish' );
+		wp_set_object_terms( $published, $topic, Taxonomies::TOPIC );
+		$order   = array();
+		$removed = static function () use ( &$order ): void {
+			$order[] = 'relationship';
+		};
+		$deleted = static function () use ( &$order ): void {
+			$order[] = 'term';
+		};
+
+		add_action( 'deleted_term_relationships', $removed );
+		add_action( 'delete_' . Taxonomies::TOPIC, $deleted );
+		wp_delete_term( $topic, Taxonomies::TOPIC );
+		remove_action( 'deleted_term_relationships', $removed );
+		remove_action( 'delete_' . Taxonomies::TOPIC, $deleted );
+
+		$this->assertSame( array( 'relationship', 'term' ), $order );
+	}
+
+	/**
+	 * A save of anything but a resource leaves a stored list in place: core's `terms` stamp, which every
+	 * post save bumps, is not part of the salt.
+	 */
+	public function test_an_unrelated_post_save_keeps_the_entry(): void {
+		$cache   = new RelatedCache();
+		$calls   = 0;
+		$compute = static function () use ( &$calls ): array {
+			++$calls;
+
+			return array();
+		};
+
+		$cache->remember( 12, 3, $compute );
+		$terms_before = wp_cache_get_last_changed( 'terms' );
+		self::factory()->post->create( array( 'post_status' => 'publish' ) );
+		$cache->remember( 12, 3, $compute );
+
+		$this->assertNotSame( $terms_before, wp_cache_get_last_changed( 'terms' ), 'Core no longer bumps its terms stamp on a save.' );
+		$this->assertSame( 1, $calls, 'The save emptied the entry.' );
+	}
+
+	/**
 	 * Topic terms bump when created, edited or deleted; type terms do not.
 	 */
 	public function test_topic_term_events_bump_and_type_term_events_do_not(): void {
@@ -203,9 +342,9 @@ final class RelatedCacheTest extends WP_UnitTestCase {
 	 * @param string   $what   Named on failure.
 	 */
 	private function assert_bumps( callable $change, string $what ): void {
-		$before = RelatedCache::last_changed();
+		$before = RelatedCache::salt();
 		$change();
-		$this->assertNotSame( $before, RelatedCache::last_changed(), "{$what} did not bump the salt." );
+		$this->assertNotSame( $before, RelatedCache::salt(), "{$what} did not bump the salt." );
 	}
 
 	/**
@@ -215,8 +354,8 @@ final class RelatedCacheTest extends WP_UnitTestCase {
 	 * @param string   $what   Named on failure.
 	 */
 	private function assert_keeps( callable $change, string $what ): void {
-		$before = RelatedCache::last_changed();
+		$before = RelatedCache::salt();
 		$change();
-		$this->assertSame( $before, RelatedCache::last_changed(), "{$what} bumped the salt." );
+		$this->assertSame( $before, RelatedCache::salt(), "{$what} bumped the salt." );
 	}
 }

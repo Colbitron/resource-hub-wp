@@ -51,6 +51,11 @@ use WP_REST_Server;
  *
  * `count` is 1 to 10, default 3, and a value outside that is a 400 from core's argument validation;
  * an `id` that is not a published resource is a 404, whoever asks, like the resolve route.
+ *
+ * A password-protected resource is still a published one: it gets a 200 of its own, and it is
+ * listed as a pick or a topic match like any other. That matches the resolve route and core's
+ * `/wp/v2/resources` list, which shows it with its content withheld, and nothing protected leaks,
+ * because this route returns IDs only and the front end reads the objects from core.
  */
 final class RelatedRoute {
 	/**
@@ -161,12 +166,7 @@ final class RelatedRoute {
 			);
 		}
 
-		$items = $this->cache->get( $post->ID, $count );
-
-		if ( null === $items ) {
-			$items = self::related( $post, $count );
-			$this->cache->set( $post->ID, $count, $items );
-		}
+		$items = $this->cache->remember( $post->ID, $count, static fn(): array => self::related( $post, $count ) );
 
 		return new WP_REST_Response( array( 'items' => $items ) );
 	}

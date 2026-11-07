@@ -12,6 +12,7 @@ namespace ResourceHub\Tests\Rest;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\Taxonomies;
+use ResourceHub\Rest\NoCacheHeader;
 use ResourceHub\Rest\RelatedCache;
 use ResourceHub\Rest\RelatedRoute;
 use ResourceHub\Tests\Revalidation\SchemaValidator;
@@ -188,6 +189,44 @@ final class RelatedRouteTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Unpublished picks are skipped before the first `count` are taken: a draft first in the list does not
+	 * use up a slot.
+	 */
+	public function test_unpublished_picks_are_skipped_before_count_is_taken(): void {
+		$draft  = $this->resource( array(), array(), 'draft' );
+		$pick_a = $this->resource();
+		$pick_b = $this->resource();
+		$post   = $this->resource( array(), array( $draft, $pick_a, $pick_b ) );
+
+		$this->assert_items(
+			array(
+				array( $pick_a, 'pick' ),
+				array( $pick_b, 'pick' ),
+			),
+			$this->related( $post, 2 )
+		);
+	}
+
+	/**
+	 * A password-protected resource is a published one: it is answered, and it is listed as a pick and as
+	 * a topic match. The route returns IDs only, so nothing behind the password is in the response.
+	 */
+	public function test_password_protected_resources_are_answered_and_listed(): void {
+		$match = $this->protect( $this->resource( array( 0 ) ) );
+		$pick  = $this->protect( $this->resource() );
+		$post  = $this->protect( $this->resource( array( 0 ), array( $pick ) ) );
+		wp_set_current_user( 0 );
+
+		$this->assert_items(
+			array(
+				array( $pick, 'pick' ),
+				array( $match, 'topic' ),
+			),
+			$this->related( $post, 3 )
+		);
+	}
+
+	/**
 	 * The fill takes only the slots the picks leave.
 	 */
 	public function test_fill_takes_the_remaining_slots(): void {
@@ -324,6 +363,7 @@ final class RelatedRouteTest extends WP_UnitTestCase {
 			'a word'   => array( 'abc' ),
 			'a float'  => array( '2.5' ),
 			'empty'    => array( '' ),
+			'an array' => array( array( 1 ) ),
 		);
 	}
 
@@ -420,6 +460,30 @@ final class RelatedRouteTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The plugin sends the same no-cache header on this route as on the others (ADR 0043), on a 200 and
+	 * on a 404, which publishing would turn into a 200.
+	 */
+	public function test_anonymous_responses_carry_the_no_cache_header(): void {
+		$post = $this->resource();
+		wp_set_current_user( 0 );
+
+		$ids = array(
+			200 => $post,
+			404 => $post + 1000,
+		);
+
+		foreach ( $ids as $status => $id ) {
+			// `dispatch()` stops before `rest_post_dispatch`, where the plugin's filter runs; apply it as `serve_request()` would.
+			$request  = new WP_REST_Request( 'GET', '/' . RelatedRoute::NAMESPACE . '/related/' . $id );
+			$server   = rest_get_server();
+			$response = apply_filters( 'rest_post_dispatch', rest_ensure_response( $server->dispatch( $request ) ), $server, $request ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+
+			$this->assertSame( $status, $response->get_status() );
+			$this->assertSame( NoCacheHeader::VALUE, $response->get_headers()['Cache-Control'] ?? '', (string) $status );
+		}
+	}
+
+	/**
 	 * The first answer is stored under `related:{id}:{count}` in the `resource_hub` group with the current
 	 * salt, and the next request with the same ID and count is answered from it.
 	 */
@@ -446,34 +510,74 @@ final class RelatedRouteTest extends WP_UnitTestCase {
 
 	/**
 	 * An entry stored under an older salt is a miss: publishing a resource turns the salt over, and the
-	 * list is computed again.
+	 * list is computed again. The draft has its topic before the entry is stored, so the publish is the
+	 * only change, and the salt is the plugin's own stamp alone.
 	 */
 	public function test_publishing_a_resource_empties_the_cache(): void {
 		$other = $this->resource( array( 0 ) );
 		$post  = $this->resource( array( 0 ) );
+		$draft = $this->resource( array( 0 ), array(), 'draft' );
 		$this->related( $post, 3 );
-		wp_cache_set_salted(
-			RelatedCache::key( $post, 3 ),
-			array(
-				array(
-					'id'     => 424242,
-					'source' => 'topic',
-				),
-			),
-			RelatedCache::GROUP,
-			RelatedCache::salt(),
-			RelatedCache::EXPIRY
-		);
+		$this->plant( $post, 3 );
+		$salt_before = RelatedCache::salt();
 
-		$newest = $this->resource( array( 0 ) );
+		wp_publish_post( $draft );
 
+		$this->assertNotSame( $salt_before, RelatedCache::salt(), 'The plugin did not bump its salt.' );
 		$this->assert_items(
 			array(
-				array( $newest, 'topic' ),
+				array( $draft, 'topic' ),
 				array( $other, 'topic' ),
 			),
 			$this->related( $post, 3 )
 		);
+	}
+
+	/**
+	 * A topic given to a published resource outside a post save makes the next read miss, so the resource
+	 * joins the lists of the resources sharing that topic.
+	 */
+	public function test_a_topic_set_outside_a_save_empties_the_cache(): void {
+		$other = $this->resource();
+		$post  = $this->resource( array( 0 ) );
+
+		$this->assert_items( array(), $this->related( $post, 3 ) );
+
+		wp_set_object_terms( $other, $this->topics[0], Taxonomies::TOPIC );
+
+		$this->assert_items( array( array( $other, 'topic' ) ), $this->related( $post, 3 ) );
+	}
+
+	/**
+	 * A save of a plain post, which bumps core's `terms` stamp, does not empty the cache.
+	 */
+	public function test_an_unrelated_post_save_keeps_the_cache(): void {
+		$post = $this->resource( array( 0 ) );
+		$this->related( $post, 3 );
+		$planted = $this->plant( $post, 3 );
+
+		self::factory()->post->create( array( 'post_status' => 'publish' ) );
+
+		$this->assertSame( $planted, $this->related( $post, 3 )->get_data()['items'] );
+	}
+
+	/**
+	 * Stores a recognisable list under the current salt, in place of whatever the route stored.
+	 *
+	 * @param int $post  The resource.
+	 * @param int $count The count.
+	 * @return array<int, array{id: int, source: string}> The list stored.
+	 */
+	private function plant( int $post, int $count ): array {
+		$planted = array(
+			array(
+				'id'     => 424242,
+				'source' => 'topic',
+			),
+		);
+		wp_cache_set_salted( RelatedCache::key( $post, $count ), $planted, RelatedCache::GROUP, RelatedCache::salt(), RelatedCache::EXPIRY );
+
+		return $planted;
 	}
 
 	/**
@@ -509,6 +613,24 @@ final class RelatedRouteTest extends WP_UnitTestCase {
 		if ( 'trash' === $status ) {
 			wp_trash_post( $id );
 		}
+
+		return $id;
+	}
+
+	/**
+	 * Puts a resource behind a password.
+	 *
+	 * @param int $id Post ID.
+	 * @return int The same ID.
+	 */
+	private function protect( int $id ): int {
+		wp_update_post(
+			array(
+				'ID'            => $id,
+				'post_password' => 'secret',
+			)
+		);
+		$this->assertTrue( post_password_required( $id ) );
 
 		return $id;
 	}

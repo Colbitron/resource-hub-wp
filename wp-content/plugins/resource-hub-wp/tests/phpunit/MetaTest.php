@@ -22,11 +22,12 @@ use WP_UnitTestCase;
  */
 final class MetaTest extends WP_UnitTestCase {
 	/**
-	 * The core test case unregisters every meta key in tear_down(), so register ours again per test.
+	 * The core test case unregisters every meta key in tear_down(), so register ours again per test. The
+	 * fields only: the plugin's own filters are still hooked, and a second copy would run every write twice.
 	 */
 	public function set_up(): void {
 		parent::set_up();
-		( new Meta() )->register();
+		( new Meta() )->register_fields();
 	}
 
 	/**

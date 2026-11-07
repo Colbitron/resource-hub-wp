@@ -2,7 +2,7 @@
 
 A headless WordPress demo in one repository ([ADR 0033](docs/adr/0033-one-repository-for-the-plugin-the-front-end-and-the-contract.md)): a WordPress plugin, `resource-hub`, with the `wp-env` environment it runs in; a Next.js front end on Vercel that reads the site over REST and is told when to revalidate; and the contract package both share. It is a demonstration of a pattern, written fresh, not production code.
 
-The plugin models a filterable resources library: a `resource` post type with `resource_topic`, `resource_type` and `resource_flag` taxonomies, REST-exposed meta (`summary`, `source_url`), two custom REST routes (old-slug resolution and a page lookup by path), and a hook that notifies the front end in batches whenever a public resource, one of its terms or a page changes. The front end renders that library, the CMS's static front page at `/` and every other published page at its path from its own server, and rebuilds pages on demand. The related-resources route and block are the next slice.
+The plugin models a filterable resources library: a `resource` post type with `resource_topic`, `resource_type` and `resource_flag` taxonomies, REST-exposed meta (`summary`, `source_url`, and the editor's `related_picks`), three custom REST routes (old-slug resolution, a page lookup by path, and the related resources for a resource, merged from the picks and its topics), and a hook that notifies the front end in batches whenever a public resource, one of its terms or a page changes. The front end renders that library, the CMS's static front page at `/` and every other published page at its path from its own server, and rebuilds pages on demand. The related-resources block's render callback, the editor's picker for the picks and the front end's related section are what remains of the slice.
 
 ## Layout
 
@@ -42,7 +42,8 @@ Everything marked done exists on `main` and is green in CI.
 | Next.js front end: listings, the single resource, the data layer, the revalidate route, the one-pass content renderer, all ISR ([ADR 0043](docs/adr/0043-fetch-cache-with-tags-without-cache-components.md), [ADR 0025](docs/adr/0025-permanent-redirects-are-computed-and-never-kept-by-browsers.md)) | done |
 | The CMS's pages on the front end: the static front page at `/`, every published page at its path, `GET /resource-hub/v1/page` and page events ([ADR 0052](docs/adr/0052-the-front-end-renders-the-cms-pages.md)) | done |
 | Front-end production deploy through a Vercel deploy hook ([ADR 0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md)); first-deploy check closed 2026-11-06 | done |
-| `GET /resource-hub/v1/related/{id}`, `related_picks`, the `resource-hub/related-resources` block's render callback and the front end's related section ([issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50)) | slice 4 |
+| `GET /resource-hub/v1/related/{id}` and `related_picks`, with the related list's salted object cache ([issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50)) | done |
+| The `resource-hub/related-resources` block's render callback, the picks editor and the front end's related section ([issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50)) | slice 4 |
 | CMS block theme | slice 5 |
 
 ## Architecture
@@ -52,8 +53,8 @@ flowchart LR
     subgraph repo["This repository"]
         subgraph wp["WordPress on Cloudways: wp-content/"]
             editor["Editor saves a resource or a page"]
-            cpt["resource post type<br/>resource_topic, resource_type, resource_flag<br/>meta: summary, source_url"]
-            rest["REST<br/>/wp/v2/resources, /wp/v2/pages<br/>/resource-hub/v1/resolve<br/>/resource-hub/v1/page"]
+            cpt["resource post type<br/>resource_topic, resource_type, resource_flag<br/>meta: summary, source_url, related_picks"]
+            rest["REST<br/>/wp/v2/resources, /wp/v2/pages<br/>/resource-hub/v1/resolve<br/>/resource-hub/v1/page<br/>/resource-hub/v1/related"]
             block["related-resources block (slice 4)<br/>server-rendered marker + fallback"]
             hook["Revalidation hook<br/>wp_after_insert_post, before_delete_post,<br/>term and option hooks; sent from WP-Cron"]
             theme["Block theme (slice 5)<br/>logged-in users only;<br/>404 for anonymous visitors"]

@@ -130,9 +130,16 @@ final class MetaRules {
 	 * In order:
 	 * - Anything but an array becomes an empty list: a lone ID, a string, a number, null.
 	 * - An item is kept, as an int, when it is an int greater than zero or a string of ASCII digits
-	 *   whose value is greater than zero. Everything else is dropped: zero, negatives, floats, `true`,
-	 *   null, nested arrays, and strings with anything but digits (`'7 '`, `'1e3'`, `'-1'`, `'abc'`).
-	 *   Over REST, items that are not integers never get this far: the schema rejects them.
+	 *   whose value is greater than zero and at most PHP_INT_MAX (`'7'` and `'007'` are kept as 7).
+	 *   Everything else is dropped, silently: zero, negatives, every float (`5.0` as well as `1.5`),
+	 *   `true`, null, nested arrays, strings with anything but digits (`'7 '`, `'1e3'`, `'-1'`,
+	 *   `'abc'`), and digit strings past PHP_INT_MAX, which a cast would turn into PHP_INT_MAX.
+	 * - Over REST, the schema runs first. It rejects with a 400 what is not an integer (`1.5`,
+	 *   `'abc'`) and what is below 1, but it counts the numeric string `'5'` and the integral float
+	 *   `5.0` as integers, and core then casts both to the int 5 before this sanitizer sees them, so
+	 *   both are stored as 5. Only PHP callers (`update_post_meta()` and the like) reach this rule
+	 *   with a float, and `5.0` from them is dropped: floats are not IDs, and accepting the integral
+	 *   ones would add a third kind of input to a rule that is read line by line.
 	 * - Keys are dropped, so the stored value is a list in the order given.
 	 * - A repeated ID keeps its first position and loses the later ones.
 	 * - The list is cut to the first RELATED_PICKS_MAX items, so a stored value never exceeds the
@@ -155,7 +162,9 @@ final class MetaRules {
 
 		foreach ( $value as $item ) {
 			if ( is_string( $item ) && ctype_digit( $item ) ) {
-				$item = (int) $item;
+				// A cast turns digits past PHP_INT_MAX into PHP_INT_MAX. Casting back shows whether the
+				// value fit: if not, null drops it below. Leading zeros are not part of the value.
+				$item = ltrim( $item, '0' ) === (string) (int) $item ? (int) $item : null;
 			}
 
 			if ( ! is_int( $item ) || $item <= 0 || in_array( $item, $picks, true ) ) {
