@@ -25,15 +25,27 @@
  * A pick that is no longer published, or no longer exists, stays in the list,
  * because the meta keeps it and the route skips it at read time; it is shown
  * with a plain "Not published, skipped on the site" note, in words and not in
- * colour alone. The picks' records come from one `include` query over every
- * status the user can read, so a draft or private pick still shows its title.
+ * colour alone, and the note describes the row's Remove button. The picks'
+ * records come from one unpaginated `include` query with `status: 'any'`. The
+ * server returns only the picks this user may read: a draft or private pick
+ * they can read keeps its title, and one they cannot (another author's draft,
+ * for an Author) is left out of the response and shown like a missing one, as
+ * "Resource #N" with the note. The query is unpaginated because core counts
+ * the unreadable posts in `X-WP-Total`; a paginated query that comes back
+ * short of that total never resolves in core-data. The IDs are sorted, so a
+ * reorder asks for the same query and sends no request.
  *
- * Accessibility: every button names its item ("Move up: 'X'", the visible
- * text first, so the name assistive technology hears starts with what a
- * sighted user sees), focus is put
- * back on a sensible element after a move or a remove, because React moves
- * the row's node and the browser drops focus from a moved node, and each
- * change in the order is spoken through `speak()` from `@wordpress/a11y`.
+ * Accessibility: every button names its item ("Move up: 'X'", the visible text
+ * first, so the name assistive technology hears starts with what a sighted
+ * user sees). Focus is put back on a sensible element after a move or a
+ * remove, because React moves the row's node and the browser drops focus from
+ * a moved node. Each change to the list is spoken through `speak()` from
+ * `@wordpress/a11y`, the add included: the combobox's own "selected" message
+ * is left empty, because it is spoken even when the choice is ignored, and
+ * the control speaks "Added as pick N" itself once the pick is in the list.
+ * The search does not open its list on focus, so focus coming back to it
+ * after a remove does not replace the removal message with a result count,
+ * and Enter adds a pick only from an open list (`guardClosedListEnter()`).
  */
 import {
 	useEffect,
@@ -58,43 +70,68 @@ import { useSelect } from '@wordpress/data';
 import { store as editorStore } from '@wordpress/editor';
 import { decodeEntities } from '@wordpress/html-entities';
 import { __, _n, sprintf } from '@wordpress/i18n';
-// `@wordpress/a11y` is not installed in this package: the wp-scripts externals
-// resolve it to core's `wp-a11y` script and list it in the asset file, which
-// is what the dependency rule below cannot see.
-// eslint-disable-next-line import/no-extraneous-dependencies
 import { speak } from '@wordpress/a11y';
 
 const POST_TYPE = 'resource';
 
 // Mirrors MetaRules::RELATED_PICKS_MAX and the REST schema's maxItems.
-export const RELATED_PICKS_MAX = 10;
+const RELATED_PICKS_MAX = 10;
 
 // How long the search waits after the last keystroke before it asks the server.
 const SEARCH_DELAY = 300;
 
 const SEARCH_PER_PAGE = 20;
 
-// One stable query object per taxonomy, so the store resolves each once.
-const TYPES_QUERY = {
+// The terms query for both taxonomies. It is a module constant so the
+// selector gets the same object on every render; the store keys its results
+// by taxonomy as well as by query, so sharing it is safe.
+const TERMS_QUERY = {
 	per_page: -1,
 	orderby: 'name',
 	order: 'asc',
 	_fields: 'id,name',
 	context: 'view',
 };
-const TOPICS_QUERY = TYPES_QUERY;
 
 const PICK_FIELDS = 'id,title,status,resource_type';
 
 // One empty list for "no picks", so the selector's result is stable.
 const NO_RECORDS = [];
 
+// The combobox speaks this on every choice, even one `add()` ignores.
+const NO_SELECTED_MESSAGE = { selected: '' };
+
+/**
+ * Stops Enter in the search from adding a pick while its list is closed.
+ *
+ * `ComboboxControl` keeps its first match highlighted whether or not the list
+ * is showing, and its Enter handler picks the highlighted match without
+ * checking that the list is open. With `expandOnFocus` off, tabbing into the
+ * empty search and pressing Enter would add the newest resource, chosen from
+ * a list the user never saw. No prop turns that off, but core's handler
+ * returns early on an event whose default is already prevented, so this runs
+ * in the capture phase, ahead of it, and prevents the default when no listbox
+ * is open.
+ *
+ * @param {KeyboardEvent} event The keydown, on its way down to the input.
+ */
+function guardClosedListEnter( event ) {
+	if (
+		event.key === 'Enter' &&
+		event.target.closest( '.components-combobox-control' ) &&
+		! event.currentTarget.querySelector( '[role="listbox"]' )
+	) {
+		event.preventDefault();
+	}
+}
+
 /**
  * Keeps the typed text for SEARCH_DELAY before handing it on, so one request
  * follows a pause in typing instead of one per keystroke.
  *
  * @param {string} value The text as typed.
- * @return {string} The text as of the last pause.
+ * @return {[string, (next: string) => void]} The text as of the last pause,
+ *                                            and a setter that skips the wait.
  */
 function useDebouncedValue( value ) {
 	const [ debounced, setDebounced ] = useState( value );
@@ -104,7 +141,7 @@ function useDebouncedValue( value ) {
 		return () => clearTimeout( timer );
 	}, [ value ] );
 
-	return debounced;
+	return [ debounced, setDebounced ];
 }
 
 /**
@@ -126,6 +163,36 @@ function titleOf( record, id ) {
 
 	/* translators: %d: post ID. */
 	return sprintf( __( 'Resource #%d', 'resource-hub' ), id );
+}
+
+/**
+ * A record's type names, joined, for labels.
+ *
+ * @param {Object|undefined}    record    The record, if known.
+ * @param {Map<number, string>} typeNames Type names by term ID.
+ * @return {string} The names, or an empty string.
+ */
+function typeNameFor( record, typeNames ) {
+	return ( record?.resource_type ?? [] )
+		.map( ( id ) => typeNames.get( id ) )
+		.filter( Boolean )
+		.join( ', ' );
+}
+
+/**
+ * The options for a term filter: "Any" first, then each term.
+ *
+ * @param {Object[]|null} terms The terms, once loaded.
+ * @return {Object[]} The options.
+ */
+function termOptions( terms ) {
+	return [
+		{ label: __( 'Any', 'resource-hub' ), value: '' },
+		...( terms ?? [] ).map( ( term ) => ( {
+			label: decodeEntities( term.name ),
+			value: String( term.id ),
+		} ) ),
+	];
 }
 
 /**
@@ -159,7 +226,7 @@ export default function RelatedPicks( { picks, onChange } ) {
 	const [ search, setSearch ] = useState( '' );
 	const [ typeFilter, setTypeFilter ] = useState( '' );
 	const [ topicFilter, setTopicFilter ] = useState( '' );
-	const debouncedSearch = useDebouncedValue( search );
+	const [ debouncedSearch, setDebouncedSearch ] = useDebouncedValue( search );
 
 	// Records by ID for the rows, kept across query changes so a row never
 	// falls back to "loading" when a neighbour is added or removed. A pick
@@ -168,8 +235,10 @@ export default function RelatedPicks( { picks, onChange } ) {
 	// return as missing.
 	const [ known, setKnown ] = useState( () => new Map() );
 
-	// Which element takes focus after the next change to the list.
+	// Which element takes focus, and what is spoken, after the next change to
+	// the list.
 	const pendingFocus = useRef( null );
+	const pendingMessage = useRef( null );
 	const buttons = useRef( new Map() );
 	const searchWrapper = useRef( null );
 	const capMessage = useRef( null );
@@ -205,18 +274,21 @@ export default function RelatedPicks( { picks, onChange } ) {
 		return query;
 	}, [ postId, picks, debouncedSearch, typeFilter, topicFilter ] );
 
+	// Sorted, so the query is the same whatever the order: the rows are
+	// keyed by ID and need no order from the server.
+	const includeKey = [ ...picks ].sort( ( a, b ) => a - b ).join( ',' );
 	const picksQuery = useMemo(
 		() => ( {
-			include: picks,
-			orderby: 'include',
-			per_page: Math.max( picks.length, 1 ),
-			// Every status an editor may read, so a draft or private pick
-			// still shows its title; `any` leaves out only the trash.
+			include: includeKey ? includeKey.split( ',' ).map( Number ) : [],
+			// Unpaginated: see the file's docblock.
+			per_page: -1,
+			// Every status the user may read, so a readable draft or private
+			// pick still shows its title; `any` leaves out only the trash.
 			status: 'any',
 			_fields: PICK_FIELDS,
 			context: 'view',
 		} ),
-		[ picks ]
+		[ includeKey ]
 	);
 
 	const { results, isSearching, pickRecords, types, topics } = useSelect(
@@ -235,12 +307,12 @@ export default function RelatedPicks( { picks, onChange } ) {
 				types: getEntityRecords(
 					'taxonomy',
 					'resource_type',
-					TYPES_QUERY
+					TERMS_QUERY
 				),
 				topics: getEntityRecords(
 					'taxonomy',
 					'resource_topic',
-					TOPICS_QUERY
+					TERMS_QUERY
 				),
 			};
 		},
@@ -271,10 +343,17 @@ export default function RelatedPicks( { picks, onChange } ) {
 		} );
 	}, [ pickRecords, picksQuery ] );
 
-	// After a change to the list, put focus where it belongs. The browser
-	// drops focus from a node React moves, so even a move needs this.
+	// After a change to the list, speak what is pending and put focus where
+	// it belongs. The browser drops focus from a node React moves, so even a
+	// move needs this.
 	useLayoutEffect( () => {
 		const target = pendingFocus.current;
+		const message = pendingMessage.current;
+
+		pendingMessage.current = null;
+		if ( message ) {
+			speak( message, 'polite' );
+		}
 
 		if ( ! target ) {
 			return;
@@ -312,12 +391,6 @@ export default function RelatedPicks( { picks, onChange } ) {
 		[ types ]
 	);
 
-	const typeNameFor = ( record ) =>
-		( record?.resource_type ?? [] )
-			.map( ( id ) => typeNames.get( id ) )
-			.filter( Boolean )
-			.join( ', ' );
-
 	const options = useMemo(
 		() =>
 			( results ?? [] )
@@ -326,7 +399,7 @@ export default function RelatedPicks( { picks, onChange } ) {
 						record.id !== postId && ! picks.includes( record.id )
 				)
 				.map( ( record ) => {
-					const typeName = typeNameFor( record );
+					const typeName = typeNameFor( record, typeNames );
 					return {
 						value: String( record.id ),
 						label: typeName
@@ -339,18 +412,8 @@ export default function RelatedPicks( { picks, onChange } ) {
 							: titleOf( record, record.id ),
 					};
 				} ),
-		// typeNameFor reads only typeNames, which is listed.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[ results, picks, postId, typeNames ]
 	);
-
-	const termOptions = ( terms ) => [
-		{ label: __( 'Any', 'resource-hub' ), value: '' },
-		...( terms ?? [] ).map( ( term ) => ( {
-			label: decodeEntities( term.name ),
-			value: String( term.id ),
-		} ) ),
-	];
 
 	const add = ( value ) => {
 		const id = Number( value );
@@ -366,11 +429,22 @@ export default function RelatedPicks( { picks, onChange } ) {
 			new Map( previous ).set( id, { ...record, status: 'publish' } )
 		);
 
+		// The combobox empties its input on a choice but does not report the
+		// empty text, so the search is cleared here, at once and not after
+		// the delay, or the next list would still be narrowed by it.
+		setSearch( '' );
+		setDebouncedSearch( '' );
+
 		const next = [ ...picks, id ];
 		pendingFocus.current =
 			next.length >= RELATED_PICKS_MAX
 				? { kind: 'cap' }
 				: { kind: 'search' };
+		pendingMessage.current = sprintf(
+			/* translators: %d: the new pick's position. */
+			__( 'Added as pick %d.', 'resource-hub' ),
+			next.length
+		);
 		onChange( next );
 	};
 
@@ -391,30 +465,25 @@ export default function RelatedPicks( { picks, onChange } ) {
 		};
 		onChange( move( picks, index, target ) );
 
-		const title = titleOf( known.get( id ), id );
-		const position = target + 1;
-		speak(
+		const format =
 			offset < 0
-				? sprintf(
-						/* translators: 1: resource title, 2: new position, 3: number of picks. */
-						__(
-							"'%1$s' moved up to position %2$d of %3$d.",
-							'resource-hub'
-						),
-						title,
-						position,
-						picks.length
+				? /* translators: 1: resource title, 2: new position, 3: number of picks. */
+					__(
+						"'%1$s' moved up to position %2$d of %3$d.",
+						'resource-hub'
 					)
-				: sprintf(
-						/* translators: 1: resource title, 2: new position, 3: number of picks. */
-						__(
-							"'%1$s' moved down to position %2$d of %3$d.",
-							'resource-hub'
-						),
-						title,
-						position,
-						picks.length
-					),
+				: /* translators: 1: resource title, 2: new position, 3: number of picks. */
+					__(
+						"'%1$s' moved down to position %2$d of %3$d.",
+						'resource-hub'
+					);
+		speak(
+			sprintf(
+				format,
+				titleOf( known.get( id ), id ),
+				target + 1,
+				picks.length
+			),
 			'polite'
 		);
 	};
@@ -496,7 +565,10 @@ export default function RelatedPicks( { picks, onChange } ) {
 					) }
 				</p>
 			) : (
-				<div ref={ searchWrapper }>
+				<div
+					ref={ searchWrapper }
+					onKeyDownCapture={ guardClosedListEnter }
+				>
 					<Flex align="flex-start" gap={ 2 }>
 						<FlexBlock>
 							<SelectControl
@@ -530,15 +602,11 @@ export default function RelatedPicks( { picks, onChange } ) {
 						value={ null }
 						options={ options }
 						isLoading={ isSearching }
+						expandOnFocus={ false }
 						onFilterValueChange={ setSearch }
 						onChange={ add }
-						messages={ {
-							selected: sprintf(
-								/* translators: %d: the new pick's position. */
-								__( 'Added as pick %d.', 'resource-hub' ),
-								picks.length + 1
-							),
-						} }
+						// `add()` speaks the add itself; see the file's docblock.
+						messages={ NO_SELECTED_MESSAGE }
 					/>
 				</div>
 			) }
@@ -553,98 +621,126 @@ export default function RelatedPicks( { picks, onChange } ) {
 					{ picks.map( ( id, index ) => {
 						const record = known.get( id );
 						const title = titleOf( record, id );
-						const typeName = typeNameFor( record );
+						const typeName = typeNameFor( record, typeNames );
 						const skipped =
 							record &&
 							( record.missing || record.status !== 'publish' );
+						const noteId = `${ baseId }-note-${ id }`;
 
 						return (
 							<li
 								key={ id }
 								className="resource-hub-related-picks__item"
 							>
-								<div>
-									<strong>{ title }</strong>
-									{ typeName && <span> ({ typeName })</span> }
-								</div>
-								{ skipped && (
-									<p className="resource-hub-related-picks__note">
-										{ __(
-											'Not published, skipped on the site.',
-											'resource-hub'
+								<Flex
+									direction="column"
+									align="flex-start"
+									gap={ 1 }
+								>
+									<div>
+										<strong>{ title }</strong>
+										{ typeName && (
+											<span> ({ typeName })</span>
 										) }
-									</p>
-								) }
-								<Flex justify="flex-start" gap={ 1 }>
-									<FlexItem>
-										<Button
-											ref={ setButton( id, 'up' ) }
-											size="compact"
-											variant="tertiary"
-											accessibleWhenDisabled
-											disabled={ index === 0 }
-											label={ sprintf(
-												/* translators: %s: resource title. */
-												__(
-													"Move up: '%s'",
-													'resource-hub'
-												),
-												title
-											) }
-											showTooltip={ false }
-											onClick={ () =>
-												moveBy( index, -1 )
-											}
-										>
-											{ __( 'Move up', 'resource-hub' ) }
-										</Button>
-									</FlexItem>
-									<FlexItem>
-										<Button
-											ref={ setButton( id, 'down' ) }
-											size="compact"
-											variant="tertiary"
-											accessibleWhenDisabled
-											disabled={
-												index === picks.length - 1
-											}
-											label={ sprintf(
-												/* translators: %s: resource title. */
-												__(
-													"Move down: '%s'",
-													'resource-hub'
-												),
-												title
-											) }
-											showTooltip={ false }
-											onClick={ () => moveBy( index, 1 ) }
+									</div>
+									{ skipped && (
+										<div
+											id={ noteId }
+											className="resource-hub-related-picks__note"
 										>
 											{ __(
-												'Move down',
+												'Not published, skipped on the site.',
 												'resource-hub'
 											) }
-										</Button>
-									</FlexItem>
-									<FlexItem>
-										<Button
-											ref={ setButton( id, 'remove' ) }
-											size="compact"
-											variant="tertiary"
-											isDestructive
-											label={ sprintf(
-												/* translators: %s: resource title. */
-												__(
-													"Remove: '%s'",
+										</div>
+									) }
+									<Flex justify="flex-start" gap={ 1 }>
+										<FlexItem>
+											<Button
+												ref={ setButton( id, 'up' ) }
+												size="compact"
+												variant="tertiary"
+												accessibleWhenDisabled
+												disabled={ index === 0 }
+												label={ sprintf(
+													/* translators: %s: resource title. */
+													__(
+														"Move up: '%s'",
+														'resource-hub'
+													),
+													title
+												) }
+												showTooltip={ false }
+												onClick={ () =>
+													moveBy( index, -1 )
+												}
+											>
+												{ __(
+													'Move up',
 													'resource-hub'
-												),
-												title
-											) }
-											showTooltip={ false }
-											onClick={ () => remove( index ) }
-										>
-											{ __( 'Remove', 'resource-hub' ) }
-										</Button>
-									</FlexItem>
+												) }
+											</Button>
+										</FlexItem>
+										<FlexItem>
+											<Button
+												ref={ setButton( id, 'down' ) }
+												size="compact"
+												variant="tertiary"
+												accessibleWhenDisabled
+												disabled={
+													index === picks.length - 1
+												}
+												label={ sprintf(
+													/* translators: %s: resource title. */
+													__(
+														"Move down: '%s'",
+														'resource-hub'
+													),
+													title
+												) }
+												showTooltip={ false }
+												onClick={ () =>
+													moveBy( index, 1 )
+												}
+											>
+												{ __(
+													'Move down',
+													'resource-hub'
+												) }
+											</Button>
+										</FlexItem>
+										<FlexItem>
+											<Button
+												ref={ setButton(
+													id,
+													'remove'
+												) }
+												size="compact"
+												variant="tertiary"
+												isDestructive
+												aria-describedby={
+													skipped ? noteId : undefined
+												}
+												label={ sprintf(
+													/* translators: %s: resource title. */
+													__(
+														"Remove: '%s'",
+														'resource-hub'
+													),
+													title
+												) }
+												showTooltip={ false }
+												onClick={ () =>
+													remove( index )
+												}
+											>
+												{ __(
+													'Remove',
+													'resource-hub'
+												) }
+											</Button>
+										</FlexItem>
+									</Flex>
 								</Flex>
 							</li>
 						);

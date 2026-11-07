@@ -28,6 +28,10 @@ const POST_TYPE = 'resource';
 // Mirrors MetaRules::SUMMARY_MAX_LENGTH and the REST schema's maxLength.
 const SUMMARY_MAX_LENGTH = 300;
 
+// One empty list for a resource with no picks yet, so the control gets the
+// same array on every render.
+const NO_PICKS = [];
+
 function ResourceDetailsPanel() {
 	const postType = useSelect(
 		( select ) => select( editorStore ).getCurrentPostType(),
@@ -85,7 +89,7 @@ function ResourceDetailsPanel() {
 				}
 			/>
 			<RelatedPicks
-				picks={ meta.related_picks ?? [] }
+				picks={ meta.related_picks ?? NO_PICKS }
 				onChange={ ( picks ) =>
 					setMeta( { ...meta, related_picks: picks } )
 				}
