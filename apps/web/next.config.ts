@@ -43,7 +43,12 @@ const nextConfig: NextConfig = {
   // in the RSC payload; a client navigation still uses <link> tags. Both
   // copies count against the 14,600 bytes of HTML Lighthouse's simulated
   // connection sends in its first round trip, and a page over that pays
-  // 150 ms more FCP and LCP, so a component imports only the CSS it renders.
+  // 150 ms more simulated FCP and LCP, so a component imports only the CSS
+  // it renders. e2e/document-size.spec.ts holds every image-led sampled page
+  // to that limit unless the owner has exempted it, for content that is
+  // wanted (the spec's docblock has the rule). The inlined <style> comes
+  // after the font and LCP image preloads in <head>, so it does not delay a
+  // real browser's discovery of them, which the same spec checks.
   // apps/web/README.md, "Images", has the measurements.
   //
   // The flag is experimental and acts only in a production build, so a
