@@ -683,11 +683,12 @@ test.describe("accessibility and layout", () => {
   test("the featured image never renders wider than its `sizes` claims, at 1280px and at 360px", async ({ page }) => {
     // The column is `--rh-measure`, 65ch, and `sizes` is that width written
     // out in rem (`CONTENT_SIZES` in lib/content/render.tsx): 42rem above a
-    // 44rem viewport, the viewport less the two 1rem gutters below it. A `sizes` under the rendered width
-    // would have the browser pick a candidate too small for the box, so a
-    // change to the measure or the typeface that moves 65ch past 42rem
-    // fails here until the string follows. The long-form resource's upload
-    // is 1600 wide, so the column, not the file, bounds the image.
+    // 44rem viewport, the viewport less the two 1rem gutters below it. A
+    // `sizes` under the rendered width would have the browser pick a
+    // candidate too small for the box, so a change to the measure or the
+    // typeface that moves 65ch past 42rem fails here until the string
+    // follows. The long-form resource's upload is 1600 wide, so the column,
+    // not the file, bounds the image.
     const rootFontSize = (): Promise<number> => page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
@@ -703,9 +704,25 @@ test.describe("accessibility and layout", () => {
     await expect(title).toBeVisible();
     const wide = await image.boundingBox();
     expect(wide).not.toBeNull();
+    // The column as this browser draws it: a probe `--rh-measure` wide inside
+    // the article, so in the article's font. A `ch` is the advance of the
+    // font's "0" as the platform lays it out, which is not one number:
+    // Chromium on macOS draws 65ch of Figtree at 16px as 666.45px, and on
+    // Linux, which rounds each advance to a whole pixel, as 650px. So the
+    // floor is the measured column, not a width in rem.
+    const measured = await page.getByRole("article").evaluate((article) => {
+      const probe = document.createElement("div");
+      probe.style.cssText = "position: absolute; visibility: hidden; width: var(--rh-measure)";
+      article.append(probe);
+      const width = probe.getBoundingClientRect().width;
+      probe.remove();
+      return width;
+    });
+    expect(Math.abs(wide!.width - measured), `the image is ${wide!.width}px wide in a ${measured}px column`).toBeLessThanOrEqual(1);
+    // The ceiling: `sizes` never understates the column. 42rem is 5.5px over
+    // it on macOS and 22px over it on Linux.
+    expect(measured).toBeLessThanOrEqual(42 * (await rootFontSize()));
     expect(wide!.width).toBeLessThanOrEqual(42 * (await rootFontSize()));
-    // The column is 65ch of Figtree, under 42rem by less than half a rem: the ceiling is tight, not slack.
-    expect(wide!.width).toBeGreaterThan(41 * (await rootFontSize()));
 
     await page.setViewportSize({ width: 360, height: 740 });
     await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
