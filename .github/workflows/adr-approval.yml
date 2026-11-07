@@ -11,8 +11,32 @@
 # The guarded paths are GUARDED_PATHS below, the one list, mirrored in
 # .claude/rules/adr.md: docs/adr/, and the three files that guard it (this
 # workflow, the deny rules in .claude/settings.json, and the rule file), so a
-# pull request cannot weaken a guard unnoticed in the same change that adds
-# an ADR.
+# pull request that weakens a guard needs the label as well.
+#
+# Why `pull_request_target`: it runs the workflow as it is on the default
+# branch, main, not as the pull request has it. A pull request therefore
+# cannot delete this check or grade itself with an edited copy; a change to
+# this file takes effect only once it is on main, and the pull request that
+# introduces or edits it is checked by main's copy (the one that introduces
+# it gets no run at all, because main has no copy yet). It also runs when the
+# pull request has a merge conflict, where `pull_request` runs nothing.
+#
+# What its safety rests on, because this trigger runs with the base
+# repository's token and secrets in reach:
+# - No checkout. The job reads the pull request through the API and never
+#   runs, builds or installs anything from it.
+# - A read-only token: `permissions` below restricts it to
+#   `pull-requests: read`. Without that key the token would default to
+#   write, so keep it.
+# - Inputs only through `env`: the run script interpolates no
+#   pull-request-controlled string (title, body, branch name, file names);
+#   it gets the repository and the pull request's number, and reads the rest
+#   as data with jq.
+# WARNING: adding a checkout of the pull request's head (or any step that
+# runs its code) to this workflow creates the known "pwn request" hole, code
+# from the pull request running with the base repository's token. Don't; if
+# a check needs the pull request's code, it belongs in ci.yml under
+# `pull_request`.
 #
 # The limits, stated plainly: this is a visible signal, not an enforcement.
 # - Agents run `gh` with Colby's own credentials, so GitHub cannot tell his
@@ -21,31 +45,25 @@
 # - Branch protection is unavailable on this plan (the API answers 403), so a
 #   red check flags the pull request but does not technically block a merge.
 #   Merges are done by Colby, or on his word.
-# - A `pull_request` run uses the workflow file as it is in the pull
-#   request's merge commit (refs/pull/N/merge). A pull request that edits
-#   this file is checked by its own edited copy, and one that deletes it gets
-#   no run at all: no check named "ADR changes are approved" appears on it.
-#   So the absence of the check is the signal. To spot it, open the pull
-#   request's Checks tab (or run `gh pr checks N`) and look for "ADR approval
-#   / ADR changes are approved" beside CI's checks; if it is missing, read
-#   the diff to this file. Pull requests with a merge conflict get no
-#   `pull_request` runs either, CI included, until the conflict is resolved.
+# - A direct push to main is not a pull request and gets no check; changes
+#   reach main through merged pull requests, and CI pushes nothing there.
 #
 # A separate workflow, not a job in ci.yml: ci.yml's `pull_request` trigger
 # runs the full gate once per push, and a label change must not re-run it.
 # This job reads the pull request through the API (the file list, paginated,
 # and the labels as they are now, not as the event saw them, so a re-run
-# after the label is removed fails), and checks nothing out. It uses only the
-# run's own token, read-only on pull requests, which is all both endpoints
-# need; no secrets.
+# after the label is removed fails). It uses only the run's own token, no
+# secrets.
 name: ADR approval
 
 # `edited` covers a change of base branch, which changes the file list; it
 # also fires on title and body edits, which is harmless for a job this small.
 # The job never skips itself with an `if:`, because a skipped job reports as
 # a passing check and would hide an earlier failure.
+# The job targets every base branch, so a pull request stacked on another
+# branch is checked too; main's copy of this file runs for all of them.
 on:
-  pull_request:
+  pull_request_target:
     types: [ opened, synchronize, reopened, labeled, unlabeled, edited ]
 
 concurrency:

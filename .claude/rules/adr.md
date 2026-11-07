@@ -21,7 +21,7 @@ A PR that touches a guarded path needs the `adr-approved` label, which only Colb
 - `.claude/settings.json`
 - `.claude/rules/adr.md`
 
-The last three are the guards themselves, so a PR that weakens one needs the label as well. A PR that rewrites or deletes the workflow can still get past the check itself; see the limits below.
+The last three are the guards themselves, so a PR that weakens one needs the label as well.
 
 ## How a record changes
 
@@ -50,7 +50,7 @@ merges: 0009 (2026-11-06)  # optional: each absorbed record with the date it was
 
 Neither guard is a lock.
 
-- **The check**, "ADR approval / ADR changes are approved" (`.github/workflows/adr-approval.yml`), fails a PR that adds, modifies, renames (either path) or deletes a guarded path without the label. Its header comment states its limits: agents run `gh` with Colby's credentials, so GitHub cannot tell who applied the label; branch protection is unavailable on this plan, so a red check does not block a merge; and the check runs the workflow as the PR's merge commit has it, so a PR that edits the workflow is checked by its own edited copy, and one that deletes it gets no check at all: the missing check is the signal, and any diff to a guarded path needs reading.
+- **The check**, "ADR approval / ADR changes are approved" (`.github/workflows/adr-approval.yml`), fails a PR that adds, modifies, renames (either path) or deletes a guarded path without the label. It runs on `pull_request_target`, so GitHub runs the copy of the workflow on `main`, not the PR's: a PR cannot delete the check or grade itself with an edited copy. A change to the workflow takes effect only once it is on `main`; the PR that edits it is checked by `main`'s copy, and the PR that introduced it got no run at all, because `main` had no copy yet. It runs on a PR with a merge conflict too (GitHub's docs: `pull_request_target` workflows "will run even if the pull request has a merge conflict"). Its safety rests on no checkout, a token restricted to `pull-requests: read`, and inputs only through `env`; never add a checkout of the PR's head to it. What remains, as its header comment says: agents run `gh` with Colby's credentials, so GitHub cannot tell who applied the label; branch protection is unavailable on this plan, so a red check does not block a merge; and a direct push to `main` is not a PR and gets no check, though changes reach `main` only through merged PRs and CI pushes nothing there.
 - **The deny rules** in `.claude/settings.json` stop the common `gh` forms: any `gh` command that names the label (`gh pr edit --add-label` or `--remove-label`, `gh pr create --label`, `gh issue edit`, `gh label edit` or `delete`, `gh api .../labels/adr-approved`), and any `gh api` call whose command text contains `labels` (the REST label endpoints) or `Labelable` (the GraphQL label mutations). They match the command's text, so they do not stop:
   - `gh api -X PATCH .../issues/N --input file.json` with a `labels` payload;
   - a GraphQL mutation that sets `labelIds` (such as `updatePullRequest`), or a query read from a file with `-F query=@file`;
