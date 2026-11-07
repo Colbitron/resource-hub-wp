@@ -22,6 +22,9 @@ import type { PageStatus, ResourceStatus, Taxonomy } from "./types.mts";
  *   a 1600×900 featured image with `medium_large`, `large` and `1536x1536`
  *   sizes, for the resource page's screenshots, its long-form checks and
  *   its `og:image`, which takes the 1536 size where the page takes `large`.
+ * - The newest featured resource (ID 20, the library's lead) has a
+ *   photo-weight 1600×900 JPEG, so Lighthouse's library sample measures the
+ *   lead image as its LCP (the media entry has why).
  * - Dates descend with the rows, so core's default order (`date` desc) is
  *   the row order.
  * - One draft (ID 34, the last row), so the related route has an
@@ -157,6 +160,24 @@ export const MEDIA: MediaSeed[] = [
       "1536x1536": { file: "2026/11/taxonomies-versus-meta-1536x864.png", width: 1536, height: 864 },
     },
   },
+  {
+    // The library's lead (resource 20, the newest featured), so the sampled
+    // `/resources/` measures an image as its LCP, as a real lead is: a
+    // generated landscape textured at a few pixels' scale, so that like a
+    // photo it stays heavy when resized (132 KB here, about 29 KB as the
+    // optimiser's 750-wide WebP). The flat test PNGs above encode to a few
+    // hundred bytes, under the bits per pixel Chrome needs to count an image
+    // as the LCP, which leaves Lighthouse measuring a heading or a summary.
+    // No sizes, so the original is used.
+    id: 106,
+    file: "2026/11/ridgelines-at-dusk.jpg",
+    mime: "image/jpeg",
+    alt: "Layered ridgelines under a dusk sky",
+    title: "Ridgelines at dusk",
+    width: 1600,
+    height: 900,
+    sizes: {},
+  },
 ];
 
 /** The newest resource's date; each later row is one day older. Site time, no offset. */
@@ -287,7 +308,7 @@ function row(
 }
 
 export const RESOURCES: ResourceSeed[] = [
-  row(20, "a-field-guide-to-revalidation", "A field guide to revalidation", "ebook", ["headless-delivery", "performance"], true, 101, "On-demand, time-based, and tag-based revalidation compared, with the failure modes of each written down."),
+  row(20, "a-field-guide-to-revalidation", "A field guide to revalidation", "ebook", ["headless-delivery", "performance"], true, 106, "On-demand, time-based, and tag-based revalidation compared, with the failure modes of each written down."),
   row(21, "alt-text-at-scale", "Alt text at scale", "article", ["accessibility", "editorial-workflow"], false, null, "How a small editorial team keeps alt text accurate across thousands of images without a bottleneck."),
   row(22, "choosing-a-headless-architecture", "Choosing a headless architecture", "webinar", ["headless-delivery", "content-modelling"], true, 102, "REST, GraphQL and static export compared for a content site that changes a few times a day."),
   row(23, "measuring-layout-shift-on-listing-pages", "Measuring layout shift on listing pages", "article", ["performance", "accessibility"], false, 103, "Reserved aspect ratios, sized images and why late content is a gate rather than a claim."),
