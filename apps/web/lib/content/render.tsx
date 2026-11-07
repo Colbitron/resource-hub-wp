@@ -118,6 +118,8 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   other classes or any other role by writing a marker around them. A
  *   marker whose attributes are not valid is not the CMS's block, so its
  *   contents get the body's rules, and so do a marker's inside another's.
+ *   A marker's own wrapper gets the body's rules too, wherever it stands,
+ *   so a marker nested in another's row keeps no row class on its wrapper.
  *   A marker still holding a plain `<ul>` of links renders as before.
  * - Embeds: an `<iframe>`, `<video>` or `<audio>` becomes a link to its
  *   `src` (a `<video>` or `<audio>` without one, to its first usable
@@ -347,7 +349,7 @@ const NO_CLASSES: ReadonlySet<string> = new Set();
 /** Where one class of the row markup may stand: the elements it belongs on, and whether only inside a row. */
 interface CardClassPlace {
   readonly elements: ReadonlySet<string>;
-  /** Only inside an `<article class="rh-card">` of the same marker (`Context.cardRow`). */
+  /** Only inside an `<article class="rh-card">` of the same marker (`Context.scope` is `"row"`). */
   readonly inRow: boolean;
 }
 
@@ -356,7 +358,7 @@ const ROW_TITLE_ELEMENTS: ReadonlySet<string> = new Set(["h2", "h3", "h4", "h5",
 /**
  * The classes of the row markup the CMS block (a sibling branch, issue #50)
  * writes inside the marker (`packages/ui/card.css`, its header comment),
- * kept only inside a valid marker's wrapper (`Context.cardMarkup`), and
+ * kept only inside a valid marker's wrapper (`Context.scope`), and
  * each only on the element it belongs on: an exact list, so a body can name
  * none of the app's other `rh-` classes by writing a marker around them.
  * `rh-related` itself is the wrapper's and stays `MARKER_CLASSES`.
@@ -384,15 +386,10 @@ const CARD_CLASSES: ReadonlyMap<string, CardClassPlace> = new Map([
   ["rh-card__topic", { elements: new Set(["li"]), inRow: true }],
 ]);
 
-/** The row's own class, which makes an `<article>` a row (`Context.cardRow`). */
-const CARD_ROW_CLASS = "rh-card";
-
 /** The topics list's class and the one name it may carry, as `CardTopics` writes them. */
 const CARD_TOPICS_CLASS = "rh-card__topics";
 const CARD_TOPICS_LABEL = "Topics";
 
-/** The one `role` a list inside a valid marker may carry: the row markup's `role="list"`. */
-const LIST_ROLES = new Set(["list"]);
 const ID_VALUE = /^[A-Za-z][A-Za-z0-9_.:-]*$/;
 const LANG_VALUE = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/;
 const DIR_VALUES = new Set(["ltr", "rtl", "auto"]);
@@ -428,6 +425,13 @@ interface CmsBase {
   readonly prefix: string;
 }
 
+/**
+ * Where in the row markup the pass is (`Context.scope`): `"none"` outside
+ * any valid marker's wrapper, `"marker"` inside one but outside its rows,
+ * and `"row"` inside an `<article class="rh-card">` of that marker.
+ */
+type MarkupScope = "none" | "marker" | "row";
+
 /** What the pass knows about the CMS, computed once per render. */
 interface Context {
   readonly cms: CmsUrls;
@@ -445,19 +449,15 @@ interface Context {
   /** How many `<a>` elements the pass is inside; see `insideLink`. */
   links: number;
   /**
-   * True inside the wrapper of a valid marker, and false again inside any
-   * marker nested in it, valid or not, until that one's own wrapper says
-   * otherwise (`markerChildren`); see `insideCardMarkup`. Inside one, the
-   * row markup's element, classes, list role and list label are kept
-   * (`CARD_CLASSES`, `LIST_ROLES`).
+   * Where in the row markup the pass is, set only through `inScope`. Every
+   * marker's wrapper is decided in `"none"`, and its children in `"marker"`
+   * when its attributes are valid and in `"none"` when not, so a marker
+   * nested in another, valid or not, is decided by itself alone. Inside a
+   * valid marker the row markup's element, classes, list role and list label
+   * are kept (`CARD_CLASSES`, `listProps`); a row's inner classes only in
+   * `"row"`, inside one of that marker's rows (`CardClassPlace.inRow`).
    */
-  cardMarkup: boolean;
-  /**
-   * True inside an `<article class="rh-card">` within the innermost valid
-   * marker (`rowChildren`): the only place the row's inner classes are kept
-   * (`CardClassPlace.inRow`). Reset at every marker's wrapper.
-   */
-  cardRow: boolean;
+  scope: MarkupScope;
   /**
    * True when the body renders an `<h1>`: every body heading is then shown
    * one level down (`headingName`), so the page keeps its own `<h1>` as the
@@ -823,10 +823,15 @@ function isPlacedCardClass(token: string, name: string, context: Context): boole
   const place = CARD_CLASSES.get(token);
   return (
     place !== undefined &&
-    insideCardMarkup(context) &&
+    context.scope !== "none" &&
     place.elements.has(name) &&
-    (!place.inRow || context.cardRow)
+    (!place.inRow || context.scope === "row")
   );
+}
+
+/** True when `props`, an element's decided props, kept the class `token`. */
+function keptClass(props: Props, token: string): boolean {
+  return typeof props.className === "string" && props.className.split(" ").includes(token);
 }
 
 /**
@@ -1014,7 +1019,7 @@ function elementProps(name: string, attributes: Attributes, context: Context): P
 
 /**
  * A list's `role` and `aria-label`, inside a valid marker only
- * (`insideCardMarkup`): `role="list"`, which the row markup puts on its
+ * (`Context.scope`): `role="list"`, which the row markup puts on its
  * lists because Safari drops list semantics under `list-style: none`, and
  * `aria-label="Topics"`, exactly, on the row's topics list alone (a `<ul>`
  * that kept `rh-card__topics`, so inside a row), the name `CardTopics`
@@ -1025,13 +1030,11 @@ function elementProps(name: string, attributes: Attributes, context: Context): P
  * decided.
  */
 function listProps(attributes: Attributes, props: Props, context: Context): Props {
-  if (!insideCardMarkup(context)) {
+  if (context.scope === "none") {
     return props;
   }
-  const role = oneOf(attributes.get("role"), LIST_ROLES);
-  if (role !== undefined) props.role = role;
-  const isTopics = typeof props.className === "string" && props.className.split(" ").includes(CARD_TOPICS_CLASS);
-  if (isTopics && attributes.get("aria-label") === CARD_TOPICS_LABEL) props["aria-label"] = CARD_TOPICS_LABEL;
+  if (attributes.get("role") === "list") props.role = "list";
+  if (keptClass(props, CARD_TOPICS_CLASS) && attributes.get("aria-label") === CARD_TOPICS_LABEL) props["aria-label"] = CARD_TOPICS_LABEL;
   return props;
 }
 
@@ -1145,37 +1148,14 @@ function linkChildren(node: Element, context: Context): ReactNode {
   }
 }
 
-/** True inside the wrapper of a marker whose attributes are valid: the row markup's element, classes, list role and label are kept there. */
-function insideCardMarkup(context: Context): boolean {
-  return context.cardMarkup;
-}
-
-/**
- * `children` of a marker's wrapper, in that marker's own scope: inside the
- * row markup when `valid` (the marker's `data-*` attributes are), outside it
- * when not, and outside any row either way, so what a marker's contents keep
- * is decided by that marker alone and never by one around it.
- */
-function markerChildren(node: Element, context: Context, valid: boolean): ReactNode {
-  const outer = { cardMarkup: context.cardMarkup, cardRow: context.cardRow };
-  context.cardMarkup = valid;
-  context.cardRow = false;
+/** `render()` with `context.scope` set to `scope`, and the scope around it put back after, however `render` ends. */
+function inScope<T>(context: Context, scope: MarkupScope, render: () => T): T {
+  const outer = context.scope;
+  context.scope = scope;
   try {
-    return children(node, context);
+    return render();
   } finally {
-    context.cardMarkup = outer.cardMarkup;
-    context.cardRow = outer.cardRow;
-  }
-}
-
-/** `children` of an `<article class="rh-card">` inside a valid marker, counted as inside a row (`Context.cardRow`). */
-function rowChildren(node: Element, context: Context): ReactNode {
-  const outer = context.cardRow;
-  context.cardRow = true;
-  try {
-    return children(node, context);
-  } finally {
-    context.cardRow = outer;
+    context.scope = outer;
   }
 }
 
@@ -1311,7 +1291,7 @@ type MarkerAttributes = Pick<RelatedBlockProps, "count" | "topic" | "topicId" | 
  * out of range. `exclude` is `context.postId` when it is given. Reads no
  * child of the marker, so it is cheap enough to run on every marker, valid
  * or not: whether the marker's contents get the row markup's allowances
- * (`markerChildren`) is decided by this alone.
+ * (`Context.scope`) is decided by this alone.
  */
 function markerAttributes(attributes: Attributes, context: Context): MarkerAttributes | null {
   const count = matching(attributes.get("data-count"), POSITIVE_INTEGER);
@@ -1360,7 +1340,7 @@ function markerProps(node: Element, attributes: MarkerAttributes, context: Conte
  * related list whatever the block's markup; the `data-*` attributes are
  * what make it a marker, not the class. Inside the wrapper of a marker whose
  * attributes are valid, the children render with the row markup's
- * allowances (`markerChildren`, see the module comment), whether or not the
+ * allowances (`Context.scope`, see the module comment), whether or not the
  * marker is handed on: the fallback past the cap or inside a link is still
  * the CMS's rows.
  *
@@ -1378,14 +1358,15 @@ function marker(node: Element, attributes: Attributes, context: Context): ReactE
   if (props !== null) {
     context.markers++;
   }
-  const wrapperProps = globalProps("div", attributes, context, MARKER_CLASSES);
+  // The wrapper is decided outside any marker, so one nested in another's row keeps none of the row's classes.
+  const wrapperProps = inScope(context, "none", () => globalProps("div", attributes, context, MARKER_CLASSES));
   // The wrapper always carries the contract's class, once, after any the CMS wrote.
   const classes = typeof wrapperProps.className === "string" ? wrapperProps.className.split(" ") : [];
   wrapperProps.className = (classes.includes(MARKER_CLASS) ? classes : [...classes, MARKER_CLASS]).join(" ");
   const fallback = createElement(
     "div",
     checked(wrapperProps, context),
-    markerChildren(node, context, marked !== null),
+    inScope(context, marked === null ? "none" : "marker", () => children(node, context)),
   );
   if (props === null) {
     return fallback;
@@ -1583,7 +1564,7 @@ function replaceNode(node: DOMNode, context: Context): ReactElement | undefined 
     return link(node, attributes, context);
   }
   // `<article>` is the row's element, kept inside a valid marker alone; elsewhere it is unwrapped like any other.
-  if (!ALLOWED_ELEMENTS.has(name) && !(name === "article" && insideCardMarkup(context))) {
+  if (!ALLOWED_ELEMENTS.has(name) && !(name === "article" && context.scope !== "none")) {
     return createElement(Fragment, null, children(node, context));
   }
   if (name === "div" && hasClass(attributes, "wp-block-embed__wrapper")) {
@@ -1599,8 +1580,13 @@ function replaceNode(node: DOMNode, context: Context): ReactElement | undefined 
   if (VOID_ELEMENTS.has(name)) {
     return createElement(name, props);
   }
-  const isRow = name === "article" && insideCardMarkup(context) && hasClass(attributes, CARD_ROW_CLASS);
-  const element = createElement(headingName(name, context), props, isRow ? rowChildren(node, context) : children(node, context));
+  // A row is an `<article>` that kept the row's class, which `card.css` makes the containing block of its link's `::after`.
+  const isRow = name === "article" && keptClass(props, "rh-card");
+  const element = createElement(
+    headingName(name, context),
+    props,
+    isRow ? inScope(context, "row", () => children(node, context)) : children(node, context),
+  );
   return name === "table" ? tableRegion(node, element, context) : element;
 }
 
@@ -1844,8 +1830,7 @@ export function renderContent(html: string, cms: CmsUrls, options: RenderContent
     postId: options.postId !== undefined && Number.isSafeInteger(options.postId) && options.postId > 0 ? options.postId : undefined,
     markers: 0,
     links: 0,
-    cardMarkup: false,
-    cardRow: false,
+    scope: "none",
     demoteHeadings: false,
     figureLabels: new Map(),
   };

@@ -911,6 +911,38 @@ describe("the block marker's rows", () => {
     }
   });
 
+  it("drops rh-card__link on any element but a link, even inside a row", () => {
+    const output = render(CARD_MARKER.replace('<p class="rh-card__summary">A summary.</p>', '<p class="rh-card__summary"><span class="rh-card__link">A summary.</span></p>'));
+    expect(output).toContain('<p class="rh-card__summary"><span>A summary.</span></p>');
+    expect(output.match(/class="rh-card__link"/g)).toHaveLength(1);
+  });
+
+  it("keeps rh-card__title on h2 to h6 alone: dropped on an h1, kept on an h6", () => {
+    const title = (tag: string) => CARD_MARKER.replace('<h3 class="rh-card__title">', `<${tag} class="rh-card__title">`).replace("</h3>", `</${tag}>`);
+    // The h1 makes the body's headings one level down, so it renders as an h2 and the marker's heading as an h3.
+    const onH1 = render(title("h1"));
+    expect(onH1).toContain('<div class="rh-card__body"><h2><a class="rh-card__link"');
+    expect(onH1).not.toContain("rh-card__title");
+    expect(render(title("h6"))).toContain('<div class="rh-card__body"><h6 class="rh-card__title"><a class="rh-card__link"');
+  });
+
+  it("drops a row class written in another case: the list is exact", () => {
+    const output = render(CARD_MARKER.replace('class="rh-card__link"', 'class="RH-CARD__LINK"'));
+    expect(output).toContain('<h3 class="rh-card__title"><a href="/resources/webinar/example/">Example</a></h3>');
+    expect(output).not.toMatch(/rh-card__link/i);
+  });
+
+  it("decides a nested marker's wrapper outside any row, so it keeps no row class from the row around it", () => {
+    const nested = CARD_MARKER.replace(
+      '<p class="rh-card__summary">',
+      '<div class="rh-card__body" data-rh-block="related-resources" data-count="3" data-topic="headless-delivery" data-topic-id="9" data-exclude="15"><p>Inner</p></div><p class="rh-card__summary">',
+    );
+    const output = render(nested);
+    expect(output).toContain('<div class="rh-related"><p>Inner</p></div><p class="rh-card__summary">');
+    // The row's own body keeps its class.
+    expect(output.match(/class="rh-card__body"/g)).toHaveLength(1);
+  });
+
   it("gives an invalid marker inside a valid one the body's rules", () => {
     const output = render(
       withTail(`<div data-rh-block="related-resources" data-count="0"><ul class="rh-card-grid" role="list">${ROW}</ul></div>`),
