@@ -413,24 +413,78 @@ test.describe("without JavaScript", () => {
 });
 
 test.describe("forced colours", () => {
+  // What a forced palette resolves to differs by platform: Chromium on Linux
+  // draws SelectedItemText in white, the same as Canvas, and on macOS in
+  // black. So no assertion here compares two segments' colours with each
+  // other. The selection must be a shape that only the checked segment has,
+  // a bar with real width, and every colour is checked against the system
+  // colour it should resolve to on whatever platform runs the test. The one
+  // inequality, CanvasText against Canvas, is the pair every forced palette
+  // keeps apart.
   test("the checked segment and the focus ring are still shown", async ({ page }) => {
     await page.emulateMedia({ forcedColors: "active" });
     await page.goto("/");
     await expect(group(page)).toBeVisible();
     await expect(radio(page, "system")).toBeChecked();
+    expect(await page.evaluate(() => matchMedia("(forced-colors: active)").matches)).toBe(true);
+    const system = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      document.body.append(probe);
+      const resolve = (keyword: string) => {
+        probe.style.color = keyword;
+        return getComputedStyle(probe).color;
+      };
+      const colours = {
+        canvas: resolve("Canvas"),
+        canvasText: resolve("CanvasText"),
+        selectedItem: resolve("SelectedItem"),
+        selectedItemText: resolve("SelectedItemText"),
+        highlight: resolve("Highlight"),
+      };
+      probe.remove();
+      return colours;
+    });
+    expect(system.canvasText).not.toBe(system.canvas);
+
     const read = (choice: Choice) =>
       page.locator("label", { hasText: NAMES[choice].split(" ")[0] }).evaluate((node) => {
         const style = getComputedStyle(node);
-        return { fill: style.backgroundColor, bar: style.borderBottomColor, barWidth: style.borderBottomWidth, outline: style.outlineStyle };
+        return {
+          fill: style.backgroundColor,
+          ink: style.color,
+          bar: style.borderBottomColor,
+          barStyle: style.borderBottomStyle,
+          barWidth: Number.parseFloat(style.borderBottomWidth),
+          height: node.getBoundingClientRect().height,
+          outline: style.outlineStyle,
+          outlineWidth: Number.parseFloat(style.outlineWidth),
+          outlineColour: style.outlineColor,
+        };
       });
     const checked = await read("system");
-    const unchecked = await read("light");
-    expect(checked.fill).not.toBe(unchecked.fill);
-    expect(checked.bar).not.toBe(unchecked.bar);
-    expect(checked.barWidth).not.toBe("0px");
+    // The cue that is not a colour: a solid bar of real width under the
+    // checked segment, in the page's text colour on the page.
+    expect(checked.barStyle).toBe("solid");
+    expect(checked.barWidth).toBeGreaterThanOrEqual(2);
+    expect(checked.bar).toBe(system.canvasText);
+    // And the system's selection colours.
+    expect(checked.fill).toBe(system.selectedItem);
+    expect(checked.ink).toBe(system.selectedItemText);
+    for (const choice of ["light", "dark"] as const) {
+      const unchecked = await read(choice);
+      // No bar at all, and no selection fill, on an unchecked segment.
+      expect(unchecked.barWidth, choice).toBe(0);
+      expect(unchecked.fill, choice).not.toBe(system.selectedItem);
+      // The bar's width moves to the padding: no segment changes height.
+      expect(unchecked.height, choice).toBe(checked.height);
+    }
+
     await tabToTheme(page);
     await expect(radio(page, "system")).toBeFocused();
-    expect((await read("system")).outline).toBe("solid");
+    const focused = await read("system");
+    expect(focused.outline).toBe("solid");
+    expect(focused.outlineWidth).toBeGreaterThan(0);
+    expect(focused.outlineColour).toBe(system.highlight);
   });
 });
 

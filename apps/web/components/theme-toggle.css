@@ -9,8 +9,8 @@
  *   (never display: none, never a 1px clip), so a finger exploring the
  *   screen and a click both land on the real control where it is drawn.
  * - The checked segment is marked by a bar under it and a fill, not by
- *   colour alone; under forced colours the fill becomes SelectedItem and the
- *   bar is drawn in SelectedItemText.
+ *   colour alone; under forced colours the fill becomes SelectedItem, the
+ *   bar is drawn in CanvasText, and only the checked segment has a bar.
  * - Focus is a real outline on the segment, because box-shadow and
  *   backgrounds vanish under forced colours, with room around every
  *   segment for the whole ring.
@@ -129,19 +129,28 @@
 /*
  * Forced colours (Windows contrast themes): fills and shadows are dropped
  * and every border takes the text colour, so the transparent bar would
- * show on every segment. The bar is drawn in the page colour on an
- * unchecked segment, and the checked one takes the system's selection
- * colours with the bar in its text colour. The focus ring keeps its own
- * system colour, distinct from the selection.
+ * show on every segment. Under forced colours an unchecked segment has no
+ * bar at all: its width goes to the padding, so every segment keeps the
+ * same height. The checked one takes the system's selection colours and the
+ * bar, drawn in CanvasText. Not SelectedItemText: the bar sits on the page
+ * at the segment's lower edge, and SelectedItemText is chosen to contrast
+ * with SelectedItem, not with Canvas. In Chromium's Linux palette both are
+ * white, which left the selection shown by its fill colour alone. CanvasText
+ * on Canvas is the one pair every forced palette keeps apart. So the
+ * selection is a shape, a bar only one segment has, as well as a colour.
+ * The focus ring keeps its own system colour, distinct from the selection.
  */
 @media (forced-colors: active) {
 	.rh-theme__label {
-		border-bottom-color: Canvas;
+		padding-bottom: calc(var(--rh-space-1) + var(--rh-border-width-strong));
+		border-bottom-width: 0;
 	}
 
 	.rh-theme__input:checked + .rh-theme__label {
+		padding-bottom: var(--rh-space-1);
+		border-bottom-width: var(--rh-border-width-strong);
+		border-bottom-color: CanvasText;
 		background: SelectedItem;
-		border-bottom-color: SelectedItemText;
 		color: SelectedItemText;
 	}
 
