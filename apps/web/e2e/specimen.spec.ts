@@ -104,9 +104,18 @@ test("shows a resource, a CMS page, the welcome page and the 404 page", async ({
   await expect(meta.getByRole("list", { name: "Topics" }).getByRole("link")).toHaveText(["Content modelling", "Performance"]);
   await expect(resource.locator(".rh-resource__media img")).toBeVisible();
   await expect(resource.locator(".rh-resource__summary")).toBeVisible();
-  // The related-resources block's fallback, with the CMS's links made root-relative.
+  // The type mark is the row's, outside the link; the topics are the row's labels with links inside.
+  await expect(meta.locator(".rh-card__type")).toHaveAttribute("data-accent", "mint");
+  await expect(meta.locator(".rh-card__topics .rh-card__topic")).toHaveCount(2);
+  // The article's insets and figures, one of each: the quote, the table in its region, code, and a figure with its upload and caption.
   const body = resource.locator(".rh-resource__body.rh-prose");
-  await expect(body.getByRole("heading", { level: 2, name: "More on content modelling" })).toBeVisible();
+  await expect(body.locator("blockquote cite")).toHaveText("A rule of thumb from the plugin's first review");
+  await expect(body.getByRole("region", { name: "Table", exact: true }).locator("table")).toHaveCount(1);
+  await expect(body.locator("pre code")).toBeVisible();
+  expect(decodeURIComponent((await body.locator("figure.wp-block-image img").getAttribute("src")) ?? "")).toContain("/media/2026/11/content-model.png");
+  await expect(body.locator("figure.wp-block-image figcaption")).toBeVisible();
+  // The related-resources block's fallback, with the CMS's links made root-relative, in the wrapper the pass marks `rh-related`.
+  await expect(body.locator(".rh-related").getByRole("heading", { level: 2, name: "More on content modelling" })).toBeVisible();
   await expect(body.getByRole("link", { name: "One content model, five channels" })).toHaveAttribute(
     "href",
     "/resources/case-study/one-content-model-five-channels/",

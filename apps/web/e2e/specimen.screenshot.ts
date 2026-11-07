@@ -58,9 +58,14 @@ for (const width of WIDTHS) {
         await page.goto(SPECIMEN_PATH);
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
         await page.goto(SPECIMEN_PATH);
-        // Every card image is eager; wait until each has decoded, and for the
-        // fonts, so the capture never catches a half-loaded page.
+        // The lead's image is eager, and the resource sample's body figure
+        // is lazy, as on the page, far under the fold: scroll every image
+        // into view once so the lazy ones are requested, then wait until
+        // each has decoded, and for the fonts, so the capture never catches
+        // a half-loaded page.
         const images = page.locator("img");
+        await images.evaluateAll((nodes) => nodes.forEach((node) => node.scrollIntoView()));
+        await page.evaluate(() => window.scrollTo(0, 0));
         await expect
           .poll(() =>
             images.evaluateAll((nodes) =>

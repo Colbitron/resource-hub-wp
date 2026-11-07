@@ -217,8 +217,11 @@ function cms() {
 }
 
 /**
- * The long-form resource's shape (the seed's ID 30) with a short body: a
- * paragraph, a list, and the related-resources block marker as the CMS
+ * The long-form resource's shape (the seed's ID 30) with a short body that
+ * has one of each thing the article styles: a paragraph, a list, a quote,
+ * a heading, a figure with an upload (through `/media/`, lazy as on the
+ * page; the screenshot spec scrolls it into view before capturing), a
+ * table, a code block, and the related-resources block marker as the CMS
  * renders it, whose links point at the CMS. The default `renderBlock`
  * renders the marker's fallback, the CMS's own heading and list, as the
  * resource page does until slice 4 plugs in `<RelatedResources>`.
@@ -237,6 +240,16 @@ function resourceFixture(): RenderedResource {
       rendered: `
 <p>A value an editor filters by is a term; a value that belongs to one resource alone is a field. The rest of this resource is the reasoning, with <a href="${site}/resources/topic/content-modelling/">more on content modelling</a> in the library.</p>
 <ul><li>Terms are shared and listed.</li><li>Fields are private to their post.</li></ul>
+<blockquote class="wp-block-quote"><p>Put a value in a taxonomy when you would build a page for it. Put it in meta when you would not.</p><cite>A rule of thumb from the plugin's first review</cite></blockquote>
+<h2 class="wp-block-heading">What each choice costs</h2>
+<figure class="wp-block-image size-full"><img src="${uploads}/2026/11/content-model.png" alt="A content model diagram" class="wp-image-101" width="240" height="160" /><figcaption class="wp-element-caption">The content model: one post type, three taxonomies, two fields.</figcaption></figure>
+<figure class="wp-block-table"><table><thead><tr><th>Question</th><th>Term</th><th>Field</th></tr></thead><tbody><tr><td>Filter a listing by it</td><td>Yes, by ID</td><td>No</td></tr><tr><td>Has a page of its own</td><td>Yes</td><td>No</td></tr><tr><td>Appears in <code>_embed</code></td><td>Under <code>wp:term</code></td><td>Under <code>meta</code></td></tr></tbody></table></figure>
+<p>A resource's terms arrive as IDs with the terms embedded; its fields arrive inline:</p>
+<pre class="wp-block-code"><code>{
+  "resource_type": [3],
+  "resource_topic": [8, 11],
+  "meta": { "summary": "When a value is a term and when it is a field." }
+}</code></pre>
 <div data-rh-block="related-resources" data-count="3" data-topic="content-modelling" data-topic-id="8" data-exclude="30"><h2>More on content modelling</h2><ul><li><a href="${site}/resources/case-study/one-content-model-five-channels/">One content model, five channels</a></li><li><a href="${site}/resources/webinar/the-anatomy-of-a-resource/">The anatomy of a resource</a></li></ul></div>
 `,
     },
@@ -307,6 +320,11 @@ const PROSE = `
 <li>A second step</li>
 </ol>
 <blockquote><p>A blockquote: what someone said, set apart from the text around it.</p><cite>A source</cite></blockquote>
+<p>A code block, which wraps rather than scrolls, and keeps its <code>indentation</code>:</p>
+<pre><code>{
+  "resource_type": [5],
+  "meta": { "source_url": "https://example.com/downloads/a-field-guide" }
+}</code></pre>
 <table>
 <caption>Release matrix</caption>
 <thead><tr><th>Event</th><th>Tags</th><th>Paths</th></tr></thead>
