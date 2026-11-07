@@ -577,27 +577,33 @@ jobs:
       # 80 to 300 ms between runs, and on 2026-11-07 main's run 42362572282
       # failed it twice on slow runners after the same code had passed on its
       # pull request, which skipped the production deploy. So on a pull
-      # request a miss fails this job as before, and on a push or a manual
-      # dispatch continue-on-error keeps the job, and with it deploy-web,
-      # going: the step's outcome is still failure, its conclusion success,
-      # and the next step reports the miss. The test is the two events that
-      # deploy, not "anything but a pull request", so a trigger added later
-      # blocks by default. The budgets are the same on every event.
+      # request a miss fails this job as before, and on a push to main or a
+      # manual dispatch on main continue-on-error keeps the job, and with it
+      # deploy-web, going: the step's outcome is still failure, its
+      # conclusion success, and the next step reports the miss. The test is
+      # the ref and the two events that deploy the front end, not "anything
+      # but a pull request", so a dispatch on another branch, which never
+      # deploys, still fails on a miss, and a trigger added later blocks by
+      # default. The budgets are the same on every event.
       - name: Run Lighthouse CI on the front end
         id: lighthouse
         if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
-        continue-on-error: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+        continue-on-error: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         env:
           RH_E2E_PREBUILT: '1'
         run: pnpm web:test:lighthouse
 
-      # Runs only when Lighthouse failed and continue-on-error let the job go
-      # on (outcome failure, conclusion success), so never on a pull request,
-      # where the failed step already fails the job. It names each missed
-      # budget in a warning annotation and in the job summary, from the
-      # failed assertions `lhci assert` saves (apps/web/.lighthouseci/, which
-      # e2e/lighthouse.mts empties before each run, so nothing is stale). When
-      # the step failed with no missed budget on record (a stage before the
+      # Runs only when every earlier step passed and Lighthouse's failure was
+      # let through by continue-on-error: success() reads conclusions, which
+      # continue-on-error turns to success, so it is true only then, and the
+      # outcome test leaves out a run where Lighthouse passed. So it never
+      # runs on a pull request or a dispatch off main, where the failed step
+      # fails the job, nor when an earlier step already failed the job, where
+      # the deploy is blocked anyway and saying otherwise would be false. It
+      # names each missed budget in a warning annotation and in the job
+      # summary, from the failed assertions `lhci assert` saves
+      # (apps/web/.lighthouseci/, which e2e/lighthouse.mts empties before each
+      # run, so nothing is stale). When the step failed with no missed budget on record (a stage before the
       # assertions failed, so the file is missing, or every assertion passed
       # and the report upload failed), the warning says that instead. Its
       # `title=` holds no comma or colon, which would need escaping as
@@ -605,7 +611,7 @@ jobs:
       # noise: if the same URL and metric miss again on the next run, treat
       # it as a regression (docs/runbooks/deploy.md).
       - name: Report a Lighthouse miss that does not block the deploy
-        if: ${{ !cancelled() && steps.lighthouse.outcome == 'failure' && steps.lighthouse.conclusion == 'success' }}
+        if: ${{ success() && steps.lighthouse.outcome == 'failure' }}
         env:
           RESULTS: apps/web/.lighthouseci/assertion-results.json
           ISSUE_URL: ${{ github.server_url }}/${{ github.repository }}/issues/76
@@ -623,8 +629,8 @@ jobs:
           else
             what="Lighthouse failed without a missed budget on record (a stage before the assertions, or the report upload, failed); its step's log says why."
           fi
-          advice="Lighthouse does not gate the production deploy until #76 calibrates it, so the deploy went ahead. This is a finding to look at: if the same URL and metric miss again on the next run, treat it as a regression."
-          echo "::warning title=Lighthouse failed; the deploy was not blocked::$what $advice ($ISSUE_URL)"
+          advice="Lighthouse does not gate the production deploy until #76 calibrates it, so this miss does not hold the deploy back. This is a finding to look at: if the same URL and metric miss again on the next run, treat it as a regression."
+          echo "::warning title=Lighthouse failed but did not block the deploy::$what $advice ($ISSUE_URL)"
           {
             echo "### Lighthouse failed (not blocking the deploy)"
             echo
