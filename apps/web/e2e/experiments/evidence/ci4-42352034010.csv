@@ -1,0 +1,10 @@
+variant,cpu,calibration_index_median,index_multiplier,ref_raw_ms_median,snap_raw_ms_median,multiplier_used,url,tbt_ms,lcp_ms,performance,benchmark_index_median,raw_main_thread_ms
+snap,"Intel(R) Xeon(R) 6975P-C",2652,8.8,158,159,5,/,187,698,0.97,2588,190
+snap,"Intel(R) Xeon(R) 6975P-C",2652,8.8,158,159,5,/resources/,242,1810,0.95,2680,215
+snap,"Intel(R) Xeon(R) 6975P-C",2652,8.8,158,159,5,/resources/article/taxonomies-versus-meta/,137,2242,0.97,2644,239
+v0,"Intel(R) Xeon(R) 6975P-C",2668,8.9,151,157,8.9,/,407,759,0.90,2622,170
+v0,"Intel(R) Xeon(R) 6975P-C",2668,8.9,151,157,8.9,/resources/,373,2506,0.89,2610,210
+v0,"Intel(R) Xeon(R) 6975P-C",2668,8.9,151,157,8.9,/resources/article/taxonomies-versus-meta/,325,1806,0.92,2651,200
+snap.again,"Intel(R) Xeon(R) 6975P-C",2727,9.1,150,166,4.8,/,212,683,0.96,2641,189
+snap.again,"Intel(R) Xeon(R) 6975P-C",2727,9.1,150,166,4.8,/resources/,117,2260,0.98,2679,222
+snap.again,"Intel(R) Xeon(R) 6975P-C",2727,9.1,150,166,4.8,/resources/article/taxonomies-versus-meta/,96,2325,0.98,2599,216

@@ -1,0 +1,10 @@
+set,variant,url,runs,benchmark_index_median,multiplier,tbt_ms,lcp_ms,performance,raw_main_thread_ms
+pr71,pr71,/,5,2759,9.4,453,742,0.89,163
+pr71,pr71,/resources/,5,2770,9.4,512,1894,0.87,213
+pr71,pr71,/resources/article/taxonomies-versus-meta/,5,2671,9.4,505,2626,0.83,224
+pr71,pr71,/resources/article/topic/accessibility/,5,2709,9.4,508,739,0.87,215
+pr71,pr71,/resources/page/2/,5,2714,9.4,469,794,0.88,216
+pr71,pr71,/resources/podcast/topic/accessibility/,5,2715,9.4,485,759,0.88,190
+pr71,pr71,/resources/topic/performance/,5,2714,9.4,483,771,0.88,182
+pr71,pr71,/resources/webinar/,5,2805,9.4,624,761,0.84,225
+pr71,pr71,/welcome/,5,2742,9.4,458,2529,0.86,189

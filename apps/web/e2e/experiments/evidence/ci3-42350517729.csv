@@ -1,0 +1,16 @@
+variant,cpu,calibration_index_median,index_multiplier,ref_raw_ms_median,snap_raw_ms_median,multiplier_used,url,tbt_ms,lcp_ms,performance,benchmark_index_median,raw_main_thread_ms
+v0,"AMD EPYC 7763 64-Core Processor",1878,5.5,218,242,5.5,/,409,749,0.90,1805,261
+v0,"AMD EPYC 7763 64-Core Processor",1878,5.5,218,242,5.5,/resources/,408,2459,0.88,1819,344
+v0,"AMD EPYC 7763 64-Core Processor",1878,5.5,218,242,5.5,/resources/article/taxonomies-versus-meta/,302,1863,0.93,1820,300
+snap,"AMD EPYC 7763 64-Core Processor",1860,5.4,213,237,3.4,/,204,674,0.97,1857,261
+snap,"AMD EPYC 7763 64-Core Processor",1860,5.4,213,237,3.4,/resources/,191,2273,0.96,1853,320
+snap,"AMD EPYC 7763 64-Core Processor",1860,5.4,213,237,3.4,/resources/article/taxonomies-versus-meta/,179,1906,0.97,1808,356
+ref,"AMD EPYC 7763 64-Core Processor",1846,5.3,221,240,4.7,/,267,703,0.95,1888,263
+ref,"AMD EPYC 7763 64-Core Processor",1846,5.3,221,240,4.7,/resources/,307,1804,0.93,1830,311
+ref,"AMD EPYC 7763 64-Core Processor",1846,5.3,221,240,4.7,/resources/article/taxonomies-versus-meta/,296,1757,0.93,1886,345
+snap.again,"AMD EPYC 7763 64-Core Processor",1818,5.2,213,223,3.6,/,176,701,0.98,1825,242
+snap.again,"AMD EPYC 7763 64-Core Processor",1818,5.2,213,223,3.6,/resources/,194,2311,0.95,1855,289
+snap.again,"AMD EPYC 7763 64-Core Processor",1818,5.2,213,223,3.6,/resources/article/taxonomies-versus-meta/,151,2305,0.96,1857,327
+v0.again,"AMD EPYC 7763 64-Core Processor",1880,5.5,208,243,5.5,/,350,776,0.92,1816,250
+v0.again,"AMD EPYC 7763 64-Core Processor",1880,5.5,208,243,5.5,/resources/,406,1787,0.90,1849,297
+v0.again,"AMD EPYC 7763 64-Core Processor",1880,5.5,208,243,5.5,/resources/article/taxonomies-versus-meta/,355,2402,0.90,1824,300

@@ -1,0 +1,16 @@
+variant,cpu,calibration_index_median,index_multiplier,ref_raw_ms_median,snap_raw_ms_median,multiplier_used,url,tbt_ms,lcp_ms,performance,benchmark_index_median,raw_main_thread_ms
+v0,"AMD EPYC 9V74 80-Core Processor",2481,8.1,171,,8.1,/,512,789,0.87,2453,189
+v0,"AMD EPYC 9V74 80-Core Processor",2481,8.1,171,,8.1,/resources/,582,2536,0.83,2404,259
+v0,"AMD EPYC 9V74 80-Core Processor",2481,8.1,171,,8.1,/resources/article/taxonomies-versus-meta/,403,2119,0.89,2366,228
+ref,"AMD EPYC 9V74 80-Core Processor",2320,7.4,177,,5.9,/,307,718,0.93,2370,205
+ref,"AMD EPYC 9V74 80-Core Processor",2320,7.4,177,,5.9,/resources/,285,2369,0.93,2392,233
+ref,"AMD EPYC 9V74 80-Core Processor",2320,7.4,177,,5.9,/resources/article/taxonomies-versus-meta/,235,1747,0.96,2388,250
+v1s,"AMD EPYC 9V74 80-Core Processor",2485,8.1,168,,8.1,/,517,763,0.87,2506,209
+v1s,"AMD EPYC 9V74 80-Core Processor",2485,8.1,168,,8.1,/resources/,433,1842,0.89,2397,215
+v1s,"AMD EPYC 9V74 80-Core Processor",2485,8.1,168,,8.1,/resources/article/taxonomies-versus-meta/,392,2489,0.88,2380,245
+ref.again,"AMD EPYC 9V74 80-Core Processor",2421,7.8,172,,6,/,292,708,0.94,2381,181
+ref.again,"AMD EPYC 9V74 80-Core Processor",2421,7.8,172,,6,/resources/,362,2396,0.89,2393,237
+ref.again,"AMD EPYC 9V74 80-Core Processor",2421,7.8,172,,6,/resources/article/taxonomies-versus-meta/,229,2358,0.94,2370,249
+v0.again,"AMD EPYC 9V74 80-Core Processor",2349,7.5,179,,7.5,/,367,749,0.91,2449,185
+v0.again,"AMD EPYC 9V74 80-Core Processor",2349,7.5,179,,7.5,/resources/,364,2512,0.89,2328,229
+v0.again,"AMD EPYC 9V74 80-Core Processor",2349,7.5,179,,7.5,/resources/article/taxonomies-versus-meta/,444,2502,0.86,2412,236

@@ -1,0 +1,22 @@
+variant,cpu,calibration_index_median,index_multiplier,ref_raw_ms_median,snap_raw_ms_median,multiplier_used,url,tbt_ms,lcp_ms,performance,benchmark_index_median,raw_main_thread_ms
+v0,"AMD EPYC 9V45 96-Core Processor",3714,13.4,,,13.4,/,548,889,0.86,3572,151
+v0,"AMD EPYC 9V45 96-Core Processor",3714,13.4,,,13.4,/resources/,853,2678,0.78,3652,208
+v0,"AMD EPYC 9V45 96-Core Processor",3714,13.4,,,13.4,/resources/article/taxonomies-versus-meta/,700,2631,0.82,3799,214
+v1,"AMD EPYC 9V45 96-Core Processor",3807,13.8,,,13.8,/,788,878,0.81,3807,191
+v1,"AMD EPYC 9V45 96-Core Processor",3807,13.8,,,13.8,/resources/,1087,1816,0.77,3786,231
+v1,"AMD EPYC 9V45 96-Core Processor",3807,13.8,,,13.8,/resources/article/taxonomies-versus-meta/,1027,1804,0.77,3817,239
+v1s,"AMD EPYC 9V45 96-Core Processor",3739,13.5,,,13.5,/,472,795,0.87,3715,145
+v1s,"AMD EPYC 9V45 96-Core Processor",3739,13.5,,,13.5,/resources/,758,1682,0.81,3806,169
+v1s,"AMD EPYC 9V45 96-Core Processor",3739,13.5,,,13.5,/resources/article/taxonomies-versus-meta/,656,2652,0.80,3677,172
+v2,"AMD EPYC 9V45 96-Core Processor",3762,13.6,,,13.6,/,620,774,0.84,3762,156
+v2,"AMD EPYC 9V45 96-Core Processor",3762,13.6,,,13.6,/resources/,535,2667,0.83,3679,170
+v2,"AMD EPYC 9V45 96-Core Processor",3762,13.6,,,13.6,/resources/article/taxonomies-versus-meta/,571,1964,0.85,3702,179
+v12,"AMD EPYC 9V45 96-Core Processor",3835,13.9,,,13.9,/,796,892,0.81,3805,187
+v12,"AMD EPYC 9V45 96-Core Processor",3835,13.9,,,13.9,/resources/,1088,1729,0.77,3746,224
+v12,"AMD EPYC 9V45 96-Core Processor",3835,13.9,,,13.9,/resources/article/taxonomies-versus-meta/,949,1771,0.78,3756,232
+v4,"AMD EPYC 9V45 96-Core Processor",3731,13.4,,,13.4,/,490,804,0.88,3732,144
+v4,"AMD EPYC 9V45 96-Core Processor",3731,13.4,,,13.4,/resources/,615,2682,0.81,3766,187
+v4,"AMD EPYC 9V45 96-Core Processor",3731,13.4,,,13.4,/resources/article/taxonomies-versus-meta/,819,1742,0.80,3626,179
+v0.again,"AMD EPYC 9V45 96-Core Processor",3743,13.5,,,13.5,/,603,802,0.85,3515,153
+v0.again,"AMD EPYC 9V45 96-Core Processor",3743,13.5,,,13.5,/resources/,720,1812,0.82,3695,173
+v0.again,"AMD EPYC 9V45 96-Core Processor",3743,13.5,,,13.5,/resources/article/taxonomies-versus-meta/,633,1746,0.84,3767,179

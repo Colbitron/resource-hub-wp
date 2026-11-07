@@ -1,0 +1,11 @@
+set,variant,url,runs,benchmark_index_median,multiplier,tbt_ms,lcp_ms,performance,raw_main_thread_ms
+docker,cpus0_1,/,3,3933,14.4,240,718,0.96,93
+docker,cpus0_1,/resources/,3,3873,14.4,145,2105,0.98,103
+docker,cpus0_1,/resources/article/taxonomies-versus-meta/,3,3879,14.4,255,1805,0.93,101
+docker,cpus0_7,/,3,3767,14.4,250,654,0.95,68
+docker,cpus0_7,/resources/,3,3797,14.4,253,2406,0.93,83
+docker,cpus0_7,/resources/article/taxonomies-versus-meta/,3,3789,14.4,261,2414,0.93,78
+docker,ref0_1,/reference/,3,3894,14.4,100,4291,0.74,79
+docker,ref0_7,/reference/,3,3939,14.4,100,4290,0.74,67
+docker,refmac,/reference/,5,4082,14.4,100,4327,0.74,71
+docker,snapmac,/snapshot/,5,4021,14.6,93,947,0.99,55

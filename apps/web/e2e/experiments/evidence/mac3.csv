@@ -1,0 +1,16 @@
+variant,cpu,calibration_index_median,index_multiplier,ref_raw_ms_median,snap_raw_ms_median,multiplier_used,url,tbt_ms,lcp_ms,performance,benchmark_index_median,raw_main_thread_ms
+v0,"Apple M4 Max",3792,13.7,79,58,13.7,/,90,643,1.00,4035,56
+v0,"Apple M4 Max",3792,13.7,79,58,13.7,/resources/,191,2367,0.95,4135,65
+v0,"Apple M4 Max",3792,13.7,79,58,13.7,/resources/article/taxonomies-versus-meta/,178,2331,0.96,3956,64
+snap,"Apple M4 Max",3962,14.4,71,56,14.3,/,177,2330,0.96,3907,57
+snap,"Apple M4 Max",3962,14.4,71,56,14.3,/resources/,186,2339,0.95,4048,66
+snap,"Apple M4 Max",3962,14.4,71,56,14.3,/resources/article/taxonomies-versus-meta/,190,2342,0.95,4005,64
+ref,"Apple M4 Max",4113,15.1,76,53,13.7,/,87,641,1.00,4039,58
+ref,"Apple M4 Max",4113,15.1,76,53,13.7,/resources/,176,2329,0.96,4016,65
+ref,"Apple M4 Max",4113,15.1,76,53,13.7,/resources/article/taxonomies-versus-meta/,175,2328,0.96,4009,65
+snap.again,"Apple M4 Max",4108,15,77,57,14.1,/,94,645,0.99,4041,58
+snap.again,"Apple M4 Max",4108,15,77,57,14.1,/resources/,181,2334,0.96,4110,65
+snap.again,"Apple M4 Max",4108,15,77,57,14.1,/resources/article/taxonomies-versus-meta/,185,2337,0.96,4092,66
+v0.again,"Apple M4 Max",3997,14.6,73,57,14.6,/,106,650,0.99,4030,60
+v0.again,"Apple M4 Max",3997,14.6,73,57,14.6,/resources/,193,2346,0.95,4105,66
+v0.again,"Apple M4 Max",3997,14.6,73,57,14.6,/resources/article/taxonomies-versus-meta/,190,2342,0.95,4068,63
