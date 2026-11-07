@@ -28,13 +28,10 @@
  * the front end's lead above it. The meta line comes before the body, as a
  * sibling, so the row can lay the two out side by side without a wrapper.
  *
- * The type mark is the `::before` of `.rh-card__type`: a dot in the accent
- * `data-accent` names, one of the five `--rh-mark-*` tokens (`coral`,
- * `cobalt`, `lemon`, `mint`, `grape`), or the ink when the attribute is
- * absent or names anything else (`neutral`). The dot always sits beside the
- * printed type name, which is what says the type; the colour only hints
- * (DESIGN.md, "Colors"). Under forced colours every dot takes the text
- * colour.
+ * The type with its mark and the topics are the row's labels, in
+ * card-labels.css, which this file imports first: other components show
+ * the same labels without the row, and load that file alone. The mark's
+ * rules, its accents and the forced-colours rule are in its header.
  *
  * The title's link is the row's only interactive element. Its ::after covers
  * the whole row, so the row is clickable without nesting anything in the
@@ -56,6 +53,8 @@
  * than the meta's, so beside the body the meta keeps its 9rem and alone on
  * its line it grows to the width; no media query.
  */
+
+@import "./card-labels.css";
 
 .rh-card-grid {
 	display: flex;
@@ -98,47 +97,6 @@
 	color: var(--rh-color-text-muted);
 	font-size: var(--rh-text-sm);
 	font-variant-numeric: tabular-nums;
-}
-
-.rh-card__type {
-	display: inline-flex;
-	align-items: center;
-	gap: var(--rh-space-2);
-	color: var(--rh-color-text);
-	font-weight: 600;
-	letter-spacing: var(--rh-tracking-label);
-	text-transform: uppercase;
-}
-
-/* The type mark: a dot before the name, in the accent `data-accent` names, or the ink. */
-
-.rh-card__type::before {
-	content: "";
-	flex: none;
-	width: var(--rh-space-2);
-	height: var(--rh-space-2);
-	border-radius: 50%;
-	background: var(--rh-color-text);
-}
-
-.rh-card__type[data-accent="coral"]::before {
-	background: var(--rh-mark-coral);
-}
-
-.rh-card__type[data-accent="cobalt"]::before {
-	background: var(--rh-mark-cobalt);
-}
-
-.rh-card__type[data-accent="lemon"]::before {
-	background: var(--rh-mark-lemon);
-}
-
-.rh-card__type[data-accent="mint"]::before {
-	background: var(--rh-mark-mint);
-}
-
-.rh-card__type[data-accent="grape"]::before {
-	background: var(--rh-mark-grape);
 }
 
 /* The body: the title, the summary and the topics, beside the meta line where they fit. */
@@ -191,50 +149,4 @@
 	margin: 0;
 	max-width: var(--rh-measure);
 	color: var(--rh-color-text-muted);
-}
-
-/* Topics: plain small text, each after the first led by a short rule, never a chip. */
-
-.rh-card__topics {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: var(--rh-space-1) var(--rh-space-3);
-	margin: 0;
-	padding: 0;
-	list-style: none;
-	color: var(--rh-color-text-muted);
-	font-size: var(--rh-text-sm);
-	font-weight: 600;
-}
-
-.rh-card__topic {
-	display: inline-flex;
-	align-items: center;
-	gap: var(--rh-space-3);
-}
-
-.rh-card__topic + .rh-card__topic::before {
-	content: "";
-	flex: none;
-	width: var(--rh-space-2);
-	height: var(--rh-border-width);
-	background: var(--rh-color-border-strong);
-}
-
-/*
- * Forced colours (Windows High Contrast and the like) force every
- * background to the system canvas, which would erase the dot and the rule.
- * Each opts out of that adjustment and paints itself in the system text
- * colour instead, so it stays visible and follows the reader's palette.
- */
-
-@media (forced-colors: active) {
-	/* `[data-accent]` matches the per-accent rules' specificity, so this wins by order. */
-	.rh-card__type::before,
-	.rh-card__type[data-accent]::before,
-	.rh-card__topic + .rh-card__topic::before {
-		forced-color-adjust: none;
-		background: CanvasText;
-	}
 }

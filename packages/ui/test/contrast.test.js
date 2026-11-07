@@ -8,7 +8,8 @@
  * Every colour token is either in an asserted pair or in the commented
  * exemption list, so a new one cannot go unchecked by omission. The
  * exemptions are decorative: the hairline and the five marks (the type name
- * is always printed beside a mark); their ratios are printed as diagnostics
+ * is always printed beside its dot, and the coral bar on an article's quote
+ * edges a box that also has the hairline); their ratios are printed as diagnostics
  * so a change to them is still seen. A translucent colour is composited over
  * the background it is measured against before its ratio is taken.
  *
@@ -177,8 +178,10 @@ const EXEMPT = [
 	// topic labels (not links). Never the only boundary of a control; a
 	// control's edge is --rh-color-border-strong.
 	'--rh-color-border',
-	// The type marks: decoration beside a printed type name, never text and
-	// never the only signal of anything (DESIGN.md, Colors).
+	// The type marks: a dot before a printed type name, and coral as the bar
+	// down the left of an article's quote, whose box is also edged with the
+	// hairline and set on the raised surface. Never text and never the only
+	// signal of anything (DESIGN.md, Colors).
 	...MARKS,
 ];
 

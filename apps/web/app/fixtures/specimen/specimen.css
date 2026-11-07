@@ -52,7 +52,8 @@
 	overflow-wrap: anywhere;
 }
 
-.rh-specimen__paragraph {
+.rh-specimen__paragraph,
+.rh-specimen__prose {
 	max-width: var(--rh-measure);
 }
 

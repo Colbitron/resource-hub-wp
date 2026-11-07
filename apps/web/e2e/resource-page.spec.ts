@@ -4,6 +4,7 @@ import type { AxeResults } from "axe-core";
 import { mockCms } from "./mock-cms/client.mts";
 import { appSiteOrigin, E2E_REVALIDATE_SECRET, MOCK_CMS_HOST, mockCmsOrigin, mockCmsPort } from "./mock-cms/config.mts";
 import { RESOURCES, TERMS } from "./mock-cms/seed.mts";
+import { platformFonts } from "./platform-fonts.mts";
 import { postRevalidate } from "./revalidation.mts";
 
 /**
@@ -179,7 +180,17 @@ test.describe("what the page renders", () => {
     await expect(article.getByRole("heading", { level: 1 })).toHaveText(SEEDED.title);
 
     // The type links to its listing, the date is a <time>, and each topic links to its listing.
-    await expect(article.getByRole("link", { name: termName("resource_type", SEEDED.type) })).toHaveAttribute("href", `/resources/${SEEDED.type}/`);
+    const typeLink = article.getByRole("link", { name: termName("resource_type", SEEDED.type) });
+    await expect(typeLink).toHaveAttribute("href", `/resources/${SEEDED.type}/`);
+    // The type mark is the row's (card-labels.css), on the span around the link and
+    // not on the link, so the dot sits outside the link's text and underline;
+    // a webinar's mark is coral (lib/type-accents.ts).
+    const typeMark = article.locator(".rh-resource__meta .rh-card__type");
+    await expect(typeMark).toHaveAttribute("data-accent", "coral");
+    expect(await typeMark.evaluate((span) => getComputedStyle(span, "::before").width)).not.toBe("0px");
+    expect(await typeLink.evaluate((link) => getComputedStyle(link, "::before").content)).toBe("none");
+    const [markBox, linkBox] = [await typeMark.boundingBox(), await typeLink.boundingBox()];
+    expect(markBox !== null && linkBox !== null && linkBox.x > markBox.x, "the dot sits before the link, outside it").toBe(true);
     const time = article.locator(".rh-resource__meta time");
     await expect(time).toHaveAttribute("datetime", /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
     await expect(time).toHaveText(/^[A-Z][a-z]{2} \d{1,2}, \d{4}$/);
@@ -200,6 +211,9 @@ test.describe("what the page renders", () => {
     // `preload` alone leaves the image at Low priority in Chromium; both the link and the <img> ask for High.
     await expect(page.locator('link[rel="preload"][as="image"]')).toHaveAttribute("fetchpriority", "high");
     await expect(featured).toHaveAttribute("fetchpriority", "high");
+    // `sizes` is the column's width written out (`CONTENT_SIZES` in lib/content/render.tsx); the body's images carry the same string.
+    await expect(featured).toHaveAttribute("sizes", "(max-width: 44rem) calc(-2rem + 100vw), 42rem");
+    await expect(article.locator(".rh-resource__body figure img")).toHaveAttribute("sizes", "(max-width: 44rem) calc(-2rem + 100vw), 42rem");
 
     await expect(article.locator(".rh-resource__summary")).toHaveText(resource.summary);
 
@@ -666,6 +680,60 @@ test.describe("accessibility and layout", () => {
     await expect(page.getByRole("main")).toBeFocused();
   });
 
+  test("the featured image never renders wider than its `sizes` claims, at 1280px and at 360px", async ({ page }) => {
+    // The column is `--rh-measure`, 65ch, and `sizes` is that width written
+    // out in rem (`CONTENT_SIZES` in lib/content/render.tsx): 42rem above a
+    // 44rem viewport, the viewport less the two 1rem gutters below it. A
+    // `sizes` under the rendered width would have the browser pick a
+    // candidate too small for the box, so a change to the measure or the
+    // typeface that moves 65ch past 42rem fails here until the string
+    // follows. The long-form resource's upload is 1600 wide, so the column,
+    // not the file, bounds the image.
+    const rootFontSize = (): Promise<number> => page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
+    const image = page.locator(".rh-resource__media img");
+    await expect(image).toHaveAttribute("sizes", "(max-width: 44rem) calc(-2rem + 100vw), 42rem");
+    // A `ch` is the font's, so the column is measured once the page is drawn in Figtree, not in the fallback face.
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    const title = page.locator("h1");
+    await expect
+      .poll(async () => (await platformFonts(page, "h1")).filter((family) => !/^Figtree\b/.test(family)).length, { message: "the title was not drawn in Figtree" })
+      .toBe(0);
+    expect((await platformFonts(page, "h1")).length).toBeGreaterThan(0);
+    await expect(title).toBeVisible();
+    const wide = await image.boundingBox();
+    expect(wide).not.toBeNull();
+    // The column as this browser draws it: a probe `--rh-measure` wide inside
+    // the article, so in the article's font. A `ch` is the advance of the
+    // font's "0" as the platform lays it out, which is not one number:
+    // Chromium on macOS draws 65ch of Figtree at 16px as 666.45px, and on
+    // Linux, which rounds each advance to a whole pixel, as 650px. So the
+    // floor is the measured column, not a width in rem.
+    const measured = await page.getByRole("article").evaluate((article) => {
+      const probe = document.createElement("div");
+      probe.style.cssText = "position: absolute; visibility: hidden; width: var(--rh-measure)";
+      article.append(probe);
+      const width = probe.getBoundingClientRect().width;
+      probe.remove();
+      return width;
+    });
+    expect(Math.abs(wide!.width - measured), `the image is ${wide!.width}px wide in a ${measured}px column`).toBeLessThanOrEqual(1);
+    // The ceiling: `sizes` never understates the column. 42rem is 5.5px over
+    // it on macOS and 22px over it on Linux.
+    expect(measured).toBeLessThanOrEqual(42 * (await rootFontSize()));
+    expect(wide!.width).toBeLessThanOrEqual(42 * (await rootFontSize()));
+
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
+    const narrow = await image.boundingBox();
+    expect(narrow).not.toBeNull();
+    // Below 44rem the claim is `calc(-2rem + 100vw)`, and the column is exactly that: the viewport less the shell's gutters.
+    const column = (await page.evaluate(() => document.documentElement.clientWidth)) - 2 * (await rootFontSize());
+    expect(narrow!.width).toBeLessThanOrEqual(column);
+    expect(narrow!.width).toBeGreaterThan(column - 1);
+  });
+
   test("at 360px nothing scrolls horizontally, no table cell breaks a word, and the page does not shift as it loads", async ({ page }) => {
     await page.setViewportSize({ width: 360, height: 740 });
     await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
@@ -797,5 +865,60 @@ test.describe("the body's tables and headings", () => {
     expect(results.violations.map((violation) => violation.nodes.map((node) => node.html))).toEqual([]);
     // The rule did look at the wide table's region, which is scrollable.
     expect(results.passes.flatMap((pass) => pass.nodes.map((node) => node.html)).some((html) => html.includes("Release matrix"))).toBe(true);
+  });
+});
+
+/**
+ * Three boxed tables, one with a footer after its body and one with the
+ * footer first (HTML allows either order; the browser draws it last), and
+ * one table in a link, which the pass leaves without a region, so unboxed.
+ */
+const TABLE_RULES =
+  '<table><caption>Body only</caption><tbody><tr><td>a</td></tr><tr><td>b</td></tr></tbody></table>' +
+  '<table><caption>Footer last</caption><tbody><tr><td>a</td></tr><tr><td>b</td></tr></tbody><tfoot><tr><td>Total</td></tr></tfoot></table>' +
+  '<table><caption>Footer first</caption><tfoot><tr><td>Total</td></tr></tfoot><tbody><tr><td>a</td></tr><tr><td>b</td></tr></tbody></table>' +
+  '<a href="/resources/"><table><tbody><tr><td>a</td></tr><tr><td>b</td></tr></tbody></table></a>' +
+  "<blockquote><p>A quote.</p></blockquote>";
+
+test.describe("the body's insets", () => {
+  async function insetsResource(): Promise<string> {
+    const slug = unique("insets");
+    await cms.createResource({ title: "Insets", type: "article", slug, content: TABLE_RULES });
+    return resourcePath("article", slug);
+  }
+
+  test("a boxed table's last row draws no rule, the row above a footer keeps one, and an unboxed table keeps them all", async ({ page }) => {
+    await page.goto(await insetsResource());
+    // Each table's rows, in the order they are drawn (the footer last), with the width of each row's bottom rule.
+    const rules = await page.locator(".rh-resource__body table").evaluateAll((tables) =>
+      tables.map((table) => ({
+        boxed: table.parentElement?.classList.contains("rh-table-scroll") ?? false,
+        rules: [...(table as HTMLTableElement).rows]
+          .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
+          .map((row) => getComputedStyle(row.cells[0]).borderBottomWidth),
+      })),
+    );
+    expect(rules).toEqual([
+      { boxed: true, rules: ["1px", "0px"] },
+      { boxed: true, rules: ["1px", "1px", "0px"] },
+      { boxed: true, rules: ["1px", "1px", "0px"] },
+      { boxed: false, rules: ["1px", "1px"] },
+    ]);
+  });
+
+  test("under forced colours the quote's bar is clearly wider than its box's edge", async ({ page }) => {
+    await page.emulateMedia({ forcedColors: "active" });
+    await page.goto(await insetsResource());
+    const widths = await page
+      .locator(".rh-resource__body blockquote")
+      .evaluate((quote) => [getComputedStyle(quote).borderLeftWidth, getComputedStyle(quote).borderTopWidth].map(parseFloat));
+    expect(widths[0]).toBeGreaterThanOrEqual(widths[1] * 3);
+  });
+
+  test("the featured image loads into the raised surface, and a body image, which may be transparent, onto the page", async ({ page }) => {
+    await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
+    const background = (selector: string) => page.locator(selector).first().evaluate((img) => getComputedStyle(img).backgroundColor);
+    expect(await background(".rh-resource__media img")).not.toBe("rgba(0, 0, 0, 0)");
+    expect(await background(".rh-resource__body img")).toBe("rgba(0, 0, 0, 0)");
   });
 });

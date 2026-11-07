@@ -37,9 +37,9 @@ const FOCUS_MARGIN = 10;
 const FOCUS_MAX_DIFF_PIXELS = 10;
 /**
  * The images Next.js's optimiser serves: the lead's and the resource's
- * featured image. The full-page shots mask them with `specimen-mask.css`,
- * which says why; the committed brand PNGs, served unoptimised, stay
- * compared.
+ * featured image and the resource body's figure. The full-page shots mask
+ * them with `specimen-mask.css`, which says why; the committed brand PNGs,
+ * served unoptimised, stay compared.
  */
 const OPTIMISED_IMAGES = 'img[src^="/_next/image"]';
 const MASK_STYLE_PATH = join(__dirname, "specimen-mask.css");
@@ -58,16 +58,31 @@ for (const width of WIDTHS) {
         await page.goto(SPECIMEN_PATH);
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
         await page.goto(SPECIMEN_PATH);
-        // Every card image is eager; wait until each has decoded, and for the
-        // fonts, so the capture never catches a half-loaded page.
-        const images = page.locator("img");
-        await expect
-          .poll(() =>
-            images.evaluateAll((nodes) =>
-              nodes.every((node) => (node as HTMLImageElement).complete && (node as HTMLImageElement).naturalWidth > 0),
-            ),
-          )
-          .toBe(true);
+        // The lead's image is eager, and the resource sample's body figure
+        // is lazy, as on the page, far under the fold. Chromium requests a
+        // lazy image only when a frame renders with it in or near the
+        // viewport, so scrolling past it faster than a frame (every image
+        // scrolled to, then straight back to the top) never requests it.
+        // Scroll to each image in turn and wait there until it has decoded,
+        // so a frame renders with it in view; then back to the top, and wait
+        // for the fonts, so the capture never catches a half-loaded page.
+        for (const image of await page.locator("img").all()) {
+          await image.scrollIntoViewIfNeeded();
+          await expect
+            .poll(
+              () => image.evaluate((node) => (node as HTMLImageElement).complete && (node as HTMLImageElement).naturalWidth > 0),
+              {
+                message: `the image ${await image.getAttribute("src")} never decoded`,
+                // A backstop well under the test's own timeout, so an image
+                // that is never requested fails here, named, rather than as
+                // the whole test timing out; the optimiser serves each one in
+                // milliseconds once it is asked.
+                timeout: 15_000,
+              },
+            )
+            .toBe(true);
+        }
+        await page.evaluate(() => window.scrollTo(0, 0));
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
         // A page left in the fallback face would fail below as thousands of
         // differing pixels; say what went wrong instead.
@@ -93,10 +108,11 @@ for (const width of WIDTHS) {
         // CSS.getPlatformFontsForNode; the same order every run). One capture
         // first, thrown away, so the baseline is always the settled layout.
         await page.screenshot({ fullPage: true });
-        // The mask's selector still names the optimiser's images: the lead's
-        // and the resource's. If Next.js changes the URL it gives them, this
-        // fails rather than letting codec noise back into the comparison.
-        await expect(page.locator(OPTIMISED_IMAGES)).toHaveCount(2);
+        // The mask's selector still names the optimiser's images: the lead's,
+        // the resource's and the resource body's figure. If Next.js changes
+        // the URL it gives them, this fails rather than letting codec noise
+        // back into the comparison.
+        await expect(page.locator(OPTIMISED_IMAGES)).toHaveCount(3);
         // Soft, so the focus ring's own shot below is still compared, and its
         // diff written, when the whole page differs.
         await expect.soft(page).toHaveScreenshot(`specimen-${width}-${colorScheme}.png`, {

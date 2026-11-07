@@ -160,13 +160,39 @@ export interface RenderContentOptions {
 }
 
 /**
- * `sizes` for a content image rendered through `next/image`. The content
- * column is `--rh-measure` (65ch in the shared tokens), about 40rem of text
- * at the system font, and `sizes` cannot read a CSS variable, so it is
- * written out, rounded up: a larger estimate fetches a few more bytes, a
- * smaller one a blurrier image.
+ * `sizes` for an image in the content column: the body's images here and
+ * the resource page's featured image (`components/ResourceArticle.tsx`),
+ * one string so the two agree.
+ *
+ * The column is `--rh-measure`, 65ch in the shared tokens, and `sizes`
+ * cannot read a CSS variable or a `ch`, so the width is written out. A `ch`
+ * is the advance of "0" in the column's font: in Figtree at the regular
+ * weight it is 0.6408 em (10.25 px at 16 px, measured in Chromium on the
+ * file in `packages/ui/fonts/`), so 65ch is 41.65rem, rounded up to 42rem.
+ * Below that plus the shell's two gutters, 44rem, the column is the
+ * viewport less the gutters, `--rh-space-4` (1rem) a side in `shell.css`,
+ * written out for the same reason. The rule is that `sizes` never
+ * understates the rendered width: a larger estimate fetches a few more
+ * bytes, a smaller one a blurrier image. The resource page's spec measures
+ * the featured image against this value at 1280 and 360 px, so a change to
+ * the measure, the typeface or the gutter fails there until this string
+ * follows.
+ *
+ * The gutter is written `calc(-2rem + 100vw)`, not `calc(100vw - 2rem)`,
+ * which a browser reads the same. `next/image` lists every configured width
+ * in the srcset, 15 of them, unless it finds a `vw` in `sizes`, which it
+ * looks for with `/(^|\s)(1?\d?\d)vw/` (`getWidths` in Next.js's
+ * `get-img-props`): the number must start the string or follow whitespace,
+ * so `(100vw` hides it. Found, the smallest `vw` drops the widths under that
+ * share of the smallest device size, 640, so `100vw` leaves the eight device
+ * sizes. The seven it drops, 32 to 384, are narrower than any phone's column
+ * at a density of 2 or more, so no phone picked one, and they are in the
+ * HTML several times over (the `<img>`, the preload link, the RSC payload):
+ * on the harness's build they were 1,987 bytes of the long-form resource's
+ * HTML, 103 once gzipped, from a first round trip with little room to spare
+ * (`apps/web/README.md`, "Images"). `test/content.test.tsx` pins the eight.
  */
-const CONTENT_SIZES = "(max-width: 40rem) 100vw, 40rem";
+export const CONTENT_SIZES = "(max-width: 44rem) calc(-2rem + 100vw), 42rem";
 
 /**
  * How many elements deep a body may nest before it renders as plain text:
@@ -284,8 +310,9 @@ const CLASS_TOKEN = /^[A-Za-z0-9_-]+$/;
  * it, so no content class may start with it, in any case.
  */
 const APP_CLASS_PREFIX = "rh-";
-/** The one app class content may carry: the block marker's wrapper's own, in the contract (`packages/ui/README.md`). */
-const MARKER_CLASSES: ReadonlySet<string> = new Set(["rh-related"]);
+/** The block marker's wrapper's own class, in the contract (`packages/ui/README.md`): the one app class content may carry, and the one the fallback always gets. */
+const MARKER_CLASS = "rh-related";
+const MARKER_CLASSES: ReadonlySet<string> = new Set([MARKER_CLASS]);
 const NO_CLASSES: ReadonlySet<string> = new Set();
 const ID_VALUE = /^[A-Za-z][A-Za-z0-9_.:-]*$/;
 const LANG_VALUE = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/;
@@ -1143,7 +1170,11 @@ function markerProps(node: Element, attributes: Attributes, context: Context): R
  * the plugin's render callback that will emit it is not built yet (issue
  * #50). The fallback is the wrapper with its `class` and its children
  * through the pass; the `data-*` attributes are read here and never
- * rendered, so the marker stays on the server.
+ * rendered, so the marker stays on the server. The wrapper always carries
+ * `rh-related`, the class the contract gives it, whether or not the CMS
+ * wrote it, so `prose.css` styles the fallback as a small collection
+ * whatever the block's markup; the `data-*` attributes are what make it a
+ * marker, not the class.
  *
  * Whether `renderBlock` gets the marker is decided, and counted, before its
  * children render, so `MAX_MARKERS` counts in document order: a marker
@@ -1158,7 +1189,11 @@ function marker(node: Element, attributes: Attributes, context: Context): ReactE
   if (props !== null) {
     context.markers++;
   }
-  const fallback = createElement("div", checked(globalProps(attributes, context, MARKER_CLASSES), context), children(node, context));
+  const wrapperProps = globalProps(attributes, context, MARKER_CLASSES);
+  // The wrapper always carries the contract's class, once, after any the CMS wrote.
+  const classes = typeof wrapperProps.className === "string" ? wrapperProps.className.split(" ") : [];
+  wrapperProps.className = (classes.includes(MARKER_CLASS) ? classes : [...classes, MARKER_CLASS]).join(" ");
+  const fallback = createElement("div", checked(wrapperProps, context), children(node, context));
   if (props === null) {
     return fallback;
   }

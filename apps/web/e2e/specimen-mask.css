@@ -1,8 +1,9 @@
 /*
  * Applied by specimen.screenshot.ts only while it captures the full page
  * (`stylePath`), never served. The images Next.js's optimiser serves, the
- * lead's and the resource's featured image (`/_next/image?…`, AVIF in
- * Chromium), get their pixels from an image codec, not from the design: the
+ * lead's and the resource's featured image and the resource body's figure
+ * (`/_next/image?…`, AVIF in Chromium), get their pixels from an image
+ * codec, not from the design: the
  * same files decode thousands of pixels apart at the diagram's edges under
  * amd64 emulation and on CI's native amd64. Each draws none of its own
  * pixels (its content is moved out of its box) and fills its own box with

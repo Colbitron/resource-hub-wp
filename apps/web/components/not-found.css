@@ -1,10 +1,18 @@
 /*
- * The 404 page (app/not-found.tsx): a heading, a sentence and a link, on
- * the shell's base styles and the shared tokens (packages/ui/DESIGN.md).
- * Imported by the page that renders the markup.
+ * The 404 page (app/not-found.tsx): a heading, a sentence and a link, in the
+ * article's column, `--rh-measure` wide and centred in the shell as the
+ * resource page and the CMS's pages are (resource.css, page.css), on the
+ * shell's base styles and the shared tokens (packages/ui/DESIGN.md,
+ * "Components", "The article"). Imported by the page that renders the
+ * markup.
  */
 
 .rh-not-found {
 	max-width: var(--rh-measure);
+	margin-inline: auto;
 	padding: var(--rh-space-5) 0;
+}
+
+.rh-not-found p {
+	font-size: var(--rh-text-md);
 }

@@ -1,0 +1,112 @@
+/*
+ * The row's labels: the type with its mark and the topics, the two parts of
+ * the resource row (card.css) that other components carry too. Class names
+ * are part of the contract (see `packages/ui/README.md`, and `DESIGN.md`
+ * for the design). card.css imports this file, so a consumer that renders
+ * the row loads card.css alone; one that shows only the labels, as the
+ * front end's resource page does in its meta line, loads this file and none
+ * of the row's layout.
+ *
+ * Built only on the tokens in tokens.css, which the consumer loads first.
+ *
+ * Markup:
+ *   <span class="rh-card__type" data-accent="mint">…</span>
+ *   <ul class="rh-card__topics" role="list">
+ *     <li class="rh-card__topic">…</li>
+ *   </ul>
+ *
+ * The type mark is the `::before` of `.rh-card__type`: a dot in the accent
+ * `data-accent` names, one of the five `--rh-mark-*` tokens (`coral`,
+ * `cobalt`, `lemon`, `mint`, `grape`), or the ink when the attribute is
+ * absent or names anything else (`neutral`). The dot always sits beside the
+ * printed type name, which is what says the type; the colour only hints
+ * (DESIGN.md, "Colors"). Under forced colours every dot takes the text
+ * colour.
+ */
+
+.rh-card__type {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--rh-space-2);
+	color: var(--rh-color-text);
+	font-weight: 600;
+	letter-spacing: var(--rh-tracking-label);
+	text-transform: uppercase;
+}
+
+/* The type mark: a dot before the name, in the accent `data-accent` names, or the ink. */
+
+.rh-card__type::before {
+	content: "";
+	flex: none;
+	width: var(--rh-space-2);
+	height: var(--rh-space-2);
+	border-radius: 50%;
+	background: var(--rh-color-text);
+}
+
+.rh-card__type[data-accent="coral"]::before {
+	background: var(--rh-mark-coral);
+}
+
+.rh-card__type[data-accent="cobalt"]::before {
+	background: var(--rh-mark-cobalt);
+}
+
+.rh-card__type[data-accent="lemon"]::before {
+	background: var(--rh-mark-lemon);
+}
+
+.rh-card__type[data-accent="mint"]::before {
+	background: var(--rh-mark-mint);
+}
+
+.rh-card__type[data-accent="grape"]::before {
+	background: var(--rh-mark-grape);
+}
+
+/* Topics: plain small text, each after the first led by a short rule, never a chip. */
+
+.rh-card__topics {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--rh-space-1) var(--rh-space-3);
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	color: var(--rh-color-text-muted);
+	font-size: var(--rh-text-sm);
+	font-weight: 600;
+}
+
+.rh-card__topic {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--rh-space-3);
+}
+
+.rh-card__topic + .rh-card__topic::before {
+	content: "";
+	flex: none;
+	width: var(--rh-space-2);
+	height: var(--rh-border-width);
+	background: var(--rh-color-border-strong);
+}
+
+/*
+ * Forced colours (Windows High Contrast and the like) force every
+ * background to the system canvas, which would erase the dot and the rule.
+ * Each opts out of that adjustment and paints itself in the system text
+ * colour instead, so it stays visible and follows the reader's palette.
+ */
+
+@media (forced-colors: active) {
+	/* `[data-accent]` matches the per-accent rules' specificity, so this wins by order. */
+	.rh-card__type::before,
+	.rh-card__type[data-accent]::before,
+	.rh-card__topic + .rh-card__topic::before {
+		forced-color-adjust: none;
+		background: CanvasText;
+	}
+}

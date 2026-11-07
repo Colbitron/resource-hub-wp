@@ -1,8 +1,10 @@
 /**
  * Which brand accent marks each resource type (`packages/ui/DESIGN.md`,
- * "Colors"). The mark is a small dot beside the type's printed name, never
- * the name's colour and never beside a link, so nothing is said by colour
- * alone; the cobalt dot in particular is kept away from cobalt links.
+ * "Colors"). The mark is a small dot before the type's printed name, never
+ * the name's colour, so nothing is said by colour alone. Where the name is a
+ * link (the resource page's meta line), the dot is drawn by the span around
+ * it and sits outside the link's text and underline, so the cobalt dot is
+ * never read as part of a cobalt link.
  *
  * The table is keyed by the `resource_type` term's ID, which is the same on
  * the hosted CMS, the local wp-env and the mock CMS's seed
