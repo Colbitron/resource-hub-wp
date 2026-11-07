@@ -13,7 +13,7 @@
  * quote, a table and a code block from the prose around them without colour:
  * the blockquote, with a bar of coral down its left edge, the one hairline of
  * brand colour in the article; the table's scroll region; and `pre`. Figures
- * and images take the same corners as the featured image. The related block's
+ * and images take the same corners as the featured image, with no plate. The related block's
  * fallback (`.rh-related`) is a small collection: a heading on a strong rule
  * and the links between hairlines, the shape the listing's "Latest" section
  * has, so slice 4's rows (issue #50) slot in under the same heading.
@@ -94,8 +94,9 @@
 
 /*
  * The quote: an inset box, a step larger than the body, with the coral bar
- * at its left edge. The bar is the strong line, so under forced colours,
- * where every border takes the system text colour, it stays a bar.
+ * at its left edge, the strong line beside the box's hairline. Under forced
+ * colours every border takes the system text colour, and 2 px against 1 px
+ * reads as a slightly heavier edge, not a bar, so there the bar doubles.
  */
 
 .rh-prose blockquote {
@@ -106,6 +107,12 @@
 	border-radius: var(--rh-radius);
 	background: var(--rh-color-surface-raised);
 	font-size: var(--rh-text-md);
+}
+
+@media (forced-colors: active) {
+	.rh-prose blockquote {
+		border-left-width: calc(var(--rh-border-width-strong) * 2);
+	}
 }
 
 .rh-prose blockquote p:last-child {
@@ -175,7 +182,11 @@
  * Tables stay tables (their semantics go with `display`); cells wrap their
  * words, and a table whose words alone are wider than the column scrolls in
  * its region. The header row is a band of the raised surface under a strong
- * rule; the last row draws no rule of its own, since the box's edge is there.
+ * rule. In the box, the table's last row draws no rule of its own, since the
+ * box's edge is there: the footer's last row when it has a `<tfoot>`, in
+ * either source order, and the body's last row otherwise, so the rule
+ * between the body and its footer stays. A table outside the box (one inside
+ * a link, which gets no region) keeps every row's rule.
  */
 .rh-prose table {
 	width: 100%;
@@ -207,8 +218,8 @@
 	background: var(--rh-color-surface-raised);
 }
 
-.rh-prose tbody tr:last-child > td,
-.rh-prose tbody tr:last-child > th {
+.rh-prose .rh-table-scroll > table:not(:has(> tfoot)) > tbody:last-of-type > tr:last-child > :is(td, th),
+.rh-prose .rh-table-scroll > table > tfoot > tr:last-child > :is(td, th) {
 	border-bottom: 0;
 }
 
@@ -222,7 +233,13 @@
 	overflow-wrap: anywhere;
 }
 
-/* Figures and images: the featured image's corners, loading into the raised surface. */
+/*
+ * Figures and images: the featured image's corners, but not its loading
+ * plate. A body image is as often a transparent PNG or SVG (a diagram, a
+ * logo) as a photograph, and the raised surface would show behind it as a
+ * box, plainest in the dark scheme. The plate is paint only: the image's
+ * width and height reserve its box either way, so dropping it moves nothing.
+ */
 
 .rh-prose figure {
 	margin: var(--rh-space-5) 0;
@@ -232,7 +249,6 @@
 	max-width: 100%;
 	height: auto;
 	border-radius: var(--rh-radius);
-	background: var(--rh-color-surface-raised);
 }
 
 .rh-prose figure img {

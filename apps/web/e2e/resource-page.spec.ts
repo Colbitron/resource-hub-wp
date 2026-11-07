@@ -847,3 +847,58 @@ test.describe("the body's tables and headings", () => {
     expect(results.passes.flatMap((pass) => pass.nodes.map((node) => node.html)).some((html) => html.includes("Release matrix"))).toBe(true);
   });
 });
+
+/**
+ * Three boxed tables, one with a footer after its body and one with the
+ * footer first (HTML allows either order; the browser draws it last), and
+ * one table in a link, which the pass leaves without a region, so unboxed.
+ */
+const TABLE_RULES =
+  '<table><caption>Body only</caption><tbody><tr><td>a</td></tr><tr><td>b</td></tr></tbody></table>' +
+  '<table><caption>Footer last</caption><tbody><tr><td>a</td></tr><tr><td>b</td></tr></tbody><tfoot><tr><td>Total</td></tr></tfoot></table>' +
+  '<table><caption>Footer first</caption><tfoot><tr><td>Total</td></tr></tfoot><tbody><tr><td>a</td></tr><tr><td>b</td></tr></tbody></table>' +
+  '<a href="/resources/"><table><tbody><tr><td>a</td></tr><tr><td>b</td></tr></tbody></table></a>' +
+  "<blockquote><p>A quote.</p></blockquote>";
+
+test.describe("the body's insets", () => {
+  async function insetsResource(): Promise<string> {
+    const slug = unique("insets");
+    await cms.createResource({ title: "Insets", type: "article", slug, content: TABLE_RULES });
+    return resourcePath("article", slug);
+  }
+
+  test("a boxed table's last row draws no rule, the row above a footer keeps one, and an unboxed table keeps them all", async ({ page }) => {
+    await page.goto(await insetsResource());
+    // Each table's rows, in the order they are drawn (the footer last), with the width of each row's bottom rule.
+    const rules = await page.locator(".rh-resource__body table").evaluateAll((tables) =>
+      tables.map((table) => ({
+        boxed: table.parentElement?.classList.contains("rh-table-scroll") ?? false,
+        rules: [...(table as HTMLTableElement).rows]
+          .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
+          .map((row) => getComputedStyle(row.cells[0]).borderBottomWidth),
+      })),
+    );
+    expect(rules).toEqual([
+      { boxed: true, rules: ["1px", "0px"] },
+      { boxed: true, rules: ["1px", "1px", "0px"] },
+      { boxed: true, rules: ["1px", "1px", "0px"] },
+      { boxed: false, rules: ["1px", "1px"] },
+    ]);
+  });
+
+  test("under forced colours the quote's bar is clearly wider than its box's edge", async ({ page }) => {
+    await page.emulateMedia({ forcedColors: "active" });
+    await page.goto(await insetsResource());
+    const widths = await page
+      .locator(".rh-resource__body blockquote")
+      .evaluate((quote) => [getComputedStyle(quote).borderLeftWidth, getComputedStyle(quote).borderTopWidth].map(parseFloat));
+    expect(widths[0]).toBeGreaterThanOrEqual(widths[1] * 3);
+  });
+
+  test("the featured image loads into the raised surface, and a body image, which may be transparent, onto the page", async ({ page }) => {
+    await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
+    const background = (selector: string) => page.locator(selector).first().evaluate((img) => getComputedStyle(img).backgroundColor);
+    expect(await background(".rh-resource__media img")).not.toBe("rgba(0, 0, 0, 0)");
+    expect(await background(".rh-resource__body img")).toBe("rgba(0, 0, 0, 0)");
+  });
+});
