@@ -131,22 +131,28 @@ test.describe("the prerendered set", () => {
 });
 
 test.describe("prefetching from the library", () => {
-  test("the library's route tree carries no static siblings, so the router cannot predict a row as the library's catch-all", async ({ page }) => {
-    // With `experimental.optimisticRouting` on (the default) the server
-    // writes each dynamic segment's static siblings into the tree
+  test("the library's route tree carries no static siblings, so the router cannot predict a row as the library's catch-all", async ({ request }) => {
+    // With `experimental.optimisticRouting` on (the default) the server writes
+    // each dynamic segment's static siblings into the tree
     // (`{"n":"rest","t":"oc","k":"","s":["page","topic"]}`) and the client
-    // predicts from them; with it off (`next.config.ts`) the tuple has no
-    // `s`. This holds whichever way the prefetch race goes, where the
-    // `$oc$rest` check below only catches the race when it is lost.
-    const tree = page.waitForResponse(
-      (response) => new URL(response.url()).pathname === "/resources/" && response.request().headers()["next-router-segment-prefetch"] === "/_tree",
-    );
-    await page.goto("/resources/");
-    const payload = await (await tree).text();
+    // predicts from them; with it off (`next.config.ts`) the field is `null`.
+    // The tree is asked for directly, with the headers the router sends for
+    // a `/_tree` prefetch, because the browser refetches the library's own
+    // tree only while the build's copy is served (its inlining hints are
+    // marked stale), not after an earlier spec has revalidated the page. The
+    // server answers the bare request with a redirect to the `_rsc` form,
+    // which the request follows. This holds whichever way the prefetch race
+    // goes, where the `$oc$rest` check below only catches the race when it is
+    // lost.
+    const response = await request.get("/resources/", {
+      headers: { RSC: "1", "Next-Router-Prefetch": "1", "Next-Router-Segment-Prefetch": "/_tree" },
+    });
+    expect(response.status()).toBe(200);
+    const payload = await response.text();
     const rest = /\{"n":"rest","t":"oc","k":""[^}]*\}/.exec(payload)?.[0];
     expect(rest, `the library's route tree should name its catch-all segment; got:\n${payload}`).toBeDefined();
-    expect(rest).not.toContain('"s":');
-    expect(payload).not.toContain('"s":["page","topic"]');
+    expect(rest).toContain('"s":null');
+    expect(payload).not.toContain('"s":[');
   });
 
   test("a cold load of /resources/ prefetches a visible row's route tree and page segment before any click", async ({ page }) => {
