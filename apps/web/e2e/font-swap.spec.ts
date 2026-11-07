@@ -45,7 +45,18 @@ const FONT_DELAY_MS = 2_000;
 const LONG_TITLE = "How one change travels from the WordPress editor to a rebuilt page on the front end, step by step";
 const CLS_BUDGET = 0.05;
 
-/** The fonts behind the size-adjusted fallback faces, as Chromium names the font it drew with. */
+/**
+ * The fonts behind the size-adjusted fallback faces, as Chromium names the
+ * font it drew with. The name is the font file's, so it cannot tell a
+ * `local()` face from the same font reached unadjusted through the system
+ * stack, as it would be with the faces' stylesheet missing. CDP's
+ * `isCustomFont` cannot either: Chromium 156 reports it true only for a font
+ * loaded from a file (Figtree) and false for a `local()` face, measured on
+ * 2026-11-06 on macOS (Arial) and in the pinned Linux image (Liberation
+ * Sans), with a test face's 90% size-adjust visibly applied. So this check
+ * proves only that the first paint was drawn in a font one of the faces
+ * covers, not that the face's numbers were applied to it.
+ */
 const ADJUSTED_FALLBACK = /^(Arial|Liberation Sans|Arimo|DejaVu Sans|Noto Sans|Roboto)$/;
 
 /** Every heading a late font could re-wrap: the page's title and the cards' titles. */

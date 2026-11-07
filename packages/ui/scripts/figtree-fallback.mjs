@@ -118,15 +118,20 @@ export function averageWidth( font ) {
 	return glyphs.reduce( ( sum, glyph ) => sum + glyph.advanceWidth, 0 ) / glyphs.length;
 }
 
-function percent( value ) {
+/** A ratio as a CSS percentage with two decimals, as the stylesheet writes it. */
+export function percent( value ) {
 	return `${ Math.abs( value * 100 ).toFixed( 2 ) }%`;
+}
+
+/** next/font's `size-adjust` for a face: Figtree's average width over the fallback's, as a ratio. */
+export function calculatedSizeAdjust( fallback, figtree = openFont( FIGTREE_FILE ) ) {
+	return averageWidth( figtree ) / figtree.unitsPerEm / ( fallback.averageWidth / fallback.unitsPerEm );
 }
 
 /** Each face's four descriptors, from Figtree's file and the face's recorded width or measured size-adjust. */
 export function fallbackDescriptors( figtree = openFont( FIGTREE_FILE ) ) {
-	const figtreeAverage = averageWidth( figtree ) / figtree.unitsPerEm;
 	return FALLBACKS.map( ( fallback ) => {
-		const sizeAdjust = fallback.measuredSizeAdjust ?? figtreeAverage / ( fallback.averageWidth / fallback.unitsPerEm );
+		const sizeAdjust = fallback.measuredSizeAdjust ?? calculatedSizeAdjust( fallback, figtree );
 		const em = figtree.unitsPerEm * sizeAdjust;
 		return {
 			...fallback,
