@@ -131,16 +131,17 @@ The package also holds the stylesheets the CMS and the front end render with, an
 |---|---|
 | `tokens.css` | Design tokens as custom properties on `:root`, all prefixed `--rh-` and named for their role, never for their value: colour as `light-dark()` pairs, the five mark accents, type, spacing, radius and measure. Every other stylesheet builds on these and defines no colour or size of its own. |
 | `card.css` | The resource row: `.rh-card` and its parts (`__meta`, `__type`, `__body`, `__title`, `__link`, `__summary`, `__topics`, `__topic`) and `.rh-card-grid`, the list the rows sit in (the name is kept from the earlier card grid, so no consumer renames anything). The markup it expects is in the file's header comment: the meta line is a sibling before the body, and the row carries no image (`__media` is gone; nothing rendered it on the CMS side). `.rh-card__type` takes an optional `data-accent` attribute, one of `coral`, `cobalt`, `lemon`, `mint` or `grape`, which colours the type mark drawn before the name; any other value or none gives the neutral mark. The front end sets it from its type-accent table (`apps/web/lib/type-accents.ts`, keyed by the `resource_type` term's ID); a CMS consumer that renders the row sets it the same way or leaves it off. |
-| `fonts/` | Figtree, one variable `woff2` on the weight axis (latin subset, the official Google Fonts release via `@fontsource-variable/figtree`), with its SIL Open Font License beside it. Each consumer loads it its own way, as `DESIGN.md` describes; no visitor's browser ever asks Google for it. |
+| `fonts/` | Figtree, one variable `woff2` on the weight axis (latin subset, the official Google Fonts release via `@fontsource-variable/figtree`), with its SIL Open Font License beside it. Each consumer loads it its own way, as `DESIGN.md` describes; no visitor's browser ever asks Google for it. Beside it, `figtree-fallback.css`: size-adjusted `@font-face` rules on system fonts (Arial and its clones Liberation Sans and Arimo, DejaVu Sans, Noto Sans, Roboto) that `--rh-font-sans` lists after Figtree, so a page drawn before the file lands takes nearly the space it will in Figtree; `scripts/figtree-fallback.mjs` derives and prints them. |
 
 `tokens.css` must be loaded before the others; how each consumer loads them is in `DESIGN.md` (Consumers and loading), and the block's `block.json` does not load them yet. Adding a component stylesheet means a new `exports` entry in `package.json`, a line in `files`, and a header comment with the markup it expects; the related list (issue #50) renders the rows in `card.css`, so it needs none of its own. Import by file name:
 
 ```js
 import '@colbitron/resource-hub-ui/tokens.css';
+import '@colbitron/resource-hub-ui/fonts/figtree-fallback.css';
 import '@colbitron/resource-hub-ui/card.css';
 ```
 
-The package's tests (`pnpm --filter @colbitron/resource-hub-ui test`, or `pnpm test:schemas` from the root) also check the stylesheets: `test/contrast.test.js` resolves every colour token in both schemes and asserts WCAG AA for every text pair and 3:1 for the focus ring, and `test/design-doc.test.js` fails when a token in `tokens.css` has no sentence in `DESIGN.md`, or the other way round.
+The package's tests (`pnpm --filter @colbitron/resource-hub-ui test`, or `pnpm test:schemas` from the root) also check the stylesheets: `test/contrast.test.js` resolves every colour token in both schemes and asserts WCAG AA for every text pair and 3:1 for the focus ring, `test/design-doc.test.js` fails when a token in `tokens.css` has no sentence in `DESIGN.md`, or the other way round, and `test/figtree-fallback.test.js` fails when `fonts/figtree-fallback.css` differs from what the script derives from Figtree's file, or `--rh-font-sans` lists its faces in another order.
 
 ## Fixtures and test
 
