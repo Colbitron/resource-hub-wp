@@ -2,7 +2,7 @@
 
 For a contributor new to the plugin: how to run it, test it and find your way around. The rules an agent follows on every edit are in [`CLAUDE.md`](CLAUDE.md) beside this file; the project's architecture, contract and decisions are in the [root README](../../../README.md).
 
-The plugin models a filterable resources library for a headless front end: the `resource` post type with its taxonomies and meta, two custom REST routes, the revalidation hook that tells the Next.js front end what changed, the lockdown that keeps the CMS's own pages for logged-in users, and the admin screens that show what happened. It is a demonstration of a pattern, written fresh, not production code.
+The plugin models a filterable resources library for a headless front end: the `resource` post type with its taxonomies and meta, three custom REST routes (resolve a slug, a page by path, and the resources related to one), the revalidation hook that tells the Next.js front end what changed, the lockdown that keeps the CMS's own pages for logged-in users, and the admin screens that show what happened. It is a demonstration of a pattern, written fresh, not production code.
 
 ## Directory map
 
@@ -12,7 +12,8 @@ src/
   Plugin.php             wires every component onto WordPress hooks
   ContentModel/          post type, taxonomies, meta and its rules, permalinks, one-type rule,
                          reserved slugs, slug escapes, used-type protection
-  Rest/                  resolve route, page route, the no-cache header on anonymous REST reads
+  Rest/                  resolve route, page route, related route and its salted cache, the no-cache
+                         header on anonymous REST reads
   Revalidation/          events, queue, dispatcher, sender, results, config, PostHog
   Pages/                 page path rules shared by the page route and page events
   Lockdown/              anonymous visitors get a 404 from theme pages; robots, sitemaps, oEmbed
@@ -74,11 +75,11 @@ Things to know:
 - **Payloads are validated against the shared schemas.** `tests/phpunit/Revalidation/SchemaValidator.php` registers every schema in `packages/ui/schemas/` under its `$id` with `opis/json-schema` (draft 2020-12, cross-file `$ref`s) and checks every payload a test builds. `SchemaTest` runs the package's `revalidate-request.*.json` fixtures through the PHP validator, so the two validators agree on the request schema. No PHP test runs the other schemas' fixtures, and Ajv's strict compile runs only under `pnpm test:schemas`. `opis/json-schema` is a dev dependency and is never shipped.
 - **`build/` is not committed.** CI builds it before the gate runs; locally, run `pnpm build` (or `pnpm start` to watch) after `pnpm env:start`. `webpack.config.js` extends the `@wordpress/scripts` config with the non-block entries under `editor/` and `admin/`.
 - **PHP 8.4 in wp-env, CI and on the host.** The declared floor (`Requires PHP`, `composer.json`, PHPCS `testVersion`) stays at 8.2 and is not exercised by CI.
-- **WordPress 6.9 or newer** (`Requires at least`). The salted object-cache helpers the planned related route will use arrived in 6.9.
+- **WordPress 6.9 or newer** (`Requires at least`). The salted object-cache helpers behind the related route's cache (`wp_cache_set_salted()`, `wp_cache_get_salted()`) arrived in 6.9.
 
 ## What is not built yet
 
-The related route (`GET /resource-hub/v1/related/{id}`), the `related_picks` meta, the block's render callback and its marker are slice 4. The block directory holds an editor scaffold only. The CMS block theme is slice 5. The spec for both is in the slice-4 issue linked from the root README's status table.
+The block's render callback and its marker, and the editor's picker for `related_picks`, are the rest of slice 4; the related route (`GET /resource-hub/v1/related/{id}?count=n`) and the `related_picks` meta exist, and the front end does not read them yet. The block directory holds an editor scaffold only. The CMS block theme is slice 5. The spec for both is in the slice-4 issue linked from the root README's status table.
 
 ## Possible next steps
 

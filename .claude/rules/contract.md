@@ -27,6 +27,6 @@ paths:
 - Strict where we produce, lenient on unknown keys where we consume: `additionalProperties: false` in the schemas, a reader that drops unknown keys on the consuming side, and the `…Strict` export proved against the fixtures.
 - Every public URL has a trailing slash; `topic` and `page` are never type slugs; `resources`, `api`, `media` and `_next` are never top-level page slugs. A slug is stored in WordPress's lower-case percent-encoded form and never holds an escape the front end's router decodes.
 - Error bodies are core's `WP_Error` shape on the CMS and `{ "error": "…" }` on the front end; the plugin shows the front end's messages to editors, so they are plain and never quote a value.
-- Do not describe the related route or the block's render callback as built (issue #50).
+- Do not describe the block's render callback as built (issue #50).
 
 The full statement: `packages/ui/README.md`. The decision: ADR 0010.
