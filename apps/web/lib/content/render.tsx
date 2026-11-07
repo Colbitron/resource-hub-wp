@@ -171,14 +171,28 @@ export interface RenderContentOptions {
  * file in `packages/ui/fonts/`), so 65ch is 41.65rem, rounded up to 42rem.
  * Below that plus the shell's two gutters, 44rem, the column is the
  * viewport less the gutters, `--rh-space-4` (1rem) a side in `shell.css`,
- * written out as `calc(100vw - 2rem)` for the same reason. The rule is that
- * `sizes` never understates the rendered width: a larger estimate fetches a
- * few more bytes, a smaller one a blurrier image. The resource page's spec
- * measures the featured image against this value at 1280 and 360 px, so a
- * change to the measure, the typeface or the gutter fails there until this
- * string follows.
+ * written out for the same reason. The rule is that `sizes` never
+ * understates the rendered width: a larger estimate fetches a few more
+ * bytes, a smaller one a blurrier image. The resource page's spec measures
+ * the featured image against this value at 1280 and 360 px, so a change to
+ * the measure, the typeface or the gutter fails there until this string
+ * follows.
+ *
+ * The gutter is written `calc(-2rem + 100vw)`, not `calc(100vw - 2rem)`,
+ * which a browser reads the same. `next/image` lists every configured width
+ * in the srcset, 15 of them, unless it finds a `vw` in `sizes`, which it
+ * looks for with `/(^|\s)(1?\d?\d)vw/` (`getWidths` in Next.js's
+ * `get-img-props`): the number must start the string or follow whitespace,
+ * so `(100vw` hides it. Found, the smallest `vw` drops the widths under that
+ * share of the smallest device size, 640, so `100vw` leaves the eight device
+ * sizes. The seven it drops, 32 to 384, are narrower than any phone's column
+ * at a density of 2 or more, so no phone picked one, and they are in the
+ * HTML several times over (the `<img>`, the preload link, the RSC payload):
+ * on the harness's build they were 1,987 bytes of the long-form resource's
+ * HTML, 103 once gzipped, from a first round trip with little room to spare
+ * (`apps/web/README.md`, "Images"). `test/content.test.tsx` pins the eight.
  */
-export const CONTENT_SIZES = "(max-width: 44rem) calc(100vw - 2rem), 42rem";
+export const CONTENT_SIZES = "(max-width: 44rem) calc(-2rem + 100vw), 42rem";
 
 /**
  * How many elements deep a body may nest before it renders as plain text:

@@ -296,10 +296,24 @@ describe("images", () => {
     expect(output).toContain('height="683"');
     expect(output).toContain('alt="A photo"');
     expect(output).toContain('class="wp-image-16"');
-    expect(output).toContain('sizes="(max-width: 44rem) calc(100vw - 2rem), 42rem"');
+    expect(output).toContain('sizes="(max-width: 44rem) calc(-2rem + 100vw), 42rem"');
     expect(output).toContain("url=%2Fmedia%2F2026%2F11%2Fphoto.jpg&amp;w=");
     expect(output).not.toContain("cms.example");
     expect(output).not.toContain("w=1024&");
+  });
+
+  it("lists only the eight device widths in a sized image's srcset, which next/image trims to only when it reads the vw in CONTENT_SIZES", () => {
+    // next/image keeps every configured width, 15, unless it finds a `vw`
+    // after whitespace in `sizes` (CONTENT_SIZES's docblock); `calc(100vw`
+    // hides it. The eight are Next.js's default `deviceSizes`.
+    const output = render(`<img src="${UPLOAD}" alt="" width="1024" height="683">`);
+    const srcset = /srcSet="([^"]*)"/.exec(output)?.[1] ?? "";
+    const widths = [...srcset.matchAll(/&amp;w=(\d+)&amp;q=\d+ (\d+)w/g)].map(([, query, descriptor]) => {
+      expect(query).toBe(descriptor);
+      return Number(descriptor);
+    });
+    expect(widths).toEqual([640, 750, 828, 1080, 1200, 1920, 2048, 3840]);
+    expect(srcset.split(", ")).toHaveLength(widths.length);
   });
 
   it("renders an unsized CMS image as a plain lazy img with src and srcset rewritten", () => {
