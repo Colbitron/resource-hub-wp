@@ -51,7 +51,26 @@ const nextConfig: NextConfig = {
   // `pnpm web:test:lighthouse` and read the built HTML's <head>. If the flag
   // stops inlining, e2e/harness.spec.ts ("the CSS ships inline in <head>, not
   // as stylesheet links") fails on the harness's production build.
-  experimental: { inlineCss: true },
+  experimental: {
+    inlineCss: true,
+
+    // The client router's route prediction is off. With it on (the default),
+    // once the router has learned the library's route tree, the optional
+    // catch-all `app/resources/[[...rest]]`, it predicts every link under
+    // `/resources/` whose first segment is not a static sibling (`topic`,
+    // `page`) as a path of that catch-all, the only dynamic child it knows
+    // there, and prefetches the row's and the type listing's page segment
+    // under the catch-all's segment key, which the server answers 404: a
+    // console error per link, nothing prefetched, and a full fetch on the
+    // click. Whether it happens is a race between the library's own tree
+    // response and the links' prefetch tasks, measured both ways on Next.js
+    // 16.4.5 (`docs/architecture/caching.md`, "Prefetching"). Without
+    // prediction every link asks the server for its own route tree, about
+    // 0.7 KB, and prefetches the right segments; `e2e/prefetch.spec.ts`
+    // fails on a request under the catch-all's key. The flag is experimental
+    // and undocumented; if an upgrade drops it, that spec is what notices.
+    optimisticRouting: false,
+  },
 
   // next/image optimises only same-origin /media/… sources, which the rewrite
   // below maps to the CMS's uploads; the CMS host is never a remote pattern, so

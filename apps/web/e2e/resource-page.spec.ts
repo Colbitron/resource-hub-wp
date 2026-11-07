@@ -315,24 +315,29 @@ test.describe("the CMS's address", () => {
     });
   }
 
-  test("is nowhere in the RSC payload a client navigation fetches", async ({ page }) => {
-    // From the type listing, as a reader would arrive: the click fetches the page's RSC payload.
+  test("is nowhere in the RSC payloads a client navigation is built from, prefetched or fetched on the click", async ({ page }) => {
+    // From the type listing, as a reader would arrive. The row is prefetched
+    // while the listing is open (its route tree and page segment; ADR 0053),
+    // so the click is served from those responses and fetches nothing new,
+    // or fetches the page's payload when the prefetch has not landed. Every
+    // RSC response for the resource's path is read, whichever way it came.
+    const payloads: Promise<string>[] = [];
+    page.on("response", (response) => {
+      if (new URL(response.url()).pathname === resourcePath(SEEDED.type, SEEDED.slug) && response.request().headers()["rsc"] === "1") {
+        payloads.push(response.text());
+      }
+    });
     await page.goto(`/resources/${SEEDED.type}/`);
-    const link = page.getByRole("link", { name: SEEDED.title });
-    const payload = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === resourcePath(SEEDED.type, SEEDED.slug) &&
-        response.request().headers()["rsc"] === "1" &&
-        response.request().headers()["next-router-prefetch"] === undefined,
-    );
-    await link.click();
-    const text = await (await payload).text();
-    // The page's own markup is in it (the flight payload may escape the title's curly apostrophe, so the class is the check).
-    expect(text).toContain("rh-resource__body");
-    for (const needle of NEEDLES) {
-      expect(text, `the RSC payload must not contain ${needle}`).not.toContain(needle);
-    }
+    await page.getByRole("link", { name: SEEDED.title }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(SEEDED.title);
+    const texts = await Promise.all(payloads);
+    // The page's own markup is in one of them (the flight payload may escape the title's curly apostrophe, so the class is the check).
+    expect(texts.some((text) => text.includes("rh-resource__body")), "no RSC response carried the page").toBe(true);
+    for (const text of texts) {
+      for (const needle of NEEDLES) {
+        expect(text, `an RSC payload must not contain ${needle}`).not.toContain(needle);
+      }
+    }
   });
 });
 

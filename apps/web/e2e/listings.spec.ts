@@ -314,12 +314,25 @@ test.describe("the lead", () => {
     // makes it, so a fault there fails the lead alone.
     await cms.addFault({ path: "/wp-json/wp/v2/resource_flag", status: 500 });
     try {
-      await cms.resetRequests();
-      const response = await page.goto("/resources/");
-      expect(response?.status()).toBe(200);
-      // The fault was met: the front end did ask for the flag.
-      const { byPath } = await cms.requests();
-      expect(Object.keys(byPath).some((requested) => requested.startsWith("/wp-json/wp/v2/resource_flag?"))).toBe(true);
+      // The library can be rendered and stored at any moment by a prefetch
+      // from a page another test left open (every page's header links to it,
+      // and the previous test's page is torn down as this one starts), and a
+      // render in flight across `beforeEach`'s clear outlives it, so the page
+      // would answer from that store without meeting the fault. Clear again
+      // now that the fault is set, and read until the fault was met.
+      await expect
+        .poll(
+          async () => {
+            await clearAppCache(request);
+            await cms.resetRequests();
+            const response = await page.goto("/resources/");
+            expect(response?.status()).toBe(200);
+            const { byPath } = await cms.requests();
+            return Object.keys(byPath).some((requested) => requested.startsWith("/wp-json/wp/v2/resource_flag?"));
+          },
+          { message: "the front end never asked for the flag, so the fault was never met", timeout: 10_000 },
+        )
+        .toBe(true);
 
       await expect(page.getByRole("heading", { level: 1 })).toHaveText("Resources");
       await expect(page.locator(".rh-lead")).toHaveCount(0);

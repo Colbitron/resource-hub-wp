@@ -19,8 +19,10 @@ import {
 // uploads, and takes control requests from the specs), then the app, with
 // WP_API_URL pointing at the mock. The front end never talks to wp-env or the
 // hosted CMS in a test: e2e/README.md has the ports, the env vars and the
-// control endpoints. The build makes no CMS request; it only needs WP_API_URL
-// for the /media/ rewrite, which here maps to the mock's uploads.
+// control endpoints. The mock must be up before the build: `next build`
+// prerenders the library, the type listings, the root and the seeded
+// resources from it (ADR 0053; lib/prerender.ts), and WP_API_URL also sets
+// the /media/ rewrite, which here maps to the mock's uploads.
 const WEB_PORT = webPort();
 const MOCK_PORT = mockCmsPort();
 
