@@ -917,7 +917,7 @@ describe("the block marker's rows", () => {
     expect(output.match(/class="rh-card__link"/g)).toHaveLength(1);
   });
 
-  it("keeps rh-card__title on h2 to h6 alone: dropped on an h1, kept on an h6", () => {
+  it("drops rh-card__title on an h1 and keeps it on an h6", () => {
     const title = (tag: string) => CARD_MARKER.replace('<h3 class="rh-card__title">', `<${tag} class="rh-card__title">`).replace("</h3>", `</${tag}>`);
     // The h1 makes the body's headings one level down, so it renders as an h2 and the marker's heading as an h3.
     const onH1 = render(title("h1"));

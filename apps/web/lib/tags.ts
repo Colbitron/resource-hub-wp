@@ -202,9 +202,9 @@ export function relatedTags(hostSlug: string): string[] {
  * from, and each entry is stored and cleared under its own slug's tag.
  * What remains is that one marker's own staleness: a marker whose
  * `data-topic` is wrong for its `data-topic-id` shows the ID's topic's rows
- * under the slug's tag, which an event for the ID's topic does not clear,
- * so it can be out of date until the hourly interval or an event for that
- * slug.
+ * under the slug's tag, which a resource event for the ID's topic does not
+ * clear (a term event does, through `terms`), so it can be out of date until
+ * the hourly interval, a term event or an event for that slug.
  */
 export function relatedBlockTags(topicSlug: string): string[] {
   return [topicTag(topicSlug), TERMS_TAG];
