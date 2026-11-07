@@ -13,7 +13,7 @@ declare(strict_types=1);
 namespace ResourceHub\ContentModel;
 
 /**
- * Sanitizers and the auth callback for `summary` and `source_url`.
+ * Sanitizers and the auth callback for `summary`, `source_url` and `related_picks`.
  */
 final class MetaRules {
 	/**
@@ -22,6 +22,13 @@ final class MetaRules {
 	 * panel shows the limit.
 	 */
 	public const SUMMARY_MAX_LENGTH = 300;
+
+	/**
+	 * Most `related_picks` a resource stores, and the most items the related route returns. The
+	 * REST schema rejects a longer list with a 400, and the sanitizer cuts longer lists from other
+	 * write paths.
+	 */
+	public const RELATED_PICKS_MAX = 10;
 
 	/**
 	 * Rule: `summary` is stored as plain text: markup is removed, entities are decoded, and nothing
@@ -115,7 +122,81 @@ final class MetaRules {
 	}
 
 	/**
-	 * Rule: a user may write either field exactly when they may edit the post it belongs to.
+	 * Rule: `related_picks` is an ordered list of at most RELATED_PICKS_MAX distinct post IDs, none of
+	 * them the resource's own. The IDs are not checked against the posts table: a pick that is not a
+	 * published resource is kept and skipped when the related route reads the list, so an editor's
+	 * choice survives the pick being unpublished and republished.
+	 *
+	 * In order:
+	 * - Anything but an array becomes an empty list: a lone ID, a string, a number, null.
+	 * - An item is kept, as an int, when it is an int greater than zero or a string of ASCII digits
+	 *   whose value is greater than zero and at most PHP_INT_MAX (`'7'` and `'007'` are kept as 7).
+	 *   Everything else is dropped, silently: zero, negatives, every float (`5.0` as well as `1.5`),
+	 *   `true`, null, nested arrays, strings with anything but digits (`'7 '`, `'1e3'`, `'-1'`,
+	 *   `'abc'`), and digit strings past PHP_INT_MAX, which a cast would turn into PHP_INT_MAX.
+	 * - Over REST, the schema runs first. It rejects with a 400 what is not an integer (`1.5`,
+	 *   `'abc'`) and what is below 1. What core's `rest_is_integer()` accepts, `'5'`, `5.0`, `'1e3'`
+	 *   and padded numbers among it, the `(int)` cast in `rest_sanitize_value_from_schema()` turns
+	 *   into an int before this sanitizer runs, so `'5'` and `5.0` are stored as 5 and `'1e3'` as
+	 *   1000. That is faithful, not a misreading: 1000 is the number the client sent, and the picks
+	 *   are whatever IDs the client named. Only PHP callers (`update_post_meta()` and the like)
+	 *   reach this rule with a float, and `5.0` from them is dropped: floats are not IDs, and
+	 *   accepting the integral ones would add a third kind of input to a rule that is read line by
+	 *   line. A digit string past PHP_INT_MAX reaches PHP callers as a string and is dropped; over
+	 *   REST, core's cast saturates it to PHP_INT_MAX, an ID no auto-increment will reach. The
+	 *   editor's picker always sends integers, so only a hand-built REST client sends these forms,
+	 *   and the related route skips any pick that is not a published resource.
+	 * - Keys are dropped, so the stored value is a list in the order given.
+	 * - A repeated ID keeps its first position and loses the later ones.
+	 * - The list is cut to the first RELATED_PICKS_MAX items, so a stored value never exceeds the
+	 *   schema's `maxItems`. That matters because core checks stored meta against the schema when it
+	 *   reads it back and serves a longer value as `null`.
+	 * - The resource's own ID is dropped, by {@see MetaRules::without_self()} from the
+	 *   `add_post_metadata` and `update_post_metadata` filters that {@see Meta} hooks, because core's
+	 *   sanitize callback is not told which post the value is for. Those filters run after this
+	 *   sanitizer, so a list of RELATED_PICKS_MAX that includes the resource stores one fewer.
+	 *
+	 * @param mixed $value Raw value.
+	 * @return int[]
+	 */
+	public static function sanitize_related_picks( mixed $value ): array {
+		if ( ! is_array( $value ) ) {
+			return array();
+		}
+
+		$picks = array();
+
+		foreach ( $value as $item ) {
+			if ( is_string( $item ) && ctype_digit( $item ) ) {
+				// A cast turns digits past PHP_INT_MAX into PHP_INT_MAX. Casting back shows whether the
+				// value fit: if not, null drops it below. Leading zeros are not part of the value.
+				$item = ltrim( $item, '0' ) === (string) (int) $item ? (int) $item : null;
+			}
+
+			if ( ! is_int( $item ) || $item <= 0 || in_array( $item, $picks, true ) ) {
+				continue;
+			}
+
+			$picks[] = $item;
+		}
+
+		return array_slice( $picks, 0, self::RELATED_PICKS_MAX );
+	}
+
+	/**
+	 * Rule: a resource is never its own pick. The clause of {@see MetaRules::sanitize_related_picks()}
+	 * that needs the post ID.
+	 *
+	 * @param int[] $picks A sanitized list.
+	 * @param int   $post_id The resource the list belongs to.
+	 * @return int[] The list without `$post_id`, reindexed.
+	 */
+	public static function without_self( array $picks, int $post_id ): array {
+		return array_values( array_filter( $picks, static fn( int $pick ): bool => $pick !== $post_id ) );
+	}
+
+	/**
+	 * Rule: a user may write any of the fields exactly when they may edit the post it belongs to.
 	 *
 	 * Core already requires `edit_post` before it asks this callback (it maps `edit_post_meta`
 	 * to `edit_post`), so this repeats that check. It is explicit by design, so the rule is
@@ -128,7 +209,7 @@ final class MetaRules {
 	 * the coding standards reject a declared parameter that is never used.
 	 *
 	 * @param mixed  $allowed  Whether an earlier callback allowed it; any type, even null. Ignored.
-	 * @param string $meta_key Meta key being checked. Ignored; the rule is the same for both fields.
+	 * @param string $meta_key Meta key being checked. Ignored; the rule is the same for every field.
 	 * @param int    $post_id  Post the meta belongs to.
 	 * @param int    $user_id  User performing the action.
 	 */

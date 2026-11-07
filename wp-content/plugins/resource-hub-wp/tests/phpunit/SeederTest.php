@@ -20,11 +20,12 @@ use WP_UnitTestCase;
  */
 final class SeederTest extends WP_UnitTestCase {
 	/**
-	 * Meta keys are unregistered between tests; the seeder relies on the sanitizers being attached.
+	 * Meta keys are unregistered between tests; the seeder relies on the sanitizers being attached. The
+	 * fields only: the plugin's own filters are still hooked.
 	 */
 	public function set_up(): void {
 		parent::set_up();
-		( new Meta() )->register();
+		( new Meta() )->register_fields();
 	}
 
 	/**

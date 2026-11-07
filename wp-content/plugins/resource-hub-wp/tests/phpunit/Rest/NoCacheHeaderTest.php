@@ -36,8 +36,9 @@ final class NoCacheHeaderTest extends WP_UnitTestCase {
 	private array $terms;
 
 	/**
-	 * Builds a fresh REST server with a stand-in route in the plugin's namespace, because the
-	 * related and resolve routes are not on this branch yet, and creates the content to read.
+	 * Builds a fresh REST server with a stand-in route in the plugin's namespace, so the header is
+	 * checked for the namespace as a whole rather than for one route's answers, and creates the
+	 * content to read. The page and related routes also check the header in their own tests.
 	 */
 	public function set_up(): void {
 		parent::set_up();

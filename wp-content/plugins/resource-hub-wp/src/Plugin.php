@@ -28,6 +28,8 @@ use ResourceHub\Editor\SidebarAssets;
 use ResourceHub\Lockdown\Lockdown;
 use ResourceHub\Rest\NoCacheHeader;
 use ResourceHub\Rest\PageRoute;
+use ResourceHub\Rest\RelatedCache;
+use ResourceHub\Rest\RelatedRoute;
 use ResourceHub\Rest\ResolveRoute;
 use ResourceHub\Revalidation\Revalidation;
 use ResourceHub\Security\XmlRpc;
@@ -88,6 +90,9 @@ final class Plugin {
 		( new Revalidation() )->register();
 		add_action( 'rest_api_init', array( new ResolveRoute(), 'register' ) );
 		add_action( 'rest_api_init', array( new PageRoute(), 'register' ) );
+		$related_cache = new RelatedCache();
+		$related_cache->register();
+		add_action( 'rest_api_init', array( new RelatedRoute( $related_cache ), 'register' ) );
 		( new ListColumn() )->register();
 		( new TermNotice() )->register();
 		( new StatusPage( $this->file ) )->register();

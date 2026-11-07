@@ -13,7 +13,7 @@ Contract changes land in one pull request that touches both sides and the schema
 | `schemas/revalidate-request.schema.json` | Body of `POST {FRONTEND_URL}/api/revalidate/`, WordPress to front end: a batch of resource, term and page events |
 | `schemas/revalidate-response-ok.schema.json` | The `200` reply: the paths the front end revalidated |
 | `schemas/revalidate-response-error.schema.json` | The `400`, `401` and `500` replies: `{ "error": "…" }`; `401` is exactly `unauthorized` |
-| `schemas/related-response.schema.json` | `GET /wp-json/resource-hub/v1/related/{id}?count=n`: related resource IDs with the reason each was picked (the route is not built yet; see [Related items](#related-items-not-built-yet)) |
+| `schemas/related-response.schema.json` | `GET /wp-json/resource-hub/v1/related/{id}?count=n`: related resource IDs with the reason each was picked, merged on the CMS; the front end does not read it yet (see [Related items](#related-items)) |
 | `schemas/resolve-response.schema.json` | `GET /wp-json/resource-hub/v1/resolve?slug=…`: an old or current slug to the resource's canonical id, type and slug |
 | `schemas/page-response.schema.json` | `GET /wp-json/resource-hub/v1/page?path=…`: the published page the front end serves at a public path, with its canonical path, or `null` |
 | `schemas/wp-error.schema.json` | The WordPress core REST error shape the custom routes return for `400` and `404` |
@@ -27,7 +27,7 @@ The bearer token on the revalidation request is a header and is not part of any 
 
 **Content reads.** `GET {WP_API_URL}/wp/v2/resources?_embed&per_page=…&page=…&resource_topic=…&resource_type=…&resource_flag=…`, `GET {WP_API_URL}/wp/v2/resources/{id}` and `?slug=`, the taxonomy endpoints `/wp/v2/resource_topic`, `/wp/v2/resource_type` and `/wp/v2/resource_flag`, and `GET {WP_API_URL}/wp/v2/pages/{id}`. Meta is `summary` and `source_url`, under `meta` because of `show_in_rest`. Featured is the `resource_flag` term `featured`, not meta: a featured resource has that term's ID in `resource_flag`. Anonymous responses from these routes and from `/resource-hub/v1/`, errors included, carry `Cache-Control: no-cache, must-revalidate, max-age=0` (the plugin's `NoCacheHeader`), so the front end's Data Cache is the only HTTP cache between the two sides.
 
-**Custom routes.** `GET {WP_API_URL}/resource-hub/v1/resolve?slug=…` and `GET {WP_API_URL}/resource-hub/v1/page?path=…` exist; `GET {WP_API_URL}/resource-hub/v1/related/{id}?count=…` is specified below and not built. All have a public permission callback and answer errors in core's `WP_Error` shape, `{ "code", "message", "data": { "status" } }`, for 400 and 404.
+**Custom routes.** `GET {WP_API_URL}/resource-hub/v1/resolve?slug=…`, `GET {WP_API_URL}/resource-hub/v1/page?path=…` and `GET {WP_API_URL}/resource-hub/v1/related/{id}?count=…` (described below; the front end does not read it yet). All have a public permission callback and answer errors in core's `WP_Error` shape, `{ "code", "message", "data": { "status" } }`, for 400 and 404.
 
 **Revalidation request**, WordPress to front end: `POST {FRONTEND_URL}/api/revalidate/`, with the trailing slash like every front-end path (the slashless form is a 308 the plugin's sender does not follow), header `Authorization: Bearer {REVALIDATE_SECRET}`, header `Content-Type: application/json`, body a batch of 1 to 25 events:
 
@@ -75,13 +75,14 @@ On the front end the exact mirror stays under a `…Strict` export, and it is th
 
 A collection the front end reads is parsed one item at a time, and a bad item is skipped rather than failing the listing, up to a threshold; `apps/web/lib/wp/fetch.ts` holds the rule. Flag terms are currently parsed as strictly as the other taxonomies ([issue #54](https://github.com/Colbitron/resource-hub-wp/issues/54)).
 
-## Related items (not built yet)
+## Related items
 
-The related route and the plugin's `related_picks` meta are specified in [issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50) and do not exist on `main`; `related-response.schema.json` and its fixtures are in place for them. The contract they will meet:
+The related route and the plugin's `related_picks` post meta exist on the CMS (`RelatedRoute`, `RelatedCache` and `Meta` in the plugin's `src/`), validated against `related-response.schema.json` and its fixtures. **The front end does not consume them yet**: its related section, and the editor's picker for the picks, are the remaining parts of [issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50). The contract:
 
-- `GET {WP_API_URL}/resource-hub/v1/related/{id}?count=3` (`count` 1 to 10, default 3) returns `{ "items": [ { "id": 12, "source": "pick" | "topic" } ] }`: at most `count` items, already merged, picks first in the editor's order, then the newest published resources sharing a topic, unpublished picks skipped, no duplicates, never the resource itself. A resource with no topics gets its picks alone; one with neither gets an empty list. A `count` out of range is a 400 and an ID that is not a published resource a 404, in core's `WP_Error` shape.
-- **IDs only.** The front end calls it once, does no merging of its own, and reads the objects with `GET {WP_API_URL}/wp/v2/resources?include={ids}&orderby=include&_embed`, so one code path renders a resource everywhere and no permalink has to be rewritten.
-- `related_picks` is in the REST `edit` context only, for the editor's picker; the front end never reads it.
+- `GET {WP_API_URL}/resource-hub/v1/related/{id}?count=3` (`count` 1 to 10, default 3) returns `{ "items": [ { "id": 12, "source": "pick" | "topic" } ] }`: at most `count` items, already merged, picks first in the editor's order, then the newest published resources sharing a topic, newest first and with no ranking by how many topics overlap, unpublished picks skipped, no duplicates, never the resource itself. A resource with no topics gets its picks alone; one with neither gets an empty list. A `count` out of range is a 400 and an ID that is not a published resource a 404, in core's `WP_Error` shape.
+- **IDs only.** The front end will call it once, do no merging of its own, and read the objects with `GET {WP_API_URL}/wp/v2/resources?include={ids}&orderby=include&_embed`, so one code path renders a resource everywhere and no permalink has to be rewritten.
+- The list is cached on the CMS under a salted object-cache key that any published resource's save, delete or topic change turns over; a change of picks on a published resource reaches the route on the next request after the save. The anonymous response carries the no-cache header like every other route here.
+- `related_picks` is an ordered list of at most 10 post IDs, in the REST `edit` context only, for the editor's picker; the front end never reads it, and an anonymous read of `/wp/v2/resources` never includes it. A pick that is no longer published stays in the list and is skipped by the route.
 
 ## Block marker (not built yet)
 
