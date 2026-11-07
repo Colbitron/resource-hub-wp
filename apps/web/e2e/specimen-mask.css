@@ -1,0 +1,18 @@
+/*
+ * Applied by specimen.screenshot.ts only while it captures the full page
+ * (`stylePath`), never served. The images Next.js's optimiser serves, the
+ * lead's and the resource's featured image (`/_next/image?…`, AVIF in
+ * Chromium), get their pixels from an image codec, not from the design: the
+ * same files decode thousands of pixels apart at the diagram's edges under
+ * amd64 emulation and on CI's native amd64. Each draws none of its own
+ * pixels (its content is moved out of its box) and fills its own box with
+ * #ff00ff, Playwright's mask colour, so its size, position and rounded
+ * corners (--rh-radius, clipped by the image or its frame) stay in the
+ * comparison. Playwright's `mask` option would paint a plain rectangle over
+ * the bounding box instead and hide the corners. The committed brand PNGs
+ * are served unoptimised and are not matched here.
+ */
+img[src^="/_next/image"] {
+	object-position: -100000px 0 !important;
+	background: #ff00ff !important;
+}

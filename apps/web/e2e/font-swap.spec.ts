@@ -25,17 +25,18 @@ import { platformFonts } from "./platform-fonts.mts";
  * never sees a late file, because the one it fetches lands before the first
  * paint. A last test proves that an undelayed page is drawn in Figtree.
  *
- * What the spec proves depends on the fallback the platform has. The
- * adjusted fallback face is `local("Arial")` with Figtree's metrics; on
- * macOS and Windows that is what the first paint uses. On Linux without
- * Arial (Playwright's image, and likely a CI runner) that face resolves to
- * nothing and the first paint uses the next family in `--rh-font-sans` that
- * the system has, unadjusted: in Playwright's image `system-ui` gives
- * WenQuanYi Zen Hei, and the listing's shift there was over a hundred times
- * the one with the adjusted Arial, though inside the budget. So on Linux the spec proves the
- * mechanism (the fallback first, Figtree after the file lands) and bounds
- * the shift of a fallback further from Figtree than a reader's, not the
- * shift a reader sees.
+ * Every face the first paint may use is size-adjusted to Figtree's
+ * metrics: next/font's `local("Arial")` face on macOS and Windows, and on
+ * Linux and Android the shared package's faces listed after it
+ * (`packages/ui/fonts/figtree-fallback.css`): Liberation Sans or Arimo with
+ * Arial's numbers, then DejaVu Sans, Noto Sans and Roboto. The spec checks
+ * that the title's first paint was drawn in one of those fonts, so a
+ * system where none is installed, whose first paint would be the
+ * unadjusted system sans, fails rather than bounding a fallback no reader
+ * is meant to get. Playwright's image and CI's runner have Liberation Sans
+ * (`fonts-liberation`, which `playwright install --with-deps` installs).
+ * Before the shared faces existed, the image drew the first paint in
+ * WenQuanYi Zen Hei, through `system-ui`, and the listing shifted by 0.175.
  */
 
 const cms = mockCms();
@@ -43,6 +44,20 @@ const RUN = Date.now().toString(36);
 const FONT_DELAY_MS = 2_000;
 const LONG_TITLE = "How one change travels from the WordPress editor to a rebuilt page on the front end, step by step";
 const CLS_BUDGET = 0.05;
+
+/**
+ * The fonts behind the size-adjusted fallback faces, as Chromium names the
+ * font it drew with. The name is the font file's, so it cannot tell a
+ * `local()` face from the same font reached unadjusted through the system
+ * stack, as it would be with the faces' stylesheet missing. CDP's
+ * `isCustomFont` cannot either: Chromium 156 reports it true only for a font
+ * loaded from a file (Figtree) and false for a `local()` face, measured on
+ * 2026-11-06 on macOS (Arial) and in the pinned Linux image (Liberation
+ * Sans), with a test face's 90% size-adjust visibly applied. So this check
+ * proves only that the first paint was drawn in a font one of the faces
+ * covers, not that the face's numbers were applied to it.
+ */
+const ADJUSTED_FALLBACK = /^(Arial|Liberation Sans|Arimo|DejaVu Sans|Noto Sans|Roboto)$/;
 
 /** Every heading a late font could re-wrap: the page's title and the cards' titles. */
 const HEADINGS = "h1, .rh-card__title";
@@ -140,7 +155,7 @@ async function measureLateFont(page: Page, path: string, selector: string): Prom
   expect(await figtreeLoaded(page), "Figtree was held back, so it has not loaded yet").toBe(false);
   const fontsBefore = await platformFonts(page, selector);
   expect(fontsBefore.length, "the title was drawn with no font").toBeGreaterThan(0);
-  for (const family of fontsBefore) expect(family, "the first paint used the fallback face").not.toMatch(/^Figtree\b/);
+  for (const family of fontsBefore) expect(family, "the first paint used a size-adjusted fallback face").toMatch(ADJUSTED_FALLBACK);
   const heightsBefore = await headingHeights(page);
 
   await fontLanded;

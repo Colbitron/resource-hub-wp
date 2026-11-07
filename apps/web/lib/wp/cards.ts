@@ -4,7 +4,8 @@ import { DomUtils, parseDocument } from "htmlparser2";
 
 import type { ResourceCardProps } from "../../components/ResourceCard";
 import { isTypeSlug, resourcePath } from "../routes";
-import { featuredImage } from "./images";
+import { typeAccent } from "../type-accents";
+import { featuredImage, type FeaturedImage } from "./images";
 import type { WpEmbeddedTerm, WpResource } from "./schemas/rest";
 
 /**
@@ -70,20 +71,35 @@ export function resourceType(resource: WpResource): WpEmbeddedTerm | null {
 }
 
 /**
- * A parsed resource as `ResourceCard`'s props, or `null` when it cannot have
- * a URL (`resourceType`). The caller skips a `null`.
+ * A resource as the listing shows it: `ResourceCard`'s props, which the row
+ * renders, plus the resource's ID, for telling the lead apart from the rows,
+ * and its featured image, which only the lead (`FeaturedLead`) shows.
+ */
+export interface CardData extends ResourceCardProps {
+  /** The resource's post ID. */
+  readonly id: number;
+  /** `featuredImage`, when the resource has a trusted one. */
+  readonly image?: FeaturedImage;
+}
+
+/**
+ * A parsed resource as `CardData`, or `null` when it cannot have a URL
+ * (`resourceType`). The caller skips a `null`.
  *
+ * - `id`: the post's ID.
  * - `href`: `resourcePath(type, slug)`, canonical and root-relative.
  * - `typeLabel` and `topicLabels`: the embedded terms' names as plain text,
  *   topics in the order of `resource_topic`, each name once; a topic that is
  *   not embedded is left out.
+ * - `accent`: the type mark's colour from `typeAccent`, by the type term's ID
+ *   and slug; `"neutral"` for a type the table does not know.
  * - `title`: `title.rendered` as plain text, or `UNTITLED` when that is
  *   empty or only zero-width characters.
  * - `summary`: `meta.summary`, which the plugin stores as plain text.
  * - `date`: `date_gmt` with a `Z`, the UTC instant the card formats.
  * - `image`: `featuredImage`, left out when `null`.
  */
-export function toCard(resource: WpResource): ResourceCardProps | null {
+export function toCard(resource: WpResource): CardData | null {
   const type = resourceType(resource);
   if (type === null) {
     return null;
@@ -94,12 +110,14 @@ export function toCard(resource: WpResource): ResourceCardProps | null {
     .map((term) => plainText(term.name));
   const image = featuredImage(resource);
   return {
+    id: resource.id,
     title: cardTitle(resource.title.rendered),
     href: resourcePath(type.slug, resource.slug),
     typeLabel: plainText(type.name),
+    accent: typeAccent(type),
     topicLabels: [...new Set(topicLabels)],
     summary: resource.meta.summary,
     date: `${resource.date_gmt}Z`,
-    ...(image === null ? {} : { image: { src: image.src, alt: image.alt, width: image.width, height: image.height } }),
+    ...(image === null ? {} : { image }),
   };
 }

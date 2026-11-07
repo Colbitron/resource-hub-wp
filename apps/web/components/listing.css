@@ -1,27 +1,48 @@
 /*
- * The listing pages: heading, filters, the count line, the empty state and
- * pagination, built on the shared tokens (packages/ui/DESIGN.md). The card
- * grid itself is `.rh-card-grid` in the shared card.css, which ResourceCard
- * imports. These classes are the front end's own, not part of the contract.
+ * The listing pages: heading, filters, the count line, the two section
+ * headings (Featured, Latest), the empty state and pagination, built on the
+ * shared tokens (packages/ui/DESIGN.md, "Components"). The rows are
+ * `.rh-card` in the shared card.css, which ResourceCard imports, and the
+ * lead is `.rh-lead` in lead.css, which FeaturedLead imports. These classes
+ * are the front end's own, not part of the contract.
+ *
+ * The page is one flat surface: hierarchy comes from the type, from two
+ * weights of rule (a hairline, `--rh-color-border` at `--rh-border-width`,
+ * and a strong rule in the ink at `--rh-border-width-strong`) and from
+ * space; nothing is boxed, filled or pill-shaped.
  */
 
 .rh-listing__header {
-	margin-bottom: var(--rh-space-5);
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: var(--rh-space-1) var(--rh-space-4);
+	margin-bottom: var(--rh-space-4);
+}
+
+.rh-listing__header h1 {
+	margin: 0;
 }
 
 .rh-listing__count {
 	margin: 0;
 	color: var(--rh-color-text-muted);
+	font-variant-numeric: tabular-nums;
 }
 
-/* Filters: two labelled rows of square-cornered links, matching the card's topic chips. */
+/*
+ * Filters: two labelled rows of plain text links between hairlines, the
+ * group's name as a small label. Each link is a flex box at least 2rem
+ * tall (over the 24px target of WCAG 2.5.8) with its text centred; the
+ * current one is heavier and underlined with the strong line, in the ink,
+ * and a hover underlines with the hairline weight. No border, fill or chip.
+ */
 
 .rh-filters {
 	display: flex;
 	flex-direction: column;
-	gap: var(--rh-space-3);
 	margin-bottom: var(--rh-space-6);
-	padding-bottom: var(--rh-space-5);
+	border-top: var(--rh-border-width) solid var(--rh-color-border);
 	border-bottom: var(--rh-border-width) solid var(--rh-color-border);
 }
 
@@ -29,43 +50,73 @@
 	display: flex;
 	flex-wrap: wrap;
 	align-items: baseline;
-	gap: var(--rh-space-2) var(--rh-space-3);
+	gap: 0 var(--rh-space-4);
+	padding: var(--rh-space-1) 0;
+}
+
+.rh-filters__group + .rh-filters__group {
+	border-top: var(--rh-border-width) solid var(--rh-color-border);
 }
 
 .rh-filters__name {
+	display: inline-flex;
+	align-items: center;
 	min-width: 3.5rem;
+	min-height: 2rem;
 	color: var(--rh-color-text-muted);
 	font-size: var(--rh-text-sm);
+	font-weight: 600;
+	letter-spacing: var(--rh-tracking-label);
+	text-transform: uppercase;
 }
 
 .rh-filters__list {
 	display: flex;
 	flex-wrap: wrap;
-	gap: var(--rh-space-2);
+	gap: 0 var(--rh-space-4);
 	margin: 0;
 	padding: 0;
 	list-style: none;
 }
 
 .rh-filters__link {
-	display: inline-block;
-	padding: var(--rh-space-1) var(--rh-space-3);
-	border: var(--rh-border-width) solid var(--rh-color-border-strong);
-	border-radius: var(--rh-radius-sm);
+	display: inline-flex;
+	align-items: center;
+	min-height: 2rem;
 	color: var(--rh-color-text);
 	font-size: var(--rh-text-sm);
 	text-decoration: none;
+	text-decoration-thickness: var(--rh-border-width);
+	text-underline-offset: 0.3em;
 }
 
 .rh-filters__link:hover {
-	border-color: var(--rh-color-text-muted);
 	text-decoration: underline;
 }
 
 .rh-filters__link[aria-current] {
-	background: var(--rh-color-text);
-	border-color: var(--rh-color-text);
-	color: var(--rh-color-surface);
+	font-weight: 600;
+	text-decoration: underline;
+	text-decoration-thickness: var(--rh-border-width-strong);
+}
+
+/* The two section headings, Featured and Latest: a small heading over a strong rule. */
+
+.rh-listing__section {
+	margin: 0 0 var(--rh-space-5);
+	padding-bottom: var(--rh-space-2);
+	border-bottom: var(--rh-border-width-strong) solid var(--rh-color-text);
+	font-size: var(--rh-text-md);
+	letter-spacing: var(--rh-tracking-heading);
+}
+
+.rh-listing__lead {
+	margin-bottom: var(--rh-space-7);
+}
+
+/* Under the Latest heading the first row's own padding is the space; the rule is already drawn. */
+.rh-listing__latest .rh-listing__section {
+	margin-bottom: 0;
 }
 
 /* The empty state: a sentence and a way out, no illustration. */
@@ -75,19 +126,23 @@
 	padding: var(--rh-space-6) 0;
 }
 
-/* Pagination: previous, the page numbers, next. */
+/*
+ * Pagination: previous, the page numbers, next, as plain text on a strong
+ * rule. Each link is a box of at least 2.5rem square (over the 24px
+ * target), the current number heavier and underlined with the strong line.
+ */
 
 .rh-pagination {
 	margin-top: var(--rh-space-7);
-	padding-top: var(--rh-space-5);
-	border-top: var(--rh-border-width) solid var(--rh-color-border);
+	padding-top: var(--rh-space-3);
+	border-top: var(--rh-border-width-strong) solid var(--rh-color-text);
 }
 
 .rh-pagination__list {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: var(--rh-space-2);
+	gap: var(--rh-space-1);
 	margin: 0;
 	padding: 0;
 	list-style: none;
@@ -95,31 +150,31 @@
 
 .rh-pagination__link,
 .rh-pagination__gap {
-	display: inline-block;
-	/* At least the WCAG 2.5.8 target size, and square for a number. */
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	min-width: 2.5rem;
 	min-height: 2.5rem;
-	padding: var(--rh-space-2) var(--rh-space-3);
-	line-height: 1.5;
-	text-align: center;
+	padding: var(--rh-space-1) var(--rh-space-2);
+	font-variant-numeric: tabular-nums;
 }
 
 .rh-pagination__link {
-	border: var(--rh-border-width) solid var(--rh-color-border-strong);
-	border-radius: var(--rh-radius-sm);
 	color: var(--rh-color-text);
+	font-weight: 600;
 	text-decoration: none;
+	text-decoration-thickness: var(--rh-border-width);
+	text-underline-offset: 0.3em;
 }
 
 .rh-pagination__link:hover {
-	border-color: var(--rh-color-text-muted);
 	text-decoration: underline;
 }
 
 .rh-pagination__link[aria-current="page"] {
-	background: var(--rh-color-text);
-	border-color: var(--rh-color-text);
-	color: var(--rh-color-surface);
+	font-weight: var(--rh-weight-heading);
+	text-decoration: underline;
+	text-decoration-thickness: var(--rh-border-width-strong);
 }
 
 .rh-pagination__gap {
@@ -136,10 +191,11 @@
 }
 
 /*
- * Forced colours (Windows High Contrast and the like) drop the background
- * fill that marks the current filter and the current page above, so they
- * would look like their neighbours. A thick underline and an outline in
- * system colours mark them instead.
+ * Forced colours (Windows High Contrast and the like) keep the underline
+ * but may take its thickness less seriously, and the weight alone is not a
+ * state. An outline in the system text colour marks the current filter and
+ * the current page on top of the underline, so the current item is told
+ * apart by a shape in every palette.
  */
 
 @media (forced-colors: active) {

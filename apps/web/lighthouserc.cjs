@@ -9,7 +9,13 @@
  * - Lighthouse's default config is the mobile preset: a Moto G Power-sized
  *   screen and simulated slow 4G with a 4x CPU slowdown. No preset is named,
  *   because LHCI's presets are `desktop`, `perf` and `experimental`.
- * - Three runs per URL; every assertion reads the median of the three.
+ * - The CPU slowdown is Lighthouse's fixed 4x. It multiplies the host's own
+ *   task times, so TBT here measures the runner as well as the code: on
+ *   GitHub's runners, faster than the reference phone, the gate is gentler
+ *   than a calibrated one, and on a laptop far gentler. Calibrating it is
+ *   issue #76 (`e2e/README.md`, "Lighthouse CI").
+ * - Five runs per URL; every assertion reads the median of the five, which
+ *   moves only when three runs do, where the median of three moved with two.
  * - Lab numbers only: no field data and nothing sent anywhere. The reports
  *   are written to `lighthouse-results/` (the filesystem target), which CI
  *   uploads as an artifact; the repository is private, so LHCI's temporary
@@ -29,7 +35,7 @@ module.exports = {
   ci: {
     collect: {
       url: SAMPLED_URLS.filter((sample) => sample.lighthouse).map((sample) => `${appSiteOrigin()}${sample.path}`),
-      numberOfRuns: 3,
+      numberOfRuns: 5,
       chromePath: chromium.executablePath(),
       settings: {
         // A lab run on localhost; the sandbox flag only matters on CI runners

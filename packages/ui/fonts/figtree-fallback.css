@@ -1,0 +1,62 @@
+/*
+ * Size-adjusted fallback faces for Figtree, for a page drawn before the
+ * file lands (the front end loads it with `font-display: swap`) and for a
+ * system that has no Arial. Each is a system font under a family name of
+ * its own, with the size and line metrics that make its text take nearly
+ * the space Figtree's will, so the swap moves as little as it can.
+ * `--rh-font-sans` in tokens.css lists them after Figtree, in this order;
+ * a face whose font is not installed is skipped. DESIGN.md, Font display,
+ * has the measurements.
+ *
+ * - "Figtree Fallback Arial": Arial, or its metric clones Liberation Sans
+ *   (most Linux systems) and Arimo (ChromeOS), which have Arial's widths.
+ *   The front end's next/font loader generates the same face from Arial
+ *   alone; this one is for the clones and for a consumer without next/font.
+ * - "Figtree Fallback DejaVu Sans", "Figtree Fallback Noto Sans" and
+ *   "Figtree Fallback Roboto": Linux without Liberation, and Android.
+ *
+ * The numbers come from scripts/figtree-fallback.mjs, which says how they
+ * are derived (next/font's calculation, against Figtree's file in this
+ * directory, with the size of the two Linux faces measured in Chromium on
+ * Linux instead) and prints these rules; test/figtree-fallback.test.js
+ * fails when they differ from what it prints. Do not edit them by hand.
+ *
+ * No `font-weight` descriptor, as in next/font's face: each face is the
+ * regular weight, and the browser synthesises bold from it.
+ */
+
+@font-face {
+	font-family: "Figtree Fallback Arial";
+	src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("LiberationSans"), local("Arimo"), local("Arimo Regular"), local("Arimo-Regular");
+	size-adjust: 99.94%;
+	ascent-override: 95.06%;
+	descent-override: 25.02%;
+	line-gap-override: 0.00%;
+}
+
+@font-face {
+	font-family: "Figtree Fallback DejaVu Sans";
+	src: local("DejaVu Sans"), local("DejaVuSans");
+	size-adjust: 90.00%;
+	ascent-override: 105.56%;
+	descent-override: 27.78%;
+	line-gap-override: 0.00%;
+}
+
+@font-face {
+	font-family: "Figtree Fallback Noto Sans";
+	src: local("Noto Sans"), local("Noto Sans Regular"), local("NotoSans-Regular");
+	size-adjust: 96.00%;
+	ascent-override: 98.96%;
+	descent-override: 26.04%;
+	line-gap-override: 0.00%;
+}
+
+@font-face {
+	font-family: "Figtree Fallback Roboto";
+	src: local("Roboto"), local("Roboto Regular"), local("Roboto-Regular");
+	size-adjust: 99.57%;
+	ascent-override: 95.41%;
+	descent-override: 25.11%;
+	line-gap-override: 0.00%;
+}

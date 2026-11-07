@@ -51,11 +51,16 @@
 	 * names it registered (the front end's next/font loader sets it on
 	 * <html>, with its size-adjusted fallback face); a consumer that
 	 * registers the family as plain "Figtree" leaves the variable unset.
-	 * Headings are the same face, heavier and slightly tighter.
+	 * Then the size-adjusted fallback faces in fonts/figtree-fallback.css,
+	 * which a consumer loads beside this file, in that file's order, so a
+	 * system without Arial still draws the page before Figtree lands in a
+	 * face sized like it; then the system sans, for a consumer that loads
+	 * neither. Headings are the same face, heavier and slightly tighter.
 	 */
-	--rh-font-sans: var(--rh-font-figtree, "Figtree"), system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+	--rh-font-sans: var(--rh-font-figtree, "Figtree"), "Figtree Fallback Arial", "Figtree Fallback DejaVu Sans", "Figtree Fallback Noto Sans", "Figtree Fallback Roboto", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 	--rh-weight-heading: 700;
 	--rh-tracking-heading: -0.02em;
+	--rh-tracking-label: 0.06em;
 	--rh-text-sm: 0.875rem;
 	--rh-text-base: 1rem;
 	--rh-text-md: 1.125rem;

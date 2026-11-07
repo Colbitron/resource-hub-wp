@@ -97,6 +97,35 @@ test.describe("rendered HTML carries no CMS address", () => {
   }
 });
 
+// `experimental.inlineCss` (next.config.ts) is an experimental flag that acts
+// only in a production build, which is what this harness serves. If an
+// upgrade stops it inlining, the pages still render, only slower, so nothing
+// else here would notice: this fails instead. The inlined <style> is the one
+// Next.js marks with `data-precedence` and `data-href`, the space-separated
+// files it replaces; its text must be those files' text, in that order.
+test.describe("the CSS ships inline in <head>, not as stylesheet links", () => {
+  for (const path of ["/", "/resources/"]) {
+    test(`${path} inlines its route's CSS files and links none`, async ({ request }) => {
+      const response = await request.get(path);
+      expect(response.status()).toBe(200);
+      const html = await response.text();
+      const head = html.slice(0, html.indexOf("</head>"));
+
+      expect(head, "a <link rel=stylesheet> means the CSS is no longer inlined").not.toMatch(/<link\b[^>]*\brel=["']?stylesheet/i);
+
+      const inlined = [...head.matchAll(/<style\b([^>]*)>([\s\S]*?)<\/style>/g)].filter(([, attrs]) => /\bdata-precedence=/.test(attrs));
+      expect(inlined, "the inlined <style data-precedence data-href> is missing from <head>").toHaveLength(1);
+      const [, attrs, css] = inlined[0];
+      const hrefs = /\bdata-href="([^"]+)"/.exec(attrs)?.[1].split(" ") ?? [];
+      expect(hrefs.length, "the inlined <style> names no CSS files in data-href").toBeGreaterThan(0);
+      for (const href of hrefs) expect(href).toMatch(/^\/_next\/static\/.+\.css$/);
+
+      const files = await Promise.all(hrefs.map(async (href) => (await request.get(href)).text()));
+      expect(css, "the inlined <style> is not the text of the files its data-href names").toBe(files.join(""));
+    });
+  }
+});
+
 test.describe("the mock's control endpoints", () => {
   test("renaming a slug makes the old one resolve to the new", async () => {
     const { resources } = await cms.state();

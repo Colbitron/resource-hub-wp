@@ -322,17 +322,31 @@ describe("openGraphImage", () => {
 });
 
 describe("toCard", () => {
-  it("maps the captured resource to ResourceCard's props", () => {
+  it("maps the captured resource to the row's props, with its ID and image", () => {
     expect(toCard(resource())).toEqual({
+      id: 15,
       title: "A field guide to revalidation",
       href: "/resources/ebook/a-field-guide-to-revalidation/",
       typeLabel: "Ebook",
+      accent: "grape",
       topicLabels: ["Headless delivery", "Performance"],
       summary:
         "On-demand, time-based, and tag-based revalidation compared, with the failure modes of each written down.",
       date: "2026-11-05T09:31:32Z",
       image: { src: "/media/2026/11/w-logo-blue.png", alt: "The WordPress logo", width: 80, height: 80 },
     });
+  });
+
+  it("colours the type mark by the type term's ID and slug, and neutral for a type the table does not know", () => {
+    // The captured resource's type is the ebook term, ID 4: grape (`lib/type-accents.ts`).
+    const embedded = structuredClone(RAW._embedded) as Json;
+    const terms = embedded["wp:term"] as unknown[][];
+    const withType = (term: Json) =>
+      resource({ resource_type: [term.id as number], _embedded: { ...embedded, "wp:term": [[term], ...terms.slice(1)] } });
+    expect(toCard(withType({ id: 5, slug: "webinar", name: "Webinar", taxonomy: "resource_type" }))?.accent).toBe("coral");
+    // An ID the table does not know, and a known ID whose slug has moved on.
+    expect(toCard(withType({ id: 99, slug: "guide", name: "Guide", taxonomy: "resource_type" }))?.accent).toBe("neutral");
+    expect(toCard(withType({ id: 4, slug: "handbook", name: "Handbook", taxonomy: "resource_type" }))?.accent).toBe("neutral");
   });
 
   it("decodes the rendered title and term names to plain text", () => {

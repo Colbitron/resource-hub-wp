@@ -1,0 +1,94 @@
+/*
+ * The lead: the featured resource at the top of the library, built on the
+ * shared tokens (packages/ui/DESIGN.md, "Components"). The front end's own
+ * classes, not part of the contract; the meta line and the topics inside it
+ * are the row's parts from the shared card.css, which FeaturedLead renders
+ * through ResourceCard's CardMeta and CardTopics.
+ *
+ * Layout: the lead wraps rather than breaking at a width, like the row. The
+ * media asks for 22rem and the body for 18rem; where both fit on one line
+ * (a container of about 42rem) they sit side by side and share what is left
+ * seven to five, image first; below that the body wraps under the image and
+ * each takes the whole width. FeaturedLead's `sizes` is derived from these
+ * numbers.
+ */
+
+.rh-lead {
+	position: relative;
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--rh-space-5) var(--rh-space-6);
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.rh-lead__media {
+	flex: 7 1 22rem;
+	min-width: 0;
+	/* A reserved box: the image fills it, so loading causes no layout shift. */
+	aspect-ratio: 16 / 9;
+	overflow: hidden;
+	background: var(--rh-color-surface-raised);
+	border-radius: var(--rh-radius);
+}
+
+.rh-lead__media > img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.rh-lead__body {
+	display: flex;
+	flex: 5 1 18rem;
+	flex-direction: column;
+	gap: var(--rh-space-3);
+	min-width: 0;
+}
+
+/* The meta line is the row's; in the lead it is one line, not a column. */
+.rh-lead .rh-card__meta {
+	flex: none;
+}
+
+.rh-lead__title {
+	margin: 0;
+	font-size: var(--rh-text-xl);
+	line-height: var(--rh-leading-tight);
+}
+
+.rh-lead__link {
+	color: var(--rh-color-text);
+	text-decoration: none;
+}
+
+.rh-lead__link:hover {
+	text-decoration: underline;
+	text-decoration-thickness: var(--rh-border-width-strong);
+	text-underline-offset: 0.15em;
+}
+
+/* The one link covers the whole lead, image included, as the row's covers the row. */
+.rh-lead__link::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: var(--rh-radius);
+}
+
+.rh-lead__link:focus-visible {
+	outline: none;
+}
+
+.rh-lead__link:focus-visible::after {
+	outline: var(--rh-focus-width) solid var(--rh-color-focus);
+	outline-offset: 2px;
+}
+
+.rh-lead__summary {
+	margin: 0;
+	max-width: var(--rh-measure);
+	color: var(--rh-color-text-muted);
+	font-size: var(--rh-text-md);
+}

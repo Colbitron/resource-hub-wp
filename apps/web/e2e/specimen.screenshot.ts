@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { expect, test } from "@playwright/test";
 
 import { platformFonts } from "./platform-fonts.mts";
@@ -33,6 +35,14 @@ const FOCUS_MARGIN = 10;
  * native amd64, and far under the 440 pixels a ring one pixel narrower moves.
  */
 const FOCUS_MAX_DIFF_PIXELS = 10;
+/**
+ * The images Next.js's optimiser serves: the lead's and the resource's
+ * featured image. The full-page shots mask them with `specimen-mask.css`,
+ * which says why; the committed brand PNGs, served unoptimised, stay
+ * compared.
+ */
+const OPTIMISED_IMAGES = 'img[src^="/_next/image"]';
+const MASK_STYLE_PATH = join(__dirname, "specimen-mask.css");
 
 for (const width of WIDTHS) {
   for (const colorScheme of SCHEMES) {
@@ -83,9 +93,16 @@ for (const width of WIDTHS) {
         // CSS.getPlatformFontsForNode; the same order every run). One capture
         // first, thrown away, so the baseline is always the settled layout.
         await page.screenshot({ fullPage: true });
+        // The mask's selector still names the optimiser's images: the lead's
+        // and the resource's. If Next.js changes the URL it gives them, this
+        // fails rather than letting codec noise back into the comparison.
+        await expect(page.locator(OPTIMISED_IMAGES)).toHaveCount(2);
         // Soft, so the focus ring's own shot below is still compared, and its
         // diff written, when the whole page differs.
-        await expect.soft(page).toHaveScreenshot(`specimen-${width}-${colorScheme}.png`, { fullPage: true });
+        await expect.soft(page).toHaveScreenshot(`specimen-${width}-${colorScheme}.png`, {
+          fullPage: true,
+          stylePath: MASK_STYLE_PATH,
+        });
 
         // The focus ring alone, compared with a tolerance of
         // FOCUS_MAX_DIFF_PIXELS: its colour (`--rh-color-focus`), width

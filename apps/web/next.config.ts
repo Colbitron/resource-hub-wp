@@ -30,14 +30,55 @@ const nextConfig: NextConfig = {
   // (ADR 0024).
   trailingSlash: true,
 
+  // Every route's CSS ships inline in <head> rather than as five
+  // render-blocking files: on the harness's build the library's <style> is
+  // 14,029 bytes raw and 2,964 gzipped, the resource page's 11,699 and 2,655,
+  // and a CMS page's 10,104 and 2,467. On a page whose LCP is an image,
+  // Lighthouse's simulation charges every request that finished before the
+  // image painted, including the framework's scripts, and the five files held
+  // the browser's connections while those scripts waited. Inline, the scripts
+  // start with the CSS, and the simulated LCP of both image-led sampled pages
+  // and every page's FCP fall by about 150 and 280 ms. The cost is CSS a
+  // returning reader cannot cache apart from the HTML, and a second copy of it
+  // in the RSC payload; a client navigation still uses <link> tags.
+  // apps/web/README.md, "Images", has the measurements.
+  //
+  // The flag is experimental and acts only in a production build, so a
+  // `next dev` page is no evidence either way. On any Next.js upgrade, re-run
+  // `pnpm web:test:lighthouse` and read the built HTML's <head>. If the flag
+  // stops inlining, e2e/harness.spec.ts ("the CSS ships inline in <head>, not
+  // as stylesheet links") fails on the harness's production build.
+  experimental: { inlineCss: true },
+
   // next/image optimises only same-origin /media/… sources, which the rewrite
   // below maps to the CMS's uploads; the CMS host is never a remote pattern, so
   // no image request names it (ADR 0040; apps/web/README.md has the images
   // setup). Next.js adds /_next/static/media/** for static imports itself.
   // `search: ""` refuses query strings, so no one can vary the URL to spend the
   // optimiser's allowance.
+  //
+  // AVIF only: the library's 1600×900 lead photograph is 18 KB as the
+  // 750-wide AVIF a phone gets against 31 KB as WebP, at the same default
+  // quality of 75 (Next.js scales AVIF's encoder quality to match WebP's
+  // look), with no visible difference at 360 or 1280 px. On Lighthouse's
+  // simulated slow 4G that is about 140 ms of the library's LCP. A lower
+  // `quality` on the lead alone was tried first: WebP at 65 saved 3 KB and no
+  // LCP, and WebP reaches AVIF's 18 KB only at about 35, which smears the
+  // photograph's texture into blocks. A browser whose `Accept` names no AVIF
+  // gets the source's own format, resized and re-encoded at the same quality
+  // (a JPEG stays a JPEG; Next.js's `images.formats` docs and
+  // `imageOptimizerTransform` in `next/dist/server/image-optimizer/transform.js`),
+  // rather than WebP: such a browser downloads more, which is the trade the
+  // single format makes. The costs are on Vercel: AVIF encodes more slowly,
+  // so the first request for each width waits longer until the optimiser has
+  // cached it. The optimiser's cache key includes the output format, so each
+  // width of an image is one AVIF transformation against the plan's
+  // allowance, and a second only if a browser without AVIF asks for that
+  // width, where two formats made it two whenever both kinds of browser came
+  // (apps/web/README.md, "Images").
   images: {
     localPatterns: [{ pathname: "/media/**", search: "" }],
+    formats: ["image/avif"],
   },
 
   // /media/… is the CMS's uploads directory, one to one (ADR 0040); see

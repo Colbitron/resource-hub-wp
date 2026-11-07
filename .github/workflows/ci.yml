@@ -331,10 +331,10 @@ jobs:
     name: Lint, typecheck, and build the front end
     runs-on: ubuntu-latest
     # Room for the install step's own 15-minute limit (an apt cache miss on a
-    # slow mirror) plus the rest of the job, which took up to 2.4 minutes
-    # before the screenshot and Lighthouse gates joined it (Lighthouse alone
-    # takes about 4.5 minutes locally).
-    timeout-minutes: 30
+    # slow mirror) plus the rest of the job: about 10.5 minutes in run
+    # 42337676741 with Lighthouse at three runs per URL (327 s), and about 3.6
+    # more now that it takes five (about 545 s at the same pace), so about 14.
+    timeout-minutes: 35
 
     # A placeholder, never a secret. next.config.ts builds the /media/ rewrite
     # from WP_API_URL, so CI builds the same routes a deploy does; nothing
@@ -558,10 +558,15 @@ jobs:
           RH_E2E_PREBUILT: '1'
         run: pnpm web:test:screenshots
 
-      # Lighthouse CI, mobile, three runs per sampled URL (apps/web/
-      # lighthouserc.cjs): performance at least 0.95, accessibility 1, LCP at
-      # most 2500 ms, CLS at most 0.05, TBT at most 200 ms, on the medians.
-      # The medians go to the job summary; the reports are an artifact below.
+      # Lighthouse CI, mobile, five runs per sampled URL at Lighthouse's
+      # fixed 4x CPU slowdown (apps/web/lighthouserc.cjs): performance at least
+      # 0.95, accessibility 1, LCP at most 2500 ms, CLS at most 0.05, TBT at
+      # most 200 ms, on the medians. 4x multiplies this runner's own task
+      # times, and the runner is faster than the reference phone: calibrated
+      # to it, GitHub's runner CPUs measured about 3.4x to 5x, so 4x is about
+      # right on the slowest and gentler than a calibrated gate on the rest.
+      # Calibrating it is issue #76 (branch lhci/snapshot-calibration). The
+      # medians go to the job summary; the reports are an artifact below.
       - name: Run Lighthouse CI on the front end
         if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
         env:

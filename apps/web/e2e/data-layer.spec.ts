@@ -39,8 +39,6 @@ test.beforeEach(async ({ request }) => {
 });
 
 test("renders two pages of the library and a resource by slug through ResourceCard", async ({ page }) => {
-  // The image optimizer is not under test here; the cards hold their shape without it.
-  await page.route("**/_next/image**", (route) => route.abort());
   await page.goto(FIXTURE_PATH);
 
   await expect(page.getByRole("heading", { level: 1, name: "Data layer fixtures" })).toBeVisible();
@@ -67,11 +65,11 @@ test("renders two pages of the library and a resource by slug through ResourceCa
   await expect(link).toHaveText("Revalidation from the editor’s chair");
   await expect(link).toHaveAttribute("href", `/resources/webinar/${SEEDED_SLUG}/`);
   await expect(single.locator(".rh-card__type")).toHaveText("Webinar");
+  await expect(single.locator(".rh-card__type")).toHaveAttribute("data-accent", "coral");
   await expect(single.locator(".rh-card__topic")).toHaveText(["Editorial workflow", "Headless delivery"]);
-  await expect(single.locator(".rh-card__media img")).toHaveCount(1);
 
-  // Page 1 has two resources with no image and one whose SVG has no dimensions: nine media boxes.
-  await expect(first.locator(".rh-card__media")).toHaveCount(9);
+  // The row has no image, whatever the resource carries; the lead on the library shows the one image.
+  await expect(page.locator(".rh-card img")).toHaveCount(0);
 });
 
 test("the HTML names neither the mock's origin nor wp-content", async ({ request }) => {
@@ -79,7 +77,6 @@ test("the HTML names neither the mock's origin nor wp-content", async ({ request
   expect(response.status()).toBe(200);
   const html = await response.text();
   expect(html).toContain("rh-card");
-  expect(html).toContain("/media/");
   expect(html).not.toContain(mockCmsOrigin());
   expect(html).not.toContain("127.0.0.1");
   expect(html).not.toContain("wp-content");
@@ -136,7 +133,6 @@ test("a resource the reader schema refuses leaves the listing, the other resourc
     expect(html).not.toContain(title);
     expect(html).not.toContain(escapedSlug);
 
-    await page.route("**/_next/image**", (route) => route.abort());
     await page.goto(FIXTURE_PATH);
     // The CMS's totals are kept: it counts 15 now, newest first, so page 1
     // holds the new resource, skipped, and the eleven before it.

@@ -154,9 +154,10 @@ const TEXT_PAIRS = [
 
 /**
  * Non-text pairs (WCAG 1.4.11), against both surfaces; 3:1. The focus ring,
- * and the strong border, the only visible boundary of a control (filter
- * chips, pagination links, topic chips), which sits on the page and around
- * the raised surface of a topic chip.
+ * and the strong border: the only visible boundary of a control (the theme
+ * control, and the resource page's topic chips until they become underlined
+ * text), and the short rule between a row's topic labels. It sits on the
+ * page, and around the raised surface of a chip.
  */
 const NON_TEXT_PAIRS = [
 	[ '--rh-color-focus', '--rh-color-surface' ],

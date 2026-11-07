@@ -7,6 +7,7 @@ import appleIcon from "@/app/apple-icon.png";
 import NotFound from "@/app/not-found";
 import shareImage from "@/app/opengraph-image.png";
 import { BrandLockup, BrandMark } from "@/components/Brand";
+import { FeaturedLead, type FeaturedLeadProps } from "@/components/FeaturedLead";
 import { FilterNav, type FilterTerm } from "@/components/FilterNav";
 import { PageArticle } from "@/components/PageArticle";
 import { Pagination } from "@/components/Pagination";
@@ -25,6 +26,7 @@ import {
   COLOR_TOKENS,
   FONT_TOKENS,
   HEADING_TOKENS,
+  LABEL_TOKENS,
   LEADING_TOKENS,
   MARK_TOKENS,
   LINE_TOKENS,
@@ -55,11 +57,12 @@ import "./specimen.css";
  *
  * It renders inside the root layout, so the shell (skip link, header,
  * footer) is the real one. Everything here is static: no CMS request, no
- * client JavaScript of its own. The card images are the mock CMS's uploads
- * through `/media/`, loaded eagerly so a full-page screenshot never catches
- * one half-loaded. Specimen-only layout (swatch grids, bars, the frame
- * around each whole-page component) lives in `specimen.css`, built on the
- * same tokens; no component style is overridden.
+ * client JavaScript of its own. The lead's image is one of the mock CMS's
+ * uploads through `/media/`, loaded eagerly as on the library, so a
+ * full-page screenshot never catches it half-loaded. Specimen-only layout
+ * (swatch grids, bars, the frame around each whole-page component) lives in
+ * `specimen.css`, built on the same tokens; no component style is
+ * overridden.
  *
  * The whole-page components (a resource, a CMS page, the welcome page, the
  * 404 page) are rendered with fixture data shaped as the CMS sends it, parsed
@@ -81,7 +84,7 @@ import "./specimen.css";
  * where Previous and Next are left out rather than disabled (the
  * component's rule), the theme control in each of its three states (the
  * footer's own copy is live and shows the stored choice; these are still),
- * and a listing's empty state.
+ * a lead without an image, and a listing's empty state.
  */
 
 export const metadata: Metadata = {
@@ -108,51 +111,96 @@ const TOPICS: FilterTerm[] = [
   { slug: "performance", name: "Performance" },
 ];
 
-/** One card per resource type, with images of different shapes and one card without. */
+/**
+ * The lead: the long-form resource with its 1600×900 image (the seed's ID
+ * 30), as the library's first page shows its newest featured resource.
+ */
+const LEAD: FeaturedLeadProps = {
+  title: "Taxonomies versus meta",
+  href: "/resources/article/taxonomies-versus-meta/",
+  typeLabel: "Article",
+  accent: "mint",
+  topicLabels: ["Content modelling"],
+  summary: "When a value is a term and when it is a field, with the REST and query consequences of each.",
+  date: "2026-10-28T09:00:00Z",
+  image: {
+    src: "/media/2026/11/taxonomies-versus-meta.png",
+    alt: "Three boxes joined by two bars: a term, a post and a field",
+    width: 1600,
+    height: 900,
+  },
+};
+
+/** A lead for a featured resource without a trusted image: the text alone, at the full width. */
+const LEAD_WITHOUT_IMAGE: FeaturedLeadProps = {
+  title: "The anatomy of a resource",
+  href: "/resources/webinar/the-anatomy-of-a-resource/",
+  typeLabel: "Webinar",
+  accent: "coral",
+  topicLabels: ["Content modelling", "Editorial workflow"],
+  summary: "Which fields belong in meta, which in taxonomies, and what to leave out until an editor asks.",
+  date: "2026-10-24T09:00:00Z",
+};
+
+/**
+ * One row per resource type, each with its mark, then a type the accent
+ * table does not know, with the neutral mark; one row has no summary and
+ * a title long enough to wrap at every width.
+ */
 const CARDS: ResourceCardProps[] = [
   {
-    title: "Taxonomies versus meta",
-    href: "/resources/article/taxonomies-versus-meta/",
+    title: "Alt text at scale",
+    href: "/resources/article/alt-text-at-scale/",
     typeLabel: "Article",
-    topicLabels: ["Content modelling"],
-    summary: "When a value is a term and when it is a field, with the REST and query consequences of each.",
-    date: "2026-10-28T09:00:00Z",
-    image: { src: "/media/2026/11/taxonomies-versus-meta.png", alt: "", width: 1600, height: 900 },
+    accent: "mint",
+    topicLabels: ["Accessibility", "Editorial workflow"],
+    summary: "How a small editorial team keeps alt text accurate across thousands of images without a bottleneck.",
+    date: "2026-10-31T09:00:00Z",
   },
   {
     title: "One content model, five channels",
     href: "/resources/case-study/one-content-model-five-channels/",
     typeLabel: "Case study",
+    accent: "cobalt",
     topicLabels: ["Content modelling", "Headless delivery"],
     summary: "A publisher's move from page-shaped content to a model that feeds the web, email, apps and partners.",
     date: "2026-10-14T12:00:00Z",
-    image: { src: "/media/2026/11/content-model.png", alt: "", width: 240, height: 160 },
   },
   {
     title: "A field guide to revalidation",
     href: "/resources/ebook/a-field-guide-to-revalidation/",
     typeLabel: "Ebook",
+    accent: "grape",
     topicLabels: ["Headless delivery", "Performance"],
     summary: "On-demand, time-based, and tag-based revalidation compared, with the failure modes of each written down.",
     date: "2026-09-30T08:30:00Z",
-    image: { src: "/media/2026/11/revalidation.png", alt: "", width: 240, height: 90 },
   },
   {
     title: "Editorial review without the bottleneck",
     href: "/resources/podcast/editorial-review-without-the-bottleneck/",
     typeLabel: "Podcast",
+    accent: "lemon",
     topicLabels: ["Editorial workflow"],
     summary: "Two editors on review queues, who approves what, and how a headless site shows the result.",
     date: "2026-09-02T16:00:00Z",
-    image: { src: "/media/2026/11/layout-shift.png", alt: "", width: 160, height: 160 },
   },
   {
-    title: "A very long webinar title that wraps across several lines, to show how a card holds a heading that runs on",
+    title: "A very long webinar title that wraps across several lines, to show how a row holds a heading that runs on",
     href: "/resources/webinar/the-anatomy-of-a-resource/",
     typeLabel: "Webinar",
+    accent: "coral",
     topicLabels: ["Accessibility", "Content modelling", "Editorial workflow", "Performance"],
     summary: "",
     date: "2026-08-01T00:00:00Z",
+  },
+  {
+    title: "A guide the accent table does not know",
+    href: "/resources/guide/a-guide-the-accent-table-does-not-know/",
+    typeLabel: "Guide",
+    accent: "neutral",
+    topicLabels: ["Content modelling"],
+    summary: "A type added in the CMS before its accent row ships gets the neutral mark, in the ink.",
+    date: "2026-07-01T09:00:00Z",
   },
 ];
 
@@ -379,6 +427,16 @@ export default function SpecimenFixturePage() {
               </span>
             </TokenRow>
           ))}
+          {LABEL_TOKENS.map((token) => (
+            <TokenRow key={token} token={token}>
+              <span
+                className="rh-specimen__sample"
+                style={{ fontSize: "var(--rh-text-sm)", fontWeight: 600, letterSpacing: cssVar(token), textTransform: "uppercase" }}
+              >
+                Case study
+              </span>
+            </TokenRow>
+          ))}
           {TEXT_SIZE_TOKENS.map((token) => (
             <TokenRow key={token} token={token}>
               <span className="rh-specimen__sample" style={{ fontSize: cssVar(token) }}>
@@ -450,11 +508,17 @@ export default function SpecimenFixturePage() {
         <FilterNav types={TYPES} topics={TOPICS} current={{ type: "webinar", topic: "performance" }} />
       </Section>
 
-      <Section id="specimen-cards" title="Cards">
+      <Section id="specimen-lead" title="Lead">
+        <p>The featured resource at the top of the library: its image beside the meta line, title, summary and topics.</p>
+        <FeaturedLead {...LEAD} />
+      </Section>
+
+      <Section id="specimen-cards" title="Rows">
+        <p>One row per type with its mark, and a type the accent table does not know, with the neutral mark.</p>
         <ul className="rh-card-grid" role="list">
           {CARDS.map((card) => (
             <li key={card.href}>
-              <ResourceCard {...card} headingLevel="h3" priority />
+              <ResourceCard {...card} headingLevel="h3" />
             </li>
           ))}
         </ul>
@@ -492,6 +556,11 @@ export default function SpecimenFixturePage() {
               <StillThemeFieldset key={choice} name={`specimen-theme-${choice}`} value={choice} />
             ))}
           </div>
+        </div>
+        <div className="rh-specimen__state">
+          <h3>A lead without an image</h3>
+          <p>A featured resource with no trusted image: the text alone, at the full width, and no empty box.</p>
+          <FeaturedLead {...LEAD_WITHOUT_IMAGE} />
         </div>
         <div className="rh-specimen__state">
           <h3>An empty listing</h3>

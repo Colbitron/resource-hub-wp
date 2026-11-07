@@ -29,6 +29,15 @@ import localFont from "next/font/local";
  *   Arial with size, ascent, descent and line-gap overrides matched to
  *   Figtree's metrics, so the fallback text takes nearly the space Figtree
  *   will, and a page drawn in it looks as close to Figtree as Arial can.
+ *   It matches `local("Arial")` only, so a system without Arial (Linux,
+ *   Android) skips it; `--rh-font-sans` lists the shared package's own
+ *   faces after it (`packages/ui/fonts/figtree-fallback.css`, imported by
+ *   `components/Shell.tsx`): Arial's clones Liberation Sans and Arimo,
+ *   DejaVu Sans, Noto Sans and Roboto, each adjusted to Figtree
+ *   (`packages/ui/DESIGN.md`, Fallback faces). Those live in the package
+ *   rather than here because next/font generates one face from one family
+ *   name, and the planned block theme, which has no next/font, needs the
+ *   same faces.
  * - `variable`: the loader sets `--rh-font-figtree` on the element that
  *   carries its class to the two generated family names (Figtree, then the
  *   adjusted fallback), and `tokens.css` puts that variable first in
