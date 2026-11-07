@@ -11,8 +11,9 @@
  * - One persistent `core/notices` notice, never dismissible, that names what
  *   is missing in plain words and offers one action per field that moves
  *   focus to its control (`focus.js`). It is a warning while the resource is
- *   a draft and an error once it is published or scheduled, and it follows
- *   every edit.
+ *   an incomplete draft, and an error while it is published or scheduled, is
+ *   being published (its edited status is `publish` or `future`), or has the
+ *   pre-publish sidebar open; it follows every edit.
  * - A `PluginPrePublishPanel` checklist, open when something is missing, so
  *   the pre-publish sidebar says why its Publish button is off.
  * - The inline state on the Topics panel, through the same
@@ -22,17 +23,23 @@
  * The lock: the editor has one saving lock, `lockPostSaving`, and it stops
  * every save, the draft save included; there is no lock for publishing
  * alone (the Publish button reads `isPostSavingLocked` and `isEditedPostSaveable`
- * only). Drafts must keep saving so no work is lost, so the lock is held
- * only while a required field is missing and either the saved post is
- * published or scheduled (so its Update button, and a switch to draft, wait)
- * or the pre-publish sidebar is open (a publish attempt; Cancel lifts it).
- * With the pre-publish checks turned off in the editor's preferences, Publish
- * saves at once and the server's refusal shows in the editor's own notice,
- * next to this one. The lock is the convenience; the server is the check.
- * Trashing is not a save and is never locked.
+ * only). Drafts and unpublishing must always save so no work is lost, so the
+ * lock is held only while a required field is missing and either the edited
+ * status, the one the next save sends, is `publish` or `future` (a published
+ * resource's Update button waits) or the pre-publish sidebar is open (a
+ * publish attempt; Cancel lifts it). The saved status does not decide it: a
+ * published resource switched to Draft or Private in the Status panel saves,
+ * and switching it back to Published locks again. With the pre-publish checks
+ * turned off in the editor's preferences, Publish edits the status and saves
+ * in the same step, before the lock can follow, so the server's refusal shows
+ * in the editor's own "Publishing failed" notice next to this one; the status
+ * edit stays `publish` after a failed save, so the lock then holds until the
+ * field is filled or the status is set back to Draft. The lock is the
+ * convenience; the server is the check. Trashing is not a save and is never
+ * locked.
  */
 import { Button } from '@wordpress/components';
-import { useDispatch, useSelect } from '@wordpress/data';
+import { useDispatch } from '@wordpress/data';
 import { PluginPrePublishPanel, store as editorStore } from '@wordpress/editor';
 import { useEffect } from '@wordpress/element';
 import { addFilter } from '@wordpress/hooks';
@@ -41,7 +48,8 @@ import { store as noticesStore } from '@wordpress/notices';
 import { registerPlugin } from '@wordpress/plugins';
 
 import { focusField } from './focus';
-import { RequiredState } from './required-state';
+import { RequiredState, useRequiredAttributes } from './required-state';
+import { RequiredTitle } from './required-title';
 import { FIELDS, field, useRequiredFields } from './rules';
 // Named `editor.scss`, not `style.scss`, so wp-scripts emits `required-fields.css`
 // beside the script rather than a `style-` prefixed file.
@@ -81,14 +89,26 @@ function listOf( nouns ) {
 }
 
 /**
- * The notice's text.
+ * The notice's text, by the saved status and the edited one.
  *
- * @param {string[]} missing  The missing keys, in FIELDS order.
- * @param {boolean}  isPublic Whether the saved post is published or scheduled.
+ * @param {string[]} missing      The missing keys, in FIELDS order.
+ * @param {boolean}  isPublic     Whether the saved post is published or scheduled.
+ * @param {boolean}  willBePublic Whether the edited status is `publish` or `future`.
  * @return {string} One or two short sentences, naming no value.
  */
-function noticeText( missing, isPublic ) {
+function noticeText( missing, isPublic, willBePublic ) {
 	const list = listOf( missing.map( ( key ) => field( key ).noun ) );
+
+	if ( isPublic && ! willBePublic ) {
+		return sprintf(
+			/* translators: %s: what the resource lacks, such as "a title and a topic". */
+			__(
+				'This resource needs %s before it can be published again. It can be saved unpublished now.',
+				'resource-hub'
+			),
+			list
+		);
+	}
 
 	if ( isPublic ) {
 		return sprintf(
@@ -195,17 +215,20 @@ function Checklist( { missing } ) {
  * @return {Element|null} The checklist, or nothing for another post type.
  */
 function RequiredFields() {
-	const { isResource, missing, isPublic } = useRequiredFields();
-	const isPublishSidebarOpened = useSelect(
-		( select ) => select( editorStore ).isPublishSidebarOpened(),
-		[]
-	);
+	const {
+		isResource,
+		missing,
+		isPublic,
+		willBePublic,
+		isPublishing,
+		isUrgent,
+	} = useRequiredFields();
 	const { createNotice, removeNotice } = useDispatch( noticesStore );
 	const { lockPostSaving, unlockPostSaving } = useDispatch( editorStore );
-	const missingKeys = missing.join( ' ' );
 
-	// The notice follows every change to the list, goes when the list empties,
-	// and goes when the editor closes.
+	// The notice follows every change to the list or the status, goes when
+	// the list empties, and goes when the editor closes. `missing` changes
+	// identity only when the list does (`useRequiredFields`).
 	useEffect( () => () => removeNotice( NOTICE_ID ), [ removeNotice ] );
 	useEffect( () => {
 		if ( ! isResource ) {
@@ -218,8 +241,8 @@ function RequiredFields() {
 		}
 
 		createNotice(
-			isPublic ? 'error' : 'warning',
-			noticeText( missing, isPublic ),
+			isUrgent ? 'error' : 'warning',
+			noticeText( missing, isPublic, willBePublic ),
 			{
 				id: NOTICE_ID,
 				isDismissible: false,
@@ -229,15 +252,20 @@ function RequiredFields() {
 				} ) ),
 			}
 		);
-		// `missing` changes identity only with `missingKeys`.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [ isResource, missingKeys, isPublic, createNotice, removeNotice ] );
+	}, [
+		isResource,
+		missing,
+		isPublic,
+		willBePublic,
+		isUrgent,
+		createNotice,
+		removeNotice,
+	] );
 
-	// The lock, as the module docblock explains.
+	// The lock, as the module docblock explains: the edited status, not the
+	// saved one, so unpublishing saves.
 	const shouldLock =
-		isResource &&
-		missing.length > 0 &&
-		( isPublic || isPublishSidebarOpened );
+		isResource && missing.length > 0 && ( willBePublic || isPublishing );
 
 	useEffect( () => {
 		if ( shouldLock ) {
@@ -252,15 +280,39 @@ function RequiredFields() {
 		return null;
 	}
 
-	return <Checklist missing={ missing } />;
+	return (
+		<>
+			<Checklist missing={ missing } />
+			<RequiredTitle />
+		</>
+	);
 }
 
 registerPlugin( 'resource-hub-required-fields', {
 	render: RequiredFields,
 } );
 
-// The Topics panel keeps core's selector and gains the inline state above it;
-// the wrapper is also what `focus.js` finds the selector's input through.
+/**
+ * Core's Topics selector with the inline state above it, its input tied to
+ * the state (`useRequiredAttributes`). The wrapper is also what `focus.js`
+ * finds the selector's input through.
+ *
+ * @param {Object}                     props
+ * @param {(props: Object) => Element} props.Selector Core's selector.
+ * @param {Object}                     props.props    Its props.
+ * @return {Element} The wrapped selector.
+ */
+function TopicSelector( { Selector, props } ) {
+	const ref = useRequiredAttributes( 'topic', 'input' );
+
+	return (
+		<div className="resource-hub-topic-selector" ref={ ref }>
+			<RequiredState field="topic" />
+			<Selector { ...props } />
+		</div>
+	);
+}
+
 addFilter(
 	'editor.PostTaxonomyType',
 	'resource-hub/required-topic',
@@ -271,10 +323,7 @@ addFilter(
 			}
 
 			return (
-				<div className="resource-hub-topic-selector">
-					<RequiredState field="topic" />
-					<OriginalSelector { ...props } />
-				</div>
+				<TopicSelector Selector={ OriginalSelector } props={ props } />
 			);
 		}
 );

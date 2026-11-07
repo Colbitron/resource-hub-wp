@@ -10,7 +10,8 @@
  * once the resource is public: the panel says so in words above the field
  * while it is blank (`RequiredState`, from the required-fields plugin), and
  * the `resource-hub-summary` class is how that plugin's notice finds the
- * field to focus.
+ * field to focus. The field carries `aria-required` and is described by that
+ * state (`useRequiredAttributes`).
  */
 import { registerPlugin } from '@wordpress/plugins';
 import {
@@ -22,7 +23,10 @@ import { useSelect } from '@wordpress/data';
 import { TextareaControl, TextControl } from '@wordpress/components';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
-import { RequiredState } from '../required-fields/required-state';
+import {
+	RequiredState,
+	useRequiredAttributes,
+} from '../required-fields/required-state';
 // The Types panel's radio buttons ship in this bundle, the one script PHP
 // loads on the resource editor.
 import '../resource-type';
@@ -43,6 +47,7 @@ function ResourceDetailsPanel() {
 		[]
 	);
 	const [ meta, setMeta ] = useEntityProp( 'postType', postType, 'meta' );
+	const summaryRef = useRequiredAttributes( 'summary', 'textarea' );
 
 	if ( postType !== POST_TYPE || ! meta ) {
 		return null;
@@ -60,26 +65,30 @@ function ResourceDetailsPanel() {
 			title={ __( 'Resource details', 'resource-hub' ) }
 		>
 			<RequiredState field="summary" />
-			<TextareaControl
-				__nextHasNoMarginBottom
-				className="resource-hub-summary"
-				label={ __( 'Summary', 'resource-hub' ) }
-				help={ sprintf(
-					/* translators: 1: maximum length in characters, 2: characters left. */
-					_n(
-						'Plain text for cards, up to %1$d characters. %2$d character left.',
-						'Plain text for cards, up to %1$d characters. %2$d characters left.',
-						remaining,
-						'resource-hub'
-					),
-					SUMMARY_MAX_LENGTH,
-					remaining
-				) }
-				value={ summary }
-				maxLength={ SUMMARY_MAX_LENGTH }
-				rows={ 4 }
-				onChange={ ( value ) => setMeta( { ...meta, summary: value } ) }
-			/>
+			<div ref={ summaryRef }>
+				<TextareaControl
+					__nextHasNoMarginBottom
+					className="resource-hub-summary"
+					label={ __( 'Summary', 'resource-hub' ) }
+					help={ sprintf(
+						/* translators: 1: maximum length in characters, 2: characters left. */
+						_n(
+							'Plain text for cards, up to %1$d characters. %2$d character left.',
+							'Plain text for cards, up to %1$d characters. %2$d characters left.',
+							remaining,
+							'resource-hub'
+						),
+						SUMMARY_MAX_LENGTH,
+						remaining
+					) }
+					value={ summary }
+					maxLength={ SUMMARY_MAX_LENGTH }
+					rows={ 4 }
+					onChange={ ( value ) =>
+						setMeta( { ...meta, summary: value } )
+					}
+				/>
+			</div>
 			<TextControl
 				__next40pxDefaultSize
 				__nextHasNoMarginBottom

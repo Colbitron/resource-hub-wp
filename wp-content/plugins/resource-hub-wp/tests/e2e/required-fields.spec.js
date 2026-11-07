@@ -112,6 +112,42 @@ test.describe( 'Required fields', () => {
 			window.wp.data.select( 'core/editor' ).isPostSavingLocked()
 		);
 
+	// The top bar's Publish, Update or Save button (not the pre-publish toggle's
+	// label, which is also "Publish").
+	const saveButton = ( page ) =>
+		topBar( page ).locator( '.editor-post-publish-button__button' );
+
+	// Picks a status in the Status & visibility popover and closes it.
+	const chooseStatus = async ( page, name ) => {
+		await settings( page )
+			.getByRole( 'button', { name: /^Change status:/ } )
+			.click();
+		await page
+			.locator( '.editor-change-status__options' )
+			.getByRole( 'radio', { name, exact: true } )
+			.check();
+		await page.keyboard.press( 'Escape' );
+	};
+
+	// A published resource with all four fields, made over REST.
+	const publishedResource = async ( requestUtils, label ) => {
+		const stamp = Date.now();
+		const resource = await requestUtils.rest( {
+			method: 'POST',
+			path: '/wp/v2/resources',
+			data: {
+				title: `E2E ${ label } ${ stamp }`,
+				slug: `e2e-${ label }-${ stamp }`,
+				status: 'publish',
+				resource_type: [ type.id ],
+				resource_topic: [ topic.id ],
+				meta: { summary: SUMMARY },
+			},
+		} );
+		createdIds.push( resource.id );
+		return resource;
+	};
+
 	test( 'a new resource names everything it lacks, in the notice and in the panels, and follows each edit', async ( {
 		admin,
 		editor,
@@ -313,6 +349,246 @@ test.describe( 'Required fields', () => {
 		await editPost( page, { resource_topic: [ topic.id ] } );
 		await expect( notice( page ) ).toHaveCount( 0 );
 		expect( await isSavingLocked( page ) ).toBe( false );
+	} );
+
+	test( 'a published resource that lacks a summary saves as a draft, and choosing Published again locks it', async ( {
+		admin,
+		editor,
+		page,
+		requestUtils,
+	} ) => {
+		const resource = await publishedResource( requestUtils, 'unpublish' );
+
+		await admin.editPost( resource.id );
+		await editor.openDocumentSettingsSidebar();
+		await openPanel( page, 'Resource details' );
+		await page.getByLabel( 'Summary' ).fill( '' );
+
+		await expect( notice( page ) ).toContainText(
+			'This resource needs a summary before it can be updated.'
+		);
+		await expect( notice( page ) ).toHaveClass( /is-error/ );
+		await expect( saveButton( page ) ).toHaveAttribute(
+			'aria-disabled',
+			'true'
+		);
+		expect( await isSavingLocked( page ) ).toBe( true );
+
+		// Draft: the save would unpublish, so it is not locked.
+		await chooseStatus( page, 'Draft' );
+		await expect( notice( page ) ).toContainText(
+			'This resource needs a summary before it can be published again. It can be saved unpublished now.'
+		);
+		await expect( saveButton( page ) ).toHaveText( 'Save' );
+		await expect( saveButton( page ) ).not.toHaveAttribute(
+			'aria-disabled',
+			'true'
+		);
+		expect( await isSavingLocked( page ) ).toBe( false );
+
+		// Published again: locked again.
+		await chooseStatus( page, 'Published' );
+		await expect( saveButton( page ) ).toHaveAttribute(
+			'aria-disabled',
+			'true'
+		);
+		expect( await isSavingLocked( page ) ).toBe( true );
+
+		// Draft, and save: the resource is unpublished without its summary.
+		await chooseStatus( page, 'Draft' );
+		await expect( saveButton( page ) ).not.toHaveAttribute(
+			'aria-disabled',
+			'true'
+		);
+		await saveButton( page ).click();
+		await page
+			.getByRole( 'button', { name: 'Dismiss this notice' } )
+			.filter( { hasText: 'reverted to draft' } )
+			.waitFor();
+
+		const saved = await requestUtils.rest( {
+			path: `/wp/v2/resources/${ resource.id }`,
+			params: { context: 'edit' },
+		} );
+		expect( saved.status ).toBe( 'draft' );
+		expect( saved.meta.summary ).toBe( '' );
+		await expect( notice( page ) ).toContainText(
+			'This resource needs a summary before it can be published. Drafts can still be saved.'
+		);
+		await expect( notice( page ) ).toHaveClass( /is-warning/ );
+	} );
+
+	test( 'with the pre-publish checks off, publishing a resource without a summary shows the server refusal', async ( {
+		admin,
+		editor,
+		page,
+		requestUtils,
+	} ) => {
+		await admin.createNewPost( {
+			postType: 'resource',
+			title: `E2E refusal ${ Date.now() }`,
+		} );
+		const postId = await trackCurrentPost( page );
+		await editor.openDocumentSettingsSidebar();
+		await openPanel( page, 'Types' );
+		await page.getByRole( 'radio', { name: type.name } ).check();
+		await editPost( page, { resource_topic: [ topic.id ] } );
+
+		await page.evaluate( () =>
+			window.wp.data.dispatch( 'core/editor' ).disablePublishSidebar()
+		);
+
+		try {
+			// Without the checks the button publishes at once, before the lock
+			// can follow the status, so the server is what refuses.
+			await expect( saveButton( page ) ).toHaveText( 'Publish' );
+			await saveButton( page ).click();
+			await expect(
+				page
+					.getByRole( 'region', { name: 'Editor content' } )
+					.locator( '.components-notice' )
+					.filter( { hasText: 'Publishing failed.' } )
+			).toContainText(
+				'Publishing failed. A resource needs a summary to be published or scheduled. Write one in the Resource details panel.'
+			);
+
+			const refused = await requestUtils.rest( {
+				path: `/wp/v2/resources/${ postId }`,
+				params: { context: 'edit' },
+			} );
+			expect( refused.status ).not.toBe( 'publish' );
+
+			// The status edit stays "publish" after the failure, so the lock
+			// holds; setting it back to Draft lifts it.
+			expect( await isSavingLocked( page ) ).toBe( true );
+			await chooseStatus( page, 'Draft' );
+			expect( await isSavingLocked( page ) ).toBe( false );
+		} finally {
+			await page.evaluate( () =>
+				window.wp.data.dispatch( 'core/editor' ).enablePublishSidebar()
+			);
+		}
+	} );
+
+	test( 'the checklist and the notice close the pre-publish sidebar and focus the control', async ( {
+		admin,
+		page,
+	} ) => {
+		await admin.createNewPost( {
+			postType: 'resource',
+			title: `E2E focus ${ Date.now() }`,
+		} );
+		await trackCurrentPost( page );
+
+		const openPrePublish = async () => {
+			await topBar( page )
+				.getByRole( 'button', { name: 'Publish', exact: true } )
+				.click();
+			await expect(
+				publishRegion( page ).getByRole( 'button', {
+					name: /^Required fields:/,
+				} )
+			).toBeVisible();
+		};
+		const topicInput = settings( page ).locator(
+			'.resource-hub-topic-selector input'
+		);
+
+		await openPrePublish();
+		await expect( notice( page ) ).toHaveClass( /is-error/ );
+		await publishRegion( page )
+			.getByRole( 'button', { name: 'Add a topic' } )
+			.click();
+		await expect( topicInput ).toBeFocused();
+		await expect(
+			publishRegion( page ).getByRole( 'button', {
+				name: /^Required fields:/,
+			} )
+		).toHaveCount( 0 );
+		expect( await isSavingLocked( page ) ).toBe( false );
+
+		await openPrePublish();
+		await notice( page )
+			.getByRole( 'button', { name: 'Add a topic' } )
+			.click();
+		await expect( topicInput ).toBeFocused();
+
+		await openPrePublish();
+		await publishRegion( page )
+			.getByRole( 'button', { name: 'Write a summary' } )
+			.click();
+		await expect( page.getByLabel( 'Summary' ) ).toBeFocused();
+	} );
+
+	test( 'each required control is described by its state and is invalid only while publishing or published', async ( {
+		admin,
+		editor,
+		page,
+	} ) => {
+		await admin.createNewPost( { postType: 'resource' } );
+		await trackCurrentPost( page );
+		await editor.openDocumentSettingsSidebar();
+		await openPanel( page, 'Types' );
+		await openPanel( page, 'Topics' );
+		await openPanel( page, 'Resource details' );
+
+		const controls = {
+			type: settings( page ).locator(
+				'.resource-hub-type-radio[role="radiogroup"]'
+			),
+			topic: settings( page ).locator(
+				'.resource-hub-topic-selector input'
+			),
+			summary: page.getByLabel( 'Summary' ),
+		};
+		const title = editor.canvas.locator( '.editor-post-title__input' );
+
+		// An incomplete draft: required and described, not invalid.
+		for ( const [ key, control ] of Object.entries( controls ) ) {
+			await expect( control ).toHaveAttribute( 'aria-required', 'true' );
+			await expect( control ).toHaveAttribute(
+				'aria-describedby',
+				new RegExp( `(^| )resource-hub-required-${ key }( |$)` )
+			);
+			await expect( control ).not.toHaveAttribute( 'aria-invalid' );
+			await expect(
+				page.locator( `#resource-hub-required-${ key }` )
+			).toHaveText( /^Required\. A resource needs / );
+		}
+		await expect( title ).toHaveAttribute( 'aria-required', 'true' );
+		await expect( title ).not.toHaveAttribute( 'aria-invalid' );
+
+		// The summary keeps its own help text in the description.
+		await expect( controls.summary ).toHaveAttribute(
+			'aria-describedby',
+			/__help/
+		);
+
+		// A publish attempt: every missing control is invalid. The post has no
+		// title or content yet, so the editor keeps its Publish toggle off;
+		// the store opens the sidebar the toggle would.
+		await page.evaluate( () =>
+			window.wp.data.dispatch( 'core/editor' ).openPublishSidebar()
+		);
+		for ( const control of Object.values( controls ) ) {
+			await expect( control ).toHaveAttribute( 'aria-invalid', 'true' );
+		}
+		await expect( title ).toHaveAttribute( 'aria-invalid', 'true' );
+		await publishRegion( page )
+			.getByRole( 'button', { name: 'Cancel' } )
+			.click();
+		await expect( controls.summary ).not.toHaveAttribute( 'aria-invalid' );
+
+		// A filled field drops the state from its description.
+		await controls.summary.fill( SUMMARY );
+		await expect( controls.summary ).not.toHaveAttribute(
+			'aria-describedby',
+			/resource-hub-required-summary/
+		);
+		await expect( controls.summary ).toHaveAttribute(
+			'aria-required',
+			'true'
+		);
 	} );
 
 	test( "the notice's actions move focus to the control that fills the field", async ( {

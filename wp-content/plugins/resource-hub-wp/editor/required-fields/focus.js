@@ -8,7 +8,10 @@
  * buttons), the Topics panel (core's) and the Resource details panel (the
  * plugin's). Each is opened through the editor's own actions, and the control
  * is focused once React has rendered it, which is why the lookup retries for
- * a moment instead of assuming the element exists.
+ * a moment instead of assuming the element exists. The pre-publish sidebar is
+ * a panel over the settings sidebar, so it is closed first: a control under
+ * it would take focus out of sight. Closing it also lifts the editor's lock
+ * on a draft (`index.js`).
  */
 import { dispatch, select } from '@wordpress/data';
 import { store as editorStore } from '@wordpress/editor';
@@ -36,6 +39,18 @@ const CONTROLS = {
 
 const RETRY_MS = 50;
 const RETRIES = 20;
+
+/**
+ * The post title in the editor canvas, or null while it is not rendered.
+ *
+ * @return {HTMLElement|null} The title's editable element.
+ */
+export function findTitle() {
+	const canvas = document.querySelector( 'iframe[name="editor-canvas"]' );
+	const root = canvas?.contentDocument ?? document;
+
+	return root.querySelector( '.editor-post-title__input' );
+}
 
 /**
  * Focuses the first element the finder returns, retrying for about a second
@@ -80,15 +95,12 @@ function openPanel( panel ) {
  * @param {string} key `title`, `type`, `topic` or `summary`.
  */
 export function focusField( key ) {
-	if ( key === 'title' ) {
-		focusWhenPresent( () => {
-			const canvas = document.querySelector(
-				'iframe[name="editor-canvas"]'
-			);
-			const root = canvas?.contentDocument ?? document;
+	if ( select( editorStore ).isPublishSidebarOpened() ) {
+		dispatch( editorStore ).closePublishSidebar();
+	}
 
-			return root.querySelector( '.editor-post-title__input' );
-		} );
+	if ( key === 'title' ) {
+		focusWhenPresent( findTitle );
 		return;
 	}
 

@@ -15,7 +15,8 @@
  * form here. While no type is chosen, the panel says so in words above the
  * buttons (`RequiredState`, from the required-fields plugin), and the
  * `resource-hub-type-radio` class is how that plugin's notice finds the
- * buttons to focus.
+ * buttons to focus. The radio group carries `aria-required` and is described
+ * by that state (`useRequiredAttributes`).
  */
 import { addFilter } from '@wordpress/hooks';
 import { RadioControl, Spinner } from '@wordpress/components';
@@ -25,7 +26,10 @@ import { store as editorStore } from '@wordpress/editor';
 import { decodeEntities } from '@wordpress/html-entities';
 import { __ } from '@wordpress/i18n';
 
-import { RequiredState } from '../required-fields/required-state';
+import {
+	RequiredState,
+	useRequiredAttributes,
+} from '../required-fields/required-state';
 
 const TAXONOMY = 'resource_type';
 
@@ -52,6 +56,7 @@ function ResourceTypeRadio() {
 		[]
 	);
 	const { editPost } = useDispatch( editorStore );
+	const ref = useRequiredAttributes( 'type', '[role="radiogroup"]' );
 
 	if ( ! types ) {
 		return <Spinner />;
@@ -73,7 +78,7 @@ function ResourceTypeRadio() {
 	const value = selected.length === 1 ? String( selected[ 0 ] ) : '';
 
 	return (
-		<>
+		<div ref={ ref }>
 			<RequiredState field="type" />
 			<RadioControl
 				className="resource-hub-type-radio"
@@ -88,7 +93,7 @@ function ResourceTypeRadio() {
 					editPost( { [ TAXONOMY ]: [ Number( id ) ] } )
 				}
 			/>
-		</>
+		</div>
 	);
 }
 
