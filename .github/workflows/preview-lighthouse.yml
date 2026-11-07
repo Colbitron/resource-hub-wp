@@ -176,10 +176,11 @@ jobs:
       # reached the comment, and 1 when nothing did or the secret went
       # somewhere it should not. continue-on-error keeps the job green
       # either way, so that a flaky preview or a missing page never shows as
-      # a failed check on the pull request; the step below fails the job
-      # only when the comment was not posted, which is the one case nothing
-      # else would surface. The script hands lhci and Chrome a minimal
-      # environment, so the token below never reaches them.
+      # a failed check on the pull request; the last step fails the job
+      # only when the comment was not posted (nothing else would surface
+      # that) or the secret reached another origin (the script's `leak`
+      # output). The script hands lhci and Chrome a minimal environment, so
+      # the token below never reaches them.
       - name: Measure the preview and comment on the pull request
         id: measure
         continue-on-error: true

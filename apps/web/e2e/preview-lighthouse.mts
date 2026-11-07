@@ -163,14 +163,31 @@ function collect(origin: string, path: string, secret: string): { runs: PreviewL
     stdio: "inherit",
     env: env as NodeJS.ProcessEnv,
   });
-  const runs = readdirSync(RAW_DIR)
-    .filter((name) => /^lhr-.*\.json$/.test(name))
-    .sort()
-    .map((name) => JSON.parse(readFileSync(join(RAW_DIR, name), "utf8")) as PreviewLhr);
-  if (result.status !== 0) {
-    return { runs, failure: `lhci collect exited with ${result.status ?? result.signal} on ${path}; its output is in the log.` };
+  // Whatever parses is returned, so a missing directory or a cut-off file
+  // (lhci interrupted mid-write) loses that run, not the exit status's reason.
+  let names: string[] = [];
+  try {
+    names = readdirSync(RAW_DIR)
+      .filter((name) => /^lhr-.*\.json$/.test(name))
+      .sort();
+  } catch {
+    names = [];
   }
-  if (runs.length === 0) return { runs, failure: `lhci collect wrote no runs for ${path}.` };
+  const runs: PreviewLhr[] = [];
+  const unreadable: string[] = [];
+  for (const name of names) {
+    try {
+      runs.push(JSON.parse(readFileSync(join(RAW_DIR, name), "utf8")) as PreviewLhr);
+    } catch {
+      unreadable.push(name);
+    }
+  }
+  const skipped = unreadable.length === 0 ? "" : ` ${unreadable.length} of its reports could not be read.`;
+  if (result.status !== 0) {
+    return { runs, failure: `lhci collect exited with ${result.status ?? result.signal} on ${path}; its output is in the log.${skipped}` };
+  }
+  if (runs.length === 0) return { runs, failure: `lhci collect wrote no runs for ${path}.${skipped}` };
+  if (unreadable.length > 0) return { runs, failure: `lhci collect finished on ${path} but${skipped}` };
   return { runs, failure: null };
 }
 
