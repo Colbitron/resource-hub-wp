@@ -76,8 +76,11 @@ import "./listing.css";
  *   it. A lead whose own place is on a later page appears there as a row.
  *   No request is added per item: the lead is matched by ID.
  * - With a lead the list is headed "Latest" and the rows take `h3`; without
- *   one the rows sit under the `h1` as `h2`s. The empty state shows only on
- *   a page with no lead, so the page never says it is empty beside one.
+ *   one the rows sit under the `h1` as `h2`s. They are plain headings, not
+ *   labelled regions: two regions inside `main` would add landmark stops
+ *   that name nothing the heading outline does not. The empty state shows
+ *   only on a page with no lead, so the page never says it is empty beside
+ *   one.
  * - A failed lead read is not a failed page: the lead is decoration over the
  *   list, so a `CmsError` from the flag lookup or the flag's listing is
  *   logged once and the page renders without a lead, which ISR stores like
@@ -248,12 +251,10 @@ export async function ListingPage({ request }: { request: ListingRequest }) {
       </header>
       <FilterNav types={offered(types, filter.type)} topics={offered(topics, filter.topic)} current={filter} />
       {lead !== null && (
-        <section className="rh-listing__lead" aria-labelledby="rh-listing-featured">
-          <h2 className="rh-listing__section" id="rh-listing-featured">
-            Featured
-          </h2>
+        <div className="rh-listing__lead">
+          <h2 className="rh-listing__section">Featured</h2>
           <FeaturedLead {...lead} headingLevel="h3" />
-        </section>
+        </div>
       )}
       {lead === null && cards.length === 0 ? (
         <div className="rh-listing__empty">
@@ -281,10 +282,8 @@ export async function ListingPage({ request }: { request: ListingRequest }) {
         </ul>
       ) : (
         rows.length > 0 && (
-          <section className="rh-listing__latest" aria-labelledby="rh-listing-latest">
-            <h2 className="rh-listing__section" id="rh-listing-latest">
-              Latest
-            </h2>
+          <div className="rh-listing__latest">
+            <h2 className="rh-listing__section">Latest</h2>
             <ul className="rh-card-grid" role="list">
               {rows.map((card) => (
                 <li key={card.id}>
@@ -292,7 +291,7 @@ export async function ListingPage({ request }: { request: ListingRequest }) {
                 </li>
               ))}
             </ul>
-          </section>
+          </div>
         )
       )}
       <Pagination filter={filter} current={page} total={listing.totalPages} />
