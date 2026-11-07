@@ -1,12 +1,19 @@
 /*
  * The single resource page: the header, the meta line, the featured image,
  * the summary, the body and the source line, built on the shared tokens
- * (packages/ui/DESIGN.md). These classes are the front end's own, not part
- * of the contract.
+ * (packages/ui/DESIGN.md, "Components", "The article"). These classes are
+ * the front end's own, not part of the contract; the meta line's mark and
+ * topic labels are the row's parts from the shared card.css, which
+ * ResourceArticle imports.
  *
- * The whole article sits in one column of `--rh-measure`, the prose line
- * length, so the image is never wider than the text under it. The body's
- * element rules are `.rh-prose` in prose.css, shared with the page route.
+ * The article is one column of `--rh-measure`, the prose line length,
+ * centred in the shell's width as a reading column, so the image is never
+ * wider than the text under it and the eye does not travel to the left
+ * edge of a wide screen for a page that is all text. The page is the one
+ * flat surface; what gives the article its character is the article
+ * itself: the rounded image, the lead paragraph, and the body's boxed
+ * quote, table and code, which are `.rh-prose` in prose.css, shared with
+ * the page route.
  *
  * Long words wrap with `overflow-wrap: break-word`, not `anywhere`: both
  * break a word that cannot fit its line, but `anywhere` also lowers an
@@ -16,6 +23,7 @@
 
 .rh-resource {
 	max-width: var(--rh-measure);
+	margin-inline: auto;
 	overflow-wrap: break-word;
 }
 
@@ -27,50 +35,55 @@
 	margin-bottom: var(--rh-space-3);
 }
 
-/* The meta line: the type, the date and the topics, wrapping as one row. */
+/*
+ * The meta line: the type with its mark, the date and the topics, as one
+ * row that wraps. The type is the row's `.rh-card__type` (the dot is its
+ * `::before`, in the accent `data-accent` names) around a link to the
+ * type's listing, so the dot sits outside the link's text and underline;
+ * the topics are the row's `.rh-card__topics`, small labels led by short
+ * rules, each holding a link to its listing.
+ */
 
 .rh-resource__meta {
 	display: flex;
 	flex-wrap: wrap;
-	align-items: center;
+	align-items: baseline;
 	gap: var(--rh-space-2) var(--rh-space-3);
 	color: var(--rh-color-text-muted);
 	font-size: var(--rh-text-sm);
+	font-variant-numeric: tabular-nums;
 }
 
+/*
+ * The type's link keeps the label's ink and gains the underline that says
+ * it is a link, at the hairline weight, set low under the capitals; a
+ * hover thickens it to the strong line, as the listing's links do.
+ */
 .rh-resource__type {
-	color: var(--rh-color-text);
-	font-weight: 600;
+	color: inherit;
+	text-decoration: underline;
+	text-decoration-thickness: var(--rh-border-width);
+	text-underline-offset: 0.3em;
 }
 
-.rh-resource__topics {
-	display: flex;
-	flex-wrap: wrap;
-	gap: var(--rh-space-1) var(--rh-space-2);
-	margin: 0;
-	padding: 0;
-	list-style: none;
+.rh-resource__type:hover {
+	text-decoration-thickness: var(--rh-border-width-strong);
 }
 
+/* A topic's link: the link colour and the underline, thickened on hover. */
 .rh-resource__topic {
-	display: inline-block;
-	padding: 0 var(--rh-space-2);
-	border: var(--rh-border-width) solid var(--rh-color-border-strong);
-	border-radius: var(--rh-radius-sm);
-	background: var(--rh-color-surface-raised);
-	color: var(--rh-color-text);
-	text-decoration: none;
+	text-decoration-thickness: var(--rh-border-width);
 }
 
 .rh-resource__topic:hover {
-	border-color: var(--rh-color-text-muted);
-	text-decoration: underline;
+	text-decoration-thickness: var(--rh-border-width-strong);
 }
 
 /*
  * The featured image. Its width and height attributes reserve its box, so it
  * moves nothing when it loads (see apps/web/README.md); it is never scaled past
- * its own size, and never wider than the column.
+ * its own size, and never wider than the column. Its corners are rounded as
+ * the lead's are, and it loads into the raised surface.
  */
 
 .rh-resource__media {
@@ -85,12 +98,15 @@
 	background: var(--rh-color-surface-raised);
 }
 
+/* The summary as the lead paragraph: a step larger than the body, in the muted ink. */
+
 .rh-resource__summary {
-	font-size: var(--rh-text-md);
+	margin-bottom: var(--rh-space-5);
 	color: var(--rh-color-text-muted);
+	font-size: var(--rh-text-md);
 }
 
-/* The source line, set off from the body. */
+/* The source line, set off from the body by a hairline. */
 
 .rh-resource__source {
 	margin-top: var(--rh-space-6);
@@ -104,10 +120,20 @@
 	margin: 0;
 }
 
-/* The route's error boundary (error.tsx): a sentence and a way to try again. */
+/*
+ * The routes' error boundaries (error.tsx): a sentence and a way to try
+ * again, in the same centred column as the article they stand in for. The
+ * button is the one filled control on the site, inverted ink, so it reads
+ * as a control and not a link.
+ */
 
 .rh-resource__unavailable {
 	max-width: var(--rh-measure);
+	margin-inline: auto;
+}
+
+.rh-resource__unavailable p {
+	font-size: var(--rh-text-md);
 }
 
 .rh-resource__unavailable button {

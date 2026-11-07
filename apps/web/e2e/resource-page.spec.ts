@@ -180,7 +180,17 @@ test.describe("what the page renders", () => {
     await expect(article.getByRole("heading", { level: 1 })).toHaveText(SEEDED.title);
 
     // The type links to its listing, the date is a <time>, and each topic links to its listing.
-    await expect(article.getByRole("link", { name: termName("resource_type", SEEDED.type) })).toHaveAttribute("href", `/resources/${SEEDED.type}/`);
+    const typeLink = article.getByRole("link", { name: termName("resource_type", SEEDED.type) });
+    await expect(typeLink).toHaveAttribute("href", `/resources/${SEEDED.type}/`);
+    // The type mark is the row's (card.css), on the span around the link and
+    // not on the link, so the dot sits outside the link's text and underline;
+    // a webinar's mark is coral (lib/type-accents.ts).
+    const typeMark = article.locator(".rh-resource__meta .rh-card__type");
+    await expect(typeMark).toHaveAttribute("data-accent", "coral");
+    expect(await typeMark.evaluate((span) => getComputedStyle(span, "::before").width)).not.toBe("0px");
+    expect(await typeLink.evaluate((link) => getComputedStyle(link, "::before").content)).toBe("none");
+    const [markBox, linkBox] = [await typeMark.boundingBox(), await typeLink.boundingBox()];
+    expect(markBox !== null && linkBox !== null && linkBox.x > markBox.x, "the dot sits before the link, outside it").toBe(true);
     const time = article.locator(".rh-resource__meta time");
     await expect(time).toHaveAttribute("datetime", /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
     await expect(time).toHaveText(/^[A-Z][a-z]{2} \d{1,2}, \d{4}$/);

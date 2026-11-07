@@ -4,8 +4,19 @@
  * (PageArticle) share it, so the two read the same. WordPress's block classes
  * are kept on the markup but nothing here depends on them. A body never renders
  * an `h1`: when it has one, the pass shows every heading one level down, so the
- * levels here start at `h2`. Built on the shared tokens (packages/ui/DESIGN.md);
- * the class is the front end's own, not part of the contract.
+ * levels here start at `h2`. Built on the shared tokens (packages/ui/DESIGN.md,
+ * "Components", "The article"); the class is the front end's own, not part of
+ * the contract.
+ *
+ * The page is flat; inside the body three things are insets, boxed on the
+ * raised surface with a hairline and the small radius, so a reader can tell a
+ * quote, a table and a code block from the prose around them without colour:
+ * the blockquote, with a bar of coral down its left edge, the one hairline of
+ * brand colour in the article; the table's scroll region; and `pre`. Figures
+ * and images take the same corners as the featured image. The related block's
+ * fallback (`.rh-related`) is a small collection: a heading on a strong rule
+ * and the links between hairlines, the shape the listing's "Latest" section
+ * has, so slice 4's rows (issue #50) slot in under the same heading.
  *
  * `anywhere` is kept for the places where an unbreakable token must not
  * widen the page: `pre`, and links and code inside table cells.
@@ -53,6 +64,10 @@
 	margin-bottom: var(--rh-space-1);
 }
 
+.rh-prose li::marker {
+	color: var(--rh-color-text-muted);
+}
+
 .rh-prose dt {
 	font-weight: 600;
 }
@@ -67,11 +82,30 @@
 	border-top: var(--rh-border-width) solid var(--rh-color-border);
 }
 
+/* Body links underline at the hairline weight and thicken on hover, like the listing's. */
+
+.rh-prose a {
+	text-decoration-thickness: var(--rh-border-width);
+}
+
+.rh-prose a:hover {
+	text-decoration-thickness: var(--rh-border-width-strong);
+}
+
+/*
+ * The quote: an inset box, a step larger than the body, with the coral bar
+ * at its left edge. The bar is the strong line, so under forced colours,
+ * where every border takes the system text colour, it stays a bar.
+ */
+
 .rh-prose blockquote {
-	margin: 0 0 var(--rh-space-4);
-	padding: var(--rh-space-1) 0 var(--rh-space-1) var(--rh-space-4);
-	border-left: 3px solid var(--rh-color-border);
-	color: var(--rh-color-text-muted);
+	margin: var(--rh-space-5) 0;
+	padding: var(--rh-space-4) var(--rh-space-5);
+	border: var(--rh-border-width) solid var(--rh-color-border);
+	border-left: var(--rh-border-width-strong) solid var(--rh-mark-coral);
+	border-radius: var(--rh-radius);
+	background: var(--rh-color-surface-raised);
+	font-size: var(--rh-text-md);
 }
 
 .rh-prose blockquote p:last-child {
@@ -81,6 +115,7 @@
 .rh-prose blockquote cite {
 	display: block;
 	margin-top: var(--rh-space-2);
+	color: var(--rh-color-text-muted);
 	font-size: var(--rh-text-sm);
 	font-style: normal;
 }
@@ -90,7 +125,7 @@
  * focus to be reachable, and the sanitiser cannot give a `<pre>` a tabindex.
  */
 .rh-prose pre {
-	margin: 0 0 var(--rh-space-4);
+	margin: 0 0 var(--rh-space-5);
 	padding: var(--rh-space-3) var(--rh-space-4);
 	border: var(--rh-border-width) solid var(--rh-color-border);
 	border-radius: var(--rh-radius);
@@ -120,11 +155,14 @@
  * Every table sits in the pass's scroll region (`tableRegion` in
  * lib/content/render.tsx): a focusable, labelled box that scrolls sideways,
  * so a table wider than the column scrolls inside it and the page never
- * does. The region is a tab stop, so it shows the focus ring; its margin is
- * the table's.
+ * does. The region is the table's box: a hairline and the small radius,
+ * which its own overflow clips the table to. It is a tab stop, so it shows
+ * the focus ring; its margin is the table's.
  */
 .rh-prose .rh-table-scroll {
-	margin: 0 0 var(--rh-space-4);
+	margin: 0 0 var(--rh-space-5);
+	border: var(--rh-border-width) solid var(--rh-color-border);
+	border-radius: var(--rh-radius);
 	overflow-x: auto;
 }
 
@@ -136,7 +174,8 @@
 /*
  * Tables stay tables (their semantics go with `display`); cells wrap their
  * words, and a table whose words alone are wider than the column scrolls in
- * its region.
+ * its region. The header row is a band of the raised surface under a strong
+ * rule; the last row draws no rule of its own, since the box's edge is there.
  */
 .rh-prose table {
 	width: 100%;
@@ -146,7 +185,7 @@
 }
 
 .rh-prose caption {
-	margin-bottom: var(--rh-space-2);
+	padding: var(--rh-space-2) var(--rh-space-3);
 	color: var(--rh-color-text-muted);
 	text-align: left;
 }
@@ -164,7 +203,13 @@
 }
 
 .rh-prose thead th {
-	border-bottom-width: 2px;
+	border-bottom: var(--rh-border-width-strong) solid var(--rh-color-border-strong);
+	background: var(--rh-color-surface-raised);
+}
+
+.rh-prose tbody tr:last-child > td,
+.rh-prose tbody tr:last-child > th {
+	border-bottom: 0;
 }
 
 /*
@@ -177,25 +222,27 @@
 	overflow-wrap: anywhere;
 }
 
+/* Figures and images: the featured image's corners, loading into the raised surface. */
+
 .rh-prose figure {
-	margin: 0 0 var(--rh-space-5);
+	margin: var(--rh-space-5) 0;
+}
+
+.rh-prose img {
+	max-width: 100%;
+	height: auto;
+	border-radius: var(--rh-radius);
+	background: var(--rh-color-surface-raised);
 }
 
 .rh-prose figure img {
 	display: block;
-	max-width: 100%;
-	height: auto;
 }
 
 .rh-prose figcaption {
 	margin-top: var(--rh-space-2);
 	color: var(--rh-color-text-muted);
 	font-size: var(--rh-text-sm);
-}
-
-.rh-prose img {
-	max-width: 100%;
-	height: auto;
 }
 
 .rh-prose details {
@@ -215,4 +262,45 @@
 	color: inherit;
 	text-decoration: underline;
 	text-decoration-color: var(--rh-color-accent);
+}
+
+/*
+ * The related-resources block's fallback (packages/ui/README.md): the
+ * wrapper the pass marks `rh-related`, holding the CMS's heading and its
+ * list of links. Shown as a small collection in the listing's shape: the
+ * heading, at whatever level the outline gave it, small over a strong rule
+ * in the ink, and each link on a row between hairlines, in the ink and
+ * underlined. Slice 4 (issue #50) keeps the heading and renders the rows
+ * of `card.css` under it in place of this list. The list keeps its
+ * markers off with `list-style: none`, which Safari reads as no list; the
+ * sanitiser lets no content carry `role`, and slice 4's own list will.
+ */
+
+.rh-prose .rh-related {
+	margin-top: var(--rh-space-7);
+}
+
+.rh-prose .rh-related :is(h2, h3, h4, h5, h6) {
+	margin: 0;
+	padding-bottom: var(--rh-space-2);
+	border-bottom: var(--rh-border-width-strong) solid var(--rh-color-text);
+	font-size: var(--rh-text-md);
+}
+
+.rh-prose .rh-related ul,
+.rh-prose .rh-related ol {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.rh-prose .rh-related li {
+	margin: 0;
+	padding: var(--rh-space-3) 0;
+	border-bottom: var(--rh-border-width) solid var(--rh-color-border);
+}
+
+.rh-prose .rh-related a {
+	color: var(--rh-color-text);
+	font-weight: 600;
 }

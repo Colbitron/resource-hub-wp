@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 
-import { renderContent } from "@/lib/content/render";
+import { CONTENT_SIZES, renderContent } from "@/lib/content/render";
 import { formatPublishedDate } from "@/lib/dates";
 import { cmsUrls } from "@/lib/env";
 import type { RenderedResource } from "@/lib/redirects";
@@ -11,18 +11,32 @@ import { resourcePath, topicListingPath, typeListingPath } from "@/lib/routes";
 import { DEFAULT_SHARE_IMAGE } from "@/lib/share-image";
 import { shareMetadata } from "@/lib/share-metadata";
 import { sourceLink, type SourceLink } from "@/lib/source-link";
+import type { MarkAccent } from "@/lib/type-accents";
 import { toCard } from "@/lib/wp/cards";
 import { featuredImage, openGraphImage, type FeaturedImage } from "@/lib/wp/images";
 
+// The row's stylesheet, for the type mark and the topic labels the meta line borrows from it.
+import "@colbitron/resource-hub-ui/card.css";
 import "./prose.css";
 import "./resource.css";
 
 /**
  * The single resource page's content: one `<article>` with the title, a meta
- * line (the type, linked to its listing; the published date; the topics,
- * linked to theirs), the featured image, the summary, the body and the source
- * link. `resourceMetadata` gives the route its `generateMetadata` from the
- * same data.
+ * line (the type with its mark, linked to its listing; the published date;
+ * the topics, linked to theirs), the featured image, the summary, the body
+ * and the source link, in the article direction the owner chose on
+ * 2026-11-06 (`packages/ui/DESIGN.md`, "Components", "The article").
+ * `resourceMetadata` gives the route its `generateMetadata` from the same
+ * data.
+ *
+ * The meta line borrows the row's parts from the shared `card.css` rather
+ * than drawing a second mark: the type is `.rh-card__type` with its
+ * `data-accent`, whose `::before` is the dot, and the topics are
+ * `.rh-card__topics` with the short rules between them. The type's name is
+ * a link to its listing, inside that span, so the dot is the span's and
+ * never part of the link's text or underline: a cobalt dot beside a link
+ * is what the mark rule forbids (DESIGN.md, "Colors"), and this keeps the
+ * two apart. Why the name stays a link is recorded in DESIGN.md.
  *
  * Its path carries the resource's type, the same on both sites (ADR 0024).
  * The CMS's address never reaches the page (ADR 0040). The URL shape is in
@@ -49,16 +63,9 @@ import "./resource.css";
  * priority, and Chromium fetches an image preload at Low. `fetchPriority=
  * "high"` is set beside it: Next.js copies it onto the preload link as well
  * as the `<img>`, so the image is requested at High from the head. Its
- * `sizes` is the content column's, the same string the body's images use.
+ * `sizes` is the content column's, `CONTENT_SIZES` from the pass, the one
+ * string the body's images use too; its docblock has the measurement.
  */
-
-/**
- * `sizes` for the featured image: the content column is `--rh-measure`
- * (65ch, about 40rem at the system font) and `sizes` cannot read a CSS
- * variable, so it is written out, rounded up, as `CONTENT_SIZES` in
- * `lib/content/render.tsx` is for the body's images.
- */
-const IMAGE_SIZES = "(max-width: 40rem) 100vw, 40rem";
 
 /** The page's view of a resource, computed once per render and shared by the component and the metadata. */
 interface ResourceView {
@@ -67,6 +74,8 @@ interface ResourceView {
   readonly description: string | null;
   readonly typeLabel: string;
   readonly typePath: string;
+  /** The type mark's colour, the row's own (`toCard`). */
+  readonly accent: MarkAccent;
   /** `date_gmt` as an ISO 8601 instant, for `<time>` and `publishedTime`. */
   readonly date: string;
   readonly topics: readonly ResourceTopic[];
@@ -87,6 +96,7 @@ function resourceView(rendered: RenderedResource): ResourceView {
     description: description === "" ? null : description,
     typeLabel: card.typeLabel,
     typePath: typeListingPath(rendered.type),
+    accent: card.accent,
     date: card.date,
     topics: resourceTopics(rendered.resource),
     image: featuredImage(rendered.resource),
@@ -151,15 +161,18 @@ export function ResourceArticle({ rendered }: { rendered: RenderedResource }) {
       <header className="rh-resource__header">
         <h1 className="rh-resource__title">{view.title}</h1>
         <div className="rh-resource__meta">
-          <Link className="rh-resource__type" href={view.typePath}>
-            {view.typeLabel}
-          </Link>
+          {/* The mark is the span's `::before` (card.css); the link holds the name alone. */}
+          <span className="rh-card__type" data-accent={view.accent}>
+            <Link className="rh-resource__type" href={view.typePath}>
+              {view.typeLabel}
+            </Link>
+          </span>
           <time dateTime={view.date}>{formatPublishedDate(view.date)}</time>
           {view.topics.length > 0 && (
             // role="list" because Safari drops list semantics under `list-style: none`.
-            <ul className="rh-resource__topics" aria-label="Topics" role="list">
+            <ul className="rh-card__topics" aria-label="Topics" role="list">
               {view.topics.map((topic) => (
-                <li key={topic.slug}>
+                <li className="rh-card__topic" key={topic.slug}>
                   <Link className="rh-resource__topic" href={topicListingPath(topic.slug)}>
                     {topic.name}
                   </Link>
@@ -176,7 +189,7 @@ export function ResourceArticle({ rendered }: { rendered: RenderedResource }) {
             alt={view.image.alt}
             width={view.image.width}
             height={view.image.height}
-            sizes={IMAGE_SIZES}
+            sizes={CONTENT_SIZES}
             preload
             fetchPriority="high"
           />
