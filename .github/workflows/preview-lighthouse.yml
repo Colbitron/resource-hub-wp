@@ -47,27 +47,36 @@ jobs:
     steps:
       # A deployment of a commit no open pull request has (a branch without
       # one yet, or a merged one) ends here quietly: nothing to comment on.
-      # The preview URL is the status's environment_url, with target_url as
-      # the older name of the same field.
+      # The commit's pull requests include any whose history holds it (a
+      # pull request stacked on this one, or its base after a merge), so
+      # only the one whose head is this commit counts: a late status for an
+      # older commit then measures nothing rather than overwrite a newer
+      # comment. The preview URL is the status's environment_url (target_url
+      # is Vercel's inspector page, not the preview); it is checked to be an
+      # https origin and nothing else, one line, before it goes anywhere.
       - name: Look up the open pull request for the deployed commit
         id: lookup
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.event.deployment.sha }}
-          PREVIEW_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+          PREVIEW_URL: ${{ github.event.deployment_status.environment_url }}
         run: |
-          number=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" --jq '[.[] | select(.state == "open")][0].number // empty')
+          # $sha is jq's variable, bound with --arg, not the shell's.
+          # shellcheck disable=SC2016
+          number=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" \
+            --jq --arg sha "$SHA" '[.[] | select(.state == "open" and .head.sha == $sha)][0].number // empty')
           if [ -z "$number" ]; then
-            echo "No open pull request has commit $SHA; nothing to measure."
+            echo "No open pull request has commit $SHA as its head; nothing to measure."
             exit 0
           fi
-          case "$PREVIEW_URL" in
-            https://*) ;;
-            *)
-              echo "::error::The deployment status carries no https preview URL (got: $PREVIEW_URL)."
-              exit 1
-              ;;
-          esac
+          if [ -z "$PREVIEW_URL" ]; then
+            echo "The deployment status carries no environment_url; nothing to measure."
+            exit 0
+          fi
+          if ! [[ "$PREVIEW_URL" =~ ^https://[A-Za-z0-9.-]+$ ]]; then
+            echo "::error::The deployment status's environment_url is not an https origin."
+            exit 1
+          fi
           echo "Pull request #$number, preview $PREVIEW_URL."
           {
             echo "number=$number"
@@ -108,8 +117,12 @@ jobs:
           echo "::add-mask::$VERCEL_PROTECTION_BYPASS"
 
       # The deployed commit, which is what GitHub runs this workflow from.
+      # Nothing here talks to GitHub through git after the checkout, so the
+      # token is not left in .git/config, as in ci.yml's deploy job.
       - name: Check out
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6
@@ -153,14 +166,16 @@ jobs:
         timeout-minutes: 15
         run: pnpm --filter resource-hub-web exec playwright install --with-deps chromium
 
-      # Warms each sampled URL, measures it at the gate's settings and posts
+      # Warms and measures each sampled URL at the gate's settings and posts
       # or updates the comment (apps/web/e2e/preview-lighthouse.mts). The
-      # script exits 2 when the measurement failed but the failure reached
-      # the comment, and 1 when nothing did. continue-on-error keeps the job
-      # green either way, so that a flaky preview or a missing page never
-      # shows as a failed check on the pull request; the step below fails
-      # the job only when the comment was not posted, which is the one case
-      # nothing else would surface.
+      # script exits 2 when some URLs could not be measured but the reasons
+      # reached the comment, and 1 when nothing did or the secret went
+      # somewhere it should not. continue-on-error keeps the job green
+      # either way, so that a flaky preview or a missing page never shows as
+      # a failed check on the pull request; the step below fails the job
+      # only when the comment was not posted, which is the one case nothing
+      # else would surface. The script hands lhci and Chrome a minimal
+      # environment, so the token below never reaches them.
       - name: Measure the preview and comment on the pull request
         id: measure
         continue-on-error: true
