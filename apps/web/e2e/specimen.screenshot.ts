@@ -37,9 +37,9 @@ const FOCUS_MARGIN = 10;
 const FOCUS_MAX_DIFF_PIXELS = 10;
 /**
  * The images Next.js's optimiser serves: the lead's and the resource's
- * featured image. The full-page shots mask them with `specimen-mask.css`,
- * which says why; the committed brand PNGs, served unoptimised, stay
- * compared.
+ * featured image and the resource body's figure. The full-page shots mask
+ * them with `specimen-mask.css`, which says why; the committed brand PNGs,
+ * served unoptimised, stay compared.
  */
 const OPTIMISED_IMAGES = 'img[src^="/_next/image"]';
 const MASK_STYLE_PATH = join(__dirname, "specimen-mask.css");
@@ -98,10 +98,11 @@ for (const width of WIDTHS) {
         // CSS.getPlatformFontsForNode; the same order every run). One capture
         // first, thrown away, so the baseline is always the settled layout.
         await page.screenshot({ fullPage: true });
-        // The mask's selector still names the optimiser's images: the lead's
-        // and the resource's. If Next.js changes the URL it gives them, this
-        // fails rather than letting codec noise back into the comparison.
-        await expect(page.locator(OPTIMISED_IMAGES)).toHaveCount(2);
+        // The mask's selector still names the optimiser's images: the lead's,
+        // the resource's and the resource body's figure. If Next.js changes
+        // the URL it gives them, this fails rather than letting codec noise
+        // back into the comparison.
+        await expect(page.locator(OPTIMISED_IMAGES)).toHaveCount(3);
         // Soft, so the focus ring's own shot below is still compared, and its
         // diff written, when the whole page differs.
         await expect.soft(page).toHaveScreenshot(`specimen-${width}-${colorScheme}.png`, {
