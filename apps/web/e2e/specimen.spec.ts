@@ -30,14 +30,19 @@ test("every token it shows has a value on the page", async ({ page }) => {
   expect(unset).toEqual([]);
 });
 
-test("shows the shell, the filters, a card of each type, pagination and prose", async ({ page }) => {
+test("shows the shell, the filters, the lead, a row of each type and a neutral one, pagination and prose", async ({ page }) => {
   await page.goto(SPECIMEN_PATH);
   await expect(page.getByRole("banner")).toHaveCount(1);
   await expect(page.getByRole("contentinfo")).toHaveCount(1);
   const filters = page.getByRole("navigation", { name: "Filter resources" });
   await expect(filters).toBeVisible();
   await expect(filters.locator("[aria-current]")).toHaveText(["Webinar", "Performance"]);
-  await expect(page.locator(".rh-card__type")).toHaveText(["Article", "Case study", "Ebook", "Podcast", "Webinar"]);
+  // The lead with its image, then the one without, in the states section.
+  await expect(page.locator(".rh-lead")).toHaveCount(2);
+  await expect(page.locator(".rh-lead__media img")).toHaveCount(1);
+  await expect(page.locator(".rh-lead .rh-card__type")).toHaveText(["Article", "Webinar"]);
+  await expect(page.locator(".rh-card .rh-card__type")).toHaveText(["Article", "Case study", "Ebook", "Podcast", "Webinar", "Guide"]);
+  await expect(page.locator(".rh-card .rh-card__type").last()).toHaveAttribute("data-accent", "neutral");
   const prose = page.locator("section[aria-labelledby='specimen-prose'] .rh-prose");
   for (const selector of ["h2", "h3", "ul", "ol", "blockquote", "table", "a"]) {
     await expect(prose.locator(selector).first(), selector).toBeVisible();
@@ -135,10 +140,10 @@ test.describe("the empty listing state", () => {
   });
 });
 
-test("every card image loads", async ({ page }) => {
+test("the lead's image loads", async ({ page }) => {
   await page.goto(SPECIMEN_PATH);
-  const images = page.locator(".rh-card__media img");
-  await expect(images).toHaveCount(4);
+  const images = page.locator(".rh-lead__media img");
+  await expect(images).toHaveCount(1);
   await expect
     .poll(() => images.evaluateAll((nodes) => nodes.every((img) => (img as HTMLImageElement).complete && (img as HTMLImageElement).naturalWidth > 0)))
     .toBe(true);

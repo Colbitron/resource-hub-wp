@@ -10,10 +10,13 @@ import { postRevalidate } from "./revalidation.mts";
  * The listing routes under `/resources/` against the built app and the mock
  * CMS (ADRs 0024, 0025 and 0043; see `packages/ui/README.md` and
  * `docs/architecture/caching.md`): what each route lists, pagination at 12 a
- * page, the filter bar, the 404s that need data, the proxy's canonical-form
- * 308s, the reserved segments, the CMS's absence from the HTML, keyboard
- * reach, and a revalidation event from the CMS reaching every listing it
- * should through its tags (the table in `docs/architecture/caching.md`).
+ * page, the lead (the newest featured resource, on the library's first page
+ * only, left out of the rows under it, with the page's one image), the
+ * filter bar and the pagination as text links with 24 px targets, the 404s
+ * that need data, the proxy's canonical-form 308s, the reserved segments,
+ * the CMS's absence from the HTML, keyboard reach, forced colours, and a
+ * revalidation event from the CMS reaching every listing it should through
+ * its tags (the table in `docs/architecture/caching.md`).
  *
  * The app's Data Cache and its stored pages outlive the mock's reset, in the
  * process and on disk (e2e/README.md), so `beforeEach` resets the mock and
@@ -31,6 +34,9 @@ const cms = mockCms();
 const RUN = Date.now().toString(36);
 
 const PUBLISHED = RESOURCES.filter((resource) => resource.status === "publish");
+
+/** The seeded featured resources, newest first; the first is the library's lead. */
+const FEATURED = PUBLISHED.filter((resource) => resource.featured);
 
 /** A title as WordPress renders it: `the_title` texturizes an apostrophe to a right single quote. */
 function texturized(title: string): string {
@@ -78,8 +84,14 @@ function cacheDirectives(response: APIResponse): string[] {
     .filter((directive) => directive !== "");
 }
 
+/** The rows' titles, in order; the lead's title is not among them (`.rh-lead__title`). */
 async function cardTitles(page: Page): Promise<string[]> {
   return page.locator(".rh-card__title").allTextContents();
+}
+
+async function leadTitle(page: Page): Promise<string | null> {
+  const lead = page.locator(".rh-lead__title");
+  return (await lead.count()) === 0 ? null : lead.textContent();
 }
 
 async function expectListing(page: Page, path: string, heading: string, titles: string[]): Promise<void> {
@@ -111,12 +123,16 @@ async function expectCanonicalRedirect(request: APIRequestContext, from: string,
 }
 
 test.describe("each route lists the right resources, newest first", () => {
-  test("the library, in two pages of twelve", async ({ page }) => {
+  test("the library, in two pages of twelve, the newest featured resource as the lead of the first", async ({ page }) => {
     const all = seededTitles();
     expect(all).toHaveLength(14);
-    await expectListing(page, "/resources/", "Resources", all.slice(0, PER_PAGE));
+    // The seed's newest resource is featured, so it is the lead and the rows start at the second.
+    expect(texturized(FEATURED[0].title)).toBe(all[0]);
+    await expectListing(page, "/resources/", "Resources", all.slice(1, PER_PAGE));
+    expect(await leadTitle(page)).toBe(all[0]);
     await expect(page.getByText("14 resources")).toBeVisible();
     await expectListing(page, "/resources/page/2/", "Resources", all.slice(PER_PAGE));
+    expect(await leadTitle(page)).toBeNull();
   });
 
   test("one type", async ({ page }) => {
@@ -154,7 +170,7 @@ test.describe("each route lists the right resources, newest first", () => {
 });
 
 test.describe("the page", () => {
-  test("has one h1, a titled document, a canonical link, and a list of cards with the first row prioritised", async ({ page }) => {
+  test("has one h1, a titled document, a canonical link, and a list of rows under the lead", async ({ page }) => {
     await page.goto("/resources/");
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
     await expect(page).toHaveTitle("Resources | Resource Hub");
@@ -164,17 +180,12 @@ test.describe("the page", () => {
 
     const grid = page.locator("ul.rh-card-grid");
     await expect(grid).toHaveAttribute("role", "list");
-    await expect(grid.locator("> li")).toHaveCount(PER_PAGE);
-
-    const images = page.locator(".rh-card__media img");
-    const loading = await images.evaluateAll((nodes) => nodes.map((img) => (img as HTMLImageElement).loading));
-    const priorities = await images.evaluateAll((nodes) => nodes.map((img) => (img as HTMLImageElement).fetchPriority));
-    // The first three cards are the first row at desktop width; two of the seed's first three have an image.
-    const withImage = PUBLISHED.slice(0, PER_PAGE).map((resource) => resource.mediaId !== null);
-    const firstRowImages = withImage.slice(0, 3).filter(Boolean).length;
-    expect(loading.slice(0, firstRowImages).every((value) => value === "eager")).toBe(true);
-    expect(priorities.slice(0, firstRowImages).every((value) => value === "high")).toBe(true);
-    expect(loading.slice(firstRowImages).every((value) => value === "lazy")).toBe(true);
+    // Twelve on the page, one of them the lead, so eleven rows.
+    await expect(grid.locator("> li")).toHaveCount(PER_PAGE - 1);
+    // Each row's title is one heading with one link, and the rows have no image.
+    await expect(grid.locator("> li h3.rh-card__title")).toHaveCount(PER_PAGE - 1);
+    await expect(grid.locator("> li a")).toHaveCount(PER_PAGE - 1);
+    await expect(grid.locator("img")).toHaveCount(0);
   });
 
   test("a filtered page's title and canonical name the filter and the page", async ({ page }) => {
@@ -198,6 +209,117 @@ test.describe("the page", () => {
     expect(second.status()).toBe(200);
     expect(second.headers()["x-nextjs-cache"]).toBe("HIT");
     expect(cacheDirectives(second).some((directive) => directive.startsWith("s-maxage=3600"))).toBe(true);
+  });
+});
+
+test.describe("the lead", () => {
+  test("is the newest featured resource, on the library's first page only, with the page's one image loaded first", async ({ page }) => {
+    await page.goto("/resources/");
+    const lead = page.locator(".rh-lead");
+    await expect(lead).toHaveCount(1);
+    const featured = FEATURED[0];
+    await expect(lead.locator(".rh-lead__title")).toHaveText(texturized(featured.title));
+    await expect(lead.getByRole("link")).toHaveCount(1);
+    await expect(lead.getByRole("link")).toHaveAttribute("href", `/resources/${featured.type}/${featured.slug}/`);
+    await expect(lead.locator(".rh-card__type")).toHaveText(termName("resource_type", featured.type));
+    await expect(lead.locator(".rh-card__type")).toHaveAttribute("data-accent", "grape");
+    // The outline: Featured and Latest as h2s, the lead's title and the rows as h3s.
+    await expect(page.getByRole("heading", { level: 2 })).toHaveText(["Featured", "Latest"]);
+    await expect(lead.locator("h3.rh-lead__title")).toHaveCount(1);
+    expect(await cardTitles(page)).not.toContain(texturized(featured.title));
+
+    // The lead's image is the page's only image: not lazy (`preload` writes no
+    // `loading`, which is eager), at high priority, preloaded from the head.
+    const image = lead.locator(".rh-lead__media img");
+    await expect(image).toHaveCount(1);
+    expect(await image.evaluate((img) => (img as HTMLImageElement).loading)).not.toBe("lazy");
+    expect(await image.evaluate((img) => (img as HTMLImageElement).fetchPriority)).toBe("high");
+    await expect(image).toHaveAttribute("sizes", /100vw/);
+    await expect(page.locator("img")).toHaveCount(1);
+    const preloads = page.locator('link[rel="preload"][as="image"]');
+    await expect(preloads).toHaveCount(1);
+    await expect(preloads).toHaveAttribute("fetchpriority", "high");
+    // The box is reserved at 16:9 whatever the image's own shape, so the late image moves nothing.
+    await expect(lead.locator(".rh-lead__media")).toHaveCSS("aspect-ratio", "16 / 9");
+  });
+
+  test("a filtered listing and a later page have no lead, no section headings, and rows at h2", async ({ page }) => {
+    for (const path of ["/resources/page/2/", `/resources/${FEATURED[0].type}/`, "/resources/topic/performance/", "/resources/article/topic/accessibility/"]) {
+      await page.goto(path);
+      await expect(page.locator(".rh-lead"), path).toHaveCount(0);
+      await expect(page.getByRole("heading", { level: 2, name: /Featured|Latest/ }), path).toHaveCount(0);
+      await expect(page.locator("h2.rh-card__title"), path).toHaveCount((await cardTitles(page)).length);
+      await expect(page.locator("img"), path).toHaveCount(0);
+    }
+    // The lead's own type listing still lists it, as a row.
+    await page.goto(`/resources/${FEATURED[0].type}/`);
+    expect(await cardTitles(page)).toContain(texturized(FEATURED[0].title));
+  });
+
+  test("a newly featured resource becomes the lead; with nothing featured, the list stands alone", async ({ page, request }) => {
+    const title = `A featured webinar ${RUN}`;
+    const created = await cms.createResource({ title, slug: `featured-webinar-${RUN}`, type: "webinar", featured: true });
+    try {
+      await clearAppCache(request);
+      await page.goto("/resources/");
+      expect(await leadTitle(page)).toBe(title);
+      expect(await cardTitles(page)).not.toContain(title);
+      expect(await cardTitles(page)).toHaveLength(PER_PAGE - 1);
+      await expect(page.getByText("15 resources")).toBeVisible();
+
+      for (const id of [created.id, ...FEATURED.map((resource) => resource.id)]) {
+        await cms.setStatus(id, "trash");
+      }
+      await clearAppCache(request);
+      await page.goto("/resources/");
+      await expect(page.locator(".rh-lead")).toHaveCount(0);
+      await expect(page.getByRole("heading", { level: 2, name: /Featured|Latest/ })).toHaveCount(0);
+      const remaining = seededTitles().filter((candidate) => !FEATURED.some((resource) => texturized(resource.title) === candidate));
+      expect(await cardTitles(page)).toEqual(remaining);
+      await expect(page.locator("h2.rh-card__title")).toHaveCount(remaining.length);
+      await expect(page.getByText(`${remaining.length} resources`)).toBeVisible();
+      await expect(page.locator("img")).toHaveCount(0);
+    } finally {
+      await cms.reset();
+      await clearAppCache(request);
+    }
+  });
+
+  test("a lead whose own place is on a later page is a row there, and the pages stay the CMS's", async ({ page, request }) => {
+    // Keep one featured resource, the seed's oldest, and publish enough newer
+    // ones to push it onto page 2: it leads page 1 all the same, page 1 keeps
+    // its twelve rows, and page 2 lists it as a row.
+    const kept = FEATURED[FEATURED.length - 1];
+    for (const resource of FEATURED.slice(0, -1)) {
+      await cms.setStatus(resource.id, "trash");
+    }
+    const published = PUBLISHED.length - (FEATURED.length - 1);
+    const olderThanKept = PUBLISHED.slice(PUBLISHED.indexOf(kept) + 1).length;
+    // The kept one's place from the top, once the trashed ones are gone, plus the new ones.
+    const keptPlace = published - olderThanKept;
+    const added = PER_PAGE + 1 - keptPlace;
+    expect(added).toBeGreaterThan(0);
+    for (let index = 0; index < added; index++) {
+      await cms.createResource({ title: `Newer than the lead ${RUN} ${index}`, slug: `newer-${RUN}-${index}`, type: "article" });
+    }
+    try {
+      await clearAppCache(request);
+      await page.goto("/resources/");
+      expect(await leadTitle(page)).toBe(texturized(kept.title));
+      expect(await cardTitles(page)).toHaveLength(PER_PAGE);
+      expect(await cardTitles(page)).not.toContain(texturized(kept.title));
+      await expect(page.getByText(`${published + added} resources`)).toBeVisible();
+      await expect(page.getByRole("navigation", { name: "Pagination" }).getByRole("link", { name: "Page 2" })).toHaveAttribute("href", "/resources/page/2/");
+
+      await page.goto("/resources/page/2/");
+      expect(await leadTitle(page)).toBeNull();
+      expect(await cardTitles(page)).toHaveLength(published + added - PER_PAGE);
+      expect((await cardTitles(page))[0]).toBe(texturized(kept.title));
+      await expectNotFound(request, "/resources/page/3/");
+    } finally {
+      await cms.reset();
+      await clearAppCache(request);
+    }
   });
 });
 
@@ -446,8 +568,10 @@ test.describe("a resource the reader schema refuses", () => {
 
     const all = seededTitles();
     // 15 resources newest first: page 1 holds the refused one and the eleven
-    // seeded before it, page 2 the last three, as the CMS paginates them.
-    await expectListing(page, "/resources/", "Resources", all.slice(0, PER_PAGE - 1));
+    // seeded before it, page 2 the last three, as the CMS paginates them. The
+    // newest seeded one is the lead, so page 1 shows ten rows.
+    await expectListing(page, "/resources/", "Resources", all.slice(1, PER_PAGE - 1));
+    expect(await leadTitle(page)).toBe(all[0]);
     await expect(page.getByText("15 resources")).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Pagination" }).getByRole("link", { name: "Page 2", exact: true })).toHaveAttribute(
       "href",
@@ -493,7 +617,7 @@ test.describe("in forced-colours mode", () => {
     });
   }
 
-  test("the current filter and the current page are marked by more than a fill", async ({ page }) => {
+  test("the current filter and the current page are marked by an outline and a heavier underline, not weight alone", async ({ page }) => {
     await page.goto("/resources/article/");
     expect(await page.evaluate(() => matchMedia("(forced-colors: active)").matches)).toBe(true);
     const types = page.getByRole("navigation", { name: "Filter resources" }).getByRole("list", { name: "Type" });
@@ -502,6 +626,8 @@ test.describe("in forced-colours mode", () => {
     expect(current.outline).not.toEqual(neighbour.outline);
     expect(current.underline).not.toEqual(neighbour.underline);
     expect(current.outline).toMatch(/^solid /);
+    expect(current.underline).toMatch(/^underline /);
+    expect(neighbour.outline).toMatch(/^none /);
 
     await page.goto("/resources/page/2/");
     const nav = page.getByRole("navigation", { name: "Pagination" });
@@ -510,6 +636,51 @@ test.describe("in forced-colours mode", () => {
     expect(currentPage.outline).not.toEqual(otherPage.outline);
     expect(currentPage.underline).not.toEqual(otherPage.underline);
     expect(currentPage.outline).toMatch(/^solid /);
+    expect(currentPage.underline).toMatch(/^underline /);
+    expect(otherPage.outline).toMatch(/^none /);
+  });
+
+  test("every type mark takes the text colour, beside its printed name", async ({ page }) => {
+    await page.goto("/resources/");
+    // Every dot, whatever its accent, is the colour the text beside it is drawn in.
+    const marks = await page.locator(".rh-card__type").evaluateAll((nodes) =>
+      nodes.map((node) => ({
+        accent: node.getAttribute("data-accent"),
+        dot: getComputedStyle(node, "::before").backgroundColor,
+        text: getComputedStyle(node).color,
+      })),
+    );
+    expect(marks.length).toBeGreaterThan(0);
+    expect(new Set(marks.map((mark) => mark.accent)).size).toBeGreaterThan(1);
+    for (const mark of marks) {
+      expect(mark.dot, mark.accent ?? "none").toBe(mark.text);
+    }
+  });
+});
+
+test.describe("targets and reflow at 320 px", () => {
+  test.use({ viewport: { width: 320, height: 640 } });
+
+  test("every filter and pagination link is at least 24 px tall and wide, and nothing scrolls sideways", async ({ page }) => {
+    await page.goto("/resources/");
+    for (const name of ["Filter resources", "Pagination"]) {
+      const links = page.getByRole("navigation", { name }).getByRole("link");
+      expect(await links.count(), name).toBeGreaterThan(0);
+      for (const link of await links.all()) {
+        const box = await link.boundingBox();
+        expect(box, name).not.toBeNull();
+        expect(box?.height, `${name}: ${await link.textContent()}`).toBeGreaterThanOrEqual(24);
+        expect(box?.width, `${name}: ${await link.textContent()}`).toBeGreaterThanOrEqual(24);
+      }
+    }
+    const widths = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
+    expect(widths.scroll).toBeLessThanOrEqual(widths.client);
+    // The lead stacks: its body under its image, each the content's width.
+    const media = await page.locator(".rh-lead__media").boundingBox();
+    const body = await page.locator(".rh-lead__body").boundingBox();
+    if (!media || !body) throw new Error("the lead has no boxes");
+    expect(body.y).toBeGreaterThan(media.y + media.height - 1);
+    expect(Math.abs(body.width - media.width)).toBeLessThan(2);
   });
 });
 
@@ -539,13 +710,15 @@ test("the keyboard reaches the filters and the pagination in order", async ({ pa
   await page.keyboard.press("Tab");
   expect(await focused()).toEqual({ text: "All types", nav: "Filter resources" });
 
-  // Every filter link in turn, then the cards, then the pagination, with nothing in between.
+  // Every filter link in turn, then the lead, then the rows, then the pagination, with nothing in between.
   const filterLinks = await page.getByRole("navigation", { name: "Filter resources" }).getByRole("link").count();
   for (let index = 1; index < filterLinks; index++) {
     await page.keyboard.press("Tab");
     expect((await focused())?.nav).toBe("Filter resources");
   }
-  for (let index = 0; index < PER_PAGE; index++) {
+  await page.keyboard.press("Tab");
+  expect(await page.evaluate(() => document.activeElement?.classList.contains("rh-lead__link"))).toBe(true);
+  for (let index = 0; index < PER_PAGE - 1; index++) {
     await page.keyboard.press("Tab");
     expect(await page.evaluate(() => document.activeElement?.classList.contains("rh-card__link"))).toBe(true);
   }
