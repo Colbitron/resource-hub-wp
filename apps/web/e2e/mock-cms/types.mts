@@ -129,12 +129,15 @@ export interface HealthResponse {
 /**
  * `POST /__mock/faults`: make the public routes under `path` answer `status`
  * instead of their own answer, after `delayMs` when given; a `delayMs`
- * alone makes them slow but correct. `times` limits it to that many
- * requests. See `faults.mts`.
+ * alone makes them slow but correct. `code`, with a `status`, makes the
+ * answer WordPress's REST error body with that code rather than its
+ * fatal-error page. `times` limits it to that many requests. See
+ * `faults.mts`.
  */
 export interface FaultInput {
   path: string;
   status?: number;
+  code?: string;
   delayMs?: number;
   times?: number;
 }
@@ -143,6 +146,7 @@ export interface FaultInput {
 export interface FaultSummary {
   path: string;
   status: number | null;
+  code: string | null;
   delayMs: number;
   remaining: number | null;
 }

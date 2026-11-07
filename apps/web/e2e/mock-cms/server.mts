@@ -4,7 +4,7 @@ import { resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { handleControl } from "./control.mts";
-import { handleRest, type MockResponse } from "./rest.mts";
+import { handleRest, restError, type MockResponse } from "./rest.mts";
 import { MockState } from "./state.mts";
 
 /**
@@ -137,6 +137,10 @@ export async function startMockCms(options: MockCmsOptions): Promise<MockCms> {
       if (fault !== null) {
         if (fault.delayMs > 0) {
           await new Promise((resolveDelay) => setTimeout(resolveDelay, fault.delayMs).unref());
+        }
+        if (fault.status !== null && fault.code !== null) {
+          send(res, restError(fault.status, fault.code));
+          return;
         }
         if (fault.status !== null) {
           // WordPress's own fatal-error page, with the CMS's address in it as

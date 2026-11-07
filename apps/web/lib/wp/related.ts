@@ -19,6 +19,9 @@ import type { WpResource } from "./schemas/rest";
 /** How many related resources the section asks for: the route's own default. */
 export const RELATED_COUNT = 3;
 
+/** Whether this process has logged a `rest_no_route` from the related route yet (`getRelated`). */
+let warnedNoRoute = false;
+
 /** A WordPress post ID: a positive safe integer. */
 function isPostId(id: number): boolean {
   return Number.isSafeInteger(id) && id >= 1;
@@ -42,6 +45,13 @@ export interface GetRelatedOptions {
  * is kept by the Data Cache, so a CMS that gains the route is asked again
  * on the next render. Anything else the route answers is a `CmsError`,
  * which the section catches around itself.
+ *
+ * Each `null` logs a `console.warn` naming the route's path, never the CMS
+ * origin: `resource_hub_not_found` every time, since the host was read as
+ * published a moment before and a run of them means the two reads
+ * disagree; `rest_no_route` once per process, since it is expected for a
+ * deploy while the CMS catches up and would otherwise fill the log on every
+ * render, yet a plugin deactivated for good must not be invisible.
  *
  * `count` is sent as asked for, so the request says what it wants and the
  * cache entry is the one a different count would not share. Throws a
@@ -75,6 +85,12 @@ export async function getRelated(id: number, { hostSlug, count = RELATED_COUNT }
     ],
   });
   if (result.kind === "miss") {
+    if (result.code !== "rest_no_route") {
+      console.warn(`getRelated: ${path} answered ${result.code} for a resource read as published; rendering without the related list`);
+    } else if (!warnedNoRoute) {
+      warnedNoRoute = true;
+      console.warn(`getRelated: ${path} answered rest_no_route, so the CMS has no related route; rendering without related lists (logged once per process)`);
+    }
     return null;
   }
   if (result.kind !== "ok") {
@@ -99,8 +115,7 @@ export async function getRelated(id: number, { hostSlug, count = RELATED_COUNT }
  * alone: a related row is a recommendation, and a row that says "Untitled
  * resource", or names no type, recommends nothing. The listings keep their
  * fallback, since there every published resource must be reachable. The
- * related section shows fewer rows for it; the block over-fetches a little
- * to keep its count (`components/RelatedResources.tsx`).
+ * related section shows fewer rows for it.
  */
 export function toRelatedCard(resource: WpResource): CardData | null {
   return hasVisibleTitle(resource.title.rendered) ? toCard(resource) : null;

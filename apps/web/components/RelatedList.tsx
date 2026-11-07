@@ -2,7 +2,12 @@ import { ResourceCard, type ResourceCardProps } from "@/components/ResourceCard"
 
 import "./related.css";
 
-/** One related resource as a row: the row's props, with the ID as its key. */
+/**
+ * One related resource as a row: the row's props, with the ID as its key.
+ * A caller may pass a wider object (`CardData`, with its `image`); only the
+ * card's own props reach `ResourceCard`, named one by one, so a field added
+ * to `CardData` never reaches the row unasked.
+ */
 export interface RelatedCard extends ResourceCardProps {
   readonly id: number;
 }
@@ -45,9 +50,18 @@ export function RelatedList({ heading, headingLevel: Heading = "h2", cards, head
         {heading}
       </Heading>
       <ul className="rh-card-grid" role="list">
-        {cards.map(({ id, ...card }) => (
+        {cards.map(({ id, title, href, typeLabel, accent, topicLabels, summary, date }) => (
           <li key={id}>
-            <ResourceCard {...card} headingLevel={rowLevel} />
+            <ResourceCard
+              title={title}
+              href={href}
+              typeLabel={typeLabel}
+              accent={accent}
+              topicLabels={topicLabels}
+              summary={summary}
+              date={date}
+              headingLevel={rowLevel}
+            />
           </li>
         ))}
       </ul>

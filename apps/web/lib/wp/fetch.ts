@@ -164,7 +164,11 @@ export interface CmsList<T> {
 
 export type CmsResult<T> =
   | { readonly kind: "ok"; readonly data: T; readonly headers: Headers }
-  | { readonly kind: "miss" }
+  | {
+      readonly kind: "miss";
+      /** The matched WordPress error `code`, for a fetcher that treats two misses differently. */
+      readonly code: string;
+    }
   | { readonly kind: typeof NO_SUCH_PAGE };
 
 /** A response as read off the wire, before anything is decided about it. */
@@ -419,7 +423,7 @@ async function read<T>(request: CmsRequestBase, parseBody: (raw: RawResponse) =>
   if (wpError.success && wpError.data.data.status === raw.status) {
     const error = { status: raw.status, code: wpError.data.code };
     if (matches(error, request.misses)) {
-      return { kind: "miss" };
+      return { kind: "miss", code: error.code };
     }
     if (matches(error, request.outOfRange)) {
       return { kind: NO_SUCH_PAGE };

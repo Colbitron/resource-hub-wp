@@ -43,9 +43,9 @@ export interface RelatedSectionProps {
  * has already rendered from reads that succeeded. That is also what holds
  * the front end against a CMS one deploy behind: today's production CMS
  * answers the related route with core's 404 `rest_no_route`, which
- * `getRelated` reads as "no answer" and this renders as no section, with
- * nothing logged. Any other error (a `RangeError` from a bad argument) is a
- * bug and still fails the page.
+ * `getRelated` reads as "no answer", warning once per process, and this
+ * renders as no section. Any other error (a `RangeError` from a bad
+ * argument) is a bug and still fails the page.
  *
  * An async server component, rendered by `ResourceArticle` where the route
  * passes it (`app/resources/[type]/[slug]/page.tsx`); the design specimen

@@ -14,7 +14,8 @@ import { postRevalidate } from "./revalidation.mts";
  * the newest resources sharing a topic; the rows as the listing's rows under
  * a heading that names the section; no section for a resource with nothing
  * related; the page rendered without the section, a 200 with nothing of the
- * CMS in it, when the related route fails, and with the section again once
+ * CMS in it, when the related route fails or the CMS has no such route
+ * (core's 404 `rest_no_route`), and with the section again once
  * the failure has passed and the resource's event has cleared the page; and
  * an unpublished pick leaving the section after its event, through the
  * `resources` tag the section's reads carry.
@@ -180,6 +181,28 @@ test.describe("when the CMS cannot answer", () => {
     await expect(section(page)).toBeVisible();
     // The performance resources, newest first: 20, 23, 27.
     expect(await rowTitles(page)).toEqual([seeded(20).title, seeded(23).title, seeded(27).title]);
+  });
+
+  test("a CMS without the related route (core's 404 rest_no_route) gives a 200 page with no section", async ({ request, page }) => {
+    const slug = unique("related-no-route");
+    const created = await cms.createResource({ title: "Read on a CMS without the route", type: "article", slug, topics: ["performance"] });
+    const path = resourcePath("article", slug);
+    // What a CMS answers with the plugin deactivated, or a deploy behind the front end.
+    await cms.addFault({ path: "/wp-json/resource-hub/v1/related", status: 404, code: "rest_no_route" });
+    await cms.resetRequests();
+
+    const response = await request.get(path);
+    expect(response.status(), path).toBe(200);
+    const html = await response.text();
+    expect(html).toContain("Read on a CMS without the route");
+    expect(html).not.toContain('class="rh-related"');
+    // The route was asked, and answered with the fault's body.
+    const { byPath } = await cms.requests();
+    expect(byPath[`/wp-json/resource-hub/v1/related/${created.id}?count=3`]).toBe(1);
+
+    await page.goto(path);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Read on a CMS without the route");
+    await expect(page.locator(".rh-related")).toHaveCount(0);
   });
 
   test("the page renders without the section when the related route answers slowly past the data layer's timeout", async ({ request }) => {

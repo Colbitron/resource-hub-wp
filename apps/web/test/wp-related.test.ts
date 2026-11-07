@@ -93,15 +93,29 @@ describe("getRelated", () => {
     expect(calls[0].url.search).toBe("?count=10");
   });
 
-  it("is null for core's rest_no_route, which a CMS without the plugin's route answers, and asks nothing else", async () => {
+  it("is null for core's rest_no_route, which a CMS without the plugin's route answers, asks nothing else, and warns once per process", async () => {
+    // A fresh module, so the once-per-process flag starts unset whatever ran before.
+    vi.resetModules();
+    const { getRelated: freshGetRelated } = await import("../lib/wp/related");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     handler = () => wpError(404, "rest_no_route");
-    expect(await getRelated(33, { hostSlug: "host" })).toBeNull();
+    expect(await freshGetRelated(33, { hostSlug: "host" })).toBeNull();
     expect(calls).toHaveLength(1);
+    expect(await freshGetRelated(34, { hostSlug: "other" })).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toMatch(/^getRelated: \/resource-hub\/v1\/related\/33 answered rest_no_route/);
+    expect(String(warn.mock.calls[0][0])).not.toContain("cms.example");
   });
 
-  it("is null for the plugin's resource_hub_not_found, a host no longer published", async () => {
+  it("is null for the plugin's resource_hub_not_found, a host no longer published, and warns each time without naming the CMS", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     handler = () => wpError(404, "resource_hub_not_found");
     expect(await getRelated(33, { hostSlug: "host" })).toBeNull();
+    expect(await getRelated(33, { hostSlug: "host" })).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(String(warn.mock.calls[0][0])).toBe(
+      "getRelated: /resource-hub/v1/related/33 answered resource_hub_not_found for a resource read as published; rendering without the related list",
+    );
   });
 
   it("throws a CmsError on any other answer: a 500, a 400, a 404 with another code, a body that is not JSON", async () => {
