@@ -295,8 +295,9 @@ const CLASS_TOKEN = /^[A-Za-z0-9_-]+$/;
  * it, so no content class may start with it, in any case.
  */
 const APP_CLASS_PREFIX = "rh-";
-/** The one app class content may carry: the block marker's wrapper's own, in the contract (`packages/ui/README.md`). */
-const MARKER_CLASSES: ReadonlySet<string> = new Set(["rh-related"]);
+/** The block marker's wrapper's own class, in the contract (`packages/ui/README.md`): the one app class content may carry, and the one the fallback always gets. */
+const MARKER_CLASS = "rh-related";
+const MARKER_CLASSES: ReadonlySet<string> = new Set([MARKER_CLASS]);
 const NO_CLASSES: ReadonlySet<string> = new Set();
 const ID_VALUE = /^[A-Za-z][A-Za-z0-9_.:-]*$/;
 const LANG_VALUE = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/;
@@ -1154,7 +1155,11 @@ function markerProps(node: Element, attributes: Attributes, context: Context): R
  * the plugin's render callback that will emit it is not built yet (issue
  * #50). The fallback is the wrapper with its `class` and its children
  * through the pass; the `data-*` attributes are read here and never
- * rendered, so the marker stays on the server.
+ * rendered, so the marker stays on the server. The wrapper always carries
+ * `rh-related`, the class the contract gives it, whether or not the CMS
+ * wrote it, so `prose.css` styles the fallback as a small collection
+ * whatever the block's markup; the `data-*` attributes are what make it a
+ * marker, not the class.
  *
  * Whether `renderBlock` gets the marker is decided, and counted, before its
  * children render, so `MAX_MARKERS` counts in document order: a marker
@@ -1169,7 +1174,11 @@ function marker(node: Element, attributes: Attributes, context: Context): ReactE
   if (props !== null) {
     context.markers++;
   }
-  const fallback = createElement("div", checked(globalProps(attributes, context, MARKER_CLASSES), context), children(node, context));
+  const wrapperProps = globalProps(attributes, context, MARKER_CLASSES);
+  // The wrapper always carries the contract's class, once, after any the CMS wrote.
+  const classes = typeof wrapperProps.className === "string" ? wrapperProps.className.split(" ") : [];
+  wrapperProps.className = (classes.includes(MARKER_CLASS) ? classes : [...classes, MARKER_CLASS]).join(" ");
+  const fallback = createElement("div", checked(wrapperProps, context), children(node, context));
   if (props === null) {
     return fallback;
   }
