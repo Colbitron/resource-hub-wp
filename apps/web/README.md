@@ -25,7 +25,7 @@ pnpm web:test:screenshots         # the design specimen against its pixel baseli
 pnpm web:test:screenshots:update  # rewrite the baselines after a design change
 pnpm web:test:lighthouse          # Lighthouse CI on the sampled URLs, mobile budgets
 pnpm web:lighthouse:preview       # Lighthouse on a Vercel preview, the comment written to a file (needs VERCEL_PROTECTION_BYPASS)
-pnpm web:build       # next build
+pnpm web:build       # clears .next/cache/fetch-cache, then next build
 ```
 
 ## Configuration

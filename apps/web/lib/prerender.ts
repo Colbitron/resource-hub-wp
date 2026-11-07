@@ -3,7 +3,7 @@ import "server-only";
 import { loadListing } from "./listing-data";
 import { decidePageRequest } from "./page-request";
 import { decideResourceRequest } from "./redirects";
-import { canonicalSlug, isTypeSlug } from "./routes";
+import { canonicalSlug, isSlug, isTypeSlug } from "./routes";
 import { resourceType } from "./wp/cards";
 import { scrubCmsHost } from "./wp/fetch";
 import { listRecentResources } from "./wp/resources";
@@ -30,7 +30,9 @@ import { listTerms } from "./wp/terms";
  *   build warning per route and no prerendered page: the route then renders
  *   each path on its first request, which is what every route did before.
  *   A CMS that answers some reads within the budget and not the rest gets
- *   the paths that answered (`ProbeContext.partial`).
+ *   the paths that answered (`ProbeContext.partial`), and one whose answer
+ *   for a few resources fails gets the rest (`ProbeContext.failures`), up
+ *   to `MAX_FAILED_SHARE` of them.
  *
  * Why these pages and no others: the prerendered set is what a reader is
  * most likely to open first and what the client router needs in the build's
@@ -74,6 +76,20 @@ export const PRERENDER_TIMEOUT_MS = 10_000;
  * finish, and when it cannot, the candidates decided by then are kept.
  */
 export const RESOURCE_PRERENDER_TIMEOUT_MS = 30_000;
+
+/**
+ * The share of the resource probe's candidates whose decision may fail
+ * before the probe gives the whole set up. One failed slug lookup is one
+ * bad object or a hiccup, and the other pages are no worse for it; when more
+ * than half fail, the CMS is unwell, and prerendering what happened to
+ * answer would store pages from a session the next request may not repeat,
+ * so the route falls back to `[]` and renders everything on demand, as
+ * before. Half, because a lower share would give up the set over the kind
+ * of partial outage a few resources can have on their own (a broken embed,
+ * a plugin error on one post), and a higher one would keep prerendering
+ * through an outage.
+ */
+export const MAX_FAILED_SHARE = 0.5;
 
 /**
  * How many CMS reads a probe keeps in flight at once. The candidate list is
@@ -130,17 +146,23 @@ export interface ResourceParams {
  * is how the server keys every request (measured 2026-11-07; see
  * `docs/architecture/caching.md`, "Prefetching"). `null` for a slug whose
  * escapes are not UTF-8 (`%ff`), which has no form Next.js can encode and
- * which WordPress never writes.
+ * which WordPress never writes, and for one whose decoded form is not a
+ * slug the routes would accept (`a%2fb` decodes to `a/b`, `a%20b` to
+ * `a b`; `isSlug`, with `isTypeSlug` for a type): such a path would be a
+ * 404 or fail to build, and the stored form is its own URL, which ISR
+ * answers on request as before.
  */
-export function paramValue(slug: string): string | null {
+export function paramValue(slug: string, kind: "slug" | "type" = "slug"): string | null {
+  let decoded: string;
   try {
-    return decodeURIComponent(canonicalSlug(slug));
+    decoded = decodeURIComponent(canonicalSlug(slug));
   } catch (error) {
     if (error instanceof URIError) {
       return null;
     }
     throw error;
   }
+  return (kind === "type" ? isTypeSlug(decoded) : isSlug(decoded)) ? decoded : null;
 }
 
 /**
@@ -166,7 +188,7 @@ export function selectResourceParams(
       continue;
     }
     const slug = paramValue(resource.slug);
-    const typeParam = paramValue(type.slug);
+    const typeParam = paramValue(type.slug, "type");
     if (slug === null || typeParam === null || seen.has(slug)) {
       continue;
     }
@@ -189,18 +211,21 @@ export interface PrerenderOptions {
   readonly warn?: (message: string) => void;
 }
 
-/** What a probe is given: the stop flag for its loops, and the list to put each param in as soon as it is decided. */
+/** What a probe is given: the stop flag for its loops, the list to put each param in as soon as it is decided, and the failures it chose to skip. */
 export interface ProbeContext<T> {
   readonly stop: Stop;
   /** Every param whose reads have succeeded so far; what the route gets when the budget runs out. */
   readonly partial: T[];
+  /** The message of each candidate's read the probe skipped rather than failed on; named in the one warning. */
+  readonly failures: string[];
 }
 
 /**
  * Runs `probe` for the route `route` under the time budget and returns what
- * it gives; when the budget runs out first, the params decided by then
- * (`partial`), with one warning saying how many were kept; when it throws,
- * `[]` with one warning. A missing `WP_API_URL` (an `EnvError` from
+ * it gives, with one warning naming the candidates it skipped (`failures`)
+ * when there were any; when the budget runs out first, the params decided by
+ * then (`partial`), with one warning saying how many were kept; when it
+ * throws, `[]` with one warning. A missing `WP_API_URL` (an `EnvError` from
  * `lib/env.ts`) is a throw like any other. The warning names the route and
  * the failure's message, scrubbed of the CMS host as every data-layer
  * message is, and says what happens instead. The stop flag is set on every
@@ -215,13 +240,22 @@ export async function prerenderParams<T>(
 ): Promise<T[]> {
   const { warn = console.warn } = options;
   const budget = options.timeoutMs ?? timeoutMs;
-  const context: ProbeContext<T> = { stop: { stopped: false }, partial: [] };
+  const context: ProbeContext<T> = { stop: { stopped: false }, partial: [], failures: [] };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => reject(new ProbeTimeout(budget)), budget);
   });
   try {
-    return await Promise.race([probe(context), timeout]);
+    const params = await Promise.race([probe(context), timeout]);
+    if (context.failures.length > 0) {
+      const skipped = context.failures.length;
+      warn(
+        scrubCmsHost(
+          `prerender ${route}: ${skipped} of ${skipped + params.length} candidate ${skipped + params.length === 1 ? "path" : "paths"} could not be read and ${skipped === 1 ? "renders" : "render"} on ${skipped === 1 ? "its" : "their"} first request (the first: ${context.failures[0]}); prerendering the other ${params.length}`,
+        ),
+      );
+    }
+    return params;
   } catch (error) {
     if (error instanceof ProbeTimeout) {
       const kept = context.partial.length;
@@ -257,10 +291,14 @@ class ProbeTimeout extends Error {
  * into the Data Cache for the render that follows, and only a `render`
  * decision is kept: a resource the lists name but the slug lookup cannot
  * find, or whose canonical URL differs, is left to ISR rather than
- * prerendered as a 404 or a 308. Each kept candidate goes into `partial` as
- * it is decided, so a budget that runs out mid-way keeps those decided by
- * then, in decision order; a failure before any decision is `[]`. The budget
- * is `RESOURCE_PRERENDER_TIMEOUT_MS`.
+ * prerendered as a 404 or a 308. A decision that throws (a 5xx for one
+ * slug, one unreadable answer) skips that candidate and counts it in
+ * `failures`, so one bad resource does not cost the set; when more than
+ * `MAX_FAILED_SHARE` of the candidates fail the probe throws, and the route
+ * is `[]`. Each kept candidate goes into `partial` as it is decided, so a
+ * budget that runs out mid-way keeps those decided by then, in decision
+ * order; a failure of the lists themselves is `[]`. The budget is
+ * `RESOURCE_PRERENDER_TIMEOUT_MS`.
  */
 export async function resourcePageParams(options: PrerenderOptions = {}): Promise<ResourceParams[]> {
   const {
@@ -270,7 +308,7 @@ export async function resourcePageParams(options: PrerenderOptions = {}): Promis
   } = options;
   return prerenderParams<ResourceParams>(
     "/resources/[type]/[slug]",
-    async ({ stop, partial }) => {
+    async ({ stop, partial, failures }) => {
       const [recent, types] = await Promise.all([recentResources({ count: RECENT_RESOURCES }), terms("resource_type")]);
       const offered = types.filter((type) => type.count > 0 && isTypeSlug(type.slug));
       const perType = await mapConcurrently(
@@ -284,7 +322,17 @@ export async function resourcePageParams(options: PrerenderOptions = {}): Promis
         candidates,
         PROBE_CONCURRENCY,
         async (params) => {
-          if ((await decide(params.type, params.slug)).kind === "render") {
+          let decision;
+          try {
+            decision = await decide(params.type, params.slug);
+          } catch (error) {
+            failures.push(error instanceof Error ? error.message : String(error));
+            if (failures.length > candidates.length * MAX_FAILED_SHARE) {
+              throw new Error(`${failures.length} of ${candidates.length} candidates could not be read, the first: ${failures[0]}`);
+            }
+            return;
+          }
+          if (decision.kind === "render") {
             partial.push(params);
           }
         },
@@ -300,7 +348,8 @@ export async function resourcePageParams(options: PrerenderOptions = {}): Promis
 /**
  * The params of the type listings the build prerenders: the first page of
  * each type the filter bar offers, read through `loadListing` so the render
- * finds its reads in the Data Cache; a type whose listing is a 404 is left
+ * finds its reads in the Data Cache; a type whose listing is a 404, or whose
+ * slug has no form the route accepts once decoded (`paramValue`), is left
  * out. Each type goes into `partial` as its page loads. Any failure is `[]`.
  */
 export async function typeListingParams(options: PrerenderOptions = {}): Promise<{ type: string }[]> {
@@ -313,7 +362,7 @@ export async function typeListingParams(options: PrerenderOptions = {}): Promise
         types,
         PROBE_CONCURRENCY,
         async (type) => {
-          const param = paramValue(type.slug);
+          const param = paramValue(type.slug, "type");
           if (param !== null && (await load({ filter: { type: type.slug }, page: 1 })) !== null) {
             partial.push({ type: param });
           }

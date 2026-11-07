@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  MAX_FAILED_SHARE,
   PRERENDER_TIMEOUT_MS,
   PROBE_CONCURRENCY,
   RECENT_PER_TYPE,
@@ -20,6 +21,7 @@ import {
   typeListingParams,
   type Stop,
 } from "../lib/prerender";
+import { decideResourceRequest } from "../lib/redirects";
 import { CmsError } from "../lib/wp/fetch";
 import { wpResourceSchema, wpTermSchema, type WpResource, type WpTerm } from "../lib/wp/schemas/rest";
 
@@ -75,12 +77,13 @@ afterEach(() => {
 });
 
 describe("the constants", () => {
-  it("are 50 newest across types, 10 newest per type, 10 s per route and 30 s for the resource route, 8 reads in flight", () => {
+  it("are 50 newest across types, 10 newest per type, 10 s per route and 30 s for the resource route, 8 reads in flight, half the candidates may fail", () => {
     expect(RECENT_RESOURCES).toBe(50);
     expect(RECENT_PER_TYPE).toBe(10);
     expect(PRERENDER_TIMEOUT_MS).toBe(10_000);
     expect(RESOURCE_PRERENDER_TIMEOUT_MS).toBe(30_000);
     expect(PROBE_CONCURRENCY).toBe(8);
+    expect(MAX_FAILED_SHARE).toBe(0.5);
   });
 });
 
@@ -96,6 +99,16 @@ describe("paramValue", () => {
 
   it("is null for an escape that is not UTF-8, which WordPress never writes", () => {
     expect(paramValue("a%ffb")).toBeNull();
+  });
+
+  it("is null when the decoded form is not a slug the routes accept: a slash or a space", () => {
+    for (const stored of ["a%2fb", "a%2Fb", "a%20b"]) {
+      expect(paramValue(stored), stored).toBeNull();
+      expect(paramValue(stored, "type"), stored).toBeNull();
+    }
+    // A type decoded to a reserved word is not a type param; it is still a slug.
+    expect(paramValue("topic", "type")).toBeNull();
+    expect(paramValue("topic")).toBe("topic");
   });
 
   it("throws on a slug that is not one, as the builders do", () => {
@@ -146,6 +159,16 @@ describe("selectResourceParams", () => {
     const japaneseType = resourceWithTypeSlug("in-a-japanese-type", "%e6%97%a5");
     const undecodable = resource("bad%ffslug", "ebook");
     expect(selectResourceParams([japaneseType, undecodable], new Map())).toEqual([{ type: "日", slug: "in-a-japanese-type" }]);
+  });
+
+  it("skips a slug or a type that decodes to a slash or a space, which no route could serve", () => {
+    const slashSlug = resource("a%2fb", "ebook");
+    const spaceSlug = resource("a%20b", "ebook");
+    const slashType = resourceWithTypeSlug("in-a-slash-type", "a%2fb");
+    const spaceType = resourceWithTypeSlug("in-a-space-type", "a%20b");
+    expect(selectResourceParams([slashSlug, spaceSlug, slashType, spaceType, resource("fine", "ebook")], new Map())).toEqual([
+      { type: "ebook", slug: "fine" },
+    ]);
   });
 
   it("is empty for empty lists", () => {
@@ -306,6 +329,23 @@ function types(counts: Record<string, number>): WpTerm[] {
   return TYPES.map((term) => ({ ...term, count: counts[term.slug] ?? 0 }));
 }
 
+describe("the resource route's own gate", () => {
+  it("answers a decoded slash or space in either segment with not-found before any read, so a param that slipped through could only be skipped", async () => {
+    const bySlug = vi.fn(async () => null);
+    const resolve = vi.fn(async () => null);
+    for (const [type, slug] of [
+      ["article", "a/b"],
+      ["article", "a b"],
+      ["a/b", "fine"],
+      ["a b", "fine"],
+    ]) {
+      expect(await decideResourceRequest(type, slug, { getResourceBySlug: bySlug, resolveSlug: resolve }), `${type}/${slug}`).toEqual({ kind: "not-found" });
+    }
+    expect(bySlug).not.toHaveBeenCalled();
+    expect(resolve).not.toHaveBeenCalled();
+  });
+});
+
 describe("resourcePageParams", () => {
   it("asks for the 50 newest and the 10 newest of each offered type, unions them, and keeps the slugs whose decision is a render", async () => {
     const listRecentResources = vi.fn(async ({ type }: { type?: string; count: number }) => {
@@ -352,7 +392,7 @@ describe("resourcePageParams", () => {
     expect(listRecentResources.mock.calls.map(([options]) => options.type)).toEqual([undefined, "webinar"]);
   });
 
-  it("is [] with one warning when any read fails", async () => {
+  it("is [] with one warning when a list fails", async () => {
     const warn = vi.fn();
     const params = await resourcePageParams({
       listRecentResources: async ({ type }) => {
@@ -366,6 +406,59 @@ describe("resourcePageParams", () => {
     expect(params).toEqual([]);
     expect(warn).toHaveBeenCalledTimes(1);
     expect((warn.mock.calls[0] as [string])[0]).toContain("HTTP 502");
+  });
+
+  it("skips a candidate whose decision fails and keeps the rest, with one warning that counts and names the first failure", async () => {
+    vi.stubEnv("WP_API_URL", "https://cms.example/wp-json");
+    const warn = vi.fn();
+    const candidates = ["a", "b", "c", "d", "e"].map((slug) => resource(slug, "webinar"));
+    const params = await resourcePageParams({
+      listRecentResources: async ({ type }) => (type === undefined ? candidates : []),
+      listTerms: async () => types({ webinar: 5 }),
+      decideResourceRequest: async (type, slug) => {
+        if (slug === "b") throw new CmsError("/wp/v2/resources", "status", "HTTP 503 (service_unavailable)", 503);
+        if (slug === "d") throw new CmsError("/wp/v2/resources", "schema", "the body is not JSON", 200);
+        return render(type, slug);
+      },
+      warn,
+    });
+    expect(slugs(params)).toEqual(["a", "c", "e"]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect((warn.mock.calls[0] as [string])[0]).toBe(
+      "prerender /resources/[type]/[slug]: 2 of 5 candidate paths could not be read and render on their first request (the first: CMS request to /wp/v2/resources failed: HTTP 503 (service_unavailable)); prerendering the other 3",
+    );
+  });
+
+  it("is [] with one warning when more than half of the candidates fail, since the CMS is unwell", async () => {
+    const warn = vi.fn();
+    const candidates = ["a", "b", "c", "d", "e", "f"].map((slug) => resource(slug, "webinar"));
+    const params = await resourcePageParams({
+      listRecentResources: async ({ type }) => (type === undefined ? candidates : []),
+      listTerms: async () => types({ webinar: 6 }),
+      decideResourceRequest: async (type, slug) => {
+        if (["b", "c", "d", "e"].includes(slug)) throw new CmsError("/wp/v2/resources", "status", "HTTP 500", 500);
+        return render(type, slug);
+      },
+      warn,
+    });
+    expect(params).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect((warn.mock.calls[0] as [string])[0]).toContain("4 of 6 candidates could not be read");
+    expect((warn.mock.calls[0] as [string])[0]).toContain("renders on its first request");
+  });
+
+  it("keeps the set when exactly half fail: the share must be exceeded", async () => {
+    const candidates = ["a", "b", "c", "d"].map((slug) => resource(slug, "webinar"));
+    const params = await resourcePageParams({
+      listRecentResources: async ({ type }) => (type === undefined ? candidates : []),
+      listTerms: async () => types({ webinar: 4 }),
+      decideResourceRequest: async (type, slug) => {
+        if (["b", "d"].includes(slug)) throw new CmsError("/wp/v2/resources", "status", "HTTP 500", 500);
+        return render(type, slug);
+      },
+      warn: silent,
+    });
+    expect(slugs(params)).toEqual(["a", "c"]);
   });
 
   it("keeps the candidates decided within the budget when the CMS is slow, and starts no decision after it", async () => {
@@ -428,6 +521,21 @@ describe("typeListingParams", () => {
       { filter: { type: "webinar" }, page: 1 },
       { filter: { type: "%e6%97%a5" }, page: 1 },
     ]);
+  });
+
+  it("leaves out a type whose slug decodes to a slash or a space, without reading its listing", async () => {
+    const loadListing = vi.fn<(valid: { filter: { type?: string }; page: number }) => Promise<never>>(async () => ({}) as never);
+    const params = await typeListingParams({
+      listTerms: async () => [
+        ...types({ webinar: 1 }),
+        { ...TYPES[0], id: 996, slug: "a%2fb", count: 1 },
+        { ...TYPES[0], id: 997, slug: "a%20b", count: 1 },
+      ],
+      loadListing,
+      warn: silent,
+    });
+    expect(params).toEqual([{ type: "webinar" }]);
+    expect(loadListing.mock.calls.map(([valid]) => valid.filter.type)).toEqual(["webinar"]);
   });
 
   it("is [] with one warning when the terms cannot be read", async () => {
