@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import type { ListingFilter, ValidListing } from "./routes";
 import { toCard, type CardData } from "./wp/cards";
 import { CmsError, NO_SUCH_PAGE } from "./wp/fetch";
@@ -10,7 +12,7 @@ import { FEATURED_FLAG_SLUG, getTermBySlug, listTerms } from "./wp/terms";
 /**
  * Every read a listing page makes, in one pass, for `components/ListingPage.tsx`
  * to render from and for the build-time probe in `lib/prerender.ts` to make
- * first (ADR 0053), so a page the build prerenders finds its reads already in
+ * first (ADR 0043), so a page the build prerenders finds its reads already in
  * the Data Cache. What a listing shows and why is in `ListingPage`'s docblock;
  * this module only reads. It lives in `lib/` rather than beside the component
  * because a route that imports it must not pull the listing's CSS into its
@@ -79,12 +81,21 @@ async function leadOrNone(): Promise<CardData | null> {
  * terms it is filtered by, the filter bar's two lists and, on the library's
  * first page, the lead. `null` when the page is a 404: a term that does not
  * exist, or a page past the last. The page, its `generateMetadata` and the
- * build-time probe all call this, so they read the same things; within a
- * render the per-render memoization answers the second call from the first.
- * A `CmsError` from any read but the lead's is thrown.
+ * build-time probe all call this, so they read the same things. Within a
+ * render it runs once: React's `cache` memoises it by the listing's filter
+ * and page, so `generateMetadata` and the page share one call, one set of
+ * reads and, when the lead fails, one log line (`leadOrNone`); the key is a
+ * string, since `cache` compares arguments by identity. Outside a render
+ * (the build-time probe) `cache` memoises nothing. A `CmsError` from any
+ * read but the lead's is thrown.
  */
-export async function loadListing(valid: ValidListing): Promise<ListingData | null> {
-  const { filter, page } = valid;
+export function loadListing(valid: ValidListing): Promise<ListingData | null> {
+  return loadListingOnce(valid.filter.type, valid.filter.topic, valid.page);
+}
+
+const loadListingOnce = cache(async (type: string | undefined, topic: string | undefined, page: number): Promise<ListingData | null> => {
+  const filter: ListingFilter = { ...(type === undefined ? {} : { type }), ...(topic === undefined ? {} : { topic }) };
+  const valid: ValidListing = { filter, page };
   const [listing, terms, types, topics, lead] = await Promise.all([
     listResources({ ...filter, page }),
     filterTerms(filter),
@@ -96,4 +107,4 @@ export async function loadListing(valid: ValidListing): Promise<ListingData | nu
     return null;
   }
   return { listing, terms, types, topics, lead };
-}
+});

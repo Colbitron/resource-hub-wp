@@ -86,7 +86,7 @@ import "./listing.css";
  *   any render until the next event or the interval. Any other error still
  *   throws, and a failure of the list itself is still the page's 500.
  *
- * The routes are ISR (ADRs 0043 and 0053: `export const revalidate = 3600`,
+ * The routes are ISR (ADR 0043: `export const revalidate = 3600`,
  * the data layer's interval as a literal, and a `generateStaticParams` that
  * names the library and each type's first page when the CMS answers at build
  * and nothing otherwise, so every other page renders on its first request).
@@ -148,9 +148,11 @@ function noneShowable(listing: ResourceListing, cardCount: number): boolean {
 
 /**
  * The metadata for the listing `request`: its title, its canonical URL, and
- * `noindex` when none of the page's resources can be shown. It reads the
- * same tagged fetches as the page, which the per-render memoization and the
- * Data Cache answer once.
+ * `noindex` when none of the page's resources can be shown. It calls the
+ * same `loadListing` as the page, which within a render runs once for both
+ * (`lib/listing-data.ts`), so the two make one set of reads and a lead that
+ * fails is logged once; a `CmsError` from a read the page depends on throws
+ * here as it does in the page, and the response is the same 500.
  */
 export async function listingMetadata(request: ListingRequest): Promise<Metadata> {
   const valid = validListing(request);
