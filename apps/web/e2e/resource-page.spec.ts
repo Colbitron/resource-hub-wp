@@ -182,7 +182,7 @@ test.describe("what the page renders", () => {
     // The type links to its listing, the date is a <time>, and each topic links to its listing.
     const typeLink = article.getByRole("link", { name: termName("resource_type", SEEDED.type) });
     await expect(typeLink).toHaveAttribute("href", `/resources/${SEEDED.type}/`);
-    // The type mark is the row's (card.css), on the span around the link and
+    // The type mark is the row's (card-labels.css), on the span around the link and
     // not on the link, so the dot sits outside the link's text and underline;
     // a webinar's mark is coral (lib/type-accents.ts).
     const typeMark = article.locator(".rh-resource__meta .rh-card__type");

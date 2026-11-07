@@ -3,8 +3,8 @@
  * the summary, the body and the source line, built on the shared tokens
  * (packages/ui/DESIGN.md, "Components", "The article"). These classes are
  * the front end's own, not part of the contract; the meta line's mark and
- * topic labels are the row's parts from the shared card.css, which
- * ResourceArticle imports.
+ * topic labels are the row's labels from the shared card-labels.css, which
+ * ResourceArticle imports without the rest of the row's card.css.
  *
  * The article is one column of `--rh-measure`, the prose line length,
  * centred in the shell's width as a reading column, so the image is never

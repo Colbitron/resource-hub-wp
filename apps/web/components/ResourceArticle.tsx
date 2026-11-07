@@ -15,8 +15,8 @@ import type { MarkAccent } from "@/lib/type-accents";
 import { toCard } from "@/lib/wp/cards";
 import { featuredImage, openGraphImage, type FeaturedImage } from "@/lib/wp/images";
 
-// The row's stylesheet, for the type mark and the topic labels the meta line borrows from it.
-import "@colbitron/resource-hub-ui/card.css";
+// The row's labels alone, the type mark and the topics the meta line borrows, not the row's layout.
+import "@colbitron/resource-hub-ui/card-labels.css";
 import "./prose.css";
 import "./resource.css";
 
@@ -29,8 +29,13 @@ import "./resource.css";
  * `resourceMetadata` gives the route its `generateMetadata` from the same
  * data.
  *
- * The meta line borrows the row's parts from the shared `card.css` rather
- * than drawing a second mark: the type is `.rh-card__type` with its
+ * The meta line borrows the row's labels from the shared `card-labels.css`
+ * rather than drawing a second mark, and imports that file alone rather
+ * than the whole row's `card.css`, so none of the row's layout is inlined
+ * into this page's HTML twice (once in `<style>`, once in the RSC payload):
+ * with it, the page's HTML crossed the 14,600 bytes Lighthouse's simulated
+ * connection sends in its first round trip (`apps/web/README.md`,
+ * "Images"). The labels: the type is `.rh-card__type` with its
  * `data-accent`, whose `::before` is the dot, and the topics are
  * `.rh-card__topics` with the short rules between them. The type's name is
  * a link to its listing, inside that span, so the dot is the span's and
@@ -161,7 +166,7 @@ export function ResourceArticle({ rendered }: { rendered: RenderedResource }) {
       <header className="rh-resource__header">
         <h1 className="rh-resource__title">{view.title}</h1>
         <div className="rh-resource__meta">
-          {/* The mark is the span's `::before` (card.css); the link holds the name alone. */}
+          {/* The mark is the span's `::before` (card-labels.css); the link holds the name alone. */}
           <span className="rh-card__type" data-accent={view.accent}>
             <Link className="rh-resource__type" href={view.typePath}>
               {view.typeLabel}

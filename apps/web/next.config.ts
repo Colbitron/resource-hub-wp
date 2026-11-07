@@ -32,15 +32,18 @@ const nextConfig: NextConfig = {
 
   // Every route's CSS ships inline in <head> rather than as five
   // render-blocking files: on the harness's build the library's <style> is
-  // 14,029 bytes raw and 2,964 gzipped, the resource page's 11,699 and 2,655,
-  // and a CMS page's 10,104 and 2,467. On a page whose LCP is an image,
+  // 15,238 bytes raw and 3,173 gzipped, the resource page's 15,581 and 3,296,
+  // and a CMS page's 12,741 and 2,912. On a page whose LCP is an image,
   // Lighthouse's simulation charges every request that finished before the
   // image painted, including the framework's scripts, and the five files held
   // the browser's connections while those scripts waited. Inline, the scripts
   // start with the CSS, and the simulated LCP of both image-led sampled pages
   // and every page's FCP fall by about 150 and 280 ms. The cost is CSS a
   // returning reader cannot cache apart from the HTML, and a second copy of it
-  // in the RSC payload; a client navigation still uses <link> tags.
+  // in the RSC payload; a client navigation still uses <link> tags. Both
+  // copies count against the 14,600 bytes of HTML Lighthouse's simulated
+  // connection sends in its first round trip, and a page over that pays
+  // 150 ms more FCP and LCP, so a component imports only the CSS it renders.
   // apps/web/README.md, "Images", has the measurements.
   //
   // The flag is experimental and acts only in a production build, so a
