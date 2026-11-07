@@ -60,14 +60,6 @@
 		<exclude-pattern>*/tests/phpunit/bootstrap\.php$</exclude-pattern>
 	</rule>
 
-	<!-- The related route's topic fill is a tax_query by design (issue #50): the alternatives are the same query under the
-	     taxonomy's query var, which only hides it from the sniff, or raw SQL, which the VIP sniffs and CLAUDE.md rule out.
-	     Its result is cached under a salted key for a day, so the query runs once per resource and count until something
-	     changes. The exclusion is for that one file; every other query stays under the sniff. -->
-	<rule ref="WordPress.DB.SlowDBQuery.slow_db_query_tax_query">
-		<exclude-pattern>*/src/Rest/RelatedRoute\.php$</exclude-pattern>
-	</rule>
-
 	<rule ref="PSR12">
 		<!-- Where PSR-12 and WordPress disagree, WordPress wins. Each group of exclusions names its conflict. -->
 		<exclude name="Generic.WhiteSpace.DisallowTabIndent"/><!-- WP indents with tabs. -->

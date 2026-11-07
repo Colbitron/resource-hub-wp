@@ -45,9 +45,10 @@ use WP_REST_Server;
  * PHP. That is enough: when `p` picks are shown and `p < count`, every published pick is among them,
  * so at most `1 + p` of the IDs are dropped and at least `count - p` remain. `post__not_in` would do
  * the same in SQL, and the VIP ruleset flags it as slow. The topic query is a `tax_query`, which the
- * WordPress slow-query sniff flags too; it is excluded for this one file in `phpcs.xml.dist`,
- * because the alternatives are the same query under a different key, and the result is cached
- * ({@see RelatedCache}) so the query runs once per resource and count until something changes.
+ * WordPress slow-query sniff flags too. It stays, because the alternatives are the same query under
+ * a different key or raw SQL, and its result is cached ({@see RelatedCache}) so the query runs once
+ * per resource and count until something changes. A `phpcs:ignore` on that one line silences the
+ * sniff, so every other query, in this file and elsewhere, stays under it.
  *
  * `count` is 1 to 10, default 3, and a value outside that is a 400 from core's argument validation;
  * an `id` that is not a published resource is a 404, whoever asks, like the resolve route.
@@ -261,7 +262,7 @@ final class RelatedRoute {
 				'fields'              => 'ids',
 				'no_found_rows'       => true,
 				'ignore_sticky_posts' => true,
-				'tax_query'           => array(
+				'tax_query'           => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query -- The topic fill is the route's one job and a tax query by definition; its result is cached under the salted key for a day, and the scale path is a search index or a precomputed list (issue #50), never raw SQL.
 					array(
 						'taxonomy' => Taxonomies::TOPIC,
 						'field'    => 'term_id',

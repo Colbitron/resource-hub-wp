@@ -135,16 +135,17 @@ final class MetaRules {
 	 *   `true`, null, nested arrays, strings with anything but digits (`'7 '`, `'1e3'`, `'-1'`,
 	 *   `'abc'`), and digit strings past PHP_INT_MAX, which a cast would turn into PHP_INT_MAX.
 	 * - Over REST, the schema runs first. It rejects with a 400 what is not an integer (`1.5`,
-	 *   `'abc'`) and what is below 1, but it counts the numeric string `'5'` and the integral float
-	 *   `5.0` as integers, and core then casts both to the int 5 before this sanitizer sees them, so
-	 *   both are stored as 5. Only PHP callers (`update_post_meta()` and the like) reach this rule
-	 *   with a float, and `5.0` from them is dropped: floats are not IDs, and accepting the integral
-	 *   ones would add a third kind of input to a rule that is read line by line. The same cast
-	 *   comes first for every string core's `rest_is_integer()` accepts, which is digits of any
-	 *   length and forms such as `'1e3'` or a padded number, so over REST `'99999999999999999999'`
-	 *   is stored as PHP_INT_MAX and `'1e3'` as 1000; the drop past PHP_INT_MAX reaches PHP callers
-	 *   only. Both are harmless: no post has those IDs, and the related route skips a pick that is
-	 *   missing or unpublished.
+	 *   `'abc'`) and what is below 1. What core's `rest_is_integer()` accepts, `'5'`, `5.0`, `'1e3'`
+	 *   and padded numbers among it, the `(int)` cast in `rest_sanitize_value_from_schema()` turns
+	 *   into an int before this sanitizer runs, so `'5'` and `5.0` are stored as 5 and `'1e3'` as
+	 *   1000. That is faithful, not a misreading: 1000 is the number the client sent, and the picks
+	 *   are whatever IDs the client named. Only PHP callers (`update_post_meta()` and the like)
+	 *   reach this rule with a float, and `5.0` from them is dropped: floats are not IDs, and
+	 *   accepting the integral ones would add a third kind of input to a rule that is read line by
+	 *   line. A digit string past PHP_INT_MAX reaches PHP callers as a string and is dropped; over
+	 *   REST, core's cast saturates it to PHP_INT_MAX, an ID no auto-increment will reach. The
+	 *   editor's picker always sends integers, so only a hand-built REST client sends these forms,
+	 *   and the related route skips any pick that is not a published resource.
 	 * - Keys are dropped, so the stored value is a list in the order given.
 	 * - A repeated ID keeps its first position and loses the later ones.
 	 * - The list is cut to the first RELATED_PICKS_MAX items, so a stored value never exceeds the
