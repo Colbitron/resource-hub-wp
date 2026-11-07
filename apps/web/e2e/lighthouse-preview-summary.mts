@@ -169,10 +169,9 @@ export function lcpImageBytes(lhr: PreviewLhr): number | null {
 
 /**
  * A `blockedUrlPatterns` entry as a regular expression: `*` matches
- * anything, the rest is literal, and the whole URL must match. Chrome's
- * own matching (`Network.setBlockedURLs`) is an unanchored substring match
- * with implicit stars, so this is narrower than Chrome's and fails closed:
- * a URL Chrome blocked that this does not match still counts as foreign.
+ * anything, the rest is literal, and the whole URL must match. This is
+ * anchored, whatever Chrome's own matching does; anything it does not
+ * match is counted as foreign.
  */
 function blockPattern(pattern: string): RegExp {
   return new RegExp(`^${pattern.split("*").map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`);
@@ -180,17 +179,18 @@ function blockPattern(pattern: string): RegExp {
 
 /**
  * Whether the request matches one of the run's own `blockedUrlPatterns`
- * and looks like one Chrome blocked: Lighthouse lists such a request with
- * the record's defaults (status -1, no protocol, no bytes), finished, and
- * ending within a millisecond of starting. The audit does not carry
- * Chrome's error text, and a request that was sent and then reset or
- * timed out has the same defaults, so the duration is what tells them
- * apart: a request to another origin cannot be sent and fail inside a
- * millisecond. Anything else fails closed and counts.
+ * and looks like one Chrome blocked, as Lighthouse lists such a request:
+ * the unanswered-request defaults (status -1, an empty protocol, zero
+ * bytes), finished, and ending under a millisecond after it started
+ * (0.013 ms observed on 2026-11-07). A heuristic, not proof: the audit
+ * does not carry Chrome's error text, and a request that was sent and
+ * then reset or timed out keeps the same defaults, so the duration is the
+ * tell, and the block itself is the control. Anything else fails closed
+ * and counts.
  */
 function abortedByBlock(item: NetworkItem, patterns: readonly string[]): boolean {
   if (!patterns.some((pattern) => blockPattern(pattern).test(item.url))) return false;
-  if (item.statusCode !== -1 || item.protocol || item.transferSize || item.finished !== true) return false;
+  if (item.statusCode !== -1 || item.protocol !== "" || item.transferSize !== 0 || item.finished !== true) return false;
   if (typeof item.networkRequestTime !== "number" || typeof item.networkEndTime !== "number") return false;
   const duration = item.networkEndTime - item.networkRequestTime;
   return duration >= 0 && duration < 1;

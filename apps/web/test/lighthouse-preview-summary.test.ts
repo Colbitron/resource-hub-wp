@@ -209,7 +209,7 @@ describe("foreignOrigins", () => {
       expect(foreignOrigins(withBlock([{ ...blocked, transferSize: 12 }]), ORIGIN)).toEqual(LIVE);
     });
 
-    it("counts when it was still in flight, took long enough to have been sent, or lacks the fields", () => {
+    it("counts when it was still in flight, ended a millisecond or more after starting, or lacks the fields", () => {
       expect(foreignOrigins(withBlock([{ ...blocked, finished: false }]), ORIGIN)).toEqual(LIVE);
       expect(foreignOrigins(withBlock([{ ...blocked, networkEndTime: blocked.networkRequestTime + 1 }]), ORIGIN)).toEqual(LIVE);
       expect(foreignOrigins(withBlock([{ ...blocked, networkEndTime: blocked.networkRequestTime + 40 }]), ORIGIN)).toEqual(LIVE);
@@ -218,6 +218,14 @@ describe("foreignOrigins", () => {
       expect(foreignOrigins(withBlock([{ ...blocked, finished: undefined }]), ORIGIN)).toEqual(LIVE);
       expect(foreignOrigins(withBlock([{ ...blocked, networkRequestTime: undefined }]), ORIGIN)).toEqual(LIVE);
       expect(foreignOrigins(withBlock([{ ...blocked, networkEndTime: undefined }]), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(withBlock([{ ...blocked, networkRequestTime: null, networkEndTime: 0.5 }]), ORIGIN)).toEqual(LIVE);
+    });
+
+    it("counts when the protocol or the bytes are missing rather than empty and zero", () => {
+      expect(foreignOrigins(withBlock([{ ...blocked, protocol: undefined }]), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(withBlock([{ ...blocked, transferSize: undefined }]), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(withBlock([{ ...blocked, transferSize: null }]), ORIGIN)).toEqual(LIVE);
+      expect(foreignOrigins(withBlock([{ ...blocked, transferSize: Number.NaN }]), ORIGIN)).toEqual(LIVE);
     });
 
     it("counts a look-alike request to an origin no pattern names, and without patterns at all", () => {
@@ -228,7 +236,7 @@ describe("foreignOrigins", () => {
       expect(foreignOrigins(lhr(PAGE, { requests: [blocked] }), ORIGIN)).toEqual(LIVE);
     });
 
-    it("matches the whole URL, narrower than Chrome's substring match, and fails closed", () => {
+    it("matches the whole URL, anchored, and counts anything it does not match", () => {
       expect(foreignOrigins(withBlock([{ ...blocked, url: "https://vercel.live.evil.com/_next-live/x.js" }]), ORIGIN)).toEqual(["https://vercel.live.evil.com"]);
       expect(foreignOrigins(withBlock([{ ...blocked, url: "https://evil.example/?u=https://vercel.live/x.js" }]), ORIGIN)).toEqual(["https://evil.example"]);
       expect(foreignOrigins(withBlock([{ ...blocked, url: "https://vercel.live@evil.example/x.js" }]), ORIGIN)).toEqual(["https://evil.example"]);
