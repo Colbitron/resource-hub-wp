@@ -175,7 +175,7 @@ test.describe("what the page renders", () => {
     const resource = seeded(SEEDED.id);
     await page.goto(resourcePath(SEEDED.type, SEEDED.slug));
 
-    const article = page.getByRole("article");
+    const article = page.locator("article.rh-resource");
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
     await expect(article.getByRole("heading", { level: 1 })).toHaveText(SEEDED.title);
 
@@ -237,7 +237,7 @@ test.describe("what the page renders", () => {
     const slug = unique("bare");
     await cms.createResource({ title: "Bare", type: "podcast", slug, summary: "", sourceUrl: "" });
     await page.goto(resourcePath("podcast", slug));
-    const article = page.getByRole("article");
+    const article = page.locator("article.rh-resource");
     await expect(article.getByRole("heading", { level: 1 })).toHaveText("Bare");
     await expect(article.locator(".rh-resource__media")).toHaveCount(0);
     await expect(article.locator(".rh-resource__summary")).toHaveCount(0);
@@ -451,16 +451,20 @@ test.describe("metadata", () => {
     await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute("content", `${site}/media/2026/11/content-model.png`);
   });
 
-  test("the page and its metadata make one CMS request between them", async ({ request }) => {
+  test("the page and its metadata make one CMS request between them, plus the related section's", async ({ request }) => {
     const slug = unique("one-request");
-    await cms.createResource({ title: "One request", type: "article", slug });
+    const created = await cms.createResource({ title: "One request", type: "article", slug, topics: [] });
     await cms.resetRequests();
 
-    // A render: one slug lookup, never resolve.
+    // A render: one slug lookup, never resolve, and the related section's one
+    // read of the related route, which names nothing for a resource with no
+    // topics and no picks, so the resources it would read are never asked for.
     await expectOk(request, resourcePath("article", slug));
     let requests = await restRequests();
-    expect(requests[`/wp-json/wp/v2/resources?_embed&slug=${slug}`]).toBe(1);
-    expect(Object.keys(requests).filter((path) => path.includes("/resolve"))).toEqual([]);
+    expect(requests).toEqual({
+      [`/wp-json/wp/v2/resources?_embed&slug=${slug}`]: 1,
+      [`/wp-json/resource-hub/v1/related/${created.id}?count=3`]: 1,
+    });
 
     // A redirect: the lookup is in the Data Cache, so no request at all.
     await cms.resetRequests();
@@ -663,7 +667,9 @@ test.describe("accessibility and layout", () => {
     await expect(page.getByRole("banner")).toHaveCount(1);
     await expect(page.getByRole("main")).toHaveCount(1);
     await expect(page.getByRole("contentinfo")).toHaveCount(1);
-    await expect(page.getByRole("article")).toHaveCount(1);
+    // One article for the resource; the rows of the related section under it are articles of their own (related.spec.ts).
+    await expect(page.locator("article.rh-resource")).toHaveCount(1);
+    await expect(page.getByRole("article").first()).toHaveClass("rh-resource");
     await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
     expect(await page.locator("html").getAttribute("lang")).toBe("en");
 
@@ -715,7 +721,7 @@ test.describe("accessibility and layout", () => {
     // Chromium on macOS draws 65ch of Figtree at 16px as 666.45px, and on
     // Linux, which rounds each advance to a whole pixel, as 650px. So the
     // floor is the measured column, not a width in rem.
-    const measured = await page.getByRole("article").evaluate((article) => {
+    const measured = await page.locator("article.rh-resource").evaluate((article) => {
       const probe = document.createElement("div");
       probe.style.cssText = "position: absolute; visibility: hidden; width: var(--rh-measure)";
       article.append(probe);

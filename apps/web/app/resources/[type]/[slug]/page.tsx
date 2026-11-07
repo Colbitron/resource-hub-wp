@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { DataNotFound, NOT_FOUND_METADATA } from "@/components/DataNotFound";
+import { RelatedSection } from "@/components/RelatedSection";
 import { ResourceArticle, resourceMetadata } from "@/components/ResourceArticle";
 import { resourcePageParams } from "@/lib/prerender";
 import { resourceForRequest } from "@/lib/redirects";
@@ -51,6 +52,14 @@ import { resourceForRequest } from "@/lib/redirects";
  * siblings `topic/` and `page/` win over `[type]`, so `/resources/topic/x/`
  * and `/resources/page/2/` never arrive here.
  *
+ * The related section (`RelatedSection`, issue #50) is passed to the
+ * article as a slot: it reads the plugin's related route and the resources
+ * it names, tagged with the page's own slug among others, and catches a
+ * `CmsError` of its own around itself, so a failed or missing related read
+ * (today's production CMS has no related route yet) renders the page
+ * without the section, never a 500. Its reads are ordinary cached fetches,
+ * so the route stays ISR.
+ *
  * A `CmsError` from the data layer is a 500, which ISR never stores.
  * `error.tsx` beside this file is the segment's error boundary: the response
  * keeps the 500 status, and the 308 and the 404 never reach the boundary, so
@@ -86,5 +95,10 @@ export async function generateMetadata({ params }: PageProps<"/resources/[type]/
 export default async function SingleResourcePage({ params }: PageProps<"/resources/[type]/[slug]">) {
   const { type, slug } = await params;
   const decision = await resourceForRequest(type, slug);
-  return decision.kind === "not-found" ? <DataNotFound /> : <ResourceArticle rendered={decision} />;
+  if (decision.kind === "not-found") {
+    return <DataNotFound />;
+  }
+  return (
+    <ResourceArticle rendered={decision} related={<RelatedSection id={decision.resource.id} slug={decision.slug} />} />
+  );
 }

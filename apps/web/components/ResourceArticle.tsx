@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { CONTENT_SIZES, renderContent } from "@/lib/content/render";
 import { formatPublishedDate } from "@/lib/dates";
@@ -45,13 +46,17 @@ import "./resource.css";
  *
  * Its path carries the resource's type, the same on both sites (ADR 0024).
  * The CMS's address never reaches the page (ADR 0040). The URL shape is in
- * `packages/ui/README.md`, and so is the block marker. The related list the
- * marker stands for is not built yet (issue #50).
+ * `packages/ui/README.md`, and so is the block marker.
  *
  * The route hands over a `RenderedResource` from `resourceForRequest`
  * (`lib/redirects.ts`), so by the time this renders the redirect and 404
  * decisions are made: this component only shows a resource that has a URL,
- * at its canonical URL.
+ * at its canonical URL. It also hands over the related section as `related`
+ * (`components/RelatedSection.tsx`, issue #50), rendered last in the
+ * article, after the source line: the section makes its own CMS reads and
+ * contains its own failures, so it is a slot the route fills rather than a
+ * read this component makes, and the design specimen, which renders this
+ * component from fixture data, leaves the slot empty and stays fixed data.
  *
  * What is shown comes from the same mappings the cards use, so a card and the
  * page it links to agree: `toCard` for the title (with its untitled rule),
@@ -157,7 +162,13 @@ export function resourceMetadata(rendered: RenderedResource): Metadata {
   };
 }
 
-export function ResourceArticle({ rendered }: { rendered: RenderedResource }) {
+export interface ResourceArticleProps {
+  readonly rendered: RenderedResource;
+  /** The related section (`RelatedSection`), rendered after the source line; nothing when left out. */
+  readonly related?: ReactNode;
+}
+
+export function ResourceArticle({ rendered, related }: ResourceArticleProps) {
   const view = resourceView(rendered);
   const { resource } = rendered;
 
@@ -203,11 +214,12 @@ export function ResourceArticle({ rendered }: { rendered: RenderedResource }) {
       {view.description !== null && <p className="rh-resource__summary">{view.description}</p>}
       <div className="rh-resource__body rh-prose">
         {/*
-         * The related-resources block, not built yet (issue #50; the marker
-         * is in `packages/ui/README.md`): the pass finds the marker and hands
-         * it to `renderBlock`, whose default renders the CMS's own fallback
-         * list. Slice 4 passes `renderBlock` here to swap the marker for
-         * `<RelatedResources>`, fetched with the `topic:{slug}` tag.
+         * The related-resources block (issue #50; the marker is in
+         * `packages/ui/README.md`): the pass finds the marker and hands it to
+         * `renderBlock`, whose default renders the CMS's own fallback list.
+         * The swap for `<RelatedResources>`, fetched with the `topic:{slug}`
+         * tag, is the next pull request of slice 4 and passes `renderBlock`
+         * here.
          */}
         {renderContent(resource.content.rendered, cmsUrls(), { postId: resource.id })}
       </div>
@@ -225,6 +237,7 @@ export function ResourceArticle({ rendered }: { rendered: RenderedResource }) {
           </p>
         </footer>
       )}
+      {related}
     </article>
   );
 }

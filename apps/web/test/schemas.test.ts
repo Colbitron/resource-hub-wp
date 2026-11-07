@@ -9,6 +9,7 @@ import { isSlug, isTypeSlug } from "../lib/routes";
 import { slugSchema, typeSlugSchema } from "../lib/wp/schemas/common";
 import { parsePaginationHeaders } from "../lib/wp/schemas/pagination";
 import { pageResponseSchema, pageResponseSchemaStrict } from "../lib/wp/schemas/page";
+import { relatedResponseSchema, relatedResponseSchemaStrict } from "../lib/wp/schemas/related";
 import { resolveResponseSchema, resolveResponseSchemaStrict } from "../lib/wp/schemas/resolve";
 import {
   hasWpTaxonomy,
@@ -46,6 +47,7 @@ const contractSchemas: Record<string, z.ZodType> = {
   "revalidate-response-error": revalidateResponseErrorSchema,
   "resolve-response": resolveResponseSchemaStrict,
   "page-response": pageResponseSchemaStrict,
+  "related-response": relatedResponseSchemaStrict,
   "wp-error": wpErrorSchema,
 };
 
@@ -62,6 +64,10 @@ const expectedIssuePaths: Record<string, (string | number)[][]> = {
   "page-response.path-without-trailing-slash.json": [["page", "path"]],
   "page-response.path-with-empty-segment.json": [["page", "path"]],
   "page-response.extra-property.json": [["page"]],
+  "related-response.eleven-items.json": [["items"]],
+  "related-response.extra-item-property.json": [["items", 0]],
+  "related-response.extra-top-level-property.json": [[]],
+  "related-response.unknown-source.json": [["items", 0, "source"]],
   "revalidate-request.page-null-previous-on-update.json": [["events", 0, "previous"]],
   "revalidate-request.page-previous-on-publish.json": [["events", 0, "previous"]],
   "revalidate-request.page-path-without-slash.json": [["events", 0, "path"]],
@@ -85,8 +91,8 @@ function issuePaths(result: { error?: z.ZodError }): PropertyKey[][] {
   return (result.error?.issues ?? []).map((issue) => issue.path);
 }
 
-/** Contract schemas the front end does not read yet: the related route is slice 4. */
-const notYetImplemented = new Set(["related-response"]);
+/** Contract schemas the front end does not read yet: none today; a new schema is listed here until its reader lands. */
+const notYetImplemented = new Set<string>();
 
 function readJson(file: string): unknown {
   return JSON.parse(readFileSync(file, "utf8"));
@@ -383,6 +389,20 @@ describe("readers drop unknown keys; strict mirrors reject them", () => {
     const extended = { ...nested, page: { ...nested.page, slug: "team" }, added: 1 };
     expect(pageResponseSchema.parse(extended)).toEqual(pageResponseSchema.parse(nested));
     expect(issuePaths(pageResponseSchemaStrict.safeParse(extended))).toEqual([["page"], []]);
+  });
+
+  it("an extra key on the related response, at either level", () => {
+    const three = readJson(path.join(contractFixtures, "valid/related-response.three-items.json")) as { items: object[] };
+    const extended = { ...three, items: three.items.map((item) => ({ ...item, title: "Not here by design" })), total: 3 };
+    expect(relatedResponseSchema.parse(extended)).toEqual(relatedResponseSchema.parse(three));
+    expect(issuePaths(relatedResponseSchemaStrict.safeParse(extended))).toEqual([["items", 0], ["items", 1], ["items", 2], []]);
+  });
+
+  it("the related reader still holds its known keys to the strict rules", () => {
+    expect(issuePaths(relatedResponseSchema.safeParse({ items: [{ id: "1", source: "pick" }] }))).toEqual([["items", 0, "id"]]);
+    expect(issuePaths(relatedResponseSchema.safeParse({ items: [{ id: 1, source: "random" }] }))).toEqual([["items", 0, "source"]]);
+    expect(relatedResponseSchema.safeParse({ items: Array.from({ length: 11 }, (_, i) => ({ id: i + 1, source: "topic" })) }).success).toBe(false);
+    expect(relatedResponseSchema.safeParse({}).success).toBe(false);
   });
 
   it("the page reader refuses a path the front end could not serve, which the schema allows", () => {

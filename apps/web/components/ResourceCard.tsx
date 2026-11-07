@@ -16,8 +16,12 @@ export interface ResourceCardProps {
   summary: string;
   /** The publication date, ISO 8601 (`date_gmt` from the REST API, with a `Z`). */
   date: string;
-  /** The heading level the title takes, so a row fits under the page's own headings. */
-  headingLevel?: "h2" | "h3";
+  /**
+   * The heading level the title takes, so a row fits under the page's own
+   * headings: `h2` under the page's `h1`, `h3` under a section heading, `h4`
+   * under a related list whose own heading was shifted to `h3`.
+   */
+  headingLevel?: "h2" | "h3" | "h4";
 }
 
 /**
