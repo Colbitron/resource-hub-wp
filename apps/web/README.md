@@ -20,7 +20,10 @@ Checks, from the root (or `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm test
 pnpm web:typecheck   # next typegen && tsc --noEmit
 pnpm web:lint        # eslint
 pnpm web:test        # vitest run (unit tests, test/*.test.ts and lib/*.test.ts)
-pnpm web:test:e2e    # playwright test (e2e/*.spec.ts, against the mock CMS in e2e/mock-cms/)
+pnpm web:test:e2e    # playwright test (e2e/*.spec.ts, against the mock CMS in e2e/mock-cms/), axe included
+pnpm web:test:screenshots         # the design specimen against its pixel baselines, in Docker
+pnpm web:test:screenshots:update  # rewrite the baselines after a design change
+pnpm web:test:lighthouse          # Lighthouse CI on the sampled URLs, mobile budgets
 pnpm web:build       # next build
 ```
 
@@ -51,7 +54,7 @@ Images are served through the same-origin `/media/…` rewrite and rendered with
 
 ## Status
 
-The listings, the single resource, the CMS's pages, the data layer, the content renderer and the revalidation route are in, all ISR. The related section that swaps the block marker for a `<RelatedResources>` component is slice 4 ([issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50)). CI lints, typechecks, builds and runs the unit and end-to-end tests.
+The listings, the single resource, the CMS's pages, the data layer, the content renderer and the revalidation route are in, all ISR. The related section that swaps the block marker for a `<RelatedResources>` component is slice 4 ([issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50)). CI lints, typechecks, builds and runs the unit and end-to-end tests, then the design gates on the same build: axe, the specimen's screenshots and Lighthouse CI ([`e2e/README.md`](e2e/README.md#the-design-gates)).
 
 ## Possible next steps
 
@@ -59,4 +62,3 @@ Only once the core is green, in this order:
 
 1. A GraphQL data path beside REST, once the plugin adds WPGraphQL, with a short written comparison.
 2. Draft preview through the signed token from the plugin.
-3. Lighthouse CI budgets and an axe check inside the Playwright run, so the pipeline produces the numbers.

@@ -18,6 +18,7 @@ vendor/
 # testing
 /coverage
 /test-results/
+/test-results-screenshots/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
@@ -45,3 +46,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Lighthouse CI: raw runs and the reports `lhci upload` writes
+/.lighthouseci/
+/lighthouse-results/

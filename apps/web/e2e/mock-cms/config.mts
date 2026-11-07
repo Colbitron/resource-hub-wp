@@ -67,3 +67,37 @@ export function mockCmsApiUrl(env: Env = process.env): string {
 export function appSiteOrigin(env: Env = process.env): string {
   return `http://localhost:${webPort(env)}`;
 }
+
+/**
+ * The environment `next build` and `next start` get under test: the fixture
+ * routes, the mock as the CMS, the fixed test secret and the site's origin.
+ * Shared by `playwright.config.ts` and the Lighthouse runner
+ * (`e2e/lighthouse.mts`), which start the same app the same way.
+ */
+export function appServerEnv(env: Env = process.env): Record<string, string> {
+  return {
+    RH_FIXTURES: "1",
+    WP_API_URL: mockCmsApiUrl(env),
+    // Empty, which the app reads as unset, so `/media/` maps to the mock's
+    // uploads through WP_API_URL. Set here rather than left out so neither a
+    // value in the shell nor one in `.env.local` (Next.js loads it only into
+    // variables that are undefined) reaches the build or the server; the
+    // build stamp records it (e2e/build-stamp.mts).
+    WP_MEDIA_ORIGIN: "",
+    // The bearer e2e/revalidate.spec.ts sends; a fixed test value, never a real secret.
+    REVALIDATE_SECRET: E2E_REVALIDATE_SECRET,
+    // The public origin the root layout gives `metadataBase`, so the
+    // canonical and og:url are absolute (e2e/resource-page.spec.ts).
+    SITE_URL: appSiteOrigin(env),
+  };
+}
+
+/**
+ * True when `RH_E2E_PREBUILT=1`: the app in `.next` was already built by an
+ * earlier run with `appServerEnv()` on the same ports, so the harness starts
+ * it without building again. CI sets it for the screenshot and Lighthouse
+ * runs, which follow the end-to-end run and reuse its build.
+ */
+export function prebuilt(env: Env = process.env): boolean {
+  return env.RH_E2E_PREBUILT === "1";
+}
