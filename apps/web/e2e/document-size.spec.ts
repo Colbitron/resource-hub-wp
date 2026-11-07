@@ -26,15 +26,21 @@ import { SAMPLED_URLS } from "./sampled-urls.mts";
  * The size is Chromium's own count, the response's header bytes plus its
  * encoded body bytes (`request.sizes()`), which is what Lighthouse reads as
  * `transferSize`: on 2026-11-07 the two agreed within 3 bytes on every
- * sampled page. Each page is requested once first, so the measured response
- * is the stored ISR page a reader after the first gets, as Lighthouse
- * measures it (`lighthouse.mts`).
+ * sampled page. Each page is requested until the app answers it from its
+ * store, so the measured response is the stored ISR page a reader after the
+ * first gets, as Lighthouse measures it (`lighthouse.mts`), and no
+ * regeneration is left running. The browser runs no JavaScript: the
+ * document is the same, and nothing hydrates to prefetch the page's links
+ * and send the CMS requests after the test has ended, into the next spec's
+ * counters.
  */
 
 /** Lantern's initial congestion window: ten segments of 1,460 bytes. */
 const FIRST_ROUND_TRIP_BYTES = 10 * 1460;
 
 const cms = mockCms();
+
+test.use({ javaScriptEnabled: false });
 
 test.beforeEach(async ({ request }) => {
   await cms.reset();
@@ -45,10 +51,20 @@ test.beforeEach(async ({ request }) => {
 
 for (const { label, path } of SAMPLED_URLS.filter((sample) => sample.imageLed && sample.status === 200)) {
   test(`the ${label}'s HTML (${path}) fits in Lighthouse's first round trip`, async ({ page, request }) => {
-    const warm = await request.get(path);
-    expect(warm.status(), path).toBe(200);
+    // A cleared page answers once from the stale entry while it renders again; then from the new one.
+    await expect
+      .poll(
+        async () => {
+          const warm = await request.get(path);
+          expect(warm.status(), path).toBe(200);
+          return warm.headers()["x-nextjs-cache"];
+        },
+        { message: `${path} never answered from the app's store` },
+      )
+      .toBe("HIT");
 
     const response = await page.goto(path);
+    expect(await response!.headerValue("x-nextjs-cache"), path).toBe("HIT");
     expect(response?.status(), path).toBe(200);
     // Lighthouse's Chromium asks for the same encodings; an uncompressed
     // response would fail below for the wrong reason.
