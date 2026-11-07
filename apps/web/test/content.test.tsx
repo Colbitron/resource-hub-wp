@@ -597,6 +597,7 @@ describe("the block marker", () => {
       topicId: 9,
       exclude: 15,
       heading: "More on Headless delivery",
+      headingLevel: "h2",
     });
     expect(renderToStaticMarkup(<>{fallback}</>)).toBe(
       '<div class="wp-block-resource-hub-related-resources rh-related"><h2>More on Headless delivery</h2><ul><li><a href="/resources/webinar/example/">Example</a></li></ul></div>',
@@ -767,6 +768,114 @@ describe("the block marker", () => {
     const renderBlock = vi.fn<RenderBlock>(() => null);
     render(MARKER.replace("<h2>More on Headless delivery</h2>", ""), { renderBlock });
     expect(renderBlock.mock.calls[0]?.[0].heading).toBeNull();
+  });
+
+  it("says the heading is one level down when the body renders an h1", () => {
+    const renderBlock = vi.fn<RenderBlock>(() => null);
+    render(`<h1>Top</h1>${MARKER}`, { renderBlock });
+    expect(renderBlock.mock.calls[0]?.[0].headingLevel).toBe("h3");
+    render(`<h2>Top</h2>${MARKER}`, { renderBlock });
+    expect(renderBlock.mock.calls[1]?.[0].headingLevel).toBe("h2");
+  });
+});
+
+describe("the block marker's rows", () => {
+  // The marker as the plugin's render callback fills it: the row markup of
+  // `packages/ui/card.css`, with `role="list"` on both lists and no
+  // `data-accent` (packages/ui/README.md, "Block marker").
+  const ROW =
+    '<li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">Webinar</span><time datetime="2026-10-30T09:00:00+00:00">Oct 30, 2026</time></p>' +
+    '<div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="https://cms.example/resources/webinar/example/">Example</a></h3>' +
+    '<p class="rh-card__summary">A summary.</p><ul class="rh-card__topics" aria-label="Topics" role="list"><li class="rh-card__topic">Headless delivery</li></ul></div></article></li>';
+  const CARD_MARKER =
+    '<div class="wp-block-resource-hub-related-resources rh-related" data-rh-block="related-resources" data-count="3" data-topic="headless-delivery" data-topic-id="9" data-exclude="15">' +
+    `<h2>More on Headless delivery</h2><ul class="rh-card-grid" role="list">${ROW}</ul></div>`;
+  const FALLBACK =
+    '<div class="wp-block-resource-hub-related-resources rh-related"><h2>More on Headless delivery</h2><ul class="rh-card-grid" role="list">' +
+    // React writes the `<time>`'s attribute as `dateTime`, which HTML reads as `datetime`.
+    '<li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">Webinar</span><time dateTime="2026-10-30T09:00:00+00:00">Oct 30, 2026</time></p>' +
+    '<div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="/resources/webinar/example/">Example</a></h3>' +
+    '<p class="rh-card__summary">A summary.</p><ul class="rh-card__topics" role="list" aria-label="Topics"><li class="rh-card__topic">Headless delivery</li></ul></div></article></li></ul></div>';
+
+  it("hands the marker on and keeps the rows in its fallback: the article, the row classes, the lists' role and the topics' label, with the link rewritten", () => {
+    const renderBlock = vi.fn<RenderBlock>(() => <aside>related</aside>);
+    const output = render(`<p>before</p>${CARD_MARKER}`, { renderBlock });
+    expect(renderBlock).toHaveBeenCalledTimes(1);
+    const [props, fallback] = renderBlock.mock.calls[0] ?? [];
+    expect(props).toMatchObject({ count: 3, topic: "headless-delivery", topicId: 9, exclude: 15, heading: "More on Headless delivery", headingLevel: "h2" });
+    expect(renderToStaticMarkup(<>{fallback}</>)).toBe(FALLBACK);
+    expect(output).toBe("<p>before</p><aside>related</aside>");
+  });
+
+  it("renders the rows by default, without the marker attributes", () => {
+    const output = render(CARD_MARKER);
+    expect(output).toBe(FALLBACK);
+    expect(output).not.toContain("data-");
+  });
+
+  it("drops the row's element, classes, role and label outside a marker, as before", () => {
+    expect(render(`<ul class="rh-card-grid" role="list" aria-label="Rows">${ROW}</ul>`)).toBe(
+      '<ul><li><p><span>Webinar</span><time dateTime="2026-10-30T09:00:00+00:00">Oct 30, 2026</time></p>' +
+        '<div><h3><a href="/resources/webinar/example/">Example</a></h3><p>A summary.</p><ul><li>Headless delivery</li></ul></div></li></ul>',
+    );
+  });
+
+  it("gives an invalid marker's contents the body's rules: it is not the CMS's block", () => {
+    const output = render(CARD_MARKER.replace('data-count="3"', 'data-count="0"'));
+    expect(output).toContain('<div class="wp-block-resource-hub-related-resources rh-related"><h2>More on Headless delivery</h2><ul><li><p>');
+    expect(output).not.toContain("rh-card");
+    expect(output).not.toContain("role=");
+    expect(output).not.toContain("aria-");
+  });
+
+  it("keeps only role=list, only on a list, and no other aria attribute, inside a marker", () => {
+    const output = render(
+      CARD_MARKER.replace('<ul class="rh-card-grid" role="list">', '<ul class="rh-card-grid" role="navigation" aria-hidden="true">').replace(
+        '<article class="rh-card">',
+        '<article class="rh-card" role="list" aria-label="Row">',
+      ),
+    );
+    expect(output).toContain('<ul class="rh-card-grid"><li><article class="rh-card"><p');
+    expect(output).not.toContain("navigation");
+    expect(output).not.toContain("aria-hidden");
+    expect(output).not.toContain('aria-label="Row"');
+    // The topics list keeps its role and label.
+    expect(output).toContain('<ul class="rh-card__topics" role="list" aria-label="Topics">');
+  });
+
+  it("keeps the app's other classes out, even inside a marker, and drops a label that names the CMS", () => {
+    const output = render(
+      CARD_MARKER.replace('<p class="rh-card__summary">', '<p class="rh-card__summary rh-shell rh-related">').replace('aria-label="Topics"', 'aria-label="Topics on cms.example"'),
+    );
+    expect(output).toContain('<p class="rh-card__summary">A summary.</p>');
+    expect(output).toContain('<ul class="rh-card__topics" role="list"><li');
+    expect(output).not.toContain("cms.example");
+  });
+
+  it("shifts the block's heading and the rows' titles with the body's headings", () => {
+    const renderBlock = vi.fn<RenderBlock>(() => null);
+    const output = render(`<h1>Top</h1>${CARD_MARKER}`, { renderBlock });
+    expect(renderBlock.mock.calls[0]?.[0].headingLevel).toBe("h3");
+    const [, fallback] = renderBlock.mock.calls[0] ?? [];
+    const markup = renderToStaticMarkup(<>{fallback}</>);
+    expect(markup).toContain("<h3>More on Headless delivery</h3>");
+    expect(markup).toContain('<h4 class="rh-card__title">');
+    expect(output).toBe("<h2>Top</h2>");
+  });
+
+  it("keeps the rows in the fallback of a marker past the cap and of one inside a link", () => {
+    const renderBlock = vi.fn<RenderBlock>(() => <aside>related</aside>);
+    const capped = render(CARD_MARKER.repeat(6), { renderBlock });
+    expect(renderBlock).toHaveBeenCalledTimes(5);
+    expect(capped.match(/<aside>related<\/aside>/g)).toHaveLength(5);
+    expect(capped.match(/<article class="rh-card">/g)).toHaveLength(1);
+    expect(capped).toContain('<ul class="rh-card-grid" role="list">');
+
+    const linked = render(`<a href="/resources/">${CARD_MARKER}</a>`, { renderBlock });
+    expect(renderBlock).toHaveBeenCalledTimes(5);
+    expect(linked).toContain('<article class="rh-card">');
+    // The row's own link is unwrapped inside the outer link, as any nested link is.
+    expect(linked).toContain('<h3 class="rh-card__title">Example</h3>');
   });
 });
 

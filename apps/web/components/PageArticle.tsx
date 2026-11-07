@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
-import { renderContent } from "@/lib/content/render";
+import { renderRelatedBlock } from "@/components/RelatedResources";
+import { renderContent, type RenderBlock } from "@/lib/content/render";
 import { cmsUrls } from "@/lib/env";
 import type { RenderedPage } from "@/lib/page-request";
 import { DEFAULT_SHARE_IMAGE } from "@/lib/share-image";
@@ -22,7 +23,10 @@ import "./prose.css";
  * The body is `content.rendered` through the one server-side pass
  * (`renderContent`, whose docblock holds the rules; ADR 0040), which sanitises
  * it and rewrites its URLs, with `postId` so a related-resources block in the
- * page excludes the page's own ID whatever its HTML says. A password-protected
+ * page excludes the page's own ID whatever its HTML says, and with
+ * `renderRelatedBlock` (`components/RelatedResources.tsx`), so a block the
+ * editor put in a page renders as the front end's own list, as on a
+ * resource, and as the CMS's rows when its read fails. A password-protected
  * page is never served: the plugin answers none, and the decision refuses one
  * whose `content.protected` is set. Pages carry no featured image here: the
  * content model gives pages no meta of their own and the front end shows what
@@ -74,7 +78,13 @@ export function pageMetadata(rendered: Extract<RenderedPage, { kind: "render" }>
   };
 }
 
-export function PageArticle({ rendered }: { rendered: Extract<RenderedPage, { kind: "render" }> }) {
+export interface PageArticleProps {
+  readonly rendered: Extract<RenderedPage, { kind: "render" }>;
+  /** What a related-resources block marker in the body renders as: `renderRelatedBlock` by default; the design specimen passes the pass's fallback. */
+  readonly renderBlock?: RenderBlock;
+}
+
+export function PageArticle({ rendered, renderBlock = renderRelatedBlock }: PageArticleProps) {
   const view = pageView(rendered.page, rendered.path);
   const { page } = rendered;
 
@@ -84,7 +94,7 @@ export function PageArticle({ rendered }: { rendered: Extract<RenderedPage, { ki
         <h1 className="rh-page__title">{view.title}</h1>
       </header>
       <div className="rh-page__body rh-prose">
-        {renderContent(page.content.rendered, cmsUrls(), { postId: page.id })}
+        {renderContent(page.content.rendered, cmsUrls(), { postId: page.id, renderBlock })}
       </div>
     </article>
   );

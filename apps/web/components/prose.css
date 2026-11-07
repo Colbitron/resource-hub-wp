@@ -13,10 +13,11 @@
  * quote, a table and a code block from the prose around them without colour:
  * the blockquote, with a bar of coral down its left edge, the one hairline of
  * brand colour in the article; the table's scroll region; and `pre`. Figures
- * and images take the same corners as the featured image, with no plate. The related block's
- * fallback (`.rh-related`) is a small collection: a heading on a strong rule
- * and the links between hairlines, the shape the listing's "Latest" section
- * has, so slice 4's rows (issue #50) slot in under the same heading.
+ * and images take the same corners as the featured image, with no plate. The
+ * related-resources block (`.rh-related`, the front end's list in place of
+ * the marker, or the marker's fallback) is a small collection in the shape
+ * of the listing's "Latest" section: a heading on a strong rule and the rows
+ * of the shared card.css under it, kept clear of the body's own rules below.
  *
  * `anywhere` is kept for the places where an unbreakable token must not
  * widen the page: `pre`, and links and code inside table cells.
@@ -281,42 +282,82 @@
 }
 
 /*
- * The related-resources block's fallback (packages/ui/README.md): the
- * wrapper the pass marks `rh-related`, holding the CMS's heading and its
- * list of links. Shown as a small collection in the listing's shape: the
- * heading, at whatever level the outline gave it, small over a strong rule
- * in the ink, and each link on a row between hairlines, in the ink and
- * underlined. Slice 4 (issue #50) keeps the heading and renders the rows
- * of `card.css` under it in place of this list. The list keeps its
- * markers off with `list-style: none`, which Safari reads as no list; the
- * sanitiser lets no content carry `role`, and slice 4's own list will.
+ * The related-resources block inside a body (packages/ui/README.md, "Block
+ * marker"; issue #50): `.rh-related` is the front end's list
+ * (components/RelatedList.tsx, in place of the marker) and the marker's
+ * fallback alike, the wrapper the pass always marks with that class. Both
+ * are a small collection in the listing's shape: the heading, the block's
+ * own and a direct child of the wrapper, at whatever level the outline gave
+ * it, small over a strong rule in the ink (the same rule as related.css,
+ * repeated here because `.rh-prose h2` would otherwise outrank it), and the
+ * rows of the shared card.css under it. The body's rules for headings,
+ * paragraphs, lists and links reach into a row with more weight than
+ * card.css's single classes, so the overrides below give a row back its own
+ * spacing, sizes and link; the row's own rules do the rest.
+ *
+ * The CMS's render callback fills the marker with the same row markup, so a
+ * fallback renders as rows too. A marker that still holds a plain list of
+ * links, the shape before the rows, keeps its old rendering: each link on a
+ * row between hairlines, in the ink, semibold and underlined, with the
+ * list's markers off (`list-style: none`, which Safari reads as no list;
+ * that list carries no `role`, where the row markup's does).
  */
 
 .rh-prose .rh-related {
 	margin-top: var(--rh-space-7);
 }
 
-.rh-prose .rh-related :is(h2, h3, h4, h5, h6) {
+.rh-prose .rh-related > :is(h2, h3, h4, h5, h6) {
 	margin: 0;
 	padding-bottom: var(--rh-space-2);
 	border-bottom: var(--rh-border-width-strong) solid var(--rh-color-text);
 	font-size: var(--rh-text-md);
 }
 
-.rh-prose .rh-related ul,
-.rh-prose .rh-related ol {
+/* The rows: the body's list, paragraph, heading and link rules kept off them. */
+
+.rh-prose .rh-related .rh-card-grid,
+.rh-prose .rh-related .rh-card :is(p, ul) {
 	margin: 0;
 	padding: 0;
 	list-style: none;
 }
 
-.rh-prose .rh-related li {
+.rh-prose .rh-related .rh-card-grid > li,
+.rh-prose .rh-related .rh-card li {
+	margin: 0;
+}
+
+.rh-prose .rh-related .rh-card :is(h3, h4) {
+	margin: 0;
+	font-size: var(--rh-text-lg);
+}
+
+.rh-prose .rh-related .rh-card__link {
+	color: var(--rh-color-text);
+	text-decoration: none;
+}
+
+.rh-prose .rh-related .rh-card__link:hover {
+	text-decoration: underline;
+	text-decoration-thickness: var(--rh-border-width-strong);
+}
+
+/* The plain list of links, the shape before the rows. */
+
+.rh-prose .rh-related > :is(ul, ol):not(.rh-card-grid) {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.rh-prose .rh-related > :is(ul, ol):not(.rh-card-grid) > li {
 	margin: 0;
 	padding: var(--rh-space-3) 0;
 	border-bottom: var(--rh-border-width) solid var(--rh-color-border);
 }
 
-.rh-prose .rh-related a {
+.rh-prose .rh-related > :is(ul, ol):not(.rh-card-grid) a {
 	color: var(--rh-color-text);
 	font-weight: 600;
 }

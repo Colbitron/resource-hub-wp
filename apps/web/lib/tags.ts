@@ -105,7 +105,7 @@ export function resourceTag(slug: string): string {
   return `resource:${canonicalSlug(slug)}`;
 }
 
-/** `topic:{slug}`, on the fetches for listings and blocks of one topic. Throws a `RangeError` on a bad slug. */
+/** `topic:{slug}`, on the fetches for listings and related-resources blocks of one topic. Throws a `RangeError` on a bad slug. */
 export function topicTag(slug: string): string {
   return `topic:${canonicalSlug(slug)}`;
 }
@@ -171,6 +171,27 @@ export function resourceFetchTags(slug: string): string[] {
  */
 export function relatedTags(hostSlug: string): string[] {
   return [RESOURCES_TAG, TERMS_TAG, resourceTag(hostSlug)];
+}
+
+/**
+ * The related-resources block's list (`components/RelatedResources.tsx`):
+ * the newest resources in one topic, read from
+ * `/wp/v2/resources?resource_topic={id}` with `_embed`. `topic:{slug}`,
+ * because every event that can change the list carries it: a resource
+ * event names the resource's topics in its current and its previous state
+ * (`addResourceState`), so a publish, update, unpublish, trash, delete,
+ * rename or move of any resource into or out of the topic clears it, and
+ * the topic's own term event clears its old and its new slug. `terms`,
+ * since the rows embed the type and topic names, which a term event for any
+ * term may rename or delete. Not `resources`: a resource event that carries
+ * no topic of the block's cannot change its list, and `resources` would
+ * clear every block on every resource event. Not `resource:{host}`: the
+ * host is the one resource left out, the URL names no host, and two blocks
+ * for one topic share one entry. The same tags as the topic's listing
+ * (`listingTags({ topic })`), which the same events reach.
+ */
+export function relatedBlockTags(topicSlug: string): string[] {
+  return [topicTag(topicSlug), TERMS_TAG];
 }
 
 /**

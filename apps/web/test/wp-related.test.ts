@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { toCard, UNTITLED } from "../lib/wp/cards";
 import { CmsError } from "../lib/wp/fetch";
-import { getRelated, inRelatedOrder, RELATED_COUNT, toRelatedCard } from "../lib/wp/related";
+import { getNewestInTopic, getRelated, inRelatedOrder, RELATED_BLOCK_SPARE, RELATED_COUNT, toRelatedCard } from "../lib/wp/related";
 import { MAX_RELATED_ITEMS } from "../lib/wp/schemas/related";
 import { wpResourceSchema, type WpResource } from "../lib/wp/schemas/rest";
 
@@ -173,6 +173,49 @@ describe("getRelated", () => {
     await expect(getRelated(33, { hostSlug: "host", count: 11 })).rejects.toThrow(RangeError);
     await expect(getRelated(33, { hostSlug: "" })).rejects.toThrow(RangeError);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("getNewestInTopic", () => {
+  const RESOURCES = JSON.parse(
+    readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures/wp/resources.list.json"), "utf8"),
+  ) as unknown[];
+
+  function paged(body: unknown[]): Response {
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "Content-Type": "application/json; charset=UTF-8", "X-WP-Total": String(body.length), "X-WP-TotalPages": "1" },
+    });
+  }
+
+  it("asks the collection for the topic's newest, with _embed, tagged with the topic's slug and terms", async () => {
+    handler = () => paged(RESOURCES);
+    const items = await getNewestInTopic({ topicId: 11, topicSlug: "Performance", count: 9 });
+    expect(items.map((item) => item.id)).toEqual((RESOURCES as { id: number }[]).map((item) => item.id));
+    expect(calls).toHaveLength(1);
+    expect(calls[0].url.href).toBe(`${API}/wp/v2/resources?_embed&per_page=9&orderby=date&order=desc&resource_topic=11`);
+    expect(calls[0].init.next).toEqual({ revalidate: 3600, tags: ["topic:performance", "terms"] });
+    expect(calls[0].init.cache).toBe("force-cache");
+  });
+
+  it("asks for a bounded few more than the block shows", () => {
+    expect(RELATED_BLOCK_SPARE).toBe(6);
+    expect(MAX_RELATED_ITEMS + RELATED_BLOCK_SPARE).toBeLessThanOrEqual(100);
+  });
+
+  it("throws a RangeError on a bad topic ID, count or slug, without a request", async () => {
+    await expect(getNewestInTopic({ topicId: 0, topicSlug: "performance", count: 3 })).rejects.toThrow(RangeError);
+    await expect(getNewestInTopic({ topicId: 11, topicSlug: "performance", count: 0 })).rejects.toThrow(RangeError);
+    await expect(getNewestInTopic({ topicId: 11, topicSlug: "performance", count: 101 })).rejects.toThrow(RangeError);
+    await expect(getNewestInTopic({ topicId: 11, topicSlug: "a b", count: 3 })).rejects.toThrow(RangeError);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("throws a CmsError, naming no CMS host, when the collection fails", async () => {
+    handler = () => wpError(500, "internal_server_error");
+    const error = await cmsError(() => getNewestInTopic({ topicId: 11, topicSlug: "performance", count: 3 }));
+    expect(error.reason).toBe("status");
+    expect(error.message).not.toContain("cms.example");
   });
 });
 

@@ -90,12 +90,30 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   an element the page's own scripts look up (`<div id="TURBOPACK">`).
  * - The block marker: `<div data-rh-block="related-resources">` with its
  *   `data-*` attributes is parsed and validated and handed to `renderBlock`
- *   with the wrapper's own rendering as the fallback. The default renders
- *   the fallback; slice 4 plugs in `<RelatedResources>`. An invalid marker,
- *   one past the first `MAX_MARKERS` in document order, or one inside an
- *   `<a>` renders the fallback and `renderBlock` is not called; one whose
- *   `renderBlock` throws renders the fallback too. The post ID passed in
- *   `postId` wins over the marker's `data-exclude`.
+ *   with the wrapper's own rendering as the fallback, and with the heading
+ *   level the outline rule below gives the marker's own `<h2>`
+ *   (`headingLevel`), so a block rendered in its place keeps the body's
+ *   order. The default renders the fallback; the resource page and the CMS
+ *   page pass a `renderBlock` that renders `<RelatedResources>`
+ *   (`components/RelatedResources.tsx`). An invalid marker, one past the
+ *   first `MAX_MARKERS` in document order, or one inside an `<a>` renders
+ *   the fallback and `renderBlock` is not called; one whose `renderBlock`
+ *   throws renders the fallback too. The post ID passed in `postId` wins
+ *   over the marker's `data-exclude`.
+ * - The marker's rows: the CMS's render callback fills the marker with the
+ *   row markup of `packages/ui/card.css` (its header comment), so that the
+ *   fallback, which renders when the marker is invalid, past the cap, or
+ *   its block's fetch failed, is the same rows the swap would render. Inside
+ *   the wrapper of a marker whose `data-*` attributes are valid, and only
+ *   there, three things are kept that the rules above would drop: the
+ *   `<article>` element, the class tokens in `CARD_CLASSES` (an exact list
+ *   of the row's classes, not the `rh-` prefix), and on a `<ul>` or `<ol>`
+ *   `role="list"` and an `aria-label` (the row's topics list). Nothing else
+ *   changes inside: every URL, class and attribute still goes through the
+ *   same checks, so a body cannot reach the app's other classes or any
+ *   other role by writing a marker around them. A marker whose attributes
+ *   are not valid is not the CMS's block, so its contents get the body's
+ *   rules. A marker still holding a plain `<ul>` of links renders as before.
  * - Embeds: an `<iframe>`, `<video>` or `<audio>` becomes a link to its
  *   `src` (a `<video>` or `<audio>` without one, to its first usable
  *   `<source>`), and an embed block whose wrapper still holds the raw URL as
@@ -138,6 +156,12 @@ export interface RelatedBlockProps {
   readonly exclude: number;
   /** The text of the block's `<h2>`, or `null` when it has none. */
   readonly heading: string | null;
+  /**
+   * The level the block's heading renders at: `h2`, or `h3` when the body
+   * renders an `<h1>` and every body heading is shown one level down
+   * (`headingName`), so the block's heading moves with the body's.
+   */
+  readonly headingLevel: "h2" | "h3";
 }
 
 /**
@@ -314,6 +338,29 @@ const APP_CLASS_PREFIX = "rh-";
 const MARKER_CLASS = "rh-related";
 const MARKER_CLASSES: ReadonlySet<string> = new Set([MARKER_CLASS]);
 const NO_CLASSES: ReadonlySet<string> = new Set();
+
+/**
+ * The classes of the row markup the block's render callback puts inside the
+ * marker (`packages/ui/card.css`, its header comment), kept only inside a
+ * valid marker's wrapper (`Context.cardMarkup`): an exact list, so a body
+ * can name none of the app's other `rh-` classes by writing a marker around
+ * them. `rh-related` itself is the wrapper's and stays `MARKER_CLASSES`.
+ */
+const CARD_CLASSES: ReadonlySet<string> = new Set([
+  "rh-card-grid",
+  "rh-card",
+  "rh-card__meta",
+  "rh-card__type",
+  "rh-card__body",
+  "rh-card__title",
+  "rh-card__link",
+  "rh-card__summary",
+  "rh-card__topics",
+  "rh-card__topic",
+]);
+
+/** The one `role` a list inside a valid marker may carry: the row markup's `role="list"`. */
+const LIST_ROLES = new Set(["list"]);
 const ID_VALUE = /^[A-Za-z][A-Za-z0-9_.:-]*$/;
 const LANG_VALUE = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/;
 const DIR_VALUES = new Set(["ltr", "rtl", "auto"]);
@@ -365,6 +412,12 @@ interface Context {
   markers: number;
   /** How many `<a>` elements the pass is inside; see `insideLink`. */
   links: number;
+  /**
+   * How many valid markers' wrappers the pass is inside; see
+   * `insideCardMarkup`. Inside one, the row markup's element, classes,
+   * list role and list label are kept (`CARD_CLASSES`, `LIST_ROLES`).
+   */
+  cardMarkup: number;
   /**
    * True when the body renders an `<h1>`: every body heading is then shown
    * one level down (`headingName`), so the page keeps its own `<h1>` as the
@@ -724,17 +777,19 @@ function hasClass(attributes: Attributes, name: string): boolean {
 /**
  * The attributes any allowed element keeps: `class` (tokens of letters,
  * digits, `-` and `_`, none starting with `APP_CLASS_PREFIX` unless it is in
- * `appClasses`), `id` (with `ID_PREFIX`), `title`, `lang` and `dir`, each
- * without a value or token that names the CMS. Never `style`, and never an
- * `on*` attribute, which are not read at all.
+ * `appClasses`, or in `CARD_CLASSES` inside a valid marker), `id` (with
+ * `ID_PREFIX`), `title`, `lang` and `dir`, each without a value or token
+ * that names the CMS. Never `style`, and never an `on*` attribute, which
+ * are not read at all.
  */
 function globalProps(attributes: Attributes, context: Context, appClasses: ReadonlySet<string> = NO_CLASSES): Props {
   const props: Props = {};
+  const inMarker = insideCardMarkup(context);
   const classes = tokens(
     attributes.get("class"),
     (token) =>
       CLASS_TOKEN.test(token) &&
-      (!token.toLowerCase().startsWith(APP_CLASS_PREFIX) || appClasses.has(token)) &&
+      (!token.toLowerCase().startsWith(APP_CLASS_PREFIX) || appClasses.has(token) || (inMarker && CARD_CLASSES.has(token))) &&
       !mentionsCms(token, context),
   );
   if (classes.length > 0) {
@@ -877,8 +932,10 @@ function elementProps(name: string, attributes: Attributes, context: Context): P
       const start = matching(attributes.get("start"), LIST_START);
       if (start !== undefined) props.start = start;
       if (attributes.has("reversed")) props.reversed = true;
-      return props;
+      return listProps(attributes, props, context);
     }
+    case "ul":
+      return listProps(attributes, props, context);
     case "blockquote":
     case "q": {
       const cite = attributes.get("cite");
@@ -897,6 +954,25 @@ function elementProps(name: string, attributes: Attributes, context: Context): P
     default:
       return props;
   }
+}
+
+/**
+ * A list's `role` and `aria-label`, inside a valid marker only
+ * (`insideCardMarkup`): `role="list"`, which the row markup puts on its
+ * lists because Safari drops list semantics under `list-style: none`, and
+ * an `aria-label`, the name the row gives its topics list. Outside a marker
+ * a body carries no role and no label, as before; no other role is ever
+ * kept, so a body cannot make a list a landmark or a menu.
+ */
+function listProps(attributes: Attributes, props: Props, context: Context): Props {
+  if (!insideCardMarkup(context)) {
+    return props;
+  }
+  const role = oneOf(attributes.get("role"), LIST_ROLES);
+  if (role !== undefined) props.role = role;
+  const label = attributes.get("aria-label");
+  if (label !== undefined && label.trim() !== "") props["aria-label"] = label;
+  return props;
 }
 
 /**
@@ -1006,6 +1082,21 @@ function linkChildren(node: Element, context: Context): ReactNode {
     return children(node, context);
   } finally {
     context.links--;
+  }
+}
+
+/** True inside the wrapper of a marker whose attributes are valid: the row markup's element, classes, list role and label are kept there. */
+function insideCardMarkup(context: Context): boolean {
+  return context.cardMarkup > 0;
+}
+
+/** `children` of a valid marker's wrapper, counted as inside one. */
+function cardChildren(node: Element, context: Context): ReactNode {
+  context.cardMarkup++;
+  try {
+    return children(node, context);
+  } finally {
+    context.cardMarkup--;
   }
 }
 
@@ -1133,11 +1224,17 @@ function isTopicSlug(value: string): boolean {
   return isSlug(value) && canonicalSlug(value) === value;
 }
 
+/** The marker's `data-*` attributes, validated (`markerAttributes`). */
+type MarkerAttributes = Pick<RelatedBlockProps, "count" | "topic" | "topicId" | "exclude">;
+
 /**
- * The marker's attributes, validated; `null` when any is missing or out of
- * range. `exclude` is `context.postId` when it is given.
+ * The marker's `data-*` attributes, validated; `null` when any is missing or
+ * out of range. `exclude` is `context.postId` when it is given. Reads no
+ * child of the marker, so it is cheap enough to run on every marker, valid
+ * or not: whether the marker's contents get the row markup's allowances
+ * (`cardChildren`) is decided by this alone.
  */
-function markerProps(node: Element, attributes: Attributes, context: Context): RelatedBlockProps | null {
+function markerAttributes(attributes: Attributes, context: Context): MarkerAttributes | null {
   const count = matching(attributes.get("data-count"), POSITIVE_INTEGER);
   const topic = attributes.get("data-topic");
   const topicId = matching(attributes.get("data-topic-id"), POSITIVE_INTEGER);
@@ -1154,27 +1251,39 @@ function markerProps(node: Element, attributes: Attributes, context: Context): R
   if (!Number.isSafeInteger(topicIdValue) || !Number.isSafeInteger(excludeValue)) {
     return null;
   }
+  return { count: countValue, topic, topicId: topicIdValue, exclude: context.postId ?? excludeValue };
+}
+
+/**
+ * What `renderBlock` gets for a valid marker that is handed on: its
+ * attributes, the text of its `<h2>` (`null` for none), and the level the
+ * outline rule gives that heading (`headingName`: `h3` when the body's
+ * headings are shown one level down, else `h2`).
+ */
+function markerProps(node: Element, attributes: MarkerAttributes, context: Context): RelatedBlockProps {
   const headingNode = node.children.find((child) => child instanceof Element && child.name.toLowerCase() === "h2");
   const heading = headingNode instanceof Element ? renderedText(headingNode).text.trim() : "";
   return {
-    count: countValue,
-    topic,
-    topicId: topicIdValue,
-    exclude: context.postId ?? excludeValue,
+    ...attributes,
     heading: heading === "" ? null : heading,
+    headingLevel: context.demoteHeadings ? "h3" : "h2",
   };
 }
 
 /**
- * The block marker, as the contract in `packages/ui/README.md` states it;
- * the plugin's render callback that will emit it is not built yet (issue
+ * The block marker, as the contract in `packages/ui/README.md` states it,
+ * with the row markup the plugin's render callback fills it with (issue
  * #50). The fallback is the wrapper with its `class` and its children
  * through the pass; the `data-*` attributes are read here and never
  * rendered, so the marker stays on the server. The wrapper always carries
  * `rh-related`, the class the contract gives it, whether or not the CMS
- * wrote it, so `prose.css` styles the fallback as a small collection
- * whatever the block's markup; the `data-*` attributes are what make it a
- * marker, not the class.
+ * wrote it, so `prose.css` and `related.css` style the fallback as the
+ * related list whatever the block's markup; the `data-*` attributes are
+ * what make it a marker, not the class. Inside the wrapper of a marker whose
+ * attributes are valid, the children render with the row markup's
+ * allowances (`cardChildren`, see the module comment), whether or not the
+ * marker is handed on: the fallback past the cap or inside a link is still
+ * the CMS's rows.
  *
  * Whether `renderBlock` gets the marker is decided, and counted, before its
  * children render, so `MAX_MARKERS` counts in document order: a marker
@@ -1185,7 +1294,8 @@ function markerProps(node: Element, attributes: Attributes, context: Context): R
  * on has its heading read, so at most `MAX_MARKERS` headings are walked.
  */
 function marker(node: Element, attributes: Attributes, context: Context): ReactElement {
-  const props = insideLink(context) || context.markers >= MAX_MARKERS ? null : markerProps(node, attributes, context);
+  const marked = markerAttributes(attributes, context);
+  const props = marked === null || insideLink(context) || context.markers >= MAX_MARKERS ? null : markerProps(node, marked, context);
   if (props !== null) {
     context.markers++;
   }
@@ -1193,7 +1303,11 @@ function marker(node: Element, attributes: Attributes, context: Context): ReactE
   // The wrapper always carries the contract's class, once, after any the CMS wrote.
   const classes = typeof wrapperProps.className === "string" ? wrapperProps.className.split(" ") : [];
   wrapperProps.className = (classes.includes(MARKER_CLASS) ? classes : [...classes, MARKER_CLASS]).join(" ");
-  const fallback = createElement("div", checked(wrapperProps, context), children(node, context));
+  const fallback = createElement(
+    "div",
+    checked(wrapperProps, context),
+    marked === null ? children(node, context) : cardChildren(node, context),
+  );
   if (props === null) {
     return fallback;
   }
@@ -1389,7 +1503,8 @@ function replaceNode(node: DOMNode, context: Context): ReactElement | undefined 
   if (name === "a") {
     return link(node, attributes, context);
   }
-  if (!ALLOWED_ELEMENTS.has(name)) {
+  // `<article>` is the row's element, kept inside a valid marker alone; elsewhere it is unwrapped like any other.
+  if (!ALLOWED_ELEMENTS.has(name) && !(name === "article" && insideCardMarkup(context))) {
     return createElement(Fragment, null, children(node, context));
   }
   if (name === "div" && hasClass(attributes, "wp-block-embed__wrapper")) {
@@ -1649,6 +1764,7 @@ export function renderContent(html: string, cms: CmsUrls, options: RenderContent
     postId: options.postId !== undefined && Number.isSafeInteger(options.postId) && options.postId > 0 ? options.postId : undefined,
     markers: 0,
     links: 0,
+    cardMarkup: 0,
     demoteHeadings: false,
     figureLabels: new Map(),
   };

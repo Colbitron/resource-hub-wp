@@ -17,6 +17,7 @@ import {
   flagLookupTags,
   listingTags,
   pageTags,
+  relatedBlockTags,
   relatedTags,
   resolveTags,
   resourceByIdTags,
@@ -597,6 +598,38 @@ describe("fetch tags", () => {
     expect(() => relatedTags("")).toThrow(RangeError);
   });
 
+  it("tag the related-resources block's list with its topic and terms, the topic listing's tags, and never resources or a host", () => {
+    expect(relatedBlockTags("performance")).toEqual(["topic:performance", "terms"]);
+    expect(relatedBlockTags("Performance")).toEqual(listingTags({ topic: "performance" }));
+    expect(relatedBlockTags("performance")).not.toContain("resources");
+    expect(() => relatedBlockTags("a b")).toThrow(RangeError);
+  });
+
+  it("the block's tags are cleared by every resource event that can change its list, and by no other resource event", () => {
+    const block = relatedBlockTags("performance");
+    const touching: ResourceEvent[] = [
+      resource({ event: "publish", topics: ["performance"] }),
+      resource({ event: "unpublish", topics: ["performance", "accessibility"] }),
+      resource({ event: "update", topics: ["accessibility"], previous: { slug: "example", types: ["webinar"], topics: ["performance"] } }),
+      resource({ event: "update", topics: ["performance"], previous: { slug: "old", types: ["webinar"], topics: [] } }),
+      resource({ event: "delete", topics: ["performance"] }),
+    ];
+    for (const event of touching) {
+      expect(eventsToInvalidations([event]).tags.some((tag) => block.includes(tag)), event.event).toBe(true);
+    }
+    const elsewhere = eventsToInvalidations([
+      resource({ event: "publish", topics: ["accessibility"] }),
+      resource({ event: "update", topics: [], previous: { slug: "x", types: ["podcast"], topics: ["security"] } }),
+    ]);
+    expect(elsewhere.tags.some((tag) => block.includes(tag))).toBe(false);
+    // A rename of the topic, or of any term the rows name, reaches it through the slug tag or terms.
+    const renamed = eventsToInvalidations([
+      term({ taxonomy: "resource_topic", event: "update", slug: "speed", name: "Speed", previous: { slug: "performance", name: "Performance" } }),
+    ]);
+    expect(renamed.tags).toEqual(expect.arrayContaining(["topic:performance", "topic:speed", "terms"]));
+    expect(eventsToInvalidations([term({ taxonomy: "resource_type", event: "update", slug: "webinar", name: "W", previous: { slug: "webinar", name: "Webinar" } })]).tags).toContain("terms");
+  });
+
   it("tag a flag-filtered list with resources and terms", () => {
     expect(flagListingTags()).toEqual(["resources", "terms"]);
   });
@@ -683,7 +716,7 @@ describe("the tagging rule, against tags written out by hand", () => {
           expected: expected.typeTopic(type, topic),
           code: listingTags({ type, topic }),
         },
-        { name: `block for ${topic}`, expected: expected.block(topic), code: listingTags({ topic }) },
+        { name: `block for ${topic}`, expected: expected.block(topic), code: relatedBlockTags(topic) },
       ]),
       { name: `resource ${state.slug}`, expected: expected.resource(state.slug), code: resourceFetchTags(state.slug) },
       { name: `resource ${state.slug} by ID`, expected: expected.resourceById, code: resourceByIdTags() },
