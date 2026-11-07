@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { DataNotFound, NOT_FOUND_METADATA } from "@/components/DataNotFound";
 import { ResourceArticle, resourceMetadata } from "@/components/ResourceArticle";
+import { resourcePageParams } from "@/lib/prerender";
 import { resourceForRequest } from "@/lib/redirects";
 
 /**
@@ -12,12 +13,16 @@ import { resourceForRequest } from "@/lib/redirects";
  * URL itself. A not-found decision renders `DataNotFound`, so the 404's HTML
  * is the site's not-found page (issue #46).
  *
- * The route is ISR, like the listings (ADR 0043; see
+ * The route is ISR, like the listings (ADRs 0043 and 0053; see
  * `docs/architecture/caching.md`): `revalidate = 3600`, the data layer's
- * interval as a literal, and a `generateStaticParams` returning `[]`, so the
- * build never asks the CMS and each URL is rendered on its first request,
- * stored, and served from the route cache until an event or the interval clears
- * it. The stored entry is whatever the decision produced: a 200, a 308 or a
+ * interval as a literal, and a `generateStaticParams` that prerenders the
+ * newest resources when the CMS answers at build (`resourcePageParams` in
+ * `lib/prerender.ts`: the 50 newest and the 10 newest of each type, each
+ * once) and nothing when it does not, so a build never fails for a CMS
+ * reason. Every other URL, and every URL after a build the CMS was absent
+ * for, is rendered on its first request, stored, and served from the route
+ * cache until an event or the interval clears it, exactly as a prerendered
+ * one is. The stored entry is whatever the decision produced: a 200, a 308 or a
  * 404, each under the tags of the fetches that decided it (`resource:{slug}`
  * and `terms` from the slug lookup, `resources` from resolve on a miss), so the
  * revalidation event for any change to the resource (ADR 0043's union of the
@@ -62,8 +67,14 @@ import { resourceForRequest } from "@/lib/redirects";
 // The data layer's interval, as a literal: Next.js reads segment config statically.
 export const revalidate = 3600;
 
-export function generateStaticParams(): { type: string; slug: string }[] {
-  return [];
+/**
+ * The newest resources, prerendered so a reader's first click from the
+ * library is served from the CDN and the client can prefetch the rows
+ * (ADR 0053): `RECENT_RESOURCES` (50) across every type and
+ * `RECENT_PER_TYPE` (10) of each, or `[]` when the CMS does not answer.
+ */
+export function generateStaticParams(): Promise<{ type: string; slug: string }[]> {
+  return resourcePageParams();
 }
 
 export async function generateMetadata({ params }: PageProps<"/resources/[type]/[slug]">): Promise<Metadata> {

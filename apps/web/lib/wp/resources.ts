@@ -9,7 +9,8 @@ import { getTermBySlug } from "./terms";
 /**
  * Resources from `/wp/v2/resources`, always with `_embed`, which the reader
  * schema relies on for terms and the featured image: a page of a listing,
- * one by slug, one by ID, and several by ID in a given order.
+ * the most recent few for the build to prerender, one by slug, one by ID,
+ * and several by ID in a given order.
  *
  * Every read of the collection is parsed per item (`cmsGetList` in
  * `fetch.ts`, whose docblock holds the rule): a resource the reader schema
@@ -126,6 +127,51 @@ export async function listResources(options: ListResourcesOptions): Promise<Reso
     return NO_SUCH_PAGE;
   }
   return { items: result.data.items, total, totalPages, skipped: result.data.skipped };
+}
+
+export interface RecentResourcesOptions {
+  /** A `resource_type` slug, as in the path; every type when left out. */
+  readonly type?: string;
+  /** How many, 1 to `MAX_INCLUDE` (core's largest `per_page`). */
+  readonly count: number;
+}
+
+/**
+ * The `count` most recently published resources, newest first, of one type
+ * or of every type: what the build prerenders (`lib/prerender.ts`). One page
+ * of `count` at `orderby=date&order=desc`, core's default order written out
+ * so the request says what it asks for. The type slug is resolved to its term
+ * ID first, as `listResources` does; a type that cannot be a type slug or
+ * names no term is `null`. Throws a `RangeError` on a `count` outside 1 to
+ * 100, since the caller passes a constant, not input.
+ *
+ * Tagged like the listing it is a longer page of: `listingTags({ type })`,
+ * so the entry a resource or term event clears is the one the next build
+ * would read. The URL differs from every listing page's (`per_page`), so it
+ * shares no Data Cache entry with one. A resource the reader schema refuses
+ * is skipped, as on a listing page.
+ */
+export async function listRecentResources(options: RecentResourcesOptions): Promise<WpResource[] | null> {
+  const { type, count } = options;
+  if (!Number.isSafeInteger(count) || count < 1 || count > MAX_INCLUDE) {
+    throw new RangeError(`count must be 1 to ${MAX_INCLUDE}, not ${String(count)}`);
+  }
+  if (type !== undefined && !isTypeSlug(type)) {
+    return null;
+  }
+  const typeTerm = type === undefined ? undefined : await getTermBySlug("resource_type", type);
+  if (typeTerm === null) {
+    return null;
+  }
+  const params = new URLSearchParams({ per_page: String(count), orderby: "date", order: "desc" });
+  if (typeTerm !== undefined) params.set("resource_type", String(typeTerm.id));
+  const { data } = await cmsGetListOk({
+    path: "/wp/v2/resources",
+    query: `_embed&${params.toString()}`,
+    tags: listingTags(type === undefined ? {} : { type }),
+    itemSchema: wpResourceSchema,
+  });
+  return data.items;
 }
 
 /**
