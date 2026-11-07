@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-11-04
+amended: 2026-11-07
 ---
 
 # The CMS's theme pages are for logged-in users only
@@ -26,3 +27,9 @@ WordPress still renders its own pages with its theme: single resources at the mi
 - `get_permalink()` still returns the absolute CMS URL; the front end strips the domain.
 - A crawler that obeys `robots.txt` never sees the `noindex, nofollow`; the header is for the rest, and the 404 keeps the content out either way.
 - The theme planned for slice 5 must not render navigation that lists pages on its 404 template (issue #50).
+
+## Amendments
+
+### 2026-11-07: the theme notes moved to issue #89
+
+The slice-5 theme rules this record points to now live in issue #89, so the "(issue #50)" under Consequences should be read as #89. Issue #50 tracks slice 4 and closes with it, so its theme notes were moved to #89 unchanged.
