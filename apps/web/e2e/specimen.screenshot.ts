@@ -59,20 +59,30 @@ for (const width of WIDTHS) {
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
         await page.goto(SPECIMEN_PATH);
         // The lead's image is eager, and the resource sample's body figure
-        // is lazy, as on the page, far under the fold: scroll every image
-        // into view once so the lazy ones are requested, then wait until
-        // each has decoded, and for the fonts, so the capture never catches
-        // a half-loaded page.
-        const images = page.locator("img");
-        await images.evaluateAll((nodes) => nodes.forEach((node) => node.scrollIntoView()));
+        // is lazy, as on the page, far under the fold. Chromium requests a
+        // lazy image only when a frame renders with it in or near the
+        // viewport, so scrolling past it faster than a frame (every image
+        // scrolled to, then straight back to the top) never requests it.
+        // Scroll to each image in turn and wait there until it has decoded,
+        // so a frame renders with it in view; then back to the top, and wait
+        // for the fonts, so the capture never catches a half-loaded page.
+        for (const image of await page.locator("img").all()) {
+          await image.scrollIntoViewIfNeeded();
+          await expect
+            .poll(
+              () => image.evaluate((node) => (node as HTMLImageElement).complete && (node as HTMLImageElement).naturalWidth > 0),
+              {
+                message: `the image ${await image.getAttribute("src")} never decoded`,
+                // A backstop well under the test's own timeout, so an image
+                // that is never requested fails here, named, rather than as
+                // the whole test timing out; the optimiser serves each one in
+                // milliseconds once it is asked.
+                timeout: 15_000,
+              },
+            )
+            .toBe(true);
+        }
         await page.evaluate(() => window.scrollTo(0, 0));
-        await expect
-          .poll(() =>
-            images.evaluateAll((nodes) =>
-              nodes.every((node) => (node as HTMLImageElement).complete && (node as HTMLImageElement).naturalWidth > 0),
-            ),
-          )
-          .toBe(true);
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
         // A page left in the fallback face would fail below as thousands of
         // differing pixels; say what went wrong instead.
