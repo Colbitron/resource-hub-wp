@@ -25,10 +25,9 @@ namespace ResourceHub\Security;
  * before the server is built, so the `xmlrpc_enabled` and `xmlrpc_methods` filters do not run
  * there.
  *
- * Trackbacks go through `wp-trackback.php`, not XML-RPC, so this switch does not stop them.
- * `wp-trackback.php` answers only when `pings_open()` is true for the post. Resources do not declare
- * `trackbacks` support, so core creates them with `ping_status` closed and `pings_open()` is false
- * for them. That was checked by reading core, not tested over HTTP.
+ * Trackbacks go through `wp-trackback.php`, not XML-RPC, so this switch does not stop them;
+ * {@see Pings} closes every post to them. With pings closed core no longer adds `X-Pingback`
+ * at all, so removing the header here only matters if that switch is ever taken away.
  *
  * Blocking `xmlrpc.php` at the host or at Cloudflare was rejected as the switch: the rule would live
  * outside the repository, where wp-env, CI and the tests cannot check it. It could still be added on

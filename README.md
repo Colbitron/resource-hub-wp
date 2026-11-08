@@ -40,7 +40,7 @@ Everything marked done exists on `main` and is green in CI.
 | The contract package with its schema test, and PHPUnit validating payloads against it ([ADR 0010](docs/adr/0010-contract-as-json-schema-in-a-shared-package.md)) | done |
 | Revalidation hook, cron send, editor notice, list column, term notice, status page, PostHog ([ADR 0011](docs/adr/0011-revalidation-fires-on-wp-after-insert-post.md)) | done |
 | `GET /resource-hub/v1/resolve` | done |
-| CMS lockdown: theme pages for logged-in users only ([ADR 0031](docs/adr/0031-cms-theme-pages-are-for-logged-in-users.md)), XML-RPC off | done |
+| CMS lockdown: theme pages for logged-in users only ([ADR 0031](docs/adr/0031-cms-theme-pages-are-for-logged-in-users.md)), XML-RPC off, trackbacks and pingbacks off | done |
 | Next.js front end: listings, the single resource, the data layer, the revalidate route, the one-pass content renderer, all ISR ([ADR 0043](docs/adr/0043-fetch-cache-with-tags-without-cache-components.md), [ADR 0025](docs/adr/0025-permanent-redirects-are-computed-and-never-kept-by-browsers.md)) | done |
 | The CMS's pages on the front end: the static front page at `/`, every published page at its path, `GET /resource-hub/v1/page` and page events ([ADR 0052](docs/adr/0052-the-front-end-renders-the-cms-pages.md)) | done |
 | Front-end production deploy through a Vercel deploy hook ([ADR 0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md)); first-deploy check closed 2026-11-06 | done |
