@@ -1,8 +1,26 @@
 /*
  * The theme control: three native radios in a fieldset, drawn as one
- * segmented control, built on the shared tokens (packages/ui/DESIGN.md,
- * "Theme and colour scheme"). The markup is in ThemeFieldset.tsx. These
- * classes are the front end's own, not part of the contract.
+ * segmented control (DESIGN.md, "Theme and colour scheme"). Class names are
+ * part of the contract (ADR 0033; see `packages/ui/README.md`): the front
+ * end's <ThemeFieldset> (`apps/web/components/ThemeFieldset.tsx`) renders
+ * the markup, and the CMS block theme's control, planned (issue #89), will
+ * render the same.
+ *
+ * Built only on the tokens in tokens.css, which the consumer loads first.
+ *
+ * Markup, one option per choice in the order System, Light, Dark, with
+ * `rh-theme--pending` on the fieldset while the stored choice is unknown:
+ *   <fieldset class="rh-theme">
+ *     <legend class="rh-theme__legend">Theme</legend>
+ *     <span class="rh-theme__option">
+ *       <input class="rh-theme__input" type="radio" name="…" id="…" value="system">
+ *       <label class="rh-theme__label" for="…">
+ *         <svg class="rh-theme__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">…</svg>
+ *         System<span class="rh-theme__suffix"> theme</span>
+ *       </label>
+ *     </span>
+ *     …
+ *   </fieldset>
  *
  * The rules the styling keeps:
  * - The input stays in the page, laid over its whole segment at opacity 0
