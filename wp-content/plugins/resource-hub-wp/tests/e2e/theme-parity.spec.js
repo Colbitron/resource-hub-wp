@@ -35,8 +35,10 @@
  * topic of its own so the seeded page's related rows and its screenshots do
  * not change, holds a featured image narrower than the column to its own
  * width and a related-resources block in its body to `related.css`'s
- * heading. The first describe also checks the resource page's two
- * stylesheets stay off the other templates.
+ * heading, and a page with the same block holds `related.css` to a page's
+ * body too, the one page outside the resource template that loads it. The
+ * first describe also checks the resource page's two stylesheets stay off a
+ * page without the block, the welcome and the 404.
  *
  * The third describe does the same for the collection pages, rendered by
  * the theme's collection templates and the plugin's collection blocks
@@ -785,10 +787,31 @@ test.describe( "A CMS page computes the front end's styles", () => {
 	} );
 } );
 
+/**
+ * related.css's rule for a related-resources block's heading inside a body
+ * (`.rh-prose .rh-related > h2`), which outranks prose.css's h2 margins and
+ * size, on a resource and on a page alike. The probe takes the heading's
+ * size, so the tracking and the leading resolve in it.
+ */
+const BODY_RELATED_HEADING = {
+	'margin-top': '0px',
+	'margin-bottom': '0px',
+	'padding-bottom': 'var(--rh-space-2)',
+	'border-bottom-width': 'var(--rh-border-width-strong)',
+	'border-bottom-style': 'solid',
+	'border-bottom-color': 'var(--rh-color-text)',
+	'font-size': 'var(--rh-text-md)',
+	'font-weight': 'var(--rh-weight-heading)',
+	'letter-spacing': 'var(--rh-tracking-heading)',
+	'line-height': 'calc(var(--rh-leading-tight) * var(--rh-text-md))',
+};
+
 test.describe( "A CMS resource page computes the front end's styles", () => {
 	let seed;
 	/** A resource with a narrow featured image and a related-resources block in its body, with its own topic and image. */
 	let narrow;
+	/** A page with a related-resources block in its body, listing the seeded topic. */
+	let blockPage;
 
 	test.beforeAll( async ( { requestUtils } ) => {
 		seed = await seedResourcePage( requestUtils );
@@ -822,6 +845,11 @@ test.describe( "A CMS resource page computes the front end's styles", () => {
 			},
 		} );
 		narrow = { topic, media, resource };
+		blockPage = await requestUtils.createPage( {
+			title: `Related block page ${ stamp }`,
+			status: 'publish',
+			content: `<!-- wp:paragraph --><p>A paragraph before the block.</p><!-- /wp:paragraph -->\n\n<!-- wp:resource-hub/related-resources {"topic":${ seed.topic.id }} /-->`,
+		} );
 	} );
 
 	test.afterAll( async ( { requestUtils } ) => {
@@ -831,6 +859,9 @@ test.describe( "A CMS resource page computes the front end's styles", () => {
 				path,
 				params: { force: true },
 			} );
+		if ( blockPage ) {
+			await remove( `/wp/v2/pages/${ blockPage.id }` );
+		}
 		if ( narrow ) {
 			await remove( `/wp/v2/resources/${ narrow.resource.id }` );
 			await remove( `/wp/v2/media/${ narrow.media.id }` );
@@ -882,25 +913,59 @@ test.describe( "A CMS resource page computes the front end's styles", () => {
 		// the leading resolve in it.
 		const selector =
 			'.rh-resource__body .rh-related[data-rh-block="related-resources"] > h2';
-		const declarations = {
-			'margin-top': '0px',
-			'margin-bottom': '0px',
-			'padding-bottom': 'var(--rh-space-2)',
-			'border-bottom-width': 'var(--rh-border-width-strong)',
-			'border-bottom-style': 'solid',
-			'border-bottom-color': 'var(--rh-color-text)',
-			'font-size': 'var(--rh-text-md)',
-			'font-weight': 'var(--rh-weight-heading)',
-			'letter-spacing': 'var(--rh-tracking-heading)',
-			'line-height': 'calc(var(--rh-leading-tight) * var(--rh-text-md))',
-		};
 		expect(
-			await computed( page, selector, Object.keys( declarations ) )
+			await computed(
+				page,
+				selector,
+				Object.keys( BODY_RELATED_HEADING )
+			)
 		).toEqual(
 			await resolve(
 				page,
 				'.rh-resource__body .rh-related[data-rh-block="related-resources"]',
-				declarations
+				BODY_RELATED_HEADING
+			)
+		);
+	} );
+
+	test( "a page with a related-resources block in its body loads related.css, and only it of the resource page's two, so its heading takes the same rule", async ( {
+		page,
+	} ) => {
+		await page.setViewportSize( { width: 1280, height: 900 } );
+		const response = await page.goto( blockPage.link );
+		expect( response.status() ).toBe( 200 );
+
+		// The page's stylesheets, with related.css for the block; not resource.css.
+		for ( const [ id, count ] of [
+			[ 'resource-hub-page', 1 ],
+			[ 'resource-hub-prose', 1 ],
+			[ 'resource-hub-related', 1 ],
+			[ 'resource-hub-resource', 0 ],
+		] ) {
+			await expect( page.locator( `link#${ id }-css` ), id ).toHaveCount(
+				count
+			);
+		}
+
+		const block = page.locator(
+			'.rh-page__body.rh-prose > .rh-related[data-rh-block="related-resources"]'
+		);
+		await expect( block ).toHaveCount( 1 );
+		await expect( block.locator( 'article.rh-card' ) ).toHaveCount( 3 );
+
+		const selector =
+			'.rh-page__body .rh-related[data-rh-block="related-resources"] > h2';
+		expect(
+			await computed(
+				page,
+				selector,
+				Object.keys( BODY_RELATED_HEADING )
+			)
+		).toEqual(
+			await resolve(
+				page,
+				'.rh-page__body .rh-related[data-rh-block="related-resources"]',
+				BODY_RELATED_HEADING
 			)
 		);
 	} );

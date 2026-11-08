@@ -147,7 +147,10 @@ const RESOURCE_HUB_THEME_ADMIN_BAR_SHELL = 'body.admin-bar .rh-shell { min-heigh
  * `listing.css`, with the theme's own `assets/pagination.css` inline after it, and the library's
  * first page `lead.css` too, the one page the plugin's `featured-lead` block renders on; every other
  * template, `page.html`, `singular.html` and `index.html`, renders the page's article and loads
- * `prose.css` and `page.css`.
+ * `prose.css` and `page.css`, and `related.css` too when a post the page renders holds a
+ * `resource-hub/related-resources` block ({@see resource_hub_theme_has_related_block()}): the front
+ * end's `PageArticle` carries `related.css` with every `RelatedList`, so a body's block gets the same
+ * heading rule on both sites.
  * The plugin's collection blocks name neither handle in their `block.json`: core enqueues every
  * registered block's style on the editor's admin page, and these handles would bring `base.css` and
  * the fallback faces there through their dependencies, where the blocks show placeholders. The enqueue
@@ -213,6 +216,10 @@ function resource_hub_theme_enqueue_page_styles(): void {
 	} else {
 		wp_enqueue_style( 'resource-hub-prose' );
 		wp_enqueue_style( 'resource-hub-page' );
+
+		if ( resource_hub_theme_has_related_block() ) {
+			wp_enqueue_style( 'resource-hub-related' );
+		}
 	}
 
 	foreach ( array( 'wp-block-table', 'wp-block-code', 'wp-block-separator', 'wp-block-quote', 'wp-block-image', 'wp-block-post-featured-image' ) as $handle ) {
@@ -220,6 +227,35 @@ function resource_hub_theme_enqueue_page_styles(): void {
 	}
 }
 add_action( 'wp_enqueue_scripts', 'resource_hub_theme_enqueue_page_styles', 20 );
+
+/**
+ * Whether a post the main query renders holds a `resource-hub/related-resources` block in its body.
+ *
+ * `has_block()` on each of the main query's posts, so `page.html` and `singular.html` (one post) and
+ * `index.html` (an archive's posts, each rendered with its content) all count. The test is the
+ * theme's, by the content, not the block's own style registration: the plugin keeps no copy of
+ * `related.css`, the theme owns the file (the theme's README, "The resource page's stylesheets have
+ * two owners"), and a handle in the block's `block.json` would also be enqueued on the editor's admin
+ * page with every registered block's style, where nothing of the theme's is drawn. `has_block()`
+ * reads the block's comment delimiter in the stored content, so the block inside a group or columns
+ * block counts, and one inside a synced pattern (`core/block`), whose content is another post's, does
+ * not; `theme-parity.spec.js` holds a page with the block to the heading rule.
+ */
+function resource_hub_theme_has_related_block(): bool {
+	$query = $GLOBALS['wp_query'] ?? null;
+
+	if ( ! $query instanceof WP_Query ) {
+		return false;
+	}
+
+	foreach ( (array) $query->posts as $post ) {
+		if ( $post instanceof WP_Post && has_block( 'resource-hub/related-resources', $post ) ) {
+			return true;
+		}
+	}
+
+	return false;
+}
 
 /**
  * Whether the request is a collection page: the resource archive, or a type or topic archive.
