@@ -907,6 +907,18 @@ final class RelatedResourcesBlockTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A password-protected resource is a published one, listed as the related route lists it, and its row's
+	 * title is the REST API's `title.rendered`, without core's "Protected: " prefix.
+	 */
+	public function test_password_protected_resource_gets_a_row_without_the_prefix(): void {
+		$id = $this->resource( 'locked', array( 'post_password' => 'secret' ) );
+		$this->assertStringStartsWith( 'Protected: ', get_the_title( $id ), 'Core prefixes the title outside the REST API.' );
+
+		$this->assertSame( array( get_permalink( $id ) => 'Resource locked' ), $this->links( $this->render( array( 'topic' => $this->topic ), null ) ) );
+		$this->assertStringStartsWith( 'Protected: ', get_the_title( $id ), 'The prefix is dropped for the row alone.' );
+	}
+
+	/**
 	 * Through `do_blocks()` on a post's content, the host comes from the global post, as on the CMS's own pages.
 	 */
 	public function test_do_blocks_takes_the_host_from_the_global_post(): void {

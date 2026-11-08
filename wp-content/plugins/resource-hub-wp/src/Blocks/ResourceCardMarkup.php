@@ -174,12 +174,28 @@ final class ResourceCardMarkup {
 	 * nothing is left once JavaScript's whitespace (U+0009–U+000D, `\p{Z}`, NBSP among them, and U+FEFF)
 	 * and the zero-width U+200B–U+200D are removed too, so `&nbsp;`, `&#8203;` or `<em></em>` alone is empty.
 	 *
+	 * The rendered title is `title.rendered` as the REST API gives it, which leaves out core's "Protected: "
+	 * prefix on a password-protected post: the posts controller filters `protected_title_format` to `%s`
+	 * while it renders, and so does this, for the one call, so a protected resource's row reads as the
+	 * front end's does.
+	 *
 	 * @param WP_Post $post The post.
 	 */
 	public static function title( WP_Post $post ): ?string {
+		add_filter( 'protected_title_format', array( self::class, 'bare_title_format' ) );
 		$text = self::plain_text( get_the_title( $post ) );
+		remove_filter( 'protected_title_format', array( self::class, 'bare_title_format' ) );
 
 		return 1 === preg_match( '/^[\x{9}-\x{D}\p{Z}\x{200B}-\x{200D}\x{FEFF}]*$/u', $text ) ? null : $text;
+	}
+
+	/**
+	 * The title format with no prefix, as the REST posts controller's `protected_title_format()` returns it.
+	 *
+	 * Public only so `title()` can hook it.
+	 */
+	public static function bare_title_format(): string {
+		return '%s';
 	}
 
 	/**

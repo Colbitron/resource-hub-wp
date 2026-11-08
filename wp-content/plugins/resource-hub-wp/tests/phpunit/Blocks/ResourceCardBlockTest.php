@@ -166,6 +166,19 @@ final class ResourceCardBlockTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A password-protected resource is a published one: the front end lists it and the related route
+	 * answers it, so it gets its row, titled as the REST API titles it, without "Protected: ". The row
+	 * shows nothing the password guards: the summary is public meta, and the content is not on it.
+	 */
+	public function test_password_protected_resource_renders_its_row(): void {
+		$id   = $this->resource( 'Locked', array( 'post_password' => 'secret' ) );
+		$html = $this->render( array(), $id );
+
+		$this->assertStringContainsString( '<a class="rh-card__link" href="' . get_permalink( $id ) . '">Locked</a>', $html );
+		$this->assertStringNotContainsString( 'Protected', $html );
+	}
+
+	/**
 	 * Anything but a published resource with exactly one type renders nothing.
 	 */
 	public function test_renders_nothing_without_a_published_resource(): void {
