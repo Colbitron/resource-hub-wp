@@ -392,6 +392,14 @@ test( 'ci-result reads every job but the exempt ones', () => {
 	const needs = ( body.match( /^ {4}needs: \[ ([a-z0-9, -]+) \]$/m ) ?? [] )[ 1 ]?.split( ',' ).map( ( need ) => need.trim() );
 	assert.ok( needs, "ci-result's needs is one flow list, `needs: [ a, b ]`" );
 	assert.match( body, /^ {4}if: \$\{\{ always\(\) \}\}$/m );
+	// Every step too: on GitHub Actions, once a run is cancelled a step's
+	// implicit success() skips it, and a job whose every step was skipped
+	// concludes success. Depot ends the job outright instead (see ci.yml).
+	const steps = body.split( /^ {6}- /m ).slice( 1 );
+	assert.ok( steps.length >= 2, 'ci-result has its steps' );
+	for ( const step of steps ) {
+		assert.match( step, /^ {8}if: \$\{\{ always\(\) \}\}$/m, `ci-result's step ${ step.split( '\n' )[ 0 ] } runs always()` );
+	}
 	for ( const id of ids ) {
 		assert.ok( needs.includes( id ) !== NOT_READ_BY_CI_RESULT.includes( id ), `${ id } must be in ci-result's needs or exempt, not both or neither` );
 	}
