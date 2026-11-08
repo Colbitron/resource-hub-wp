@@ -35,7 +35,7 @@ export const MAX_SEARCH_QUERY_LENGTH = 100;
  * count, and with U+0085 and U+180E, which it does. `test/wp-search.test.ts`
  * pins the difference code point by code point, with the plugin's own test.
  */
-const WHITESPACE_RUN = /(?:[^\S﻿]|[\u0085᠎])+/gu;
+const WHITESPACE_RUN = /(?:[^\S\uFEFF]|[\u0085\u180E])+/gu;
 
 /** The query as the plugin searches for it: whitespace runs collapsed to one space, the ends trimmed. */
 export function normalizeSearchQuery(raw: string): string {

@@ -135,7 +135,7 @@ describe("normalizeSearchQuery", () => {
     expect(normalizeSearchQuery("case study")).toBe("case study");
     expect(normalizeSearchQuery("  case study\t")).toBe("case study");
     expect(normalizeSearchQuery("case \t\n\r\v\f study")).toBe("case study");
-    expect(normalizeSearchQuery("　case　 study　")).toBe("case study");
+    expect(normalizeSearchQuery("\u3000case\u3000\u2003study\u3000")).toBe("case study");
     expect(normalizeSearchQuery("Case <b>Study</b>")).toBe("Case <b>Study</b>");
     expect(normalizeSearchQuery("日本語")).toBe("日本語");
     expect(normalizeSearchQuery(" \t ")).toBe("");
@@ -176,7 +176,7 @@ describe("searchQuery", () => {
     expect(searchQuery("")).toBeNull();
     expect(searchQuery("a")).toBeNull();
     expect(searchQuery("  a  ")).toBeNull();
-    expect(searchQuery(" \t　 ")).toBeNull();
+    expect(searchQuery(" \t\u3000 ")).toBeNull();
     expect(searchQuery("a".repeat(101))).toBeNull();
     expect(searchQuery("😀".repeat(101))).toBeNull();
     expect(searchQuery(`${"a ".repeat(50)}a`)).toBeNull();
@@ -308,7 +308,7 @@ describe("searchSite", () => {
   });
 
   it("throws a RangeError, without a request, on a query that is not normalised or out of bounds, or a bad page", async () => {
-    for (const query of ["", "a", " case study", "case  study", "case study", "a".repeat(101)]) {
+    for (const query of ["", "a", " case study", "case  study", "case\u00a0study", "a".repeat(101)]) {
       await expect(searchSite(query)).rejects.toThrow(RangeError);
     }
     for (const page of [0, -1, MAX_SEARCH_PAGE + 1, 1.5, Number.NaN]) {

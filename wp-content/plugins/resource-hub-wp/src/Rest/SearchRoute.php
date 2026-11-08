@@ -13,6 +13,7 @@ namespace ResourceHub\Rest;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\Pages\PagePath;
 use WP_Error;
+use WP_Post;
 use WP_Query;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -25,10 +26,15 @@ use WP_REST_Server;
  * for the related route, so this route stays small and cacheable and the engine behind it can change
  * without changing the contract.
  *
- * The query is one `WP_Query` for IDs: `s`, published resources and pages with no password, and
+ * The query is one `WP_Query`: `s`, published resources and pages with no password, and
  * `'relevanssi' => true`, which asks Relevanssi to answer it when that plugin is active (it otherwise
  * runs only on the main search query) and is an unknown query var core ignores when it is not, so core's
- * own search answers. The order is the engine's. The password and the posts page are left out in the
+ * own search answers. It reads whole posts with their term and meta caches off, since each match's
+ * type is the one field read. The order is the engine's. Core's relevance order ends with `post_date`
+ * and has no ID tie-break, so two matches with the same rank and publish second can swap between pages;
+ * core adds its relevance clause only when `orderby` is empty or exactly `relevance`, so no supported
+ * `orderby` adds one, and a raw `posts_search_orderby` filter was ruled out. Relevanssi orders by its
+ * own score. The password and the posts page are left out in the
  * query, because the front end serves neither ({@see PagePath::is_served()}), and in the query rather
  * than after it so `found_posts` counts only what is listed. Leaving them out also makes the answer the
  * same whoever asks: core's search drops password-protected posts only for a logged-out reader, and the
@@ -204,15 +210,17 @@ final class SearchRoute {
 	 */
 	private static function search( string $query, int $page ): array {
 		$args = array(
-			's'                   => $query,
-			'post_type'           => self::TYPES,
-			'post_status'         => 'publish',
-			'has_password'        => false,
-			'posts_per_page'      => self::PER_PAGE,
-			'paged'               => $page,
-			'fields'              => 'ids',
-			'ignore_sticky_posts' => true,
-			'relevanssi'          => true,
+			's'                      => $query,
+			'post_type'              => self::TYPES,
+			'post_status'            => 'publish',
+			'has_password'           => false,
+			'posts_per_page'         => self::PER_PAGE,
+			'paged'                  => $page,
+			// Whole posts rather than `ids`, for each match's type; their terms and meta are never read.
+			'update_post_term_cache' => false,
+			'update_post_meta_cache' => false,
+			'ignore_sticky_posts'    => true,
+			'relevanssi'             => true,
 		);
 
 		$posts_page = PagePath::posts_page_id();
@@ -222,19 +230,13 @@ final class SearchRoute {
 		}
 
 		$results = new WP_Query( $args );
-		$ids     = array_map( 'intval', $results->posts );
 		$items   = array();
 
-		// `fields => ids` reads no rows, so the types come from one query here rather than one per ID.
-		_prime_post_caches( $ids, false, false );
-
-		foreach ( $ids as $id ) {
-			$type = get_post_type( $id );
-
-			if ( in_array( $type, self::TYPES, true ) ) {
+		foreach ( $results->posts as $post ) {
+			if ( $post instanceof WP_Post && in_array( $post->post_type, self::TYPES, true ) ) {
 				$items[] = array(
-					'id'   => $id,
-					'type' => $type,
+					'id'   => $post->ID,
+					'type' => $post->post_type,
 				);
 			}
 		}
@@ -267,6 +269,7 @@ final class SearchRoute {
 				array(
 					'paged'          => 1,
 					'posts_per_page' => 1,
+					'fields'         => 'ids',
 				)
 			)
 		);
