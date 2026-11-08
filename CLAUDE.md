@@ -39,7 +39,7 @@ A filterable resources library: WordPress models it and pushes changes, Next.js 
 | Running and testing the front end, its configuration, routes and images | `apps/web/README.md`, `apps/web/e2e/README.md` |
 | Why the system has its shape | `docs/adr/` (14 records) |
 | Why one class or module does what it does | Its docblock |
-| What is not built yet | The open follow-ups: #115 PR 4 (the theme's `search.html` and header search control, after #128 redesigns that control), #138 (hardening the theme allowlist test), #102 (the featured-image generator's accent map), #85 (lab measurement) and #87 (the related list's scale path); and the theme's known parity gaps, in its `README.md` ("Not built yet") |
+| What is not built yet | The open follow-ups: #115 PR 4 (the theme's `search.html` and header search control, after #128 redesigns that control), #138 (hardening the theme allowlist test), #85 (lab measurement) and #87 (the related list's scale path); and the theme's known parity gaps, in its `README.md` ("Not built yet") |
 
 ## Standards and workflow
 

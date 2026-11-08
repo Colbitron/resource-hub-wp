@@ -125,7 +125,7 @@ async function readCatalogue(): Promise<Resource[]> {
     }
   }
   for (const type of seederTypes) {
-    if (!(type in TYPE_ACCENTS)) {
+    if (!Object.hasOwn(TYPE_ACCENTS, type)) {
       throw new Error(
         `Seeder type "${type}" has no row in packages/ui/type-accents.json; add its row there before generating.`,
       );
