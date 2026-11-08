@@ -1,8 +1,47 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
-import { AROUND, MAX_LISTED, pageWindow } from "../lib/pagination";
+import { AROUND, MAX_LISTED, pageWindow, type PageItem } from "../lib/pagination";
+
+/**
+ * The contract's page-window table: every page count from 1 to 20 and every
+ * current page, with the items `pageWindow()` lists. The CMS's
+ * `PaginationNumbersTest` reads the same file, so a CMS collection page and
+ * the front end list the same numbers, and a change to either side's
+ * windowing fails one of the two until the fixture, and the other side,
+ * follow.
+ */
+interface PageWindowFixture {
+  readonly maxListed: number;
+  readonly around: number;
+  readonly cases: ReadonlyArray<{ readonly pages: number; readonly current: number; readonly items: PageItem[] }>;
+}
+
+const fixture: PageWindowFixture = JSON.parse(
+  readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../packages/ui/fixtures/pagination/page-window.json"), "utf8"),
+);
 
 describe("pageWindow", () => {
+  it("lists what the contract's fixture lists, for every page count up to 20 and every current page", () => {
+    expect(fixture.maxListed).toBe(MAX_LISTED);
+    expect(fixture.around).toBe(AROUND);
+    expect(fixture.cases.length).toBeGreaterThan(0);
+    for (const { pages, current, items } of fixture.cases) {
+      expect(pageWindow(current, pages), `${current} of ${pages}`).toEqual(items);
+    }
+    // The table is complete: one case per (pages, current) pair, 1..20.
+    const keys = fixture.cases.map(({ pages, current }) => `${pages}:${current}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    for (let pages = 1; pages <= 20; pages++) {
+      for (let current = 1; current <= pages; current++) {
+        expect(keys, `${current} of ${pages} is in the fixture`).toContain(`${pages}:${current}`);
+      }
+    }
+  });
+
   it("lists every page up to the maximum", () => {
     expect(pageWindow(1, 1)).toEqual([1]);
     expect(pageWindow(2, 2)).toEqual([1, 2]);

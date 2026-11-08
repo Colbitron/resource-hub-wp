@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace ResourceHub\Tests\Theme;
 
+use ResourceHub\Pages\PostsPage;
+use WP_Query;
 use WP_UnitTestCase;
 
 /**
@@ -61,7 +63,8 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 	private string $html = '';
 
 	/**
-	 * The theme, its block-template loader, and an editor.
+	 * The theme, its block-template loader, and an editor, with Settings > Reading showing posts and
+	 * naming no posts page.
 	 */
 	public function set_up(): void {
 		parent::set_up();
@@ -70,6 +73,7 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 		_add_template_loader_filters();
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
 		update_option( 'show_on_front', 'posts' );
+		update_option( 'page_for_posts', 0 );
 	}
 
 	/**
@@ -104,6 +108,85 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 		$this->assertSame( 'resource-hub//home', $this->template_for( home_url( '/' ) ) );
 		$this->assertFalse( is_front_page() );
 		$this->assertOneHeading( 'Resource Hub' );
+	}
+
+	/**
+	 * The posts page under a static front page is the 404, `404.html`, as the front end answers it: its
+	 * page route never serves the page `page_for_posts` names while `show_on_front` is `page`
+	 * (`PagePath::is_served()`), so the plugin's `PostsPage` makes the CMS's request a 404 too, by path and
+	 * by `page_id`, and its later pages with it. Core alone would render `home.html` for it.
+	 */
+	public function test_posts_page_under_a_static_front_page_is_the_404(): void {
+		$front = self::factory()->post->create( array( 'post_type' => 'page' ) );
+		$posts = self::factory()->post->create(
+			array(
+				'post_type'  => 'page',
+				'post_title' => 'Blog',
+			)
+		);
+		self::factory()->post->create();
+		update_option( 'show_on_front', 'page' );
+		update_option( 'page_on_front', $front );
+		update_option( 'page_for_posts', $posts );
+
+		$this->assertSame( 'resource-hub//404', $this->template_for( get_permalink( $posts ) ) );
+		$this->assertTrue( is_404() );
+		$this->assertFalse( is_home() );
+		$this->assertOneHeading( 'Page not found' );
+
+		$this->assertSame( 'resource-hub//404', $this->template_for( home_url( '/?page_id=' . $posts . '&paged=2' ) ), 'Its later pages too.' );
+		$this->assertTrue( is_404() );
+
+		// The front page is still the page, and `/` is not touched.
+		$this->assertSame( 'resource-hub//page', $this->template_for( home_url( '/' ) ) );
+		$this->assertTrue( is_front_page() );
+	}
+
+	/**
+	 * For an anonymous visitor the posts page is the lockdown's 404, and `PostsPage` stands down: the gate
+	 * at priority 0 has already handled the request, so a `$preempt` that is not `false` is returned as it
+	 * came and the query is not touched, even one that is still the posts page.
+	 */
+	public function test_posts_page_stands_down_once_the_lockdown_has_answered(): void {
+		$front = self::factory()->post->create( array( 'post_type' => 'page' ) );
+		$posts = self::factory()->post->create( array( 'post_type' => 'page' ) );
+		update_option( 'show_on_front', 'page' );
+		update_option( 'page_on_front', $front );
+		update_option( 'page_for_posts', $posts );
+
+		wp_set_current_user( 0 );
+		$this->assertSame( 'resource-hub//404', $this->template_for( get_permalink( $posts ) ) );
+		$this->assertTrue( is_404() );
+
+		// The same request, as PostsPage receives it once an earlier callback has preempted.
+		$query = new WP_Query( array( 'page_id' => $posts ) );
+		$this->assertTrue( $query->is_posts_page );
+
+		$this->assertTrue( ( new PostsPage() )->is_404( true, $query ) );
+		$this->assertFalse( $query->is_404(), 'A preempted request is left as the earlier callback left it.' );
+		$this->assertTrue( $query->is_posts_page );
+
+		$this->assertSame( 'handled', ( new PostsPage() )->is_404( 'handled', $query ), 'Any preempting value comes back as it came.' );
+		$this->assertFalse( $query->is_404() );
+	}
+
+	/**
+	 * The page `page_for_posts` names is an ordinary page while the front page shows posts: core reads
+	 * the option only under a static front page, and so does the front end's page route.
+	 */
+	public function test_page_for_posts_is_a_page_while_posts_show_on_front(): void {
+		$posts = self::factory()->post->create(
+			array(
+				'post_type'  => 'page',
+				'post_title' => 'Blog',
+			)
+		);
+		update_option( 'show_on_front', 'posts' );
+		update_option( 'page_for_posts', $posts );
+
+		$this->assertSame( 'resource-hub//page', $this->template_for( get_permalink( $posts ) ) );
+		$this->assertFalse( is_404() );
+		$this->assertOneHeading( 'Blog' );
 	}
 
 	/**
