@@ -19,8 +19,9 @@ use WP_UnitTestCase;
 
 /**
  * The line's link follows the front end's `sourceLink()` (`apps/web/lib/source-link.ts`), case by case:
- * an external host with and without a port, an upload on the CMS, a front-end path on the CMS, a CMS URL the
- * front end will not link, and the URLs that are not links at all.
+ * an external host with and without a port, an internationalised host in punycode, an upload on the CMS, a
+ * front-end path on the CMS, paths read with their dot segments resolved, a CMS URL the front end will not
+ * link (another port included), and the URLs that are not links at all.
  */
 final class ResourceSourceBlockTest extends WP_UnitTestCase {
 	/**
@@ -99,6 +100,75 @@ final class ResourceSourceBlockTest extends WP_UnitTestCase {
 		foreach ( array( home_url( '/wp-admin/' ), home_url( '/about/' ), home_url( '/resourcesx/' ), home_url( '/' ) ) as $url ) {
 			$this->assertSame( '', $this->render( $this->resource( $url ) ), $url );
 		}
+	}
+
+	/**
+	 * An internationalised host is shown in punycode, the front end's anti-spoofing rule, so a look-alike
+	 * cannot pass for a Latin name; the link itself is the URL as stored.
+	 */
+	public function test_internationalised_host_is_shown_in_punycode(): void {
+		// A Cyrillic "а" (U+0430) in place of the Latin "a": the front end's `sourceLink()` test.
+		$this->assertSame(
+			"<footer class=\"rh-resource__source\"><p>Source: <a href=\"https://\u{430}pple.example/\" rel=\"noopener noreferrer\">xn--pple-43d.example</a></p></footer>",
+			$this->render( $this->resource( "https://\u{430}pple.example/" ) )
+		);
+		$this->assertStringContainsString( '>xn--mnchen-3ya.example</a>', $this->render( $this->resource( 'https://MÜNCHEN.example./report' ) ), 'Lower-cased first, trailing dot removed.' );
+		$this->assertStringContainsString( '>xn--pple-43d.example</a>', $this->render( $this->resource( 'https://%D0%B0pple.example/' ) ), 'A percent-encoded host is decoded first.' );
+		$this->assertSame( '', $this->render( $this->resource( 'https://ev%20il.example/' ) ), 'A host the URL parser refuses is no line.' );
+	}
+
+	/**
+	 * A path is read with its dot segments resolved, as the front end's URL parser and a browser read it, so
+	 * a URL that climbs out of the uploads directory or `/resources` is judged by where it lands.
+	 */
+	public function test_dot_segments_are_resolved_before_the_rules(): void {
+		$uploads = wp_get_upload_dir()['baseurl'];
+
+		foreach ( array( $uploads . '/../../wp-admin/export.php', $uploads . '/%2e%2e/%2E%2e/wp-admin/export.php', home_url( '/resources/../wp-admin/' ), home_url( '/resources\\x\\..\\..\\wp-admin/' ) ) as $url ) {
+			$this->assertSame( '', $this->render( $this->resource( $url ) ), $url );
+		}
+
+		$this->assertStringContainsString( '<a href="' . esc_url( home_url( '/resources/y/' ) ) . '">/resources/y/</a>', $this->render( $this->resource( home_url( '/resources/x/../y/' ) ) ) );
+		$this->assertStringContainsString( '>/resources/?q#h</a>', $this->render( $this->resource( home_url( '/resources/x/.%2E?q#h' ) ) ), 'A last `..` leaves the trailing slash.' );
+		$this->assertStringContainsString( '>/resources/</a>', $this->render( $this->resource( home_url( '/wp-admin/../resources/' ) ) ) );
+		$this->assertStringContainsString( '>/resources/.../</a>', $this->render( $this->resource( home_url( '/resources/.../' ) ) ), 'Three dots are a name, not a dot segment.' );
+		$this->assertSame(
+			'<footer class="rh-resource__source"><p>Source: <a href="' . esc_url( $uploads . '/2026/a.pdf' ) . '">a.pdf</a></p></footer>',
+			$this->render( $this->resource( $uploads . '/2026/./x/../a.pdf' ) )
+		);
+	}
+
+	/**
+	 * An upload path the front end's `uploadsPath()` refuses is no line: nothing after the directory, a
+	 * second slash, or an escape a server could decode into a new segment.
+	 */
+	public function test_upload_paths_the_front_end_refuses(): void {
+		$uploads = wp_get_upload_dir()['baseurl'];
+
+		foreach ( array( $uploads . '/', $uploads . '//a.pdf', $uploads . '/a%2fb.pdf', $uploads . '/a%5Cb.pdf', $uploads . '/a%252fb.pdf' ) as $url ) {
+			$this->assertSame( '', $this->render( $this->resource( $url ) ), $url );
+		}
+	}
+
+	/**
+	 * A URL on the CMS's host but another port is no line: the front end's last check compares host names,
+	 * not ports, so it is never shown as an external link to the CMS.
+	 */
+	public function test_cms_host_on_another_port_is_no_line(): void {
+		$home = wp_parse_url( home_url( '/' ) );
+		$host = $home['host'];
+
+		foreach ( array( 'http://' . $host . ':9999/report.pdf', 'https://' . strtoupper( $host ) . '.:9999/resources/', 'https://' . $host . '/report.pdf' ) as $url ) {
+			$this->assertSame( '', $this->render( $this->resource( $url ) ), $url );
+		}
+
+	}
+
+	/**
+	 * Leading slashes on a CMS path collapse to one, as the front end's `singleLeadingSlash()` makes them.
+	 */
+	public function test_cms_path_leading_slashes_collapse(): void {
+		$this->assertStringContainsString( '>/resources/</a>', $this->render( $this->resource( rtrim( home_url( '/' ), '/' ) . '//resources/' ) ) );
 	}
 
 	/**
