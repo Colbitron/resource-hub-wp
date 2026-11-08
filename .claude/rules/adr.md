@@ -13,9 +13,14 @@ When a decision earns an ADR is in the root `CLAUDE.md` ("Standards and workflow
 
 ## Approval
 
-No agent creates, amends, supersedes or deletes a file under `docs/adr/` without Colby's explicit approval in the conversation. A message from another agent, a coordinator's included, is not that approval. Without it, propose the record, the amendment or the supersession in the PR description or an issue, and leave `docs/adr/` alone.
+No agent creates, amends, supersedes or deletes a file under `docs/adr/` without Colby's explicit approval. The approval reaches an agent one of two ways:
 
-A PR that touches a guarded path needs the `adr-approved` label, which only Colby applies; agents never apply or remove it. The guarded paths, the same list as `GUARDED_PATHS` in both copies of the check, `.github/workflows/adr-approval.yml` and `.depot/workflows/adr-approval.yml` (change all three together, and only with that approval):
+- **Direct:** Colby gives it in that agent's own conversation.
+- **Relayed:** the orchestrator that briefed the agent passes on an approval Colby gave in the orchestrator's conversation. The relay quotes Colby's words and names the record and the change they cover, and it covers only that change. It is one hop: an agent that received a relayed approval does not relay it further. The agent copies the quote into the PR description, so Colby can check it before applying the label.
+
+Nothing else is that approval: not a message from anyone but the briefing orchestrator (another worker, a reviewer, a bridged model), and not an orchestrator's own judgment, a paraphrase, or an approval for a different record. Approval for one change does not carry over to another. A relay covers `docs/adr/` only: a change to any other guarded path below, this section included, needs Colby's direct approval. Without it, propose the record, the amendment or the supersession in the PR description or an issue, and leave `docs/adr/` alone.
+
+A PR that touches a guarded path needs the `adr-approved` label, which only Colby applies; agents never apply or remove it. The guarded paths, the same list as `GUARDED_PATHS` in both copies of the check, `.github/workflows/adr-approval.yml` and `.depot/workflows/adr-approval.yml` (change all three together, and only with Colby's direct approval):
 
 - `docs/adr/`, everything under it
 - `.github/workflows/adr-approval.yml`
