@@ -69,8 +69,16 @@ The budgets, partial results, param decoding and measurements are in [`docs/arch
 **Costs.**
 
 - One function run per uncached request. Nothing caches the page itself: Next.js sends a dynamic render with `private, no-cache, no-store, max-age=0, must-revalidate`, and on Vercel a repeated request was `x-vercel-cache: MISS` (a preview, 2026-11-07), so in practice that is every request.
-- Its reads still go through the tagged Data Cache: every CMS read is the data layer's `force-cache` fetch with the `resources`, `terms` and `pages` tags fixed before the request, so a repeated query is a render without a CMS request until an event clears those tags. Each distinct query and page is its own entry, and costs one CMS search the first time.
-- It is bounded at the edge by the published Vercel Firewall rule "Rate limit search", which is in log mode for now, so it counts requests and does not yet block them.
+- Its reads still go through the tagged Data Cache: every CMS read is the data layer's `force-cache` fetch with the `resources`, `terms` and `pages` tags fixed before the request, so a repeated query is expected to be a render without a CMS request until an event clears those tags, and each distinct query and page its own entry, costing one CMS search the first time. That is measured under `next start` and not yet on Vercel.
+- It is bounded at the edge by the Vercel Firewall rate-limit rule "Rate limit search"; its current settings and mode are in `caching.md`.
+
+**Options weighed.**
+
+- The query in the path, ISR (`/search/{q}/`): every distinct query becomes a stored page, a store a crawler can grow without bound, and most queries are not slugs.
+- A client-side fetch against a route handler, with a static `/search/` page: the results would need JavaScript to appear, and the handler is still a function run per query.
+- A static `/search/` shell with the results streamed in behind a Suspense boundary or a `loading.tsx`: without Cache Components, rejected above, reading `searchParams` anywhere makes the whole route dynamic, so there is no static shell to gain, and a CMS error after the shell had streamed would leave a 200 already sent.
+- An index shipped to the browser and searched there: every reader downloads the library's text, and the CMS's engine, which indexes the summaries and term names, is bypassed.
+- A dynamic page that reads `searchParams`, with its reads in the Data Cache: chosen.
 
 **How the rules above still hold.** The Data Cache stays the only cache, with tags fixed from the request. The build still never needs the CMS: the page prerenders nothing. The not-found boundary's 404 depends on ISR, so the page never answers a 404 or a redirect: every state, a page out of range included, is a 200, and a CMS error is a 500 with `no-store`.
 
