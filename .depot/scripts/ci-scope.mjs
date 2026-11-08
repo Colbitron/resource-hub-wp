@@ -18,6 +18,10 @@
 // The rules, first match wins:
 //
 //   wp-content/**              plugin
+//   apps/web/e2e/browser-      plugin, web: the front end's screenshot
+//   container.mts,             container, which the plugin's Playwright
+//   apps/web/e2e/playwright-   imports for the CMS theme's baselines
+//   image.mts                  (theme-screenshots.spec.js); PLUGIN_IMPORTS
 //   apps/**                    web
 //   .wp-env.json               plugin, web (both sides' environment, by the
 //                              owner's rule)
@@ -84,6 +88,18 @@ const NONE = Object.freeze( [] );
 const INERT_PREFIXES = [ 'docs/', '.claude/', '.github/', 'tools/' ];
 
 /**
+ * The files under `apps/` that the plugin's Playwright suite imports: the
+ * screenshot container, and the pinned image it reads, which the CMS
+ * theme's screenshot spec starts itself. A change to either can break the
+ * plugin's gate, so it runs both sides. `ci-scope.test.mjs` follows the
+ * plugin's spec imports into `apps/` and fails when one is missing here.
+ */
+export const PLUGIN_IMPORTS = Object.freeze( [
+	'apps/web/e2e/browser-container.mts',
+	'apps/web/e2e/playwright-image.mts',
+] );
+
+/**
  * The sides one changed path can affect, as a list of SIDES.
  *
  * @param {string} path A repository-relative path, as git prints it.
@@ -92,6 +108,9 @@ const INERT_PREFIXES = [ 'docs/', '.claude/', '.github/', 'tools/' ];
 export function sidesOf( path ) {
 	if ( path.startsWith( 'wp-content/' ) ) {
 		return [ 'plugin' ];
+	}
+	if ( PLUGIN_IMPORTS.includes( path ) ) {
+		return ALL;
 	}
 	if ( path.startsWith( 'apps/' ) ) {
 		return [ 'web' ];
