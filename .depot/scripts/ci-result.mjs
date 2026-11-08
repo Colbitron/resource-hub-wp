@@ -20,12 +20,15 @@
 //   WEB_SCREENSHOTS
 //
 // It prints each job's result, writes a table to $GITHUB_STEP_SUMMARY, and
-// exits 1 on any problem. A job added to ci.yml has to be named in
+// exits 1 on any problem. It exits 1 too when it cannot tell whether node
+// ran it as the script or a test imported it (entry-point.mjs), since a
+// main() that never ran would exit 0, a pass. A job added to ci.yml has to be named in
 // ci-result's needs (and here) or exempted; ci-scope.test.mjs fails until
 // it is one or the other.
 
-import { appendFileSync, realpathSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { appendFileSync } from 'node:fs';
+
+import { runAsScript } from './entry-point.mjs';
 
 /** Each job ci-result reads: the env variable with its result, and the scope side that may skip it. */
 export const JOBS = Object.freeze( {
@@ -110,26 +113,10 @@ export function main( env = process.env ) {
 	return passed;
 }
 
-/**
- * Whether this file is the script node was asked to run, rather than a
- * module a test imported. Both sides are compared as realpaths: node loads
- * the main module through argv[1]'s realpath (unless --preserve-symlinks-main),
- * so a symlink anywhere in the checkout's path would make a plain comparison
- * false, main() would never run, and the step would exit 0 with no verdict.
- *
- * @return {boolean} Whether to run main().
- */
-function isEntryPoint() {
-	if ( ! process.argv[ 1 ] ) {
-		return false;
-	}
-	try {
-		return realpathSync( process.argv[ 1 ] ) === realpathSync( fileURLToPath( import.meta.url ) );
-	} catch {
-		return false;
-	}
-}
-
-if ( isEntryPoint() ) {
-	process.exitCode = main() ? 0 : 1;
-}
+// The verdict only as the script, and a red one when it cannot tell whether
+// it is the script, so the required check never passes without a verdict.
+runAsScript(
+	import.meta.url,
+	() => ( main() ? 0 : 1 ),
+	'ci-result.mjs could not tell whether it was run as the script, so CI result fails rather than pass without a verdict.'
+);
