@@ -22,20 +22,22 @@ use WP_Term;
 use WP_UnitTestCase;
 
 /**
- * The sample resource in `packages/ui/fixtures/markup/resource.json`, stored with core's functions, renders
- * through the `resource-card` and `resource-meta` blocks exactly as `resource-card.html` and
- * `resource-meta.html` say, which is what the front end's `ResourceCard` and `ResourceArticle` render from
- * the same sample (`apps/web/test/markup-parity.test.tsx`). So a change to either side's markup fails one
- * of the two tests until the fixture, and the other side, follow.
+ * Each sample resource in `packages/ui/fixtures/markup/{case}.json`, stored with core's functions, renders
+ * through the `resource-card` and `resource-meta` blocks exactly as `{case}.card.html` and
+ * `{case}.meta.html` say, which is what the front end's `ResourceCard` and `ResourceArticle` render from
+ * the same samples (`apps/web/test/markup-parity.test.tsx`). So a change to either side's markup fails one
+ * of the two tests until the fixtures, and the other side, follow.
  *
- * The sample is in the REST API's forms, so this test first proves that storing it gives those forms
+ * The samples are in the REST API's forms, so this test first proves that storing each gives those forms
  * back (the rendered title, the stored term names, the stored summary), or the comparison would test a
- * resource the front end never receives. The type's mark is the table's row for the sample's type ID: the
- * tests database gives the term another ID, so that row is mapped onto it.
+ * resource the front end never receives. The type's mark is the table's row for the sample's type ID,
+ * mapped onto the term the tests database creates, which has another ID; a sample whose type has no row
+ * gets an empty table, so its mark is neutral, as the front end's is.
  *
  * The comparison normalises what the HTML parser ignores, as the front end's test does: whitespace holding
- * a line break between two tags (the fixtures' indentation), and the case of attribute names (React writes
- * `dateTime`). And one thing the contract says differs: links here are absolute, `get_permalink()` and
+ * a line break between two tags (the fixtures' indentation), the case of attribute names (React writes
+ * `dateTime`), and the spelling of a numeric character reference (React writes `'` as `&#x27;`, PHP as
+ * `&#039;`). And one thing the contract says differs: links here are absolute, `get_permalink()` and
  * `home_url()`, where the front end's are root-relative, since it strips the CMS's origin from every link
  * and the paths are the same on both sites (`packages/ui/README.md`, "Public URL shape"), so the CMS's
  * origin is removed from each `href` before comparing. Every other byte counts.
@@ -44,56 +46,16 @@ final class MarkupParityTest extends WP_UnitTestCase {
 	use SetsTypeAccentsTable;
 
 	/**
-	 * The sample resource, decoded.
-	 *
-	 * @var array<string, mixed>
-	 */
-	private array $sample;
-
-	/**
-	 * The sample, stored.
-	 *
-	 * @var int
-	 */
-	private int $post;
-
-	/**
-	 * Stores the sample under pretty permalinks, as `RelatedResourcesBlockTest` sets them up.
+	 * Pretty permalinks (see `RelatedResourcesBlockTest::set_up()`), and an administrator, who has
+	 * `unfiltered_html` as editors on the CMS do, so kses stores a title's `&` as typed and core renders it
+	 * `&#038;`, the samples' form; with no user, kses would store `&amp;`.
 	 */
 	public function set_up(): void {
 		parent::set_up();
 		$this->set_permalink_structure( '/%postname%/' );
 		( new PostType() )->register();
 		( new Taxonomies() )->register();
-
-		$file = self::markup_dir() . '/resource.json';
-		$this->assertFileIsReadable( $file, 'packages/ui is not mounted: run `pnpm env:start` after a change to .wp-env.json.' );
-		$this->sample = wp_json_file_decode( $file, array( 'associative' => true ) );
-
-		// An administrator, who has `unfiltered_html` as editors on the CMS do, so kses stores the title's `&` as
-		// typed and core renders it `&#038;`, the sample's form; with no user, kses would store `&amp;`.
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-
-		$type   = $this->term( Taxonomies::TYPE, $this->sample['type'] );
-		$topics = array_map( fn ( array $topic ): int => $this->term( Taxonomies::TOPIC, $topic ), $this->sample['topics'] );
-
-		$this->post = self::factory()->post->create(
-			array(
-				'post_type'     => PostType::NAME,
-				'post_status'   => 'publish',
-				'post_title'    => $this->sample['title']['raw'],
-				'post_name'     => $this->sample['slug'],
-				'post_date_gmt' => str_replace( 'T', ' ', $this->sample['date_gmt'] ),
-			)
-		);
-		wp_set_object_terms( $this->post, array( $type ), Taxonomies::TYPE );
-		wp_set_object_terms( $this->post, $topics, Taxonomies::TOPIC );
-		update_post_meta( $this->post, Meta::SUMMARY, wp_slash( MetaRules::sanitize_summary( $this->sample['summary'] ) ) );
-
-		self::reset_type_accents();
-		$row = TypeAccents::table()[ $this->sample['type']['id'] ] ?? null;
-		$this->assertNotNull( $row, 'The sample\'s type ID has no row in build/type-accents.json: run `pnpm build`, or fix the sample.' );
-		self::use_type_accents( array( $type => $row ) );
 	}
 
 	/**
@@ -106,43 +68,123 @@ final class MarkupParityTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Storing the sample gives back the REST API's forms the front end's test feeds it.
+	 * The cases, one per sample file; the front end's test reads the same directory.
+	 *
+	 * @return array<string, array{string}>
 	 */
-	public function test_the_stored_sample_is_the_sample(): void {
-		$post = get_post( $this->post );
+	public static function cases(): array {
+		$cases = array();
+		$files = glob( self::markup_dir() . '/*.json' );
 
-		$this->assertSame( $this->sample['title']['rendered'], get_the_title( $post ) );
-		$this->assertSame( $this->sample['summary'], get_post_meta( $this->post, Meta::SUMMARY, true ) );
-		$this->assertSame( $this->sample['date_gmt'], str_replace( ' ', 'T', $post->post_date_gmt ) );
-		$this->assertSame( $this->sample['type']['name'], get_the_terms( $post, Taxonomies::TYPE )[0]->name );
+		foreach ( false === $files ? array() : $files as $file ) {
+			$name           = basename( $file, '.json' );
+			$cases[ $name ] = array( $name );
+		}
+
+		return $cases;
+	}
+
+	/**
+	 * The samples are there, each with its two fixtures.
+	 */
+	public function test_finds_the_samples(): void {
+		$this->assertFileIsReadable( self::markup_dir() . '/full.json', 'packages/ui is not mounted: run `pnpm env:start` after a change to .wp-env.json.' );
+
+		foreach ( array( 'bare', 'full', 'unmapped' ) as $name ) {
+			$this->assertArrayHasKey( $name, self::cases() );
+		}
+
+		foreach ( array_keys( self::cases() ) as $name ) {
+			$this->assertFileIsReadable( self::markup_dir() . '/' . $name . '.card.html' );
+			$this->assertFileIsReadable( self::markup_dir() . '/' . $name . '.meta.html' );
+		}
+	}
+
+	/**
+	 * Storing a sample gives back the REST API's forms the front end's test feeds it.
+	 *
+	 * @dataProvider cases
+	 *
+	 * @param string $name The case.
+	 */
+	public function test_the_stored_sample_is_the_sample( string $name ): void {
+		$sample = self::sample( $name );
+		$post   = get_post( $this->store( $sample ) );
+
+		$this->assertSame( $sample['title']['rendered'], get_the_title( $post ) );
+		$this->assertSame( $sample['summary'], get_post_meta( $post->ID, Meta::SUMMARY, true ) );
+		$this->assertSame( $sample['date_gmt'], str_replace( ' ', 'T', $post->post_date_gmt ) );
+		$this->assertSame( $sample['type']['name'], get_the_terms( $post, Taxonomies::TYPE )[0]->name );
 
 		$topics = get_the_terms( $post, Taxonomies::TOPIC );
+		$topics = is_array( $topics ) ? $topics : array();
 		$this->assertSame(
-			array_column( $this->sample['topics'], 'name' ),
+			array_column( $sample['topics'], 'name' ),
 			array_map( fn ( WP_Term $term ): string => $term->name, $topics ),
 			'The topics are stored with these names and come back in this order.'
 		);
-		$this->assertSame( array_column( $this->sample['topics'], 'slug' ), wp_list_pluck( $topics, 'slug' ) );
+		$this->assertSame( array_column( $sample['topics'], 'slug' ), wp_list_pluck( $topics, 'slug' ) );
 	}
 
 	/**
-	 * The card block renders `resource-card.html`, the front end's listing row at its default `h2`.
-	 */
-	public function test_resource_card_matches_the_fixture(): void {
-		$this->assertSame( self::fixture( 'resource-card.html' ), self::normalise( $this->render( ResourceCardBlock::NAME ) ) );
-	}
-
-	/**
-	 * The meta block renders `resource-meta.html`, the front end's resource page's meta line.
-	 */
-	public function test_resource_meta_matches_the_fixture(): void {
-		$this->assertSame( self::fixture( 'resource-meta.html' ), self::normalise( $this->render( ResourceMetaBlock::NAME ) ) );
-	}
-
-	/**
-	 * A term from the sample, created with the stored name core would keep for it; its ID.
+	 * The card block renders `{case}.card.html`, the front end's listing row at its default `h2`.
 	 *
-	 * Core stores a name's `&` as `&amp;`, the form the sample holds, so the name is decoded on the way in
+	 * @dataProvider cases
+	 *
+	 * @param string $name The case.
+	 */
+	public function test_resource_card_matches_the_fixture( string $name ): void {
+		$post = $this->store( self::sample( $name ) );
+
+		$this->assertSame( self::fixture( $name . '.card.html' ), self::normalise( $this->render( ResourceCardBlock::NAME, $post ) ) );
+	}
+
+	/**
+	 * The meta block renders `{case}.meta.html`, the front end's resource page's meta line.
+	 *
+	 * @dataProvider cases
+	 *
+	 * @param string $name The case.
+	 */
+	public function test_resource_meta_matches_the_fixture( string $name ): void {
+		$post = $this->store( self::sample( $name ) );
+
+		$this->assertSame( self::fixture( $name . '.meta.html' ), self::normalise( $this->render( ResourceMetaBlock::NAME, $post ) ) );
+	}
+
+	/**
+	 * Stores a sample as a published resource, with its type's accent row mapped onto the type's term; its ID.
+	 *
+	 * @param array<string, mixed> $sample The decoded sample.
+	 */
+	private function store( array $sample ): int {
+		$type   = $this->term( Taxonomies::TYPE, $sample['type'] );
+		$topics = array_map( fn ( array $topic ): int => $this->term( Taxonomies::TOPIC, $topic ), $sample['topics'] );
+
+		$post = self::factory()->post->create(
+			array(
+				'post_type'     => PostType::NAME,
+				'post_status'   => 'publish',
+				'post_title'    => $sample['title']['raw'],
+				'post_name'     => $sample['slug'],
+				'post_date_gmt' => str_replace( 'T', ' ', $sample['date_gmt'] ),
+			)
+		);
+		wp_set_object_terms( $post, array( $type ), Taxonomies::TYPE );
+		wp_set_object_terms( $post, $topics, Taxonomies::TOPIC );
+		update_post_meta( $post, Meta::SUMMARY, wp_slash( MetaRules::sanitize_summary( $sample['summary'] ) ) );
+
+		self::reset_type_accents();
+		$row = TypeAccents::table()[ $sample['type']['id'] ] ?? null;
+		self::use_type_accents( null === $row ? array() : array( $type => $row ) );
+
+		return $post;
+	}
+
+	/**
+	 * A term from a sample, created with the stored name core would keep for it; its ID.
+	 *
+	 * Core stores a name's `&` as `&amp;`, the form the samples hold, so the name is decoded on the way in
 	 * and `test_the_stored_sample_is_the_sample()` checks it is stored as the sample says.
 	 *
 	 * @param string               $taxonomy The taxonomy.
@@ -159,11 +201,12 @@ final class MarkupParityTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * One block, rendered for the sample through `WP_Block`, with the context a post template gives it.
+	 * One block, rendered for a post through `WP_Block`, with the context a post template gives it.
 	 *
 	 * @param string $name The block's name.
+	 * @param int    $post The post.
 	 */
-	private function render( string $name ): string {
+	private function render( string $name, int $post ): string {
 		$parsed = array(
 			'blockName'    => $name,
 			'attrs'        => array(),
@@ -175,7 +218,7 @@ final class MarkupParityTest extends WP_UnitTestCase {
 		return ( new WP_Block(
 			$parsed,
 			array(
-				'postId'   => $this->post,
+				'postId'   => $post,
 				'postType' => PostType::NAME,
 			)
 		) )->render();
@@ -190,8 +233,23 @@ final class MarkupParityTest extends WP_UnitTestCase {
 		$html = str_replace( 'href="' . untrailingslashit( home_url() ) . '/', 'href="/', $html );
 		$html = (string) preg_replace( '/>\s*\n\s*</', '><', $html );
 		$html = (string) preg_replace_callback( '/ ([A-Za-z][\w:.-]*)="/', fn ( array $m ): string => ' ' . strtolower( $m[1] ) . '="', $html );
+		$html = (string) preg_replace_callback(
+			'/&#(x[0-9a-f]+|[0-9]+);/i',
+			fn ( array $m ): string => '&#x' . dechex( 'x' === strtolower( $m[1][0] ) ? (int) hexdec( substr( $m[1], 1 ) ) : (int) $m[1] ) . ';',
+			$html
+		);
 
 		return trim( $html );
+	}
+
+	/**
+	 * A sample, decoded.
+	 *
+	 * @param string $name The case.
+	 * @return array<string, mixed>
+	 */
+	private static function sample( string $name ): array {
+		return wp_json_file_decode( self::markup_dir() . '/' . $name . '.json', array( 'associative' => true ) );
 	}
 
 	/**

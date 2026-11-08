@@ -1,0 +1,13 @@
+{
+	"$comment": "The unmapped case: a type type-accents.json has no row for, so its mark is neutral, and straight apostrophes in every text the two sides print as typed (the summary, the type's name, the topic's name), which React writes as &#x27; and PHP as &#039;. The title's apostrophe is texturized to a curly one, as core renders it. README.md, \"Markup fixtures\".",
+	"id": 103,
+	"slug": "why-we-dont-cache",
+	"title": {
+		"raw": "Why we don't cache",
+		"rendered": "Why we don&#8217;t cache"
+	},
+	"date_gmt": "2026-01-05T00:00:00",
+	"summary": "It's the editors' pick.",
+	"type": { "id": 99, "slug": "explainer", "name": "Editors' explainer" },
+	"topics": [ { "id": 21, "slug": "editors-picks", "name": "Editors' picks" } ]
+}

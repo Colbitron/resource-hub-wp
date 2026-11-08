@@ -23,8 +23,9 @@ use WP_Term;
  * the front end's order: `row()` is `ResourceCard` (`apps/web/components/ResourceCard.tsx`) and `meta()`
  * is the meta line `ResourceArticle` writes in its header (`apps/web/components/ResourceArticle.tsx`).
  * The contract's markup fixtures (`packages/ui/fixtures/markup/`, `packages/ui/README.md`, "Markup
- * fixtures") hold both sides to the same HTML for one sample resource: the front end's vitest renders the
- * components and this side's PHPUnit renders the blocks, and each compares its output with the fixture.
+ * fixtures") hold both sides to the same HTML for a few sample resources (every part, no summary and no
+ * topics, an unmapped type with apostrophes): the front end's vitest renders the components and this
+ * side's PHPUnit renders the blocks, and each compares its output with the fixtures.
  *
  *     row():  <article class="rh-card">
  *               <p class="rh-card__meta"><span class="rh-card__type" data-accent="{accent}">{type}</span><time datetime="{ISO}">{Nov 1, 2026}</time></p>
