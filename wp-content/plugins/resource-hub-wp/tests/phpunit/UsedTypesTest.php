@@ -14,6 +14,7 @@ use ResourceHub\ContentModel\Taxonomies;
 use ResourceHub\ContentModel\UsedTypes;
 use RuntimeException;
 use WPDieException;
+use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_Term;
@@ -24,6 +25,8 @@ use WP_UnitTestCase;
  * delete.
  */
 final class UsedTypesTest extends WP_UnitTestCase {
+	use RestTransports;
+
 	/**
 	 * Logs in an administrator, who could delete any type that is not in use.
 	 */
@@ -93,6 +96,108 @@ final class UsedTypesTest extends WP_UnitTestCase {
 			'private'   => array( 'private', true ),
 			'trashed'   => array( 'trash', false ),
 		);
+	}
+
+	/**
+	 * The REST message holds whatever case the route is requested in and however core is reached.
+	 * Core matches a path to a route without regard to case, so every spelling, as a request, a
+	 * batch item or a `?rest_route=` request, reaches the terms controller's delete handler and is
+	 * refused by the capability; the message keys on that handler and on the path as core matches
+	 * it, so each gets the plain message and the type is kept.
+	 *
+	 * @dataProvider route_spellings
+	 *
+	 * @param string $transport How the request is sent, as RestTransports::send_via() takes it.
+	 * @param string $route     The route, with `%d` for the type's ID.
+	 */
+	public function test_rest_delete_is_refused_with_the_message_in_any_case( string $transport, string $route ): void {
+		$type_id = $this->used_type( 'Webinar' );
+
+		$response = $this->send_via( $transport, 'DELETE', sprintf( $route, $type_id ), array( 'force' => true ) );
+
+		$this->assertSame( 403, $response['status'] );
+		$this->assertSame( UsedTypes::ERROR_CODE, $response['body']['code'] );
+		$this->assertSame( UsedTypes::message(), $response['body']['message'] );
+		$this->assertInstanceOf( WP_Term::class, get_term( $type_id, Taxonomies::TYPE ) );
+	}
+
+	/**
+	 * Cases for test_rest_delete_is_refused_with_the_message_in_any_case(). A lowercase namespace
+	 * with a mixed-case base is matched among the namespace's own routes; an uppercase namespace
+	 * matches no namespace, so core tries every route.
+	 *
+	 * @return array<string, array{0: string, 1: string}>
+	 */
+	public function route_spellings(): array {
+		return array(
+			'lowercase'                    => array( 'dispatch', '/wp/v2/' . Taxonomies::TYPE . '/%d' ),
+			'mixed case'                   => array( 'dispatch', '/WP/v2/Resource_Type/%d' ),
+			'uppercase'                    => array( 'dispatch', '/WP/V2/RESOURCE_TYPE/%d' ),
+			'lowercase namespace'          => array( 'dispatch', '/wp/v2/Resource_Type/%d' ),
+			'mixed case, batch item'       => array( 'batch', '/WP/v2/Resource_Type/%d' ),
+			'mixed case, rest_route query' => array( 'serve_request', '/WP/v2/Resource_Type/%d' ),
+		);
+	}
+
+	/**
+	 * Another handler that answers DELETE on the single-type pattern ahead of core's keeps its own
+	 * refusal: core matches the request to it, not to the terms controller, so the message is not
+	 * the plugin's to replace even though the path and the type are the same.
+	 */
+	public function test_rest_message_leaves_another_handler_on_the_path_alone(): void {
+		$type_id = $this->used_type( 'Webinar' );
+
+		$this->with_handler_ahead_of_core(
+			'wp/v2',
+			'/' . Taxonomies::TYPE . '/(?P<id>[\d]+)',
+			'DELETE',
+			static fn(): WP_Error => new WP_Error( 'rest_cannot_delete', 'Not this one.', array( 'status' => 403 ) ),
+			function () use ( $type_id ): void {
+				$response = $this->send_via( 'dispatch', 'DELETE', '/wp/v2/' . Taxonomies::TYPE . '/' . $type_id, array( 'force' => true ) );
+
+				$this->assertSame( 403, $response['status'] );
+				$this->assertSame( 'rest_cannot_delete', $response['body']['code'] );
+				$this->assertSame( 'Not this one.', $response['body']['message'] );
+			}
+		);
+
+		$this->assertInstanceOf( WP_Term::class, get_term( $type_id, Taxonomies::TYPE ) );
+	}
+
+	/**
+	 * The message judges the term the controller checks and deletes, `$request['id']`, which core
+	 * reads from the body before the URL: `DELETE /resource_type/{a}`, a an unused type, with a body
+	 * `id` of b, a type in use, is refused with the plain message, and both types are kept.
+	 */
+	public function test_rest_delete_judges_the_body_id_over_the_url_id(): void {
+		$url_id  = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) );
+		$body_id = $this->used_type( 'Webinar' );
+
+		$response = $this->delete_with_body_id( $url_id, $body_id );
+
+		$this->assertSame( 403, $response->get_status() );
+		$this->assertSame( UsedTypes::ERROR_CODE, $response->get_data()['code'] );
+		$this->assertInstanceOf( WP_Term::class, get_term( $body_id, Taxonomies::TYPE ) );
+		$this->assertInstanceOf( WP_Term::class, get_term( $url_id, Taxonomies::TYPE ) );
+	}
+
+	/**
+	 * A body `id` equal to the URL's changes nothing: a used type is refused with the message and
+	 * an unused one is deleted, as without it.
+	 */
+	public function test_rest_delete_with_the_same_body_id(): void {
+		$used     = $this->used_type( 'Webinar' );
+		$response = $this->delete_with_body_id( $used, $used );
+
+		$this->assertSame( 403, $response->get_status() );
+		$this->assertSame( UsedTypes::ERROR_CODE, $response->get_data()['code'] );
+		$this->assertInstanceOf( WP_Term::class, get_term( $used, Taxonomies::TYPE ) );
+
+		$unused   = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) );
+		$response = $this->delete_with_body_id( $unused, $unused );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertNull( get_term( $unused, Taxonomies::TYPE ) );
 	}
 
 	/**
@@ -356,6 +461,24 @@ final class UsedTypesTest extends WP_UnitTestCase {
 		}
 
 		return $location;
+	}
+
+	/**
+	 * Sends a forced REST delete of a type with an `id` in the body as well as the URL.
+	 *
+	 * @param int $url_id  Type term ID in the URL.
+	 * @param int $body_id Type term ID in the body.
+	 */
+	private function delete_with_body_id( int $url_id, int $body_id ): WP_REST_Response {
+		$request = new WP_REST_Request( 'DELETE', '/wp/v2/' . Taxonomies::TYPE . '/' . $url_id );
+		$request->set_body_params(
+			array(
+				'id'    => $body_id,
+				'force' => true,
+			)
+		);
+
+		return rest_get_server()->dispatch( $request );
 	}
 
 	/**

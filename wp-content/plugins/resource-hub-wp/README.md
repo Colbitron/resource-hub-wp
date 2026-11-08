@@ -13,7 +13,8 @@ src/
   ContentModel/          post type, taxonomies, meta and its rules, permalinks, one-type rule,
                          required fields, reserved slugs, slug escapes, used-type protection
   Rest/                  resolve route, page route, related route and its salted cache, the no-cache
-                         header on anonymous REST reads
+                         header on anonymous REST reads, RouteMatch (which route and handler a request
+                         reached, for the content-model REST guards)
   Revalidation/          events, queue, dispatcher, sender, results, config, PostHog
   Pages/                 page path rules shared by the page route and page events
   Lockdown/              anonymous visitors get a 404 from theme pages; robots, sitemaps, oEmbed

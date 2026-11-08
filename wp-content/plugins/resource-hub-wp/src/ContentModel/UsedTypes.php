@@ -9,11 +9,13 @@ declare(strict_types=1);
 
 namespace ResourceHub\ContentModel;
 
+use ResourceHub\Rest\RouteMatch;
 use WP_Error;
 use WP_HTTP_Response;
 use WP_Query;
 use WP_REST_Request;
 use WP_REST_Response;
+use WP_REST_Terms_Controller;
 use WP_Term;
 
 /**
@@ -136,24 +138,33 @@ final class UsedTypes {
 	 * why, for a user who could delete the type were it unused; anyone else keeps core's answer.
 	 * Hooked to `rest_request_after_callbacks`, which also sees a failed permission check.
 	 *
+	 * That hook is given the handler but not the route pattern core matched, so the request is a
+	 * delete of a type when both hold: the handler's callback is a terms controller's `delete_item`,
+	 * and the request's path matches the pattern the type's terms controller registers
+	 * ({@see RouteMatch::term_item()}) with core's own match, without regard to case.
+	 * `/WP/v2/Resource_Type/{id}` and `?rest_route=/WP/v2/…` reach that handler and get the message;
+	 * another plugin's handler on a pattern that also matches the path keeps its own answer. The
+	 * type judged is `$request['id']`, the one the controller checks and deletes: core reads
+	 * parameters in its own order (a JSON body, a form body, the query string, then the URL), so an
+	 * `id` in the body or the query string names the term whatever ID the path carries.
+	 *
 	 * @param WP_REST_Response|WP_HTTP_Response|WP_Error|mixed $response Result of the request.
 	 * @param array<string, mixed>                             $handler  Route handler.
 	 * @param WP_REST_Request                                  $request  The REST request.
 	 * @return WP_REST_Response|WP_HTTP_Response|WP_Error|mixed
 	 */
 	public function rest_message( $response, $handler, WP_REST_Request $request ) {
-		unset( $handler );
-
 		if ( ! $response instanceof WP_Error || 'rest_cannot_delete' !== $response->get_error_code() || 'DELETE' !== $request->get_method() ) {
 			return $response;
 		}
 
-		if ( ! preg_match( '#^/wp/v2/' . Taxonomies::TYPE . '/(\d+)$#', $request->get_route(), $matches ) ) {
+		if ( ! RouteMatch::is_handler( $handler, WP_REST_Terms_Controller::class, 'delete_item' )
+			|| null === RouteMatch::params( RouteMatch::term_item( Taxonomies::TYPE ), $request->get_route() ) ) {
 			return $response;
 		}
 
 		$taxonomy = get_taxonomy( Taxonomies::TYPE );
-		$term     = get_term( (int) $matches[1], Taxonomies::TYPE );
+		$term     = get_term( (int) $request['id'], Taxonomies::TYPE );
 
 		if ( ! $taxonomy || ! $term instanceof WP_Term || ! current_user_can( $taxonomy->cap->delete_terms ) || ! self::in_use( $term ) ) {
 			return $response;

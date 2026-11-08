@@ -9,8 +9,10 @@ declare(strict_types=1);
 
 namespace ResourceHub\ContentModel;
 
+use ResourceHub\Rest\RouteMatch;
 use WP_Error;
 use WP_REST_Request;
+use WP_REST_Terms_Controller;
 
 /**
  * Decodes, on save, the percent escapes of the characters `encodeURIComponent()` leaves
@@ -333,8 +335,16 @@ final class SlugEscapes {
 	 * refuses a slug another term has. The editor must type a new slug; a 500 would say the server
 	 * failed. Hooked to `rest_request_after_callbacks`.
 	 *
+	 * That hook is given the handler but not the route pattern core matched, so the request is an
+	 * edit of one of the three taxonomies' terms when both hold: the handler's callback is a terms
+	 * controller's `update_item`, and the request's path matches the single-term pattern one of
+	 * their terms controllers registers ({@see RouteMatch::term_item()}) with core's own match,
+	 * without regard to case. `/WP/v2/Resource_Topic/{id}` and `?rest_route=/WP/v2/…` reach that
+	 * handler and get the 400; another plugin's handler on a pattern that also matches the path
+	 * keeps its own answer.
+	 *
 	 * @param mixed           $response The route's result: a response, or an error.
-	 * @param mixed           $handler  The route handler. Unused.
+	 * @param mixed           $handler  The route handler core matched.
 	 * @param WP_REST_Request $request  The request.
 	 * @return mixed The result, with the status added when it applies.
 	 */
@@ -343,10 +353,7 @@ final class SlugEscapes {
 			return $response;
 		}
 
-		// Each taxonomy's REST base is its name ({@see Taxonomies}).
-		$bases = implode( '|', array_map( static fn( string $taxonomy ): string => preg_quote( $taxonomy, '#' ), self::TAXONOMIES ) );
-
-		if ( ! preg_match( '#^/wp/v2/(?:' . $bases . ')/\d+$#', $request->get_route() ) ) {
+		if ( ! RouteMatch::is_handler( $handler, WP_REST_Terms_Controller::class, 'update_item' ) || ! self::any_term_route( $request->get_route() ) ) {
 			return $response;
 		}
 
@@ -359,5 +366,20 @@ final class SlugEscapes {
 		$response->add_data( array_merge( is_array( $data ) ? $data : array(), array( 'status' => 400 ) ) );
 
 		return $response;
+	}
+
+	/**
+	 * Whether a requested path matches the single-term route of any of the three taxonomies.
+	 *
+	 * @param string $path The requested route, `WP_REST_Request::get_route()`.
+	 */
+	private static function any_term_route( string $path ): bool {
+		foreach ( self::TAXONOMIES as $taxonomy ) {
+			if ( null !== RouteMatch::params( RouteMatch::term_item( $taxonomy ), $path ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 }
