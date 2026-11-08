@@ -17,6 +17,10 @@ import { wpPageSchema, wpResourceSchema, type WpResource } from "../lib/wp/schem
 // compiler can run; its metadata never reads the font, so the module is stood in.
 vi.mock("../app/fonts", () => ({ figtree: { className: "", variable: "", style: { fontFamily: "" } } }));
 
+// Its icon links read three static image imports when the metadata is built, which Vite gives as
+// bare strings; they have nothing to do with the share card, so the list is stood in (`site-icons.test.ts` covers it).
+vi.mock("../lib/site-icons", () => ({ siteIcons: () => ({ icon: [], apple: [] }) }));
+
 // The default share image's static import as Next.js resolves it; Vite would give a bare string, with no `src` (`share-image.test.ts`).
 vi.mock("@/app/opengraph-image.png", () => ({
   default: { src: "/_next/static/media/opengraph-image.0123abcd.png", width: 1200, height: 630 },

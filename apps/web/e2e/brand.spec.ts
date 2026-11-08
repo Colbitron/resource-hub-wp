@@ -15,6 +15,7 @@ import { appSiteOrigin } from "./mock-cms/config.mts";
  * 320 px up; the lockup under forced colours; the footer's publisher link; the icon files (the SVG,
  * the 32 px PNG, `favicon.ico` and the apple touch icon) and the default
  * share image, each answering with the right content type and size, the
+ * icon links in one order on every kind of page, 404s included, the
  * share image at one content-hashed URL per route; a resource with a
  * featured image keeping that image as its share image while one without
  * gets the default; no console error or 404 on a page load; and no
@@ -30,6 +31,9 @@ const cms = mockCms();
 /** A resource with a trusted featured image (the long-form article) and one with none. */
 const WITH_IMAGE = "/resources/article/taxonomies-versus-meta/";
 const WITHOUT_IMAGE = "/resources/article/alt-text-at-scale/";
+/** A 404 the proxy decides from the path alone (a reserved word with no term) and one the resource page decides by data (no resource has the slug). */
+const ICONS_PATH_DECIDED_404 = "/resources/topic/";
+const ICONS_DATA_DECIDED_404 = "/resources/article/no-such-resource-for-the-icons/";
 
 test.beforeEach(async ({ request }) => {
   await cms.reset();
@@ -176,19 +180,39 @@ test.describe("the icons", () => {
     expect(served.replace(/\s+/g, " ")).toBe(readFileSync(join(__dirname, "../app/icon.svg"), "utf8").replace(/\s+/g, " "));
   });
 
-  test("the 32 px PNG icon and favicon.ico are linked, for clients that read no SVG icon, with the SVG last", async ({ page, request }) => {
-    await page.goto("/");
-    // Three icons, the SVG last: a browser that reads SVG icons takes the
-    // one sized `any`, and the two 32 px files are for the rest, which
-    // includes Safari's tab and anyone asking for `/favicon.ico` unprompted.
-    const icons = page.locator('link[rel="icon"]');
-    await expect(icons).toHaveCount(3);
-    expect(await icons.evaluateAll((links) => links.map((link) => link.getAttribute("type")))).toEqual([
-      "image/x-icon",
-      "image/png",
-      "image/svg+xml",
-    ]);
+  /**
+   * Three icons, the SVG last, and one apple touch icon, on every kind of
+   * page: the home page, a listing and a resource page under nested
+   * segments, and both 404s, the one decided from the path alone (the
+   * proxy's rewrite to `/404`) and the one decided by data. The explicit
+   * list in the root layout (`lib/site-icons.ts`) is what every one of
+   * them inherits, so none may add, drop or reorder a link.
+   */
+  for (const [path, status] of [
+    ["/", 200],
+    ["/resources/", 200],
+    [WITH_IMAGE, 200],
+    [ICONS_PATH_DECIDED_404, 404],
+    [ICONS_DATA_DECIDED_404, 404],
+  ] as const) {
+    test(`${path} links favicon.ico, the PNG and the SVG in that order, and one apple touch icon`, async ({ page }) => {
+      expect((await page.goto(path))?.status()).toBe(status);
+      // A browser that reads SVG icons takes the one sized `any`, and the
+      // two 32 px files are for the rest, which includes Safari's tab and
+      // anyone asking for `/favicon.ico` unprompted.
+      const icons = page.locator('link[rel="icon"]');
+      await expect(icons).toHaveCount(3);
+      expect(await icons.evaluateAll((links) => links.map((link) => link.getAttribute("type")))).toEqual([
+        "image/x-icon",
+        "image/png",
+        "image/svg+xml",
+      ]);
+      await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveCount(1);
+    });
+  }
 
+  test("the 32 px PNG icon and favicon.ico are linked, for clients that read no SVG icon", async ({ page, request }) => {
+    await page.goto("/");
     const png = page.locator('link[rel="icon"][type="image/png"]');
     await expect(png).toHaveAttribute("sizes", "32x32");
     const pngHref = (await png.getAttribute("href")) as string;
