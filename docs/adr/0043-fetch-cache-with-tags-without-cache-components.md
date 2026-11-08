@@ -69,7 +69,7 @@ The budgets, partial results, param decoding and measurements are in [`docs/arch
 **Costs.**
 
 - One function run per uncached request. Nothing caches the page itself: Next.js sends a dynamic render with `private, no-cache, no-store, max-age=0, must-revalidate`, and on Vercel a repeated request was `x-vercel-cache: MISS` (a preview, 2026-11-07), so in practice that is every request.
-- Its reads still go through the tagged Data Cache: every CMS read is the data layer's `force-cache` fetch with the `resources`, `terms` and `pages` tags fixed before the request, so a repeated query is expected to be a render without a CMS request until an event clears those tags, and each distinct query and page its own entry, costing one CMS search the first time. That is measured under `next start` and not yet on Vercel.
+- Its reads still go through the tagged Data Cache: every CMS read is the data layer's `force-cache` fetch with the `resources`, `terms` and `pages` tags fixed before the request, so a repeated query is a render without a CMS request until an event clears those tags, and each distinct query and page its own entry, costing one CMS search the first time. The saving was measured on a Vercel preview on 2026-11-08 (a repeat's fetches 5 to 8 ms with the first response's `Date`, against 163 to 224 ms for a new query); the clear by an event was measured under `next start` only.
 - It is bounded at the edge by the Vercel Firewall rate-limit rule "Rate limit search"; its current settings and mode are in `caching.md`.
 
 **Options weighed.**
