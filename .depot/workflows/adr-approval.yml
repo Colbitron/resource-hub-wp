@@ -9,19 +9,15 @@
 # - GUARDED_PATHS lists both copies of this workflow, as GitHub's does.
 #
 # This copy runs beside GitHub's, .github/workflows/adr-approval.yml (ADR
-# 0053). The reasoning under "Why `pull_request_target`" below is GitHub's
-# documented behaviour, and it holds here only once a test shows that Depot
-# CI also runs main's copy of this file, not the pull request's. GitHub's
-# copy is the check of record only while GitHub Actions runs jobs: the
-# owner set a small Actions budget, and if the limit is reached again this
-# copy may be the only one running, with its trust unconfirmed until
-# tested. Whether Depot CI delivers the labeled and unlabeled types below is
-# unconfirmed too. The test, after the merge and only with the owner's
-# go-ahead (this is a guarded path): a throwaway pull request, never merged
-# and never labelled, that changes only this file, adding
-# `echo "PR COPY"; exit 0` at the top of the run script. A red check means
-# Depot ran main's copy; green, or "PR COPY" in the log, means it ran the
-# pull request's, and this copy cannot be trusted (.claude/rules/adr.md).
+# 0053). A test on 2026-11-08 showed that Depot CI, like GitHub, runs main's
+# copy of this file on `pull_request_target`, not the pull request's: a
+# throwaway pull request (#100) that put `echo "PR COPY"; exit 0` at the top
+# of the run script got main's copy, with no "PR COPY" in the log, and a
+# failed check. So this copy can stand as the check of record if GitHub's
+# stops running. Depot CI delivers the labeled type below; whether it
+# delivers unlabeled, and whether the re-run and merge-conflict behaviour
+# under "Why `pull_request_target`" (GitHub's documented behaviour) holds
+# here, is unconfirmed (.claude/rules/adr.md).
 
 # Flags a pull request that changes an architecture decision record, or the
 # guards on them, without the owner's approval. ADRs record the decisions
