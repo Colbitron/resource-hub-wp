@@ -10,8 +10,7 @@
  * its gutter, the header, `main` and the footer.
  *
  * Markup (the front end's; the CMS theme's carries WordPress's block
- * classes beside these, and has no search control in its header and no
- * theme control in its footer yet):
+ * classes beside these, and has no search control in its header yet):
  *   <div class="rh-shell">
  *     <header class="rh-header">
  *       <div class="rh-shell__inner rh-header__inner">…the lockup, then the search control (header-search.css)…</div>

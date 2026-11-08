@@ -124,6 +124,13 @@ const ASSETS = [
 		handle: 'resource-hub-lead',
 		deps: [ 'resource-hub-base' ],
 	},
+	// The footer's System / Light / Dark control, on every template but the
+	// 404 (`inc/theme-control.php`).
+	{
+		file: 'theme-toggle.css',
+		handle: 'resource-hub-theme-toggle',
+		deps: [ 'resource-hub-tokens' ],
+	},
 ];
 
 /**

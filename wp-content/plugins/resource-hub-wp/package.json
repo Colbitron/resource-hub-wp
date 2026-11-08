@@ -8,9 +8,9 @@
 		"build": "wp-scripts build --webpack-src-dir=blocks",
 		"start": "wp-scripts start --webpack-src-dir=blocks",
 		"lint:js": "wp-scripts lint-js admin blocks editor tests/e2e playwright.config.js webpack.config.js && pnpm run lint:js:theme",
-		"lint:js:theme": "cd ../../.. && wp-scripts lint-js wp-content/themes/resource-hub/scripts",
+		"lint:js:theme": "cd ../../.. && wp-scripts lint-js wp-content/themes/resource-hub/scripts wp-content/themes/resource-hub/js",
 		"format": "wp-scripts format admin blocks editor tests/e2e playwright.config.js webpack.config.js && pnpm run format:theme",
-		"format:theme": "cd ../../.. && wp-scripts format wp-content/themes/resource-hub/scripts",
+		"format:theme": "cd ../../.. && wp-scripts format wp-content/themes/resource-hub/scripts wp-content/themes/resource-hub/js",
 		"test:e2e": "wp-scripts test-playwright",
 		"test:e2e:debug": "wp-scripts test-playwright --debug"
 	},

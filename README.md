@@ -54,7 +54,7 @@ Everything marked done exists on `main` and is green in CI.
 | CMS block theme skeleton: header, footer, `index` and `404` templates, active on both wp-env sites, its 404 listing no pages and printing no pingback link ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
 | CMS block theme assets: the `packages/ui` tokens, Figtree and its fallback faces, and the lockup, built into the theme and loaded on its pages and in the editor canvas, one copy of the tokens beside the related-resources block ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
 | CMS block theme foundation: every template in the front end's shell, the page and welcome templates, the base, shell and component stylesheets after core's global styles, tables in the front end's scroll region, and computed-style and screenshot parity checks ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
-| CMS block theme: the plugin's blocks, the single-resource and collection templates, the System / Light / Dark control and its deploy ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | slice 5 |
+| CMS block theme: the plugin's blocks, the single-resource and collection templates, the footer's System / Light / Dark control and its deploy ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | slice 5 |
 
 ## Architecture
 

@@ -28,7 +28,7 @@ html {
 
 /*
  * The reader's theme choice (the front end's `apps/web/lib/theme.ts`; the
- * CMS theme's control is planned, issue #89): `data-theme` on <html>, set by
+ * CMS theme's `js/theme-control.js`): `data-theme` on <html>, set by
  * the head script before first paint and by the theme control after, pins
  * the colour scheme to one side, and every `light-dark()` token in
  * tokens.css follows. No attribute means System: `:root`'s
