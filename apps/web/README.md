@@ -23,7 +23,8 @@ pnpm web:test        # vitest run (unit tests, test/*.test.ts and lib/*.test.ts)
 pnpm web:test:e2e    # playwright test (e2e/*.spec.ts, against the mock CMS in e2e/mock-cms/), axe included
 pnpm web:test:screenshots         # the design specimen against its pixel baselines, in Docker
 pnpm web:test:screenshots:update  # rewrite the baselines after a design change
-pnpm web:test:lighthouse          # Lighthouse CI on the sampled URLs, mobile budgets
+pnpm web:test:lighthouse          # Lighthouse CI on the sampled URLs, mobile budgets, five runs per URL
+pnpm web:test:lighthouse:quick    # the same, one run per URL: the smell test before pushing a front-end change
 pnpm web:lighthouse:preview       # Lighthouse on a Vercel preview, the comment written to a file (needs VERCEL_PROTECTION_BYPASS)
 pnpm web:build       # clears .next/cache/fetch-cache, then next build
 ```
