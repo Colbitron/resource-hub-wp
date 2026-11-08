@@ -23,10 +23,10 @@ use WP_Query;
  * sizes reproduces its list for every page count and current page (20 pages at page 4 is 1, 2, 3, 4, 5, a
  * gap, 20 on the front end; core's shapes are 1, gap, 3, 4, 5, gap, 20 or 1, 2, 3, 4, 5, 6, gap, 20).
  *
- * So this filters `paginate_links_output`, core's filter on the finished list, on a collection's main
- * query ({@see Collection::is_collection()}), for the call the numbers block makes (`type` plain, no
- * previous and next links, not already every page): it calls `paginate_links()` again with the same
- * arguments and `show_all`, with this filter off for that one call, so core builds every page's link
+ * So this filters `paginate_links_output`, core's filter on the finished list, while the global
+ * `$wp_query` is the main query and a collection ({@see Collection::is_collection()}), for the call the
+ * numbers block makes (`type` plain, no previous and next links, not already every page): it calls
+ * `paginate_links()` again with the same arguments and `show_all`, so core builds every page's link
  * itself, its URL from the request's base, format and query arguments, its `paginate_links` filter, its
  * escaping, its "Page" screen-reader prefix and its `aria-current`; splits them on the newline core
  * joins them with, one per page; and keeps the pages `PageWindow::items()` names, with core's own
@@ -34,10 +34,14 @@ use WP_Query;
  * so the theme's `assets/pagination.css` draws it unchanged and core's DOM stays the one accepted
  * difference from the front end's `Pagination`; only which numbers show between Previous and Next
  * changes. If core's list does not split into one entry per page (another `type`, or a page prefix
- * with a newline in it), the output is left as core wrote it.
+ * with a newline in it), the output is left as core wrote it. On a collection the numbers block's
+ * `midSize` attribute is inert, because the front end's window decides which pages are listed.
  *
- * Off a collection (a page with a Query Loop of its own, say) the list is core's. In the editor and
- * the REST API nothing paginates through this filter.
+ * Both tests are needed: `is_collection()` alone is true of any query for resources, and for a Query
+ * Loop that does not inherit the main query core's numbers block swaps the global `$wp_query` for the
+ * block's own query while it calls `paginate_links()`. So off a collection (a page with a resource
+ * Query Loop of its own, say) the list is core's, and so is a non-inheriting Query Loop's on a
+ * collection page. In the editor and the REST API nothing paginates through this filter.
  */
 final class PaginationNumbers {
 	/**
@@ -70,7 +74,7 @@ final class PaginationNumbers {
 
 		$query = $GLOBALS['wp_query'] ?? null;
 
-		if ( ! $query instanceof WP_Query || ! Collection::is_collection( $query ) ) {
+		if ( ! $query instanceof WP_Query || ! $query->is_main_query() || ! Collection::is_collection( $query ) ) {
 			return $output;
 		}
 
@@ -81,9 +85,8 @@ final class PaginationNumbers {
 			return $output;
 		}
 
-		remove_filter( 'paginate_links_output', array( $this, 'window_the_numbers' ) );
+		// This call runs this filter again; the `show_all` guard above returns its output as it came, so there is no recursion.
 		$all = paginate_links( array_merge( $args, array( 'show_all' => true ) ) );
-		add_filter( 'paginate_links_output', array( $this, 'window_the_numbers' ), 10, 2 );
 
 		$links = is_string( $all ) ? explode( "\n", $all ) : array();
 

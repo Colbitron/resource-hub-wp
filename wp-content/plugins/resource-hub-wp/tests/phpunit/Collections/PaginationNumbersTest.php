@@ -181,6 +181,28 @@ final class PaginationNumbersTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A Query Loop of resources that does not inherit the main query keeps core's list, on a page and on a
+	 * collection page alike: core's numbers block swaps the global `$wp_query` for the block's own query,
+	 * which reads as a resource archive but is not the main query.
+	 */
+	public function test_a_resource_query_loop_of_its_own_keeps_cores_list(): void {
+		$this->resource( 'A', 'ebook', array( 'caching' ) );
+		self::factory()->post->create_many( 19, array( 'post_type' => 'resource' ) );
+
+		$block = '<!-- wp:query {"queryId":7,"query":{"inherit":false,"postType":"resource","perPage":1,"pages":0}} --><div class="wp-block-query"><!-- wp:query-pagination --><!-- wp:query-pagination-numbers /--><!-- /wp:query-pagination --></div><!-- /wp:query -->';
+		$page  = get_permalink( self::factory()->post->create( array( 'post_type' => 'page' ) ) );
+
+		foreach ( array( $page, home_url( '/resources/' ) ) as $url ) {
+			$this->go_to( $url );
+			$_GET['query-7-page'] = '4';
+
+			$this->assertSame( array( 1, 2, 3, 4, 5, 6, null, 20 ), $this->numbers_in( do_blocks( $block ) ), $url );
+
+			unset( $_GET['query-7-page'] );
+		}
+	}
+
+	/**
 	 * Only the numbers block's call is windowed: a `paginate_links()` with previous and next links, a list,
 	 * or every page already shown, is left as core wrote it, even on a collection.
 	 */
