@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { changedPaths, main, scopeOf, sidesOf } from './ci-scope.mjs';
+import { changedPaths, main, pullRequestFilePaths, scopeOf, sidesOf } from './ci-scope.mjs';
 
 const EVERYTHING = { plugin: true, web: true };
 
@@ -39,6 +39,7 @@ test( 'each path selects the sides it can affect', () => {
 		'docs/runbooks/deploy.md': [],
 		'.claude/rules/adr.md': [],
 		'.github/workflows/preview-lighthouse.yml': [],
+		'.depot/workflows/preview-lighthouse.yml': [ 'plugin', 'web' ],
 		'tools/featured-images/generate.mts': [],
 		'README.md': [],
 		'CLAUDE.md': [],
@@ -190,6 +191,7 @@ test( 'main writes the outputs and the summary', () => {
 
 const SCRIPT = fileURLToPath( new URL( './ci-scope.mjs', import.meta.url ) );
 const WORKFLOW = fileURLToPath( new URL( '../workflows/ci.yml', import.meta.url ) );
+const PREVIEW_WORKFLOW = fileURLToPath( new URL( '../workflows/preview-lighthouse.yml', import.meta.url ) );
 
 test( 'changedPaths reads a --depth 2 clone of the merge commit, as the scope job checks it out', () => {
 	const repo = repoWith( { 'apps/web/page.tsx': 'changed\n' } );
@@ -249,6 +251,76 @@ test( 'the script reads --expect-head from its arguments', () => {
 	}
 } );
 
+// Preview Lighthouse classifies from the pull request files API, not a diff.
+test( 'pullRequestFilePaths reads the files API, renames at both ends', () => {
+	const files = [
+		{ filename: 'wp-content/plugins/resource-hub-wp/src/Plugin.php', status: 'modified' },
+		{ filename: 'docs/page.tsx', previous_filename: 'apps/web/page.tsx', status: 'renamed' },
+	];
+	const { paths } = pullRequestFilePaths( files, 2 );
+	assert.deepEqual( paths, [ 'wp-content/plugins/resource-hub-wp/src/Plugin.php', 'apps/web/page.tsx', 'docs/page.tsx' ] );
+	assert.deepEqual( scopeOf( paths ), EVERYTHING );
+	// The count arrives as text from the shell.
+	assert.deepEqual( pullRequestFilePaths( files, '2' ).paths, paths );
+} );
+
+test( 'a plugin-only or docs-only pull request does not reach the front end', () => {
+	const plugin = pullRequestFilePaths( [ { filename: 'wp-content/plugins/resource-hub-wp/src/Plugin.php' }, { filename: 'docs/runbooks/deploy.md' } ], 2 );
+	assert.equal( scopeOf( plugin.paths ).web, false );
+	const docs = pullRequestFilePaths( [ { filename: 'docs/adr/0053-ci-runs-on-depot-ci.md' }, { filename: 'README.md' } ], 2 );
+	assert.deepEqual( scopeOf( docs.paths ), { plugin: false, web: false } );
+	assert.equal( scopeOf( pullRequestFilePaths( [ { filename: 'apps/web/app/page.tsx' } ], 1 ).paths ).web, true );
+	assert.equal( scopeOf( pullRequestFilePaths( [ { filename: 'packages/ui/card.css' } ], 1 ).paths ).web, true );
+} );
+
+test( 'an incomplete or unreadable files list reaches every side', () => {
+	const one = [ { filename: 'docs/a.md' } ];
+	for ( const [ files, count, reason ] of [
+		[ one, 2, /listed 1 of 2/ ], // the API's 3,000-file cap, or a page lost
+		[ one, '', /not a whole number/ ],
+		[ one, undefined, /not a whole number/ ],
+		[ one, 'two', /not a whole number/ ],
+		[ one, 1.5, /not a whole number/ ],
+		[ one, -1, /not a whole number/ ],
+		[ { filename: 'docs/a.md' }, 1, /not an array/ ],
+		[ [ { path: 'docs/a.md' } ], 1, /not an array/ ],
+		[ [ null ], 1, /not an array/ ],
+	] ) {
+		const result = pullRequestFilePaths( files, count );
+		assert.equal( result.paths, null, JSON.stringify( [ files, count ] ) );
+		assert.match( result.reason, reason );
+		assert.deepEqual( scopeOf( result.paths ), EVERYTHING );
+	}
+} );
+
+test( 'the script reads --pr-files and --changed-files, and fails safe', () => {
+	const dir = mkdtempSync( join( tmpdir(), 'ci-scope-pr-' ) );
+	try {
+		const output = join( dir, 'output' );
+		const summary = join( dir, 'summary' );
+		const run = ( ...args ) => {
+			writeFileSync( output, '' );
+			writeFileSync( summary, '' );
+			execFileSync( process.execPath, [ SCRIPT, ...args ], { cwd: dir, env: { PATH: process.env.PATH, GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: summary }, stdio: 'ignore' } );
+			return readFileSync( output, 'utf8' );
+		};
+		const files = join( dir, 'files.json' );
+		writeFileSync( files, JSON.stringify( [ { filename: 'wp-content/plugins/p/a.php' }, { filename: 'docs/a.md' } ] ) );
+		assert.equal( run( '--pr-files', files, '--changed-files', '2' ), 'plugin=true\nweb=false\n' );
+		assert.match( readFileSync( summary, 'utf8' ), /### Sides this pull request reaches[\s\S]*\| web \| not reached \|/ );
+		// Fewer listed than changed, no count, no such file, a file that is not JSON, no file named.
+		assert.equal( run( '--pr-files', files, '--changed-files', '3' ), 'plugin=true\nweb=true\n' );
+		assert.match( readFileSync( summary, 'utf8' ), /Every side: the files API listed 2 of 3/ );
+		assert.equal( run( '--pr-files', files ), 'plugin=true\nweb=true\n' );
+		assert.equal( run( '--pr-files', join( dir, 'missing.json' ), '--changed-files', '2' ), 'plugin=true\nweb=true\n' );
+		writeFileSync( join( dir, 'garbled.json' ), '[{"filename":' );
+		assert.equal( run( '--pr-files', join( dir, 'garbled.json' ), '--changed-files', '1' ), 'plugin=true\nweb=true\n' );
+		assert.equal( run( '--pr-files' ), 'plugin=true\nweb=true\n' );
+	} finally {
+		rmSync( dir, { recursive: true, force: true } );
+	}
+} );
+
 // ci.yml's conditions, read as text: every job a pull request can skip is
 // skipped only on a pull request, and neither deploy reads scope's outputs,
 // so nothing here can skip a job on main.
@@ -279,4 +351,18 @@ test( 'ci.yml scopes jobs only on a pull request, and never the deploys', () => 
 			assert.match( ifOf( job ), /^github\.event_name != 'pull_request' \|\|/, job );
 		}
 	}
+} );
+
+// preview-lighthouse.yml, read as text: it measures only when this script
+// says the pull request reaches the front end, which unknown paths do, and
+// it never uploads the raw runs, which carry the bypass header.
+test( 'preview-lighthouse.yml measures only what the scope rules reach', () => {
+	const text = readFileSync( PREVIEW_WORKFLOW, 'utf8' ).split( '\n' ).filter( ( line ) => ! /^\s*#/.test( line ) ).join( '\n' );
+	assert.match( text, /^ {6}measure: \$\{\{ steps\.decide\.outputs\.web \}\}$/m );
+	assert.match( text, /node \.depot\/scripts\/ci-scope\.mjs --pr-files "\$files" --changed-files "\$changed"/ );
+	const measure = text.slice( text.indexOf( '\n  measure:\n' ) );
+	assert.match( measure, /^ {4}if: needs\.pr\.outputs\.measure == 'true'$/m );
+	assert.doesNotMatch( measure, /\.lighthouseci/ );
+	assert.match( measure, /path: apps\/web\/lighthouse-preview-results\/$/m );
+	assert.match( measure, /e2e\/preview-lighthouse\.mts/ );
 } );

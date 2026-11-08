@@ -4,7 +4,10 @@
 // job runs but its outputs are not read, and every job runs, so nothing
 // here can skip a job that gates main or a deploy. Lighthouse is not a side:
 // its shards never run on a pull request, whatever paths changed, and
-// always run everywhere else (ADR 0053).
+// always run everywhere else (ADR 0053). Preview Lighthouse
+// (.depot/workflows/preview-lighthouse.yml) reads the same rules for a
+// pull request's preview and measures only when `web` is true; it blocks
+// nothing.
 //
 // Each changed path selects the sides it can affect:
 //
@@ -47,11 +50,23 @@
 // $GITHUB_OUTPUT and a short table to $GITHUB_STEP_SUMMARY:
 //
 //   node ci-scope.mjs [--expect-head <sha>] [--paths-file <file>]
+//                     [--pr-files <file> --changed-files <n>]
 //
 // --expect-head is the pull request's head SHA, which HEAD^2 must equal;
 // without it every job runs. --paths-file reads the changed paths from a
 // file, one per line, instead of from git; the tests and a trial run use
-// it, the workflow does not.
+// it, the workflows do not.
+//
+// --pr-files reads them from GitHub's pull request files API instead: a
+// file holding one JSON array of its entries, every page merged
+// (`gh api --paginate .../pulls/N/files | jq -s 'add // []'`), with
+// --changed-files the pull request's `changed_files`. Preview Lighthouse
+// (.depot/workflows/preview-lighthouse.yml) uses it: a deployment_status
+// run has no merge commit to diff, only the deployed commit. A renamed
+// entry counts as its old path (`previous_filename`) and its new one, as
+// in the git diff. The API lists at most 3,000 files, so a list shorter
+// than --changed-files, a file that does not parse, or a count that is not
+// a whole number reads as unknown: every side.
 
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -140,6 +155,39 @@ export function changedPaths( { cwd = process.cwd(), expectHead = '' } = {} ) {
 	}
 }
 
+/**
+ * The paths a pull request changes, from GitHub's pull request files API,
+ * or null with the reason when the list cannot be trusted to be complete.
+ *
+ * @param {unknown} files        The API's entries, every page merged into one array.
+ * @param {unknown} changedFiles The pull request's `changed_files`.
+ * @return {{paths: string[]|null, reason: string}} The paths, or null.
+ */
+export function pullRequestFilePaths( files, changedFiles ) {
+	const expected = Number( changedFiles );
+	if ( String( changedFiles ?? '' ).trim() === '' || ! Number.isInteger( expected ) || expected < 0 ) {
+		return { paths: null, reason: `the pull request's changed-file count is not a whole number (${ JSON.stringify( changedFiles ) })` };
+	}
+	if ( ! Array.isArray( files ) || files.some( ( file ) => typeof file?.filename !== 'string' ) ) {
+		return { paths: null, reason: 'the files list is not an array of entries with a filename' };
+	}
+	if ( files.length < expected ) {
+		return { paths: null, reason: `the files API listed ${ files.length } of ${ expected } changed files` };
+	}
+	const paths = files.flatMap( ( file ) => ( typeof file.previous_filename === 'string' ? [ file.previous_filename, file.filename ] : [ file.filename ] ) );
+	return { paths, reason: `the pull request files API, ${ files.length } file(s)` };
+}
+
+function readPullRequestFiles( file, changedFiles ) {
+	let files;
+	try {
+		files = JSON.parse( readFileSync( file, 'utf8' ) );
+	} catch ( error ) {
+		return { paths: null, reason: `could not read the files list (${ firstLine( error ) })` };
+	}
+	return pullRequestFilePaths( files, changedFiles );
+}
+
 function firstLine( error ) {
 	return String( error.stderr || error.message ).trim().split( '\n' )[ 0 ];
 }
@@ -158,13 +206,25 @@ function argument( argv, name ) {
  */
 export function main( argv = process.argv.slice( 2 ), env = process.env ) {
 	const pathsFile = argument( argv, '--paths-file' );
-	const { paths, reason } = pathsFile
-		? { paths: readFileSync( pathsFile, 'utf8' ).split( '\n' ).map( ( line ) => line.trim() ).filter( Boolean ), reason: `paths from ${ pathsFile }` }
-		: changedPaths( { expectHead: argument( argv, '--expect-head' ) } );
+	const fromPullRequest = argv.includes( '--pr-files' );
+	let read;
+	if ( pathsFile ) {
+		read = { paths: readFileSync( pathsFile, 'utf8' ).split( '\n' ).map( ( line ) => line.trim() ).filter( Boolean ), reason: `paths from ${ pathsFile }` };
+	} else if ( fromPullRequest ) {
+		const prFiles = argument( argv, '--pr-files' );
+		read = prFiles ? readPullRequestFiles( prFiles, argument( argv, '--changed-files' ) ) : { paths: null, reason: '--pr-files was given no file' };
+	} else {
+		read = changedPaths( { expectHead: argument( argv, '--expect-head' ) } );
+	}
+	const { paths, reason } = read;
 	const scope = scopeOf( paths );
+	// CI's scope job decides which jobs run; Preview Lighthouse only reads the sides.
+	const words = fromPullRequest
+		? { all: 'Every side', title: 'Sides this pull request reaches', yes: 'reached', no: 'not reached' }
+		: { all: 'Every job runs', title: 'Jobs this pull request needs', yes: 'runs', no: 'skipped' };
 
 	const lines = SIDES.map( ( side ) => `${ side }=${ scope[ side ] }` );
-	console.log( paths === null ? `Running every job: ${ reason }.` : `${ paths.length } changed path(s), ${ reason }.` );
+	console.log( paths === null ? `${ words.all }: ${ reason }.` : `${ paths.length } changed path(s), ${ reason }.` );
 	for ( const path of paths ?? [] ) {
 		// JSON-encoded, so a crafted file name cannot start a workflow command.
 		console.log( `  ${ JSON.stringify( path ) } -> ${ sidesOf( path ).join( ', ' ) || 'nothing' }` );
@@ -174,13 +234,13 @@ export function main( argv = process.argv.slice( 2 ), env = process.env ) {
 		appendFileSync( env.GITHUB_OUTPUT, lines.join( '\n' ) + '\n' );
 	}
 	if ( env.GITHUB_STEP_SUMMARY ) {
-		const row = ( side ) => `| ${ side } | ${ scope[ side ] ? 'runs' : 'skipped' } |`;
+		const row = ( side ) => `| ${ side } | ${ scope[ side ] ? words.yes : words.no } |`;
 		appendFileSync(
 			env.GITHUB_STEP_SUMMARY,
 			[
-				'### Jobs this pull request needs',
+				`### ${ words.title }`,
 				'',
-				paths === null ? `Every job runs: ${ reason }.` : `From ${ paths.length } changed path(s) (.depot/scripts/ci-scope.mjs).`,
+				paths === null ? `${ words.all }: ${ reason }.` : `From ${ paths.length } changed path(s) (.depot/scripts/ci-scope.mjs).`,
 				'',
 				'| Side | |',
 				'|---|---|',

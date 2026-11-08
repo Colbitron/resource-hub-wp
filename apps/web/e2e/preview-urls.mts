@@ -1,7 +1,7 @@
 /**
  * The URLs the preview Lighthouse run measures on a pull request's Vercel
  * preview (`preview-lighthouse.mts`, run by the Preview Lighthouse
- * workflow, `.github/workflows/preview-lighthouse.yml`).
+ * workflow, `.depot/workflows/preview-lighthouse.yml`).
  *
  * Why this is not `sampled-urls.mts`: the blocking gate measures the mock
  * CMS's seed, whose paths are the seed's. A preview reads the hosted CMS,

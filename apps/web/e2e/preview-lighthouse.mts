@@ -1,7 +1,7 @@
 /**
  * Measures a pull request's Vercel preview with Lighthouse and reports the
  * result as one comment on the pull request, updated in place on every run.
- * The Preview Lighthouse workflow (`.github/workflows/preview-lighthouse.yml`)
+ * The Preview Lighthouse workflow (`.depot/workflows/preview-lighthouse.yml`)
  * runs it; locally it writes the comment to a file instead.
  *
  *   node e2e/preview-lighthouse.mts --origin https://…vercel.app [--sha <commit>] (--pr <number> | --comment-file <path>)
