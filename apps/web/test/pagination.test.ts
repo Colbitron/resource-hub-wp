@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { AROUND, MAX_LISTED, pageWindow, type PageItem } from "../lib/pagination";
 
 /**
- * The contract's page-window table: every page count from 1 to 12 and every
+ * The contract's page-window table: every page count from 1 to 20 and every
  * current page, with the items `pageWindow()` lists. The CMS's
  * `PaginationNumbersTest` reads the same file, so a CMS collection page and
  * the front end list the same numbers, and a change to either side's
@@ -25,17 +25,17 @@ const fixture: PageWindowFixture = JSON.parse(
 );
 
 describe("pageWindow", () => {
-  it("lists what the contract's fixture lists, for every page count up to 12 and every current page", () => {
+  it("lists what the contract's fixture lists, for every page count up to 20 and every current page", () => {
     expect(fixture.maxListed).toBe(MAX_LISTED);
     expect(fixture.around).toBe(AROUND);
     expect(fixture.cases.length).toBeGreaterThan(0);
     for (const { pages, current, items } of fixture.cases) {
       expect(pageWindow(current, pages), `${current} of ${pages}`).toEqual(items);
     }
-    // The table is complete: one case per (pages, current) pair, 1..12.
+    // The table is complete: one case per (pages, current) pair, 1..20.
     const keys = fixture.cases.map(({ pages, current }) => `${pages}:${current}`);
     expect(new Set(keys).size).toBe(keys.length);
-    for (let pages = 1; pages <= 12; pages++) {
+    for (let pages = 1; pages <= 20; pages++) {
       for (let current = 1; current <= pages; current++) {
         expect(keys, `${current} of ${pages} is in the fixture`).toContain(`${pages}:${current}`);
       }

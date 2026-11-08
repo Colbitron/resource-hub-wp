@@ -46,7 +46,7 @@ final class PaginationNumbersTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * `PageWindow::items()` is the fixture, case by case: every page count from 1 to 12 and every current page,
+	 * `PageWindow::items()` is the fixture, case by case: every page count from 1 to 20 and every current page,
 	 * with the front end's two constants.
 	 */
 	public function test_page_window_is_the_fixture(): void {
@@ -54,7 +54,7 @@ final class PaginationNumbersTest extends WP_UnitTestCase {
 
 		$this->assertSame( PageWindow::MAX_LISTED, $fixture['maxListed'] );
 		$this->assertSame( PageWindow::AROUND, $fixture['around'] );
-		$this->assertCount( 78, $fixture['cases'], 'One case per (pages, current) pair for 1 to 12 pages.' );
+		$this->assertCount( 210, $fixture['cases'], 'One case per (pages, current) pair for 1 to 20 pages.' );
 
 		$seen = array();
 		foreach ( $fixture['cases'] as $case ) {
@@ -62,7 +62,7 @@ final class PaginationNumbersTest extends WP_UnitTestCase {
 			$seen[] = "{$case['pages']}:{$case['current']}";
 		}
 
-		for ( $pages = 1; $pages <= 12; $pages++ ) {
+		for ( $pages = 1; $pages <= 20; $pages++ ) {
 			for ( $current = 1; $current <= $pages; $current++ ) {
 				$this->assertContains( "{$pages}:{$current}", $seen, "{$current} of {$pages} is in the fixture." );
 			}

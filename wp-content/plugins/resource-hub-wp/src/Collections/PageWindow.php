@@ -24,7 +24,7 @@ use RangeException;
  * `mid_size`), and up to 7 pages every page is listed where core would already write gaps.
  *
  * The contract package holds both sides to one table: `packages/ui/fixtures/pagination/page-window.json`
- * lists the items for every page count from 1 to 12 and every current page, the front end's
+ * lists the items for every page count from 1 to 20 and every current page, the front end's
  * `pagination.test.ts` checks `pageWindow()` against it and `PaginationNumbersTest` checks this, so a
  * change to either side's windowing fails one of the two until the fixture, and the other side, follow.
  * {@see PaginationNumbers} applies it to core's pagination block on the collection pages.
