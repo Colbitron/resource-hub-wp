@@ -160,4 +160,4 @@ Fourteen records under [`docs/adr/`](docs/adr/) hold the decisions that are expe
 
 ## License
 
-GPL-2.0-or-later; the full text is in [`LICENSE`](LICENSE). The Figtree font in `packages/ui/fonts/` is under its own licence, the SIL Open Font License 1.1 ([`LICENSE-Figtree.txt`](packages/ui/fonts/LICENSE-Figtree.txt)).
+Copyright (C) 2026 Colby Hill. Licensed under the GNU General Public License, version 2 or (at your option) any later version (GPL-2.0-or-later); the full text of version 2 is in [`LICENSE`](LICENSE). The Colbination name and mark (`apps/web/app/icon.svg`, its drawing in `apps/web/components/Brand.tsx`, and the icons and share image rendered from it, `favicon.ico`, `icon.png`, `apple-icon.png` and `opengraph-image.png` in `apps/web/app/`) are not covered by that license: all rights reserved. The Figtree font in `packages/ui/fonts/` is under its own license, the SIL Open Font License 1.1 ([`LICENSE-Figtree.txt`](packages/ui/fonts/LICENSE-Figtree.txt)).
