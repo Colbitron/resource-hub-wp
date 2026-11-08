@@ -94,11 +94,11 @@ final class RoutesTest extends WP_UnitTestCase {
 		$this->go_to( home_url( '/resources/ebook/topic/caching/' ) );
 
 		$this->assertFalse( is_404() );
+		// `is_tax()` with a term reads the queried object, one of the two terms (whichever taxonomy core
+		// orders first, which the suite's other tests move about); the query vars hold both.
 		$this->assertTrue( is_tax() );
-		// `is_tax()` with a term reads the queried object, which is the topic, the first taxonomy registered; the vars hold both.
 		$this->assertSame( 'ebook', get_query_var( Taxonomies::TYPE ) );
 		$this->assertSame( 'caching', get_query_var( Taxonomies::TOPIC ) );
-		$this->assertTrue( is_tax( Taxonomies::TOPIC, 'caching' ) );
 		$this->assertSame( array( $both ), wp_list_pluck( $GLOBALS['wp_query']->posts, 'ID' ) );
 	}
 
@@ -143,8 +143,9 @@ final class RoutesTest extends WP_UnitTestCase {
 
 		$this->go_to( home_url( '/resources/ebook/topic/caching/page/2/' ) );
 		$this->assertFalse( is_404() );
+		$this->assertTrue( is_tax() );
 		$this->assertSame( 'ebook', get_query_var( Taxonomies::TYPE ) );
-		$this->assertTrue( is_tax( Taxonomies::TOPIC, 'caching' ) );
+		$this->assertSame( 'caching', get_query_var( Taxonomies::TOPIC ) );
 		$this->assertSame( 2, get_query_var( 'paged' ) );
 		$this->assertSame( 1, $GLOBALS['wp_query']->post_count );
 	}

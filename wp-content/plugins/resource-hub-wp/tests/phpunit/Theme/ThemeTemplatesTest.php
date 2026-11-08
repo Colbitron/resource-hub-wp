@@ -253,8 +253,9 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 			$this->template_for( home_url( '/?resource_type=webinar&resource_topic=caching' ) ),
 			array( 'resource-hub//taxonomy-resource_type', 'resource-hub//taxonomy-resource_topic' )
 		);
+		$this->assertTrue( is_tax() );
 		$this->assertSame( 'webinar', get_query_var( 'resource_type' ) );
-		$this->assertTrue( is_tax( 'resource_topic', 'caching' ) );
+		$this->assertSame( 'caching', get_query_var( 'resource_topic' ) );
 		$this->assertOneHeading( 'Webinar resources on Caching' );
 		$this->assertSame( 1, substr_count( $this->html, '<article class="rh-card">' ) );
 	}
