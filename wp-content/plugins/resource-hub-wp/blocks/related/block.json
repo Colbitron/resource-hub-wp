@@ -1,0 +1,21 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "resource-hub/related",
+	"version": "0.1.0",
+	"title": "Related Section",
+	"category": "theme",
+	"icon": "editor-ul",
+	"description": "The resources related to this one, the editor's picks first and then the newest sharing a topic, as the front end's resource page lists them under the article. Rendered on the server from the same selection the related route serves.",
+	"keywords": [ "resource", "related", "picks", "topics" ],
+	"textdomain": "resource-hub",
+	"usesContext": [ "postId", "postType" ],
+	"supports": {
+		"html": false,
+		"className": false,
+		"customClassName": false,
+		"reusable": false
+	},
+	"editorScript": "file:./index.js",
+	"style": [ "resource-hub-tokens", "resource-hub-card" ]
+}

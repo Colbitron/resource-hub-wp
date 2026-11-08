@@ -5,9 +5,12 @@ import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { RelatedList } from "../components/RelatedList";
+import { RELATED_HEADING, RELATED_HEADING_ID } from "../components/RelatedSection";
 import { ResourceArticle } from "../components/ResourceArticle";
 import { ResourceCard } from "../components/ResourceCard";
 import { toCard } from "../lib/wp/cards";
+import { RELATED_COUNT, toRelatedCard } from "../lib/wp/related";
 import { wpResourceSchema, type WpResource } from "../lib/wp/schemas/rest";
 import nextConfig from "../next.config";
 
@@ -17,11 +20,14 @@ import nextConfig from "../next.config";
  * `packages/ui/fixtures/markup/{case}.json`, fed through the same mapping the
  * pages use, renders exactly the HTML in `{case}.card.html` (the listing's
  * row, `ResourceCard` at its default `h2`) and `{case}.meta.html` (the
- * resource page's meta line, from `ResourceArticle`'s header). The plugin's
- * `MarkupParityTest` renders its `resource-card` and `resource-meta` blocks
- * from the same samples and compares them with the same files, so a change to
- * either side's markup fails one of the two until the fixtures, and the other
- * side, follow.
+ * resource page's meta line, from `ResourceArticle`'s header); and the first
+ * `RELATED_COUNT` samples in name order, as the rows of the resource page's
+ * related section (`RelatedList` with the section's heading and id, as
+ * `RelatedSection` renders it), render exactly the HTML in `related.html`.
+ * The plugin's `MarkupParityTest` renders its `resource-card`, `resource-meta`
+ * and `related` blocks from the same samples and compares them with the same
+ * files, so a change to either side's markup fails one of the two until the
+ * fixtures, and the other side, follow.
  *
  * The comparison normalises three things the HTML parser ignores, and nothing
  * else: whitespace that holds a line break between two tags, the fixtures'
@@ -130,11 +136,23 @@ afterEach(() => {
 });
 
 describe("markup parity with the CMS blocks", () => {
-  it("finds the samples, each with its two fixtures", () => {
+  it("finds the samples, each with its two fixtures, and the related section's", () => {
     expect(CASES).toEqual(expect.arrayContaining(["bare", "full", "unmapped"]));
     for (const name of CASES) {
       expect(readdirSync(markup)).toEqual(expect.arrayContaining([`${name}.card.html`, `${name}.meta.html`]));
     }
+    expect(readdirSync(markup)).toContain("related.html");
+  });
+
+  it(`renders the resource page's related section, with the first ${RELATED_COUNT} samples as rows, as related.html`, () => {
+    const cards = CASES.slice(0, RELATED_COUNT).map((name) => toRelatedCard(sampleResource(sample(name))));
+    for (const card of cards) {
+      expect(card).not.toBeNull();
+    }
+    const html = renderToStaticMarkup(
+      <RelatedList heading={RELATED_HEADING} headingId={RELATED_HEADING_ID} cards={cards.filter((card) => card !== null)} />,
+    );
+    expect(normalise(html)).toBe(fixture("related.html"));
   });
 
   describe.each(CASES)("%s", (name) => {
