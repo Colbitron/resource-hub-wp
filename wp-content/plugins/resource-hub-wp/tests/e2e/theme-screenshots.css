@@ -1,0 +1,13 @@
+/*
+ * Added by theme-screenshots.spec.js to a logged-in page before its shot: the admin bar
+ * a logged-in preview carries, and the margin core puts on <html> for it,
+ * neither of which the front end has. `html:root` outranks core's own
+ * `html { margin-top: 32px !important; }`.
+ */
+#wpadminbar {
+	display: none !important;
+}
+
+html:root {
+	margin-top: 0 !important;
+}
