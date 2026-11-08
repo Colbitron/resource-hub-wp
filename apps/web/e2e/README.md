@@ -58,7 +58,7 @@ Four checks measure the design rather than behaviour, and every design change sh
   RH_E2E_PREBUILT=1 RH_LIGHTHOUSE_URLS=/resources/ pnpm web:test:lighthouse:quick
   ```
 
-  CI never takes the quick settings: `lighthouserc.cjs` refuses `RH_LIGHTHOUSE_RUNS` and `RH_LIGHTHOUSE_URLS` when `CI` is set, and `.depot/workflows/ci.yml` sets `CI: 'true'` itself on each Lighthouse job (and on the end-to-end and screenshot jobs, whose Playwright config reads it) rather than relying on the host to, so CI always measures every URL five times and the medians job's coverage check, which reads `numberOfRuns` from the same config, always expects five (`test/lighthouserc.test.ts` fails if the default drops below five).
+  CI never takes the quick settings: `lighthouserc.cjs` refuses `RH_LIGHTHOUSE_RUNS` and `RH_LIGHTHOUSE_URLS` when `CI` is set, and `.depot/workflows/ci.yml` sets `CI: 'true'` itself on each Lighthouse job (and on the end-to-end and screenshot jobs, whose Playwright config reads it) rather than relying on the host to, though Depot CI sets `CI=true` as well (trial run 3fz779wbdz), so CI always measures every URL five times and the medians job's coverage check, which reads `numberOfRuns` from the same config, always expects five (`test/lighthouserc.test.ts` fails if the default drops below five).
 
   Five runs rather than three, so the median moves only when three runs do. They take about 7.5 minutes locally, and took about 9 on GitHub's runners, where CI ran until 2026-11-07, at the pace of the last three-run gate there (327 s). On Depot CI's 2-vCPU sandboxes one run takes about 10 s whatever the URL (463 s for all 45 in trial run p3vrwgxc8x), so a shard of two URLs takes about 140 s with its setup and build.
 

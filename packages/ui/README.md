@@ -154,7 +154,7 @@ The package's tests (`pnpm --filter @colbitron/resource-hub-ui test`, or `pnpm t
 pnpm --filter @colbitron/resource-hub-ui test
 ```
 
-CI runs it in the gate on every pull request and push to `main`. The plugin's PHPUnit runs the `revalidate-request` fixtures, and only those, through its own validator, so the two validators are known to agree on the request schema.
+CI runs it in the plugin's gate on every push to `main` and every pull request that changes `wp-content/` or a shared path; `packages/` is a shared path, so a change to this package always runs it (`docs/runbooks/deploy.md`, "Which jobs a pull request runs"). The plugin's PHPUnit runs the `revalidate-request` fixtures, and only those, through its own validator, so the two validators are known to agree on the request schema.
 
 ## Using the schemas
 
