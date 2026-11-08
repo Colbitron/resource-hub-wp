@@ -16,6 +16,8 @@ parts/footer.html    the publisher line
 
 No PHP: a block theme needs none, so there is no `functions.php` for PHPCS to lint.
 
+A block theme gives editors the Site Editor (Appearance > Editor), whose Pages section can edit pages too. Edit pages in the post editor instead: a Site Editor save still revalidates the front end and records its result, but shows no revalidation notice (issue #89's third note, settled; `docs/architecture/revalidation.md`, "Reading results").
+
 The lockup links to the CMS's own `/resources/` rather than to the front end: editors see the resource archive there, and anonymous visitors get the lockdown's 404. ADR 0031 rejects redirecting to the front end because each redirect is a link from the CMS domain to it, and the lockup follows the same reasoning.
 
 ## The two rules from issue #89
@@ -38,4 +40,5 @@ Slice 5 continues in [issue #89](https://github.com/Colbitron/resource-hub-wp/is
 - **Assets:** the `packages/ui` tokens, `card.css` and the Figtree typeface, loaded only where used. The markup already uses the front end's lockup classes (`rh-brand`), but no stylesheet is loaded, so the pages render in the browser's defaults. Those classes live in `apps/web/components/brand.css`, which is the front end's own and not part of the contract, so the assets pull request must first move what the theme needs into `packages/ui`.
 - **The remaining templates:** single resource, archives and pages; `index.html` stands in for all of them.
 - **Deploy:** CI syncs only the plugin to the host, so this theme is not on the hosted CMS yet, and the hosted 404 is still rendered with the host's current theme.
-- **The Site Editor revalidation notice** (issue #89's third note).
+
+Issue #89's third note, the Site Editor revalidation notice, is settled: page editing stays in the post editor, and the Site Editor gets no notice (above).
