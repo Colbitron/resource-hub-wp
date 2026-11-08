@@ -87,13 +87,14 @@ function trackedFiles() {
 		.map( ( file ) => posix.relative( THEME, file ) );
 }
 
-// The names through which PHP code can reach a file in the theme. Every one
+// The names through which PHP code can reach a file in the theme, in any
+// case, as PHP reads magic constants and function names. Every one
 // in a shipped PHP file's code must be read by runtimePaths, below, or be
 // named in UNRESOLVED; anything else fails, so a path this test cannot read
 // is never skipped. `get_parent_theme_file_*` and the `_directory_uri` forms
 // are matched too, though no recognised form reads them, so they fail until
 // one does.
-const REFERENCE = /\b(?:__DIR__|__FILE__|get_(?:stylesheet|template)_directory(?:_uri)?|get_(?:parent_)?theme_file_(?:path|uri))\b/g;
+const REFERENCE = /\b(?:__DIR__|__FILE__|get_(?:stylesheet|template)_directory(?:_uri)?|get_(?:parent_)?theme_file_(?:path|uri))\b/gi;
 
 // References runtimePaths cannot resolve to one path, each named by its file
 // and the code it starts, with the reason the file it reaches is already in
@@ -184,10 +185,11 @@ const lineAt = ( source, at ) => source.slice( 0, at ).split( '\n' ).length;
 // The forms runtimePaths resolves, in a file's comment-free source. Each
 // path is one single-quoted literal with nothing concatenated before or
 // after the expression and no `dirname(` around it, since either would
-// change the path the literal names. `name` is the reference's own text, so
+// change the path the literal names. They match in any case, as REFERENCE
+// does. `name` is the reference's own text, so
 // its offset says which reference the form resolves.
-const FROM_DIR = /(?<!(?:\.|dirname\s*\()\s*)(?:dirname\(\s*(?<name>__DIR__)\s*(?:,\s*(?<levels>\d+)\s*)?\)|(?<name2>__DIR__))\s*\.\s*'(?<path>\/[^'\\]+)'(?!\s*\.)/dg;
-const FROM_THEME = /(?<!\.\s*)(?<name>get_theme_file_(?:uri|path))\(\s*'(?<path>[^'\\]+)'\s*\)(?!\s*\.)/dg;
+const FROM_DIR = /(?<!(?:\.|dirname\s*\()\s*)(?:dirname\(\s*(?<name>__DIR__)\s*(?:,\s*(?<levels>\d+)\s*)?\)|(?<name2>__DIR__))\s*\.\s*'(?<path>\/[^'\\]+)'(?!\s*\.)/dgi;
+const FROM_THEME = /(?<!\.\s*)(?<name>get_theme_file_(?:uri|path))\(\s*'(?<path>[^'\\]+)'\s*\)(?!\s*\.)/dgi;
 
 /**
  * The theme paths a PHP file reaches, relative to the theme: `__DIR__ . '/…'`,
@@ -331,6 +333,14 @@ test( 'runtimePaths fails on every reference it cannot resolve, naming its file 
 		() => runtimePaths( 'functions.php', php( '$a = __FILE__;\n$b = __FILE__;' ) ),
 		( error ) => error.message.includes( 'functions.php:1: ' ) && error.message.includes( 'functions.php:2: ' )
 	);
+} );
+
+test( 'runtimePaths reads names in any case, as PHP does', () => {
+	const source = php( "require __Dir__ . '/inc/a.php';\n$up = DirName( __DIR__ ) . '/js/b.js';\n$uri = Get_Theme_File_Uri( 'assets/e.css' );" );
+	assert.deepEqual( runtimePaths( 'inc/x.php', source ).paths, [ 'inc/inc/a.php', 'js/b.js', 'assets/e.css' ] );
+	for ( const line of [ 'require __dir__ . "/inc/x.php";', "require GET_STYLESHEET_DIRECTORY() . '/inc/x.php';", "require dirname( __File__ ) . '/x.php';" ] ) {
+		assert.throws( () => runtimePaths( 'inc/z.php', php( `\n${ line }` ) ), ( error ) => error.message.startsWith( 'inc/z.php:2: ' ) && error.message.includes( `\`${ line }\`` ), line );
+	}
 } );
 
 test( 'runtimePaths accepts a reference UNRESOLVED names, in that file only', () => {
