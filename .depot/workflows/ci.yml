@@ -41,14 +41,18 @@
 #                            (never on a pull request)
 #   web-lighthouse-medians   needs web-lighthouse: one table of every median
 #                            (never on a pull request)
+#   ci-result                needs scope, gate and the three web jobs above,
+#                            and always runs: red unless scope succeeded and
+#                            each of the rest succeeded or was skipped. The
+#                            one check a ruleset requires, CI / CI result
 #   deploy                   needs gate (main and dispatch only)
 #   deploy-web               needs deploy and every web job (main only)
 #
 # Every job but the two deploys needs scope, though the list names it only
-# for the gate. Everything but scope, the two deploys and the medians
-# starts once scope has answered, about 6 to 8 s later than without it
-# (trial runs 2nw1m59b8d, fxprsxt9wx), so a run waits for scope and then
-# the slowest of the rest, not their sum. Each front-end job that serves
+# for the gate and ci-result. Everything but scope, the two deploys, the
+# medians and ci-result starts once scope has answered, about 6 to 8 s
+# later than without it (trial runs 2nw1m59b8d, fxprsxt9wx), so a run
+# waits for scope and then the slowest of the rest, not their sum. Each front-end job that serves
 # the app builds its own copy of the end-to-end harness's build
 # (RH_FIXTURES=1, the mock CMS), the same command at the same commit,
 # rather than one job building it for the rest: the build takes about 10 s,
@@ -127,8 +131,9 @@
 # ever skipped (deploy-web's own if aside), and if scope fails there,
 # nothing runs and the run is red. On a pull request, a failed scope
 # likewise skips every job behind it (trial run h1bkmg53wt). A skipped
-# job reports as skipped, not as passed or failed; there is no branch
-# protection to require it.
+# job reports as skipped, not as passed or failed, and GitHub counts a
+# skipped check as passing, so a ruleset requires ci-result's check
+# rather than any scoped job's; see that job.
 #
 # The deploys cannot be reached by a skipped job. deploy needs the gate,
 # deploy-web needs deploy and every front-end job, and neither condition
@@ -820,6 +825,55 @@ jobs:
       - name: Merge the Lighthouse medians
         working-directory: apps/web
         run: node e2e/lighthouse-merge.mts "$RUNNER_TEMP/lighthouse-shards"
+
+  ci-result:
+    # The one check a GitHub ruleset requires on main, CI / CI result. The
+    # jobs it reads cannot be required themselves: scope path-skips them on
+    # a pull request, and GitHub counts a skipped check as passing, so a
+    # required gate would pass on every pull request that skipped it. This
+    # job always runs and is red unless scope succeeded and every other job
+    # it needs succeeded or was skipped. Scope must succeed outright: a
+    # failed or cancelled scope skips every job behind it, and those skips
+    # would otherwise pass. always() rather than !cancelled(), so a
+    # cancelled run reports red here instead of a skip, which would pass.
+    # Lighthouse and its medians never run on a pull request and the
+    # deploys only after a merge, so none of them is read.
+    name: CI result
+    needs: [ scope, gate, web-checks, web-e2e, web-screenshots ]
+    if: ${{ always() }}
+    runs-on: depot-ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      # The results come in through env, never interpolated into the
+      # script. An empty or unexpected result is red, like a failure.
+      - name: Check every job passed or was skipped
+        env:
+          SCOPE: ${{ needs.scope.result }}
+          GATE: ${{ needs.gate.result }}
+          WEB_CHECKS: ${{ needs.web-checks.result }}
+          WEB_E2E: ${{ needs.web-e2e.result }}
+          WEB_SCREENSHOTS: ${{ needs.web-screenshots.result }}
+        run: |
+          failed=0
+          echo "scope: $SCOPE"
+          if [ "$SCOPE" != success ]; then
+            echo "::error::scope's result is '$SCOPE', not success, so the jobs behind it cannot count as passed."
+            failed=1
+          fi
+          for job in "gate=$GATE" "web-checks=$WEB_CHECKS" "web-e2e=$WEB_E2E" "web-screenshots=$WEB_SCREENSHOTS"; do
+            name=${job%%=*}
+            result=${job#*=}
+            echo "$name: $result"
+            case "$result" in
+              success | skipped) ;;
+              *)
+                echo "::error::$name's result is '$result', not success or skipped."
+                failed=1
+                ;;
+            esac
+          done
+          exit "$failed"
 
   deploy:
     name: Deploy to the host
