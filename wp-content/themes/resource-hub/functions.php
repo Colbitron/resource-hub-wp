@@ -140,9 +140,10 @@ const RESOURCE_HUB_THEME_ADMIN_BAR_SHELL = 'body.admin-bar .rh-shell { min-heigh
  * first page `lead.css` too, the one page the plugin's `featured-lead` block renders on; every other
  * template, `page.html`, `singular.html` and `index.html`, renders the page's article and loads
  * `prose.css` and `page.css`.
- * The plugin's collection blocks name the `resource-hub-listing` and `resource-hub-lead` handles in
- * their `block.json` as well, so the Site Editor's canvas has them; on the pages the enqueue here is
- * what loads them, whether or not a block rendered anything.
+ * The plugin's collection blocks name neither handle in their `block.json`: core enqueues every
+ * registered block's style on the editor's admin page, and these handles would bring `base.css` and
+ * the fallback faces there through their dependencies, where the blocks show placeholders. The enqueue
+ * here is what loads them, whether or not a block rendered anything.
  *
  * **Core's pagination as the front end's.** The collection part renders core's `query-pagination`
  * block, whose markup is WordPress's own (the one accepted DOM difference from the front end's

@@ -40,7 +40,7 @@ final class CollectionEmptyBlockTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The compiled block.json: the callback, the no-results ancestor, no wrapper supports, the tokens and the listing handle.
+	 * The compiled block.json: the callback, the no-results ancestor, no wrapper supports and the tokens alone.
 	 */
 	public function test_registered_from_build(): void {
 		$type = WP_Block_Type_Registry::get_instance()->get_registered( CollectionEmptyBlock::NAME );
@@ -49,7 +49,7 @@ final class CollectionEmptyBlockTest extends WP_UnitTestCase {
 		$this->assertIsCallable( $type->render_callback );
 		$this->assertSame( array( 'core/query-no-results' ), $type->ancestor );
 		$this->assertFalse( $type->supports['className'] );
-		$this->assertSame( array( SharedTokens::HANDLE, 'resource-hub-listing' ), $type->style_handles );
+		$this->assertSame( array( SharedTokens::HANDLE ), $type->style_handles );
 	}
 
 	/**

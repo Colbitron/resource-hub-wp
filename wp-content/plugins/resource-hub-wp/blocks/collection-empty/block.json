@@ -18,5 +18,5 @@
 		"multiple": false
 	},
 	"editorScript": "file:./index.js",
-	"style": [ "resource-hub-tokens", "resource-hub-listing" ]
+	"style": [ "resource-hub-tokens" ]
 }

@@ -27,9 +27,10 @@ use ResourceHub\Collections\Lead;
  * - **No wrapper.** The output is the section, `<div class="rh-listing__lead">` with its heading and the
  *   `<article class="rh-lead">`, with no block wrapper attributes, so it is the front end's markup exactly.
  * - **Styles.** `block.json` lists the shared `resource-hub-tokens` and `resource-hub-card` handles (the
- *   lead's meta line and topics are the row's parts) and `resource-hub-lead`, the package's `lead.css`,
- *   which the CMS theme registers from its build; the section's heading is `listing.css`'s, which the
- *   collection head brings.
+ *   lead's meta line and topics are the row's parts). The lead's own rules are the package's `lead.css`,
+ *   which the CMS theme registers from its build and enqueues on the library's first page, and the
+ *   section's heading is `listing.css`'s, enqueued on every collection template; the block names neither
+ *   (see {@see CollectionHeadBlock} for why).
  *
  * The contract's lead fixtures (`packages/ui/fixtures/markup/{case}.lead.html`) hold this block and the
  * front end's `FeaturedSection` to the same HTML (`MarkupParityTest`).

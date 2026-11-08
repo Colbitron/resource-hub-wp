@@ -46,9 +46,12 @@ use WP_Term;
  *   them and a translation would make the two sites' markup differ.
  * - **No wrapper.** The output is the `<header>` and the `<nav>`, with no block wrapper attributes, so it
  *   is the front end's markup exactly.
- * - **Styles.** `block.json` lists the shared `resource-hub-tokens` handle and `resource-hub-listing`, the
- *   package's `listing.css`, which the CMS theme registers from its build (`scripts/build.mjs`); in a theme
- *   that does not, the head renders unstyled.
+ * - **Styles.** `block.json` lists the shared `resource-hub-tokens` handle alone. The head's rules are the
+ *   package's `listing.css`, which the CMS theme registers from its build and enqueues on its collection
+ *   templates (`functions.php`), not a handle named here: core enqueues every registered block's style on
+ *   the editor's admin page, around the canvas, and the theme's handle would bring `base.css` and the
+ *   fallback faces with it there, where the block only shows a placeholder. In a theme that does not load
+ *   `listing.css`, the head renders unstyled.
  *
  * The contract's collection fixtures (`packages/ui/fixtures/markup/collection/`) hold this block and the
  * front end's `CollectionHead` to the same HTML for a few scenes (`MarkupParityTest`).

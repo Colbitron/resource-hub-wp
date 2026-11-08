@@ -1,9 +1,9 @@
 /**
  * Registers the Collection Head block on the editor side. Rendering happens in
  * PHP (`src/Blocks/CollectionHeadBlock.php`) from the page's main query; this
- * file wires the metadata and the editor placeholder. The stylesheets are
- * handles `block.json` names: the shared tokens and the CMS theme's copy of
- * the package's `listing.css`.
+ * file wires the metadata and the editor placeholder. The one stylesheet
+ * `block.json` names is the shared tokens handle; `listing.css` is the CMS
+ * theme's, loaded on its collection templates.
  */
 import { registerBlockType } from '@wordpress/blocks';
 

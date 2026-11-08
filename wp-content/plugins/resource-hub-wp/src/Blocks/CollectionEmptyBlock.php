@@ -30,8 +30,9 @@ use ResourceHub\Collections\Lead;
  *
  * - **No wrapper.** The output is the `<div class="rh-listing__empty">` alone, with no block wrapper
  *   attributes, so it is the front end's markup exactly.
- * - **Styles.** `block.json` lists the shared `resource-hub-tokens` handle and `resource-hub-listing`,
- *   the package's `listing.css`, which the CMS theme registers from its build.
+ * - **Styles.** `block.json` lists the shared `resource-hub-tokens` handle alone; the empty state's rules are
+ *   the package's `listing.css`, which the CMS theme enqueues on its collection templates (see
+ *   {@see CollectionHeadBlock} for why the block names no theme handle).
  *
  * Registered from `build/collection-empty/`, so without a build the block is not registered.
  */

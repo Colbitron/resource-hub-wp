@@ -111,8 +111,9 @@ const ASSETS = [
 		deps: [ 'resource-hub-base' ],
 	},
 	// The collection templates: the head, the filters, the section headings,
-	// the empty state and the space over the pagination (the plugin's
-	// collection blocks name the handle too), and the library's lead.
+	// the empty state and the space over the pagination, and the library's
+	// lead. functions.php enqueues both; the plugin's collection blocks name
+	// neither, so the editor's admin page never loads their dependencies.
 	{
 		file: 'listing.css',
 		handle: 'resource-hub-listing',

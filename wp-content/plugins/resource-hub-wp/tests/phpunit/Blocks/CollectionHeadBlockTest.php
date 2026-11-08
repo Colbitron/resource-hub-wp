@@ -41,7 +41,8 @@ final class CollectionHeadBlockTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The compiled block.json: the callback, no context, no wrapper supports, the tokens and the theme's listing handle.
+	 * The compiled block.json: the callback, no context, no wrapper supports, and the tokens alone (the theme's
+	 * listing handle would reach the editor's admin page through its dependencies).
 	 */
 	public function test_registered_from_build(): void {
 		$type = WP_Block_Type_Registry::get_instance()->get_registered( CollectionHeadBlock::NAME );
@@ -51,7 +52,7 @@ final class CollectionHeadBlockTest extends WP_UnitTestCase {
 		$this->assertFalse( $type->supports['className'] );
 		$this->assertFalse( $type->supports['customClassName'] );
 		$this->assertFalse( $type->supports['multiple'] );
-		$this->assertSame( array( SharedTokens::HANDLE, 'resource-hub-listing' ), $type->style_handles );
+		$this->assertSame( array( SharedTokens::HANDLE ), $type->style_handles );
 	}
 
 	/**

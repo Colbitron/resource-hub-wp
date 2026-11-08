@@ -43,7 +43,7 @@ final class FeaturedLeadBlockTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The compiled block.json: the callback, no wrapper supports, the tokens, the shared row and the theme's lead handle.
+	 * The compiled block.json: the callback, no wrapper supports, the tokens and the shared row, and not the theme's lead handle.
 	 */
 	public function test_registered_from_build(): void {
 		$type = WP_Block_Type_Registry::get_instance()->get_registered( FeaturedLeadBlock::NAME );
@@ -52,7 +52,7 @@ final class FeaturedLeadBlockTest extends WP_UnitTestCase {
 		$this->assertIsCallable( $type->render_callback );
 		$this->assertFalse( $type->supports['className'] );
 		$this->assertFalse( $type->supports['customClassName'] );
-		$this->assertSame( array( SharedTokens::HANDLE, SharedCard::HANDLE, 'resource-hub-lead' ), $type->style_handles );
+		$this->assertSame( array( SharedTokens::HANDLE, SharedCard::HANDLE ), $type->style_handles );
 	}
 
 	/**
