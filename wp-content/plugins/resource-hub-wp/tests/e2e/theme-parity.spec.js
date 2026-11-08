@@ -28,6 +28,13 @@ const CONTENT = [
 	'<!-- wp:list --><ul class="wp-block-list"><!-- wp:list-item --><li>One item</li><!-- /wp:list-item --><!-- wp:list-item --><li>Another item</li><!-- /wp:list-item --></ul><!-- /wp:list -->',
 	'<!-- wp:table --><figure class="wp-block-table"><table class="has-fixed-layout"><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody><tr><td>First</td><td>1</td></tr><tr><td>Second</td><td>2</td></tr></tbody></table><figcaption class="wp-element-caption">Two rows of sample values</figcaption></figure><!-- /wp:table -->',
 	'<!-- wp:quote --><blockquote class="wp-block-quote"><!-- wp:paragraph --><p>A quoted line.</p><!-- /wp:paragraph --><cite>Someone</cite></blockquote><!-- /wp:quote -->',
+	'<!-- wp:list {"ordered":true} --><ol class="wp-block-list"><!-- wp:list-item --><li>First step</li><!-- /wp:list-item --><!-- wp:list-item --><li>Second step</li><!-- /wp:list-item --></ol><!-- /wp:list -->',
+	'<!-- wp:quote {"className":"is-style-large"} --><blockquote class="wp-block-quote is-style-large"><!-- wp:paragraph --><p>A quote in core\'s large style.</p><!-- /wp:paragraph --><cite>Someone else</cite></blockquote><!-- /wp:quote -->',
+	'<!-- wp:paragraph --><p>A sentence with <code>inline code</code> in it.</p><!-- /wp:paragraph -->',
+	'<!-- wp:code --><pre class="wp-block-code"><code>const answer = 42;</code></pre><!-- /wp:code -->',
+	'<!-- wp:separator --><hr class="wp-block-separator has-alpha-channel-opacity"/><!-- /wp:separator -->',
+	'<!-- wp:separator {"className":"is-style-dots"} --><hr class="wp-block-separator has-alpha-channel-opacity is-style-dots"/><!-- /wp:separator -->',
+	'<!-- wp:image {"lightbox":{"enabled":true},"sizeSlug":"large","linkDestination":"none"} --><figure class="wp-block-image size-large"><img src="/wp-includes/images/w-logo-blue.png" alt="A sample image"/><figcaption class="wp-element-caption">An image caption</figcaption></figure><!-- /wp:image -->',
 ].join( '\n\n' );
 
 /**
@@ -232,6 +239,201 @@ test.describe( "A CMS page computes the front end's styles", () => {
 		} );
 	}
 
+	test( "the body's other elements: lists, quotes, code, the rule, an image and the captions", async ( {
+		page,
+	} ) => {
+		await page.setViewportSize( { width: 1280, height: 900 } );
+		await page.goto( cmsPage.link );
+
+		/**
+		 * Holds the element `selector` matches to `declarations`, resolved
+		 * on a probe inside `context` (by default the element's parent's
+		 * context, the body).
+		 *
+		 * @param {string}                 selector     The element on the CMS page.
+		 * @param {Record<string, string>} declarations What the package's rule declares.
+		 * @param {string}                 [context]    Where the tokens resolve.
+		 */
+		const holds = async ( selector, declarations, context = '.rh-prose' ) =>
+			expect(
+				await computed( page, selector, Object.keys( declarations ) ),
+				selector
+			).toEqual( await resolve( page, context, declarations ) );
+
+		// Lists: prose.css's margins, indent and item spacing, and the
+		// markers in the muted ink.
+		for ( const list of [ '.rh-prose > ul', '.rh-prose > ol' ] ) {
+			await holds( list, {
+				'margin-top': '0px',
+				'margin-bottom': 'var(--rh-space-4)',
+				'padding-left': 'var(--rh-space-5)',
+			} );
+			await holds( `${ list } > li:first-child`, {
+				'margin-bottom': 'var(--rh-space-1)',
+			} );
+			expect(
+				await page
+					.locator( `${ list } > li:first-child` )
+					.evaluate(
+						( node ) =>
+							window.getComputedStyle( node, '::marker' ).color
+					)
+			).toBe(
+				(
+					await resolve( page, '.rh-prose', {
+						color: 'var(--rh-color-text-muted)',
+					} )
+				).color
+			);
+		}
+
+		// Both quotes are prose.css's inset: core's large style, which the
+		// front end never loads, changes nothing.
+		for ( const quote of [
+			'.rh-prose > blockquote:not(.is-style-large)',
+			'.rh-prose > blockquote.is-style-large',
+		] ) {
+			await holds( quote, {
+				'margin-top': 'var(--rh-space-5)',
+				'margin-bottom': 'var(--rh-space-5)',
+				'padding-top': 'var(--rh-space-4)',
+				'padding-left': 'var(--rh-space-5)',
+				'padding-right': 'var(--rh-space-5)',
+				'border-top-width': 'var(--rh-border-width)',
+				'border-top-color': 'var(--rh-color-border)',
+				'border-left-width': 'var(--rh-border-width-strong)',
+				'border-left-color': 'var(--rh-mark-coral)',
+				'border-top-left-radius': 'var(--rh-radius)',
+				'background-color': 'var(--rh-color-surface-raised)',
+				'font-size': 'var(--rh-text-md)',
+			} );
+			await holds(
+				`${ quote } > p`,
+				{
+					'font-size': 'var(--rh-text-md)',
+					'font-style': 'normal',
+					'line-height':
+						'calc(var(--rh-leading-body) * var(--rh-text-md))',
+					// Not its last child: the cite follows.
+					'margin-bottom': 'var(--rh-space-4)',
+					'padding-left': '0px',
+				},
+				quote
+			);
+			await holds(
+				`${ quote } > cite`,
+				{
+					display: 'block',
+					'margin-top': 'var(--rh-space-2)',
+					color: 'var(--rh-color-text-muted)',
+					'font-size': 'var(--rh-text-sm)',
+					'font-style': 'normal',
+					'text-align': 'start',
+				},
+				quote
+			);
+		}
+
+		// Code: the inline inset, and the block inset whose code takes the
+		// browser's monospace at the block's size.
+		await holds(
+			'.rh-prose > p > code',
+			{
+				'font-size': '0.9em',
+				'padding-left': '0.2em',
+				'border-top-left-radius': 'var(--rh-radius-sm)',
+				'background-color': 'var(--rh-color-surface-raised)',
+				'font-family': 'monospace',
+			},
+			'.rh-prose > p:has(> code)'
+		);
+		await holds( '.rh-prose > pre', {
+			'margin-top': '0px',
+			'margin-bottom': 'var(--rh-space-5)',
+			'padding-top': 'var(--rh-space-3)',
+			'padding-left': 'var(--rh-space-4)',
+			'border-top-width': 'var(--rh-border-width)',
+			'border-top-color': 'var(--rh-color-border)',
+			'border-top-left-radius': 'var(--rh-radius)',
+			'background-color': 'var(--rh-color-surface-raised)',
+			'font-size': 'var(--rh-text-sm)',
+			'font-family': 'monospace',
+			'white-space': 'pre-wrap',
+		} );
+		await holds(
+			'.rh-prose > pre > code',
+			{
+				display: 'inline',
+				'padding-left': '0px',
+				'background-color': 'rgba(0, 0, 0, 0)',
+				'font-size': 'var(--rh-text-sm)',
+				'font-family': 'monospace',
+			},
+			'.rh-prose > pre'
+		);
+
+		// The rule: one hairline, in core's dots style too, which the front
+		// end draws as the same rule.
+		for ( const rule of [
+			'.rh-prose > hr:not(.is-style-dots)',
+			'.rh-prose > hr.is-style-dots',
+		] ) {
+			await holds( rule, {
+				'margin-top': 'var(--rh-space-6)',
+				'margin-bottom': 'var(--rh-space-6)',
+				'border-top-width': 'var(--rh-border-width)',
+				'border-top-style': 'solid',
+				'border-top-color': 'var(--rh-color-border)',
+				'border-bottom-width': '0px',
+				'border-left-width': '0px',
+			} );
+			expect(
+				await page
+					.locator( rule )
+					.evaluate(
+						( node ) =>
+							window.getComputedStyle( node, '::before' ).content
+					),
+				rule
+			).toBe( 'none' );
+		}
+
+		// The image: the figure's margins, the image's corners, and both
+		// captions small and muted, with no margin below (core's default
+		// caption style gives it one; the front end loads none).
+		await holds( '.rh-prose > figure.wp-block-image', {
+			'margin-top': 'var(--rh-space-5)',
+			'margin-bottom': 'var(--rh-space-5)',
+			'margin-left': '0px',
+		} );
+		await holds(
+			'.rh-prose > figure.wp-block-image > img',
+			{
+				display: 'block',
+				'border-top-left-radius': 'var(--rh-radius)',
+				'max-width': '100%',
+			},
+			'.rh-prose > figure.wp-block-image'
+		);
+		// Set to expand on click, it renders as the front end shows it: the
+		// image alone, no trigger button and no overlay.
+		await expect(
+			page.locator( '.rh-prose figure.wp-block-image button' )
+		).toHaveCount( 0 );
+		await expect( page.locator( '.wp-lightbox-overlay' ) ).toHaveCount( 0 );
+		for ( const caption of [
+			'.rh-prose > figure.wp-block-image > figcaption',
+			'.rh-prose > figure.wp-block-table > figcaption',
+		] ) {
+			await holds( caption, {
+				'margin-top': 'var(--rh-space-2)',
+				'margin-bottom': '0px',
+				color: 'var(--rh-color-text-muted)',
+				'font-size': 'var(--rh-text-sm)',
+			} );
+		}
+	} );
+
 	test( 'the shell, the header and the article column at 1280 px', async ( {
 		page,
 	} ) => {
@@ -328,6 +530,53 @@ test.describe( "A CMS page computes the front end's styles", () => {
 		const title = await box( page, '.rh-page__title' );
 		expect( title.x ).toBeCloseTo( article.x, 1 );
 		expect( title.width ).toBeCloseTo( article.width, 1 );
+	} );
+
+	test( '/ is the welcome page while the front page shows posts', async ( {
+		page,
+		requestUtils,
+	} ) => {
+		// The tests site is a fresh install, so Settings > Reading shows
+		// posts, the state the front end answers with its welcome page.
+		const settings = await requestUtils.rest( { path: '/wp/v2/settings' } );
+		expect( settings.show_on_front ).toBe( 'posts' );
+
+		await page.setViewportSize( { width: 1280, height: 900 } );
+		await page.goto( '/' );
+		await expect( page.locator( 'h1' ) ).toHaveCount( 1 );
+		await expect(
+			page.locator( '.rh-page.rh-welcome > h1.rh-page__title' )
+		).toHaveText( 'Resource Hub' );
+		await expect(
+			page.locator( 'link#resource-hub-welcome-css' )
+		).toHaveAttribute(
+			'href',
+			/\/themes\/resource-hub\/build\/welcome\.css/
+		);
+
+		// welcome.css's lead: the sentence a step larger, in the article's
+		// column of page.css.
+		await expect( async () => {
+			const expected = await resolve( page, '.rh-welcome', {
+				'font-size': 'var(--rh-text-md)',
+			} );
+			expect(
+				await computed( page, '.rh-welcome > p:first-of-type', [
+					'font-size',
+				] )
+			).toEqual( expected );
+		} ).toPass();
+		const measure = parseFloat(
+			(
+				await resolve( page, '.rh-welcome', {
+					width: 'var(--rh-measure)',
+				} )
+			).width
+		);
+		expect( ( await box( page, '.rh-welcome' ) ).width ).toBeCloseTo(
+			measure,
+			1
+		);
 	} );
 
 	test( 'the gutter at 360 px', async ( { page } ) => {

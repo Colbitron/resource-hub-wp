@@ -19,6 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 require_once __DIR__ . '/inc/table-region.php';
+require_once __DIR__ . '/inc/image-lightbox.php';
 
 /**
  * Each stylesheet's handle, its copy under `build/`, and the handles it loads after.
@@ -136,13 +137,23 @@ add_action( 'enqueue_block_assets', 'resource_hub_theme_enqueue_styles' );
  * `page.html` and `index.html`, renders the article and loads `prose.css` and `page.css`.
  *
  * **Core block styles that fight the body's.** Core enqueues each block's stylesheet as the block
- * renders, before `wp_head`, and three draw over what `prose.css` gives the same elements, which the
+ * renders, before `wp_head`, and five draw over what `prose.css` gives the same elements, which the
  * front end, loading no core CSS, never shows: `wp-block-table` (a border on every side of every
  * cell, a 3 px rule under the head, a fixed table layout, the scroll on the figure rather than the
- * region), `wp-block-code` (code set as a block in the body's font, not the monospace inset) and
- * `wp-block-separator` (a 2 px rule in the text colour, not the hairline). They are dequeued here,
- * on the CMS's own pages only; the editor canvas keeps them. The other core block styles a body can
- * bring set box sizing, wrapping or classes an editor opts into, and stay.
+ * region), `wp-block-code` (the code inside the block set as a block that breaks spaces, not the
+ * inset's inline code), `wp-block-separator` (its dots style: three dots, with the hairline's
+ * border taken off `!important`),
+ * `wp-block-quote` (the large style's own padding, margins and italic, right-aligned citation,
+ * where the front end draws every quote as the one inset) and `wp-block-image` (a margin under the
+ * caption, and the alignment, sizing and lightbox rules, none of which the front end draws). They
+ * are dequeued here, on the CMS's own pages only; the editor canvas keeps them. Without the image
+ * stylesheet a lightbox's overlay would show, so those pages also render every image with its
+ * lightbox off (`inc/image-lightbox.php`), as the front end shows it. `theme-parity.spec.js` holds
+ * each element to `prose.css`. The other core block styles a body can bring set box sizing,
+ * wrapping or classes an editor opts into, and stay. Core's button look is not a block stylesheet
+ * but core's default `theme.json` element style, printed in the global styles both the pages and the
+ * canvas share, so it is not removed here: a button block is a filled button on the CMS and a link
+ * on the front end (the theme's README, "Not built yet").
  */
 function resource_hub_theme_enqueue_page_styles(): void {
 	wp_enqueue_style( 'resource-hub-base' );
@@ -157,11 +168,13 @@ function resource_hub_theme_enqueue_page_styles(): void {
 		wp_enqueue_style( 'resource-hub-page' );
 	}
 
-	foreach ( array( 'wp-block-table', 'wp-block-code', 'wp-block-separator' ) as $handle ) {
+	foreach ( array( 'wp-block-table', 'wp-block-code', 'wp-block-separator', 'wp-block-quote', 'wp-block-image' ) as $handle ) {
 		wp_dequeue_style( $handle );
 	}
 }
 add_action( 'wp_enqueue_scripts', 'resource_hub_theme_enqueue_page_styles', 20 );
 
-// Each core/table block on a page core renders with a template, in the front end's scroll region.
+// On a page core renders with a template: each core/table block in the front end's scroll region,
+// and each image block without its lightbox.
 add_action( 'template_redirect', 'resource_hub_theme_add_table_regions' );
+add_action( 'template_redirect', 'resource_hub_theme_add_lightbox_off' );
