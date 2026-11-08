@@ -15,7 +15,17 @@
  * and `vendor/` from the deploy, never the workspace, so the table travels in
  * `build/` as the block's stylesheet does; a PHPUnit test fails when the copy
  * differs from the package's (`packages/ui/README.md`, "Type accents").
+ *
+ * It also copies the shared package's `tokens.css` to `build/shared/`, byte
+ * for byte, with a `tokens.asset.php` holding its version, for the
+ * `resource-hub-tokens` handle the block and the theme share
+ * (`src/Blocks/SharedTokens.php`). A copy and not an entry, because the
+ * CSS minifier rewrites colours on the way (an `rgb()` with a slash came out
+ * as a rounded `hsla()`), and the CMS should draw the package's own values.
+ * The copy plugin is the one wp-scripts already configures, so no second
+ * version of it is installed.
  */
+const { createHash } = require( 'crypto' );
 const { readFileSync } = require( 'fs' );
 const { resolve } = require( 'path' );
 const defaultConfig = require( '@wordpress/scripts/config/webpack.config' );
@@ -52,9 +62,37 @@ class TypeAccentsPlugin {
 	}
 }
 
+const CopyPlugin = scriptConfig.plugins.find(
+	( plugin ) => plugin.constructor.name === 'CopyPlugin'
+).constructor;
+
+const tokens = require.resolve( '@colbitron/resource-hub-ui/tokens.css' );
+
+// The `.asset.php` convention the plugin's other builds follow: a version of 20 hex characters.
+const tokensAsset = ( content ) => {
+	const version = createHash( 'sha256' )
+		.update( content )
+		.digest( 'hex' )
+		.slice( 0, 20 );
+	return `<?php return array( 'version' => '${ version }' );\n`;
+};
+
 const config = {
 	...scriptConfig,
-	plugins: [ ...scriptConfig.plugins, new TypeAccentsPlugin() ],
+	plugins: [
+		...scriptConfig.plugins,
+		new TypeAccentsPlugin(),
+		new CopyPlugin( {
+			patterns: [
+				{ from: tokens, to: 'shared/tokens.css' },
+				{
+					from: tokens,
+					to: 'shared/tokens.asset.php',
+					transform: tokensAsset,
+				},
+			],
+		} ),
+	],
 	entry: () => ( {
 		...scriptConfig.entry(),
 		'editor/resource-details': resolve(

@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace ResourceHub\Tests\Blocks;
 
 use ResourceHub\Blocks\RelatedResourcesBlock;
+use ResourceHub\Blocks\SharedTokens;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\Taxonomies;
@@ -114,17 +115,18 @@ final class RelatedResourcesBlockTest extends WP_UnitTestCase {
 		$this->assertSame( '', $type->attributes['heading']['default'] );
 		$this->assertSame( array( 'postId' ), $type->uses_context );
 
-		$this->assertCount( 1, $type->style_handles );
-		$style = wp_styles()->registered[ $type->style_handles[0] ] ?? null;
+		// The shared tokens handle first (SharedTokensTest), then the block's own file.
+		$this->assertCount( 2, $type->style_handles );
+		$this->assertSame( SharedTokens::HANDLE, $type->style_handles[0] );
+		$style = wp_styles()->registered[ $type->style_handles[1] ] ?? null;
 		$this->assertNotNull( $style, 'The block style is registered with wp_styles().' );
 		$this->assertStringEndsWith( '/build/related-resources/style-index.css', $style->src );
 
-		// The compiled stylesheet is the shared package's tokens and the row, tokens first.
+		// The compiled stylesheet is the shared package's row, with no tokens of its own.
 		$css = file_get_contents( dirname( __DIR__, 3 ) . '/build/related-resources/style-index.css' ); // phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- A local file from the plugin's own build, read by a test, never a remote URL.
-		$this->assertStringContainsString( '--rh-color-text:', $css );
+		$this->assertStringNotContainsString( '--rh-color-text:', $css );
 		$this->assertStringContainsString( '.rh-card', $css );
 		$this->assertStringContainsString( '.rh-card__type', $css, 'card-labels.css, which card.css imports, is inlined too.' );
-		$this->assertLessThan( strpos( $css, '.rh-card' ), strpos( $css, '--rh-color-text:' ), 'tokens.css comes first.' );
 	}
 
 	/**
