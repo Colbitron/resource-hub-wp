@@ -242,6 +242,21 @@ final class RelatedBlockTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A host that is not published renders nothing even for an editor who may preview it, and leaves no
+	 * entry in the cache the public related route answers from: the selection is computed for published
+	 * hosts only.
+	 */
+	public function test_unpublished_host_renders_nothing_for_an_editor(): void {
+		$this->resource( 'A match', array( $this->topic ) );
+		$draft = $this->resource( 'A draft', array( $this->topic ), array(), array( 'post_status' => 'draft' ) );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+		$this->assertTrue( current_user_can( 'read_post', $draft ) );
+
+		$this->assertSame( '', $this->render( $draft ) );
+		$this->assertFalse( wp_cache_get_salted( RelatedCache::key( $draft, RelatedItems::DEFAULT_COUNT ), RelatedCache::GROUP, RelatedCache::salt() ), 'No cache entry for the draft.' );
+	}
+
+	/**
 	 * In a single template, `do_blocks()` gives the block the global post as its context.
 	 */
 	public function test_renders_the_global_post(): void {

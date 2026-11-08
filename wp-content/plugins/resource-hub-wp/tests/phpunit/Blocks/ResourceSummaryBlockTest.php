@@ -81,18 +81,33 @@ final class ResourceSummaryBlockTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Anything but a published resource with exactly one type renders nothing, as the meta block.
+	 * Anything but a resource with exactly one type that is published or the user may read renders nothing,
+	 * as the meta block: a draft gives a visitor and a subscriber nothing.
 	 */
-	public function test_renders_nothing_without_a_published_typed_resource(): void {
+	public function test_renders_nothing_without_a_typed_resource_the_user_may_read(): void {
 		$this->assertSame( '', $this->render( null ), 'No context.' );
 		$this->assertSame( '', $this->render( self::factory()->post->create() ), 'A post.' );
-		$this->assertSame( '', $this->render( $this->resource( 'A summary.', array( 'post_status' => 'draft' ) ) ), 'A draft.' );
+
+		$draft = $this->resource( 'A summary.', array( 'post_status' => 'draft' ) );
+		$this->assertSame( '', $this->render( $draft ), 'A draft, logged out.' );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'subscriber' ) ) );
+		$this->assertSame( '', $this->render( $draft ), 'A draft, a subscriber.' );
 
 		$untyped = $this->resource( 'A summary.' );
 		wp_set_object_terms( $untyped, array(), Taxonomies::TYPE );
 		$this->assertSame( '', $this->render( $untyped ), 'No type.' );
 
 		$this->assertSame( '', $this->render( $this->resource( 'A summary.' ), 'post' ), 'A postType context that is not resource.' );
+	}
+
+	/**
+	 * A logged-in preview of a draft shows the summary to a user core lets read it, here an editor who did not write it.
+	 */
+	public function test_renders_a_draft_for_a_user_who_may_read_it(): void {
+		$draft = $this->resource( 'A summary.', array( 'post_status' => 'draft' ) );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		$this->assertStringStartsWith( '<p class="rh-resource__summary">', $this->render( $draft ) );
 	}
 
 	/**

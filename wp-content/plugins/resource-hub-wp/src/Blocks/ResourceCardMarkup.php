@@ -175,7 +175,7 @@ final class ResourceCardMarkup {
 	/**
 	 * A resource's meta line, as the front end's `ResourceArticle` renders it in the page's header.
 	 *
-	 * @param WP_Post $post A published resource.
+	 * @param WP_Post $post A resource the caller may show: published, or readable by the current user (`ContextResource::readable()`).
 	 * @param WP_Term $type Its one type, from `type()`.
 	 */
 	public static function meta( WP_Post $post, WP_Term $type ): string {
@@ -203,7 +203,7 @@ final class ResourceCardMarkup {
 	/**
 	 * A resource's summary as the lead paragraph of the front end's resource page, or nothing (see the class docblock).
 	 *
-	 * @param WP_Post $post A published resource.
+	 * @param WP_Post $post A resource the caller may show: published, or readable by the current user (`ContextResource::readable()`).
 	 */
 	public static function summary( WP_Post $post ): string {
 		$text = self::collapse_whitespace( (string) get_post_meta( $post->ID, Meta::SUMMARY, true ) );
@@ -214,7 +214,7 @@ final class ResourceCardMarkup {
 	/**
 	 * A resource's source line as the front end's resource page prints it under the body, or nothing (see the class docblock).
 	 *
-	 * @param WP_Post $post A published resource.
+	 * @param WP_Post $post A resource the caller may show: published, or readable by the current user (`ContextResource::readable()`).
 	 */
 	public static function source( WP_Post $post ): string {
 		$link = self::source_link( (string) get_post_meta( $post->ID, Meta::SOURCE_URL, true ) );

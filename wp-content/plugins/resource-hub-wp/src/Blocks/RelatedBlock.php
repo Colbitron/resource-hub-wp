@@ -33,8 +33,11 @@ use WP_Query;
  *     </section>
  *
  * - **Which post.** The `postId` and `postType` context, which `render_block()` sets from the global post
- *   in a single template and the editor's preview sends as the post being edited (`ContextResource`).
- *   Anything but a published resource renders nothing.
+ *   in a single template and the editor's preview sends as the post being edited (`ContextResource::from()`).
+ *   Anything but a published resource renders nothing, even in a preview the article's other blocks render
+ *   for: `RelatedItems` caches the selection under the host's ID in the entry the public related route
+ *   serves, and the route answers only for published hosts, so a host that is not published never reaches
+ *   it and nothing about a draft's relations is computed or stored for the public read.
  * - **The rows.** The selection's IDs are read as posts in its order, published resources only, as the
  *   front end reads them with `include=…&orderby=include` (`getResourcesByIds`); one no longer published
  *   between the cache and the render is left out, as that read would leave it out. A resource whose title

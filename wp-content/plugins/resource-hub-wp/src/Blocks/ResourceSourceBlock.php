@@ -20,9 +20,10 @@ use WP_Block;
  * the line (a button bound to the meta is a button, and the label is computed from the URL), so this block
  * does, with `ResourceCardMarkup::source()`, whose class docblock has every rule of the link.
  *
- * - **Which post.** The `postId` and `postType` context (`ContextResource`), as the meta block reads it.
- *   Anything but a published resource renders nothing, and so does a resource without exactly one type,
- *   which the front end does not render at all, so the three article blocks agree on when they render.
+ * - **Which post.** The `postId` and `postType` context (`ContextResource::readable()`), as the meta block
+ *   reads it: a published resource, or one the current user may read, for a logged-in preview. Anything
+ *   else renders nothing, and so does a resource without exactly one type, which the front end does not
+ *   render at all, so the three article blocks agree on when they render.
  * - **No wrapper.** The output is the `<footer>` alone, with no block wrapper attributes, so it is the
  *   front end's markup exactly.
  * - **No stylesheet.** The line's rule is the article's, in `resource.css`, which the template that renders
@@ -64,7 +65,7 @@ final class ResourceSourceBlock {
 	 * @param WP_Block             $block      The block being rendered, for its context.
 	 */
 	public function render( array $attributes, string $content, WP_Block $block ): string {
-		$post = ContextResource::from( $block );
+		$post = ContextResource::readable( $block );
 
 		return null === $post || null === ResourceCardMarkup::type( $post ) ? '' : ResourceCardMarkup::source( $post );
 	}

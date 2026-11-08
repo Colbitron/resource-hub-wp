@@ -20,9 +20,10 @@ use WP_Block;
  * paragraph's margin, when the meta is empty, and inserts the value through core's rich-text path, where
  * this writes the text as React would (`ResourceCardMarkup::summary()`, whose class docblock has the rule).
  *
- * - **Which post.** The `postId` and `postType` context (`ContextResource`), as the meta block reads it.
- *   Anything but a published resource renders nothing, and so does a resource without exactly one type,
- *   which the front end does not render at all, so the three article blocks agree on when they render.
+ * - **Which post.** The `postId` and `postType` context (`ContextResource::readable()`), as the meta block
+ *   reads it: a published resource, or one the current user may read, for a logged-in preview. Anything
+ *   else renders nothing, and so does a resource without exactly one type, which the front end does not
+ *   render at all, so the three article blocks agree on when they render.
  * - **No wrapper.** The output is the `<p>` alone, with no block wrapper attributes, so it is the front
  *   end's markup exactly. The contract's markup fixtures hold it to `ResourceArticle` (`{case}.summary.html`;
  *   `MarkupParityTest`).
@@ -65,7 +66,7 @@ final class ResourceSummaryBlock {
 	 * @param WP_Block             $block      The block being rendered, for its context.
 	 */
 	public function render( array $attributes, string $content, WP_Block $block ): string {
-		$post = ContextResource::from( $block );
+		$post = ContextResource::readable( $block );
 
 		return null === $post || null === ResourceCardMarkup::type( $post ) ? '' : ResourceCardMarkup::summary( $post );
 	}
