@@ -1,0 +1,35 @@
+{
+	"name": "colbyhill/resource-hub-site-plugins",
+	"description": "The third-party WordPress plugins the Resource Hub CMS runs beside its own, installed from wpackagist into wp-content/plugins/.",
+	"type": "project",
+	"license": "GPL-2.0-or-later",
+	"repositories": [
+		{
+			"type": "composer",
+			"url": "https://wpackagist.org",
+			"only": [
+				"wpackagist-plugin/*"
+			]
+		}
+	],
+	"require": {
+		"composer/installers": "^2.3",
+		"wpackagist-plugin/relevanssi": "4.28.8"
+	},
+	"extra": {
+		"installer-paths": {
+			"../wp-content/plugins/{$name}/": [
+				"type:wordpress-plugin"
+			]
+		}
+	},
+	"config": {
+		"allow-plugins": {
+			"composer/installers": true
+		},
+		"platform": {
+			"php": "8.4"
+		},
+		"sort-packages": true
+	}
+}

@@ -9,6 +9,7 @@ The plugin models a filterable resources library: a `resource` post type with `r
 ```
 /                                        pnpm workspace root: .wp-env.json, CLAUDE.md, this README
 ├─ wp-content/plugins/resource-hub-wp/   the WordPress plugin (its own README.md and CLAUDE.md)
+├─ site-plugins/                         Composer project for the third-party plugins beside it, Relevanssi so far (its own README.md)
 ├─ wp-content/themes/resource-hub/       the CMS's block theme, slice 5: skeleton and assets so far (its own README.md)
 ├─ apps/web/                             the Next.js front end (its own README.md and CLAUDE.md)
 ├─ packages/ui/                          @colbitron/resource-hub-ui: the contract's JSON Schemas, shared styles and DESIGN.md
@@ -47,6 +48,9 @@ Everything marked done exists on `main` and is green in CI.
 | `GET /resource-hub/v1/related/{id}` and `related_picks`, with the related list's salted object cache ([issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50)) | done |
 | The `resource-hub/related-resources` block's render callback and its marker with card rows, the picks editor, and the front end's related section and its swap of the marker ([issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50)) | done |
 | Follow-ups: real-browser lab measurement ([issue #85](https://github.com/Colbitron/resource-hub-wp/issues/85)), the related list's scale path ([issue #87](https://github.com/Colbitron/resource-hub-wp/issues/87)) | open |
+| Search engine: Relevanssi (free) from wpackagist through `site-plugins/`, configured in the plugin's code, indexed by `wp resource-hub search-index`, synced and activated by the deploy ([issue #115](https://github.com/Colbitron/resource-hub-wp/issues/115)) | done |
+| `GET /resource-hub/v1/search`, the route that queries Relevanssi ([issue #115](https://github.com/Colbitron/resource-hub-wp/issues/115), PR #121) | done |
+| The front end's `/search/` page and the theme's search template ([issue #115](https://github.com/Colbitron/resource-hub-wp/issues/115)) | planned |
 | CMS block theme skeleton: header, footer, `index` and `404` templates, active on both wp-env sites, its 404 listing no pages and printing no pingback link ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
 | CMS block theme assets: the `packages/ui` tokens, Figtree and its fallback faces, and the lockup, built into the theme and loaded on its pages and in the editor canvas, one copy of the tokens beside the related-resources block ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
 | CMS block theme: the remaining templates, the System / Light / Dark control and its deploy ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | slice 5 |
@@ -100,10 +104,11 @@ Requirements on the host: Docker, Node 24, pnpm. PHP, Composer and WP-CLI run in
 
 ```sh
 pnpm install            # one workspace: the plugin, the front end and packages/ui
-pnpm env:start          # WordPress at http://localhost:8888, tests site at :8889
+pnpm env:start          # WordPress at http://localhost:8888, tests site at :8889; installs and activates Relevanssi
 pnpm composer install   # inside the container; vendor/ lands in the plugin directory
 pnpm build              # compiles the block and editor scripts into the plugin's build/, and copies the theme's assets into its build/
 pnpm wp resource-hub seed   # optional: fictional sample resources to list and filter
+pnpm wp resource-hub search-index --force   # rebuilds the search index after seeding; starts rebuild it only when out of date
 ```
 
 Log in at `http://localhost:8888/wp-admin` with `admin` / `password`. The plugin's [README](wp-content/plugins/resource-hub-wp/README.md) has the rest: configuration, the WP-CLI commands and testing. The front end's [README](apps/web/README.md) covers `apps/web`.
@@ -114,8 +119,9 @@ Log in at `http://localhost:8888/wp-admin` with `admin` / `password`. The plugin
 |---|---|
 | `pnpm env:start` / `env:stop` / `env:destroy` | wp-env lifecycle |
 | `pnpm wp <args>` / `pnpm wp:tests <args>` | WP-CLI in the dev or tests container |
-| `pnpm wp resource-hub seed` / `decode-slugs` | The plugin's commands; see its README |
-| `pnpm composer <args>` | Composer in the dev container |
+| `pnpm wp resource-hub seed` / `decode-slugs` / `search-index` | The plugin's commands; see its README |
+| `pnpm composer <args>` | Composer in the dev container, in the plugin directory |
+| `pnpm composer:site <args>` | Composer in the dev container, in `site-plugins/` (third-party plugins; see its README) |
 | `pnpm lint` / `pnpm lint:fix` | PHPCS / PHPCBF |
 | `pnpm lint:js` / `pnpm format` | ESLint and Prettier with the WordPress presets |
 | `pnpm build` / `pnpm start` | Block build, once or watching; `pnpm build` also builds the theme's assets |

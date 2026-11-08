@@ -15,6 +15,7 @@ use ResourceHub\Admin\TermNotice;
 use ResourceHub\Blocks\RelatedResourcesBlock;
 use ResourceHub\Blocks\SharedTokens;
 use ResourceHub\Cli\DecodeSlugsCommand;
+use ResourceHub\Cli\SearchIndexCommand;
 use ResourceHub\Cli\SeedCommand;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\OneType;
@@ -38,6 +39,11 @@ use ResourceHub\Rest\ResolveRoute;
 use ResourceHub\Rest\SearchCache;
 use ResourceHub\Rest\SearchRoute;
 use ResourceHub\Revalidation\Revalidation;
+use ResourceHub\Search\RelevanssiConfig;
+use ResourceHub\Search\RelevanssiFoundPosts;
+use ResourceHub\Search\RelevanssiPostCache;
+use ResourceHub\Search\SearchIndex;
+use ResourceHub\Search\TermReindex;
 use ResourceHub\Security\OutgoingPings;
 use ResourceHub\Security\Pings;
 use ResourceHub\Security\XmlRpc;
@@ -116,10 +122,16 @@ final class Plugin {
 		( new XmlRpc() )->register();
 		( new Pings() )->register();
 		( new OutgoingPings() )->register();
+		( new RelevanssiConfig() )->register();
+		( new RelevanssiFoundPosts() )->register();
+		( new RelevanssiPostCache() )->register();
+		( new SearchIndex() )->register();
+		( new TermReindex() )->register();
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			\WP_CLI::add_command( 'resource-hub seed', SeedCommand::class );
 			\WP_CLI::add_command( 'resource-hub decode-slugs', DecodeSlugsCommand::class );
+			\WP_CLI::add_command( 'resource-hub search-index', SearchIndexCommand::class );
 		}
 	}
 
@@ -133,11 +145,16 @@ final class Plugin {
 	 * flush, done lazily. The post type and taxonomies are also registered here so that anything
 	 * regenerating the rules later in this same request already sees them. `wp rewrite flush`
 	 * is the manual equivalent.
+	 *
+	 * It also forgets the search index's stamp, since Relevanssi indexed saves on its own defaults
+	 * while the plugin was off, so the next `wp resource-hub search-index` rebuilds
+	 * ({@see SearchIndex}).
 	 */
 	public static function activate(): void {
 		( new PostType() )->register();
 		( new Taxonomies() )->register();
 		delete_option( 'rewrite_rules' );
+		SearchIndex::forget();
 	}
 
 	/**
