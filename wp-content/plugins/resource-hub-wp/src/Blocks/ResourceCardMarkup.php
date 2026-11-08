@@ -107,8 +107,10 @@ use WpOrg\Requests\IdnaEncoder;
  *   resolved (`resolved_path()`), so `/wp-content/uploads/../../wp-admin/export.php`, its `%2e%2e` form
  *   and `/resources/../wp-admin/` are the `/wp-admin/` paths a click reaches, and give no line. A URL
  *   under the CMS's uploads directory links the file and shows its name, the last path segment decoded,
- *   where the front end links `/media/…` to the same file (and as the front end's `uploadsPath()`, not when
- *   nothing follows the directory, a second slash does or the rest holds `%2f`, `%5c` or `%25`); a URL on
+ *   where the front end links `/media/…` to the same file, a difference the theme's README accepts ("Accepted
+ *   difference: the source line for an upload"), since the CMS has no `/media/` address (and as the front
+ *   end's `uploadsPath()`, not when nothing follows the directory, a second slash does or the rest holds
+ *   `%2f`, `%5c` or `%25`); a URL on
  *   the CMS's own host is kept only when its path, under the install's path, is `/resources` or below it,
  *   linked on the CMS's origin with the trailing slash every public URL has and shown as that path with
  *   its query and fragment, as the front end shows the root-relative path, and any other CMS URL
