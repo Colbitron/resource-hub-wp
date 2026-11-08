@@ -172,14 +172,25 @@ jobs:
             echo "::error::Could not read the Playwright version from resource-hub-wp (got: $playwright)."
             exit 1
           fi
-          if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
-            echo "::error::ImageOS or ImageVersion is not set; the apt package cache needs a GitHub-hosted runner image."
-            exit 1
+          # GitHub's images set ImageOS and ImageVersion. Depot CI's sandboxes
+          # are not documented to, so where they are unset the image is named
+          # by its OS release and a fingerprint of its installed packages,
+          # which changes when the sandbox image does, the same refresh clock.
+          if [ -n "${ImageOS:-}" ] && [ -n "${ImageVersion:-}" ]; then
+            image="$ImageOS-$ImageVersion"
+          else
+            os=$(. /etc/os-release && echo "${ID:-}${VERSION_ID:-}")
+            packages=$(dpkg-query -W -f='${Package}=${Version}\n' | sort | sha256sum | cut -c1-12)
+            if [ -z "$os" ] || ! [[ "$packages" =~ ^[0-9a-f]{12}$ ]]; then
+              echo "::error::Could not name the runner image (os: $os, packages: $packages); the apt package cache key needs it."
+              exit 1
+            fi
+            image="depot-$os-$packages"
           fi
           {
             echo "week=$(date -u +%G-W%V)"
             echo "playwright=$playwright"
-            echo "image=$ImageOS-$ImageVersion"
+            echo "image=$image"
             echo "wp_env_home=$RUNNER_TEMP/wp-env"
             echo "apt_dir=$RUNNER_TEMP/playwright-apt"
           } >> "$GITHUB_OUTPUT"
@@ -425,14 +436,25 @@ jobs:
             echo "::error::Could not read the Playwright version from resource-hub-web (got: $version)."
             exit 1
           fi
-          if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
-            echo "::error::ImageOS or ImageVersion is not set; the apt package cache needs a GitHub-hosted runner image."
-            exit 1
+          # GitHub's images set ImageOS and ImageVersion. Depot CI's sandboxes
+          # are not documented to, so where they are unset the image is named
+          # by its OS release and a fingerprint of its installed packages,
+          # which changes when the sandbox image does, the same refresh clock.
+          if [ -n "${ImageOS:-}" ] && [ -n "${ImageVersion:-}" ]; then
+            image="$ImageOS-$ImageVersion"
+          else
+            os=$(. /etc/os-release && echo "${ID:-}${VERSION_ID:-}")
+            packages=$(dpkg-query -W -f='${Package}=${Version}\n' | sort | sha256sum | cut -c1-12)
+            if [ -z "$os" ] || ! [[ "$packages" =~ ^[0-9a-f]{12}$ ]]; then
+              echo "::error::Could not name the runner image (os: $os, packages: $packages); the apt package cache key needs it."
+              exit 1
+            fi
+            image="depot-$os-$packages"
           fi
           docker_image=$(node -e "import('./apps/web/e2e/playwright-image.mts').then((m) => console.log(m.PLAYWRIGHT_IMAGE))")
           {
             echo "version=$version"
-            echo "image=$ImageOS-$ImageVersion"
+            echo "image=$image"
             echo "apt_dir=$RUNNER_TEMP/playwright-apt"
             echo "docker_image=$docker_image"
           } >> "$GITHUB_OUTPUT"
