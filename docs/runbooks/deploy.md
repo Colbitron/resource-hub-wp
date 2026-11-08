@@ -22,22 +22,29 @@ Six secrets feed the two deploy jobs, and a seventh the preview Lighthouse workf
 
 The CMS's own configuration (`RESOURCE_HUB_FRONTEND_URL`, `RESOURCE_HUB_REVALIDATE_SECRET`, and the optional `RESOURCE_HUB_POSTHOG_KEY` and `RESOURCE_HUB_POSTHOG_HOST`) is `define()`d in the host's `wp-config.php`. The front end's (`WP_API_URL`, `REVALIDATE_SECRET`, `SITE_URL`, optionally `WP_MEDIA_ORIGIN`) lives in the Vercel project's environment variables; `apps/web/README.md` describes each.
 
-**The secrets are in reach of a pull request.** Depot CI runs the workflow as the pull request has it, and the secrets are scoped to the repository, not to `main`, so a pull request that edited the workflow could read them, as it could when they were GitHub repository secrets on this free plan. The only collaborator is the owner, so this is accepted. Before the repository goes public or takes outside pull requests, scope the deploy secrets' variants to `main` (`depot ci secrets set <name> --repo Colbitron/resource-hub-wp --branch main`, then remove the unscoped variant), confirm a pull request's run sees them empty, and add a GitHub ruleset that requires the gate's checks on `main`.
+**The secrets are in reach of a pull request.** Depot CI runs the workflow as the pull request has it, and the secrets are scoped to the repository, not to `main`, so a pull request that edited the workflow could read them, as it could when they were GitHub repository secrets on this free plan. The cache is in reach too: Depot Cache is not isolated by branch (Depot documents that for its GitHub Actions runners; it is assumed for Depot CI), so a same-repository pull request whose workflow saved a cache entry could write a key that `main`'s runs then restore, and the deploy builds from what it installs. The only collaborator is the owner, so both are accepted. Before the repository goes public or takes outside pull requests, decide how to scope the deploy secrets, and add a GitHub ruleset that requires the gate's checks on `main`. Scoping a secret's variant to `main` alone (`depot ci secrets set <name> --repo Colbitron/resource-hub-wp --branch main`) would probably also hide it from a rollback, which is a dispatch on a tag ref, not on `main`; so either scope it to `main` and add a second variant matching the rollback tags (`rollback-*`; whether `--branch` matches a tag ref is unconfirmed, see `depot ci secrets set --help`), then dispatch on a throwaway tag to check the deploy job sees the secrets, or keep the repository-wide variant and accept that a pull request can read it. Only once the scoped variants work, remove the repository-wide one (`depot ci secrets list --repo Colbitron/resource-hub-wp` names each secret's variants), and confirm a pull request's run sees the secrets empty.
 
 ## The cutover switch, `DEPOT_DEPLOY_ENABLED`
 
 Both deploy jobs also require the Depot CI variable `DEPOT_DEPLOY_ENABLED` to be `true`. It kept Depot's trial runs from deploying while GitHub's copy of the workflow still did, and while it is unset nothing on Depot CI reaches the host or Vercel, whatever the event or ref: the two jobs report as skipped.
 
-- **At the cutover**, just before the pull request that deletes `.github/workflows/ci.yml` merges, set it: `depot ci vars add DEPOT_DEPLOY_ENABLED --repo Colbitron/resource-hub-wp --value true`. Check with `depot ci vars list --repo Colbitron/resource-hub-wp`. The merge's own push to `main` is then the first run that deploys from Depot CI; watch it with `depot ci status`.
-- **Afterwards**, a follow-up pull request drops the variable's line from both jobs' `if:` and then the variable (`depot ci vars remove DEPOT_DEPLOY_ENABLED`). Until it lands, unsetting the variable is the quickest way to stop Depot CI deploying.
+**At the cutover**, in this order:
+
+1. Merge the pull request that deletes `.github/workflows/ci.yml` with the variable still unset. The merge's push to `main` is then the first push run on Depot CI: it exercises the gate and saves the caches from `main`, and its two deploy jobs report as skipped.
+2. Once that run is green, set the variable: `depot ci vars add DEPOT_DEPLOY_ENABLED --repo Colbitron/resource-hub-wp --value true`, and check it with `depot ci vars list --repo Colbitron/resource-hub-wp`.
+3. Start the first Depot CI deploy by hand and watch it to the end: `depot ci dispatch --repo Colbitron/resource-hub-wp --workflow ci.yml --ref main`, then `depot ci status <run-id>` until both deploy jobs finish.
+
+Depot CI registers a workflow's `push` and `pull_request` triggers only once it is on the default branch, so before the merge every Depot run was a `depot ci run` of local files. The `pull_request` path (`github.base_ref`, `github.event_name`, the check names on the pull request, and Lighthouse's warn-only condition for a pull request into `main`) is first exercised by the next pull request after the merge; check that run's jobs and checks.
+
+**Afterwards**, a follow-up pull request drops the variable's line from both jobs' `if:` and then the variable (`depot ci vars remove DEPOT_DEPLOY_ENABLED --repo Colbitron/resource-hub-wp --force`). Until it lands, removing the variable is the quickest way to stop Depot CI deploying.
 
 ## Rolling CI back to GitHub Actions
 
 If Depot CI has to be left (ADR 0053, "Rollback"):
 
-1. Unset the switch, `depot ci vars remove DEPOT_DEPLOY_ENABLED`, so Depot CI deploys nothing while both run. This works only while the jobs still test it; after the follow-up, delete `.depot/workflows/ci.yml` in the same pull request as step 2 instead.
+1. Unset the switch, `depot ci vars remove DEPOT_DEPLOY_ENABLED --repo Colbitron/resource-hub-wp --force` (`--repo` selects the repository's variant; `--force` skips the confirmation prompt), so Depot CI deploys nothing while both run. This works only while the jobs still test it; after the follow-up, delete `.depot/workflows/ci.yml` in the same pull request as step 2 instead.
 2. In a pull request, restore `.github/workflows/ci.yml` from git, and `screenshot-baselines.yml` if it is wanted: `git log --diff-filter=D -- .github/workflows/ci.yml` names the commit that deleted it, and `git checkout <that commit>~1 -- .github/workflows/ci.yml` brings it back. Step 1 is what keeps the two from both deploying.
-3. Make sure the six deploy secrets, the five `DEPLOY_*` and `VERCEL_DEPLOY_HOOK_URL`, are GitHub repository secrets (`gh secret list`; `gh secret set <name>` for any that were deleted), and that the account has Actions minutes left.
+3. Make sure the six deploy secrets, the five `DEPLOY_*` and `VERCEL_DEPLOY_HOOK_URL`, are GitHub repository secrets (`gh secret list`; `gh secret set <name>` for any that were deleted), and that the account has Actions minutes left: if the limit is reached, GitHub refuses the restored workflow's jobs until it resets or the budget is raised.
 4. Merge; the push to `main` runs and deploys on GitHub Actions.
 
 ## The CMS deploy
