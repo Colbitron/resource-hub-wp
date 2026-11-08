@@ -1,6 +1,6 @@
 import { ResourceCard, type ResourceCardProps } from "@/components/ResourceCard";
 
-import "./related.css";
+import "@colbitron/resource-hub-ui/related.css";
 
 /**
  * One related resource as a row: the row's props, with the ID as its key.
