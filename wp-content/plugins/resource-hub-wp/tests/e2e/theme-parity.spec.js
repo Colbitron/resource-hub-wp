@@ -579,6 +579,34 @@ test.describe( "A CMS page computes the front end's styles", () => {
 		);
 	} );
 
+	test( 'a short page under the admin bar does not scroll', async ( {
+		page,
+	} ) => {
+		// The shell is at least the viewport's height, and core pushes the
+		// page down by the admin bar's (32 px, or 46 px at 782 px and under),
+		// which the theme subtracts under `body.admin-bar`.
+		for ( const width of [ 1280, 600 ] ) {
+			await page.setViewportSize( { width, height: 800 } );
+			await page.goto( '/' );
+			await expect( page.locator( 'body.admin-bar' ) ).toHaveCount( 1 );
+			const { scroll, viewport, footerBottom } = await page.evaluate(
+				() => ( {
+					scroll: document.documentElement.scrollHeight,
+					viewport: window.innerHeight,
+					footerBottom: document
+						.querySelector( 'footer.rh-footer' )
+						.getBoundingClientRect().bottom,
+				} )
+			);
+			expect( scroll, `at ${ width } px` ).toBe( viewport );
+			// The footer still meets the bottom of the window.
+			expect( footerBottom, `at ${ width } px` ).toBeCloseTo(
+				viewport,
+				0
+			);
+		}
+	} );
+
 	test( 'the gutter at 360 px', async ( { page } ) => {
 		await page.setViewportSize( { width: 360, height: 800 } );
 		await page.goto( cmsPage.link );

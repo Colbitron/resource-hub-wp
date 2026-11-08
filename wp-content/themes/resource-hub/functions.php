@@ -84,6 +84,19 @@ function resource_hub_theme_enqueue_styles(): void {
 add_action( 'enqueue_block_assets', 'resource_hub_theme_enqueue_styles' );
 
 /**
+ * The shell's height under the admin bar, which only the CMS has.
+ *
+ * `shell.css` makes `.rh-shell` at least the viewport's height, `100dvh`, so the footer sits at the
+ * bottom of a short page. For a logged-in user core adds the admin bar and pushes `<html>` down by
+ * its height (`margin-top`, 32 px, or 46 px at 782 px and under), so a short page was that much
+ * taller than the viewport and scrolled. Core's `admin-bar.css` gives that height as
+ * `--wp-admin--admin-bar--height` on `<html>`, so under `body.admin-bar` the shell's minimum is the
+ * viewport less it: `100vh` first, for an engine without `dvh`, as `shell.css` writes it. The front
+ * end has no admin bar, so this is the theme's, added inline after `shell.css`, not the package's.
+ */
+const RESOURCE_HUB_THEME_ADMIN_BAR_SHELL = 'body.admin-bar .rh-shell { min-height: calc(100vh - var(--wp-admin--admin-bar--height, 0px)); min-height: calc(100dvh - var(--wp-admin--admin-bar--height, 0px)); }';
+
+/**
  * Enqueues the document, the shell and the template's components on the CMS's own pages, after
  * core's global styles, on `wp_enqueue_scripts` at priority 20.
  *
@@ -133,6 +146,7 @@ add_action( 'enqueue_block_assets', 'resource_hub_theme_enqueue_styles' );
 function resource_hub_theme_enqueue_page_styles(): void {
 	wp_enqueue_style( 'resource-hub-base' );
 	wp_enqueue_style( 'resource-hub-shell' );
+	wp_add_inline_style( 'resource-hub-shell', RESOURCE_HUB_THEME_ADMIN_BAR_SHELL );
 
 	if ( is_404() ) {
 		wp_enqueue_style( 'resource-hub-not-found' );
