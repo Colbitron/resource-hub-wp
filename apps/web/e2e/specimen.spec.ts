@@ -41,8 +41,10 @@ test("shows the shell, the filters, the lead, a row of each type and a neutral o
   await expect(page.locator(".rh-lead")).toHaveCount(2);
   await expect(page.locator(".rh-lead__media img")).toHaveCount(1);
   await expect(page.locator(".rh-lead .rh-card__type")).toHaveText(["Article", "Webinar"]);
-  await expect(page.locator(".rh-card .rh-card__type")).toHaveText(["Article", "Case study", "Ebook", "Podcast", "Webinar", "Guide"]);
-  await expect(page.locator(".rh-card .rh-card__type").last()).toHaveAttribute("data-accent", "neutral");
+  // The rows section alone: the resource sample's related block holds rows of its own (checked below).
+  const rows = page.locator("section[aria-labelledby='specimen-cards'] .rh-card .rh-card__type");
+  await expect(rows).toHaveText(["Article", "Case study", "Ebook", "Podcast", "Webinar", "Guide"]);
+  await expect(rows.last()).toHaveAttribute("data-accent", "neutral");
   const prose = page.locator("section[aria-labelledby='specimen-prose'] .rh-prose");
   for (const selector of ["h2", "h3", "ul", "ol", "blockquote", "table", "a"]) {
     await expect(prose.locator(selector).first(), selector).toBeVisible();
@@ -114,8 +116,14 @@ test("shows a resource, a CMS page, the welcome page and the 404 page", async ({
   await expect(body.locator("pre code")).toBeVisible();
   expect(decodeURIComponent((await body.locator("figure.wp-block-image img").getAttribute("src")) ?? "")).toContain("/media/2026/11/content-model.png");
   await expect(body.locator("figure.wp-block-image figcaption")).toBeVisible();
-  // The related-resources block's fallback, with the CMS's links made root-relative, in the wrapper the pass marks `rh-related`.
-  await expect(body.locator(".rh-related").getByRole("heading", { level: 2, name: "More on content modelling" })).toBeVisible();
+  // The related-resources block's fallback: the CMS's heading and its rows of card.css, kept by the pass inside the
+  // wrapper it marks `rh-related`, with the rows' links made root-relative and the rows' marks in the neutral ink.
+  const related = body.locator(".rh-related");
+  await expect(related.getByRole("heading", { level: 2, name: "More on content modelling" })).toBeVisible();
+  await expect(related.locator("ul.rh-card-grid[role=list] > li > article.rh-card")).toHaveCount(2);
+  await expect(related.locator("h3.rh-card__title")).toHaveCount(2);
+  await expect(related.locator(".rh-card").first().getByRole("list", { name: "Topics" })).toHaveText("Content modelling");
+  await expect(related.locator(".rh-card__type").first()).not.toHaveAttribute("data-accent", /./);
   await expect(body.getByRole("link", { name: "One content model, five channels" })).toHaveAttribute(
     "href",
     "/resources/case-study/one-content-model-five-channels/",

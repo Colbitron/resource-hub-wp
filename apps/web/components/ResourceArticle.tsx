@@ -3,7 +3,8 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { CONTENT_SIZES, renderContent } from "@/lib/content/render";
+import { renderRelatedBlock } from "@/components/RelatedResources";
+import { CONTENT_SIZES, renderContent, type RenderBlock } from "@/lib/content/render";
 import { formatPublishedDate } from "@/lib/dates";
 import { cmsUrls } from "@/lib/env";
 import type { RenderedResource } from "@/lib/redirects";
@@ -67,7 +68,9 @@ import "./resource.css";
  * dimensions, and `resourceTopics` for the topic links. The body is
  * `content.rendered` through the one server-side pass (`renderContent`),
  * which sanitises it and rewrites its URLs, with `postId` so the marker
- * excludes this resource whatever its HTML says.
+ * excludes this resource whatever its HTML says, and `renderRelatedBlock`
+ * (`components/RelatedResources.tsx`) so each related-resources block
+ * marker in it renders as the front end's own list.
  *
  * The featured image is the page's one LCP candidate. `preload` (Next.js
  * 16's replacement for the deprecated `priority`) puts a `<link
@@ -168,9 +171,16 @@ export interface ResourceArticleProps {
   readonly rendered: RenderedResource;
   /** The related section (`RelatedSection`), rendered after the source line; nothing when left out. */
   readonly related?: ReactNode;
+  /**
+   * What a related-resources block marker in the body renders as:
+   * `renderRelatedBlock`, the front end's list, by default. The design
+   * specimen passes the pass's own fallback instead, so it renders from
+   * fixture data alone and makes no CMS read.
+   */
+  readonly renderBlock?: RenderBlock;
 }
 
-export function ResourceArticle({ rendered, related }: ResourceArticleProps) {
+export function ResourceArticle({ rendered, related, renderBlock = renderRelatedBlock }: ResourceArticleProps) {
   const view = resourceView(rendered);
   const { resource } = rendered;
 
@@ -218,12 +228,11 @@ export function ResourceArticle({ rendered, related }: ResourceArticleProps) {
         {/*
          * The related-resources block (issue #50; the marker is in
          * `packages/ui/README.md`): the pass finds the marker and hands it to
-         * `renderBlock`, whose default renders the CMS's own fallback list.
-         * The swap for `<RelatedResources>`, fetched with the `topic:{slug}`
-         * tag, is the next pull request of slice 4 and passes `renderBlock`
-         * here.
+         * `renderRelatedBlock`, which swaps it for `<RelatedResources>`,
+         * fetched with the `topic:{slug}` tag, and falls back to the CMS's own
+         * rows when that read fails.
          */}
-        {renderContent(resource.content.rendered, cmsUrls(), { postId: resource.id })}
+        {renderContent(resource.content.rendered, cmsUrls(), { postId: resource.id, renderBlock })}
       </div>
       {view.source !== null && (
         <footer className="rh-resource__source">

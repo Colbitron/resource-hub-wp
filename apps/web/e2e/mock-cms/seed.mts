@@ -184,6 +184,41 @@ export const MEDIA: MediaSeed[] = [
 /** The newest resource's date; each later row is one day older. Site time, no offset. */
 export const SEED_DATE = "2026-11-01T09:00:00";
 
+/** One row of a block marker's fallback, as the CMS block (a sibling branch, issue #50) writes it. */
+interface MarkerRow {
+  type: string;
+  /** The `<time>`'s `datetime` (UTC with a `Z`, as the block's `gmdate('Y-m-d\TH:i:s\Z')`) and its text, the publication date. */
+  datetime: string;
+  dateText: string;
+  /** The resource's public path; the block writes it on the CMS's origin (`{{origin}}`). */
+  path: string;
+  title: string;
+  summary: string;
+  topics: string[];
+}
+
+/**
+ * The `resource-hub/related-resources` block as the CMS block (a sibling
+ * branch, issue #50; `packages/ui/README.md`, "Block marker") writes it,
+ * imitated here until that branch lands: the wrapper
+ * with its `data-*` attributes, the block's `<h2>`, and under it the row
+ * markup of `packages/ui/card.css` (its header comment) for the resources
+ * the CMS found, with `role="list"` on the two lists and no `data-accent`,
+ * which is the front end's. The front end swaps the whole wrapper for its
+ * own list and renders this only when that read fails.
+ */
+function relatedMarker(topicId: number, exclude: number, heading: string, rows: MarkerRow[]): string {
+  const row = (r: MarkerRow) =>
+    `<li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">${r.type}</span><time datetime="${r.datetime}">${r.dateText}</time></p>` +
+    `<div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="{{origin}}${r.path}">${r.title}</a></h3>` +
+    `<p class="rh-card__summary">${r.summary}</p>` +
+    `<ul class="rh-card__topics" aria-label="Topics" role="list">${r.topics.map((topic) => `<li class="rh-card__topic">${topic}</li>`).join("")}</ul></div></article></li>`;
+  return (
+    `<div class="wp-block-resource-hub-related-resources rh-related" data-rh-block="related-resources" data-count="3" data-topic="{{topic-slug:${topicId}}}" data-topic-id="${topicId}" data-exclude="${exclude}">` +
+    `<h2>${heading}</h2><ul class="rh-card-grid" role="list">${rows.map(row).join("")}</ul></div>`
+  );
+}
+
 const RICH_CONTENT = `
 <p class="wp-block-paragraph">Revalidation looks different from the editor's chair. Start with <a href="{{origin}}/resources/ebook/a-field-guide-to-revalidation/">A field guide to revalidation</a> and then compare it with <a href="https://example.com/elsewhere/">a write-up on another site</a>.</p>
 
@@ -193,7 +228,26 @@ const RICH_CONTENT = `
 
 
 
-<div data-rh-block="related-resources" data-count="3" data-topic="{{topic-slug:10}}" data-topic-id="10" data-exclude="33"><h2>Related resources</h2><ul><li><a href="{{origin}}/resources/article/alt-text-at-scale/">Alt text at scale</a></li><li><a href="{{origin}}/resources/podcast/editorial-review-without-the-bottleneck/">Editorial review without the bottleneck</a></li></ul></div>
+${relatedMarker(10, 33, "Related resources", [
+  {
+    type: "Article",
+    datetime: "2026-10-31T09:00:00Z",
+    dateText: "Oct 31, 2026",
+    path: "/resources/article/alt-text-at-scale/",
+    title: "Alt text at scale",
+    summary: "How a small editorial team keeps alt text accurate across thousands of images without a bottleneck.",
+    topics: ["Accessibility", "Editorial workflow"],
+  },
+  {
+    type: "Podcast",
+    datetime: "2026-10-27T09:00:00Z",
+    dateText: "Oct 27, 2026",
+    path: "/resources/podcast/editorial-review-without-the-bottleneck/",
+    title: "Editorial review without the bottleneck",
+    summary: "Two editors on review queues, who approves what, and how a headless site shows the result.",
+    topics: ["Editorial workflow"],
+  },
+])}
 `;
 
 /**
@@ -278,7 +332,26 @@ const LONG_CONTENT = `
 
 
 
-<div data-rh-block="related-resources" data-count="3" data-topic="{{topic-slug:8}}" data-topic-id="8" data-exclude="30"><h2>More on content modelling</h2><ul><li><a href="{{origin}}/resources/case-study/one-content-model-five-channels/">One content model, five channels</a></li><li><a href="{{origin}}/resources/webinar/the-anatomy-of-a-resource/">The anatomy of a resource</a></li></ul></div>
+${relatedMarker(8, 30, "More on content modelling", [
+  {
+    type: "Case study",
+    datetime: "2026-10-28T09:00:00Z",
+    dateText: "Oct 28, 2026",
+    path: "/resources/case-study/one-content-model-five-channels/",
+    title: "One content model, five channels",
+    summary: "A publisher's move from page-shaped content to a model that feeds the web, email, apps and partners.",
+    topics: ["Content modelling"],
+  },
+  {
+    type: "Webinar",
+    datetime: "2026-10-24T09:00:00Z",
+    dateText: "Oct 24, 2026",
+    path: "/resources/webinar/the-anatomy-of-a-resource/",
+    title: "The anatomy of a resource",
+    summary: "Which fields belong in meta, which in taxonomies, and what to leave out until an editor asks.",
+    topics: ["Content modelling", "Editorial workflow"],
+  },
+])}
 `;
 
 function row(

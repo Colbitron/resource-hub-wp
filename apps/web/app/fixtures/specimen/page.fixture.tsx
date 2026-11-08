@@ -14,7 +14,7 @@ import { Pagination } from "@/components/Pagination";
 import { ResourceArticle } from "@/components/ResourceArticle";
 import { ResourceCard, type ResourceCardProps } from "@/components/ResourceCard";
 import { WelcomePage } from "@/components/WelcomePage";
-import { renderContent } from "@/lib/content/render";
+import { renderContent, type RenderBlock } from "@/lib/content/render";
 import { cmsUrls } from "@/lib/env";
 import type { RenderedPage } from "@/lib/page-request";
 import type { RenderedResource } from "@/lib/redirects";
@@ -217,14 +217,23 @@ function cms() {
 }
 
 /**
+ * The block marker as the pass's own fallback: the specimen is fixture data
+ * and makes no CMS read, so the two articles render the marker as the CMS
+ * sent it, which is also what a reader sees when the block's read fails.
+ */
+const showFallback: RenderBlock = (_props, fallback) => fallback;
+
+/**
  * The long-form resource's shape (the seed's ID 30) with a short body that
  * has one of each thing the article styles: a paragraph, a list, a quote,
  * a heading, a figure with an upload (through `/media/`, lazy as on the
  * page; the screenshot spec scrolls it into view before capturing), a
  * table, a code block, and the related-resources block marker as the CMS
- * renders it, whose links point at the CMS. The default `renderBlock`
- * renders the marker's fallback, the CMS's own heading and list, as the
- * resource page does until slice 4 plugs in `<RelatedResources>`.
+ * renders it, its heading and the rows of `card.css`, whose links point at
+ * the CMS. The default `renderBlock` renders the marker's fallback, which
+ * is what the resource page shows when the block's own read fails; the
+ * specimen makes no CMS read, so it shows that rendering rather than the
+ * swapped `<RelatedResources>`.
  */
 function resourceFixture(): RenderedResource {
   const { site, uploads } = cms();
@@ -250,7 +259,7 @@ function resourceFixture(): RenderedResource {
   "resource_topic": [8, 11],
   "meta": { "summary": "When a value is a term and when it is a field." }
 }</code></pre>
-<div data-rh-block="related-resources" data-count="3" data-topic="content-modelling" data-topic-id="8" data-exclude="30"><h2>More on content modelling</h2><ul><li><a href="${site}/resources/case-study/one-content-model-five-channels/">One content model, five channels</a></li><li><a href="${site}/resources/webinar/the-anatomy-of-a-resource/">The anatomy of a resource</a></li></ul></div>
+<div class="wp-block-resource-hub-related-resources rh-related" data-rh-block="related-resources" data-count="3" data-topic="content-modelling" data-topic-id="8" data-exclude="30"><h2>More on content modelling</h2><ul class="rh-card-grid" role="list"><li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">Case study</span><time datetime="2026-10-28T09:00:00Z">Oct 28, 2026</time></p><div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="${site}/resources/case-study/one-content-model-five-channels/">One content model, five channels</a></h3><p class="rh-card__summary">A publisher's move from page-shaped content to a model that feeds the web, email, apps and partners.</p><ul class="rh-card__topics" aria-label="Topics" role="list"><li class="rh-card__topic">Content modelling</li></ul></div></article></li><li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">Webinar</span><time datetime="2026-10-24T09:00:00Z">Oct 24, 2026</time></p><div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="${site}/resources/webinar/the-anatomy-of-a-resource/">The anatomy of a resource</a></h3><p class="rh-card__summary">Which fields belong in meta, which in taxonomies, and what to leave out until an editor asks.</p><ul class="rh-card__topics" aria-label="Topics" role="list"><li class="rh-card__topic">Content modelling</li><li class="rh-card__topic">Editorial workflow</li></ul></div></article></li></ul></div>
 `,
     },
     excerpt: { rendered: "" },
@@ -600,13 +609,13 @@ export default function SpecimenFixturePage() {
 
       <Section id="specimen-resource" title="Resource">
         <div className="rh-specimen__frame">
-          <ResourceArticle rendered={resourceFixture()} />
+          <ResourceArticle rendered={resourceFixture()} renderBlock={showFallback} />
         </div>
       </Section>
 
       <Section id="specimen-page" title="CMS page">
         <div className="rh-specimen__frame">
-          <PageArticle rendered={pageFixture()} />
+          <PageArticle rendered={pageFixture()} renderBlock={showFallback} />
         </div>
       </Section>
 

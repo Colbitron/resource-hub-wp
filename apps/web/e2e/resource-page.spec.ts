@@ -264,9 +264,10 @@ test.describe("what the page renders", () => {
   test("the long-form body renders every element the sanitiser allows", async ({ page }) => {
     await page.goto(resourcePath(LONG_FORM.type, LONG_FORM.slug));
     const body = page.locator(".rh-resource__body");
+    // The body's three h2s and the related block's heading; the body's one h3 and its three list items, with the block's rows (related-block.spec.ts) left out.
     await expect(body.getByRole("heading", { level: 2 })).toHaveCount(4);
-    await expect(body.getByRole("heading", { level: 3 })).toHaveCount(1);
-    await expect(body.locator("ul li")).toHaveCount(5);
+    await expect(body.locator("h3:not(.rh-related h3)")).toHaveCount(1);
+    await expect(body.locator("ul li:not(.rh-related li)")).toHaveCount(3);
     await expect(body.locator("ol li")).toHaveCount(3);
     await expect(body.locator("blockquote cite")).toHaveText("A rule of thumb from the plugin's first review");
     await expect(body.locator("pre code")).toContainText('"resource_type": [5]');

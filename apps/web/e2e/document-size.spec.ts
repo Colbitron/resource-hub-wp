@@ -46,12 +46,13 @@ import { SAMPLED_URLS } from "./sampled-urls.mts";
  * "Lighthouse CI"). One sampled page is exempt: the resource page, by the
  * owner's decision of 2026-11-07, for its related section (issue #50), which
  * is wanted content. The section's rows load `card.css` and `related.css`,
- * which the page's own meta line does without, and on 2026-11-07, on the
- * harness's seed, its HTML was 16,462 bytes (467 of headers), one window
- * boundary over and well under the ceiling; its preloads ended 982 bytes in,
+ * which the page's own meta line does without, and the body's
+ * related-resources block renders the same rows. On 2026-11-07, on the
+ * harness's seed, its HTML was 16,849 bytes (467 of headers), one window
+ * boundary over and well under the ceiling; its preloads ended 985 bytes in,
  * inside the discovery check's limit; and its simulated LCP had gone from
- * 2,170 to 2,318 ms with the section, inside the 2,500 ms budget. These
- * numbers are stated here only; the other documents point here.
+ * 2,170 to a median of 2,322 ms, inside the 2,500 ms budget. These numbers
+ * are stated here only; the other documents point here.
  *
  * **The ceiling** (every exempt page): its transfer size, counted the same
  * way, is at most 43,800 bytes. Lantern's window starts at ten segments and

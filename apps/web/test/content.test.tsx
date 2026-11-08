@@ -597,6 +597,7 @@ describe("the block marker", () => {
       topicId: 9,
       exclude: 15,
       heading: "More on Headless delivery",
+      headingLevel: "h2",
     });
     expect(renderToStaticMarkup(<>{fallback}</>)).toBe(
       '<div class="wp-block-resource-hub-related-resources rh-related"><h2>More on Headless delivery</h2><ul><li><a href="/resources/webinar/example/">Example</a></li></ul></div>',
@@ -767,6 +768,202 @@ describe("the block marker", () => {
     const renderBlock = vi.fn<RenderBlock>(() => null);
     render(MARKER.replace("<h2>More on Headless delivery</h2>", ""), { renderBlock });
     expect(renderBlock.mock.calls[0]?.[0].heading).toBeNull();
+  });
+
+  it("says the heading is one level down when the body renders an h1", () => {
+    const renderBlock = vi.fn<RenderBlock>(() => null);
+    render(`<h1>Top</h1>${MARKER}`, { renderBlock });
+    expect(renderBlock.mock.calls[0]?.[0].headingLevel).toBe("h3");
+    render(`<h2>Top</h2>${MARKER}`, { renderBlock });
+    expect(renderBlock.mock.calls[1]?.[0].headingLevel).toBe("h2");
+  });
+});
+
+describe("the block marker's rows", () => {
+  // The marker as the CMS block (a sibling branch, issue #50) writes it: the row markup of
+  // `packages/ui/card.css`, with `role="list"` on both lists and no
+  // `data-accent` (packages/ui/README.md, "Block marker").
+  const ROW =
+    '<li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">Webinar</span><time datetime="2026-10-30T09:00:00Z">Oct 30, 2026</time></p>' +
+    '<div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="https://cms.example/resources/webinar/example/">Example</a></h3>' +
+    '<p class="rh-card__summary">A summary.</p><ul class="rh-card__topics" aria-label="Topics" role="list"><li class="rh-card__topic">Headless delivery</li></ul></div></article></li>';
+  const CARD_MARKER =
+    '<div class="wp-block-resource-hub-related-resources rh-related" data-rh-block="related-resources" data-count="3" data-topic="headless-delivery" data-topic-id="9" data-exclude="15">' +
+    `<h2>More on Headless delivery</h2><ul class="rh-card-grid" role="list">${ROW}</ul></div>`;
+  /** `CARD_MARKER` with `extra` after its grid, straight inside the wrapper. */
+  const withTail = (extra: string) => `${CARD_MARKER.slice(0, -"</div>".length)}${extra}</div>`;
+  const FALLBACK =
+    '<div class="wp-block-resource-hub-related-resources rh-related"><h2>More on Headless delivery</h2><ul class="rh-card-grid" role="list">' +
+    // React writes the `<time>`'s attribute as `dateTime`, which HTML reads as `datetime`.
+    '<li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">Webinar</span><time dateTime="2026-10-30T09:00:00Z">Oct 30, 2026</time></p>' +
+    '<div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="/resources/webinar/example/">Example</a></h3>' +
+    '<p class="rh-card__summary">A summary.</p><ul class="rh-card__topics" role="list" aria-label="Topics"><li class="rh-card__topic">Headless delivery</li></ul></div></article></li></ul></div>';
+
+  it("hands the marker on and keeps the rows in its fallback: the article, the row classes, the lists' role and the topics' label, with the link rewritten", () => {
+    const renderBlock = vi.fn<RenderBlock>(() => <aside>related</aside>);
+    const output = render(`<p>before</p>${CARD_MARKER}`, { renderBlock });
+    expect(renderBlock).toHaveBeenCalledTimes(1);
+    const [props, fallback] = renderBlock.mock.calls[0] ?? [];
+    expect(props).toMatchObject({ count: 3, topic: "headless-delivery", topicId: 9, exclude: 15, heading: "More on Headless delivery", headingLevel: "h2" });
+    expect(renderToStaticMarkup(<>{fallback}</>)).toBe(FALLBACK);
+    expect(output).toBe("<p>before</p><aside>related</aside>");
+  });
+
+  it("renders the rows by default, without the marker attributes", () => {
+    const output = render(CARD_MARKER);
+    expect(output).toBe(FALLBACK);
+    expect(output).not.toContain("data-");
+  });
+
+  it("drops the row's element, classes, role and label outside a marker, as before", () => {
+    expect(render(`<ul class="rh-card-grid" role="list" aria-label="Rows">${ROW}</ul>`)).toBe(
+      '<ul><li><p><span>Webinar</span><time dateTime="2026-10-30T09:00:00Z">Oct 30, 2026</time></p>' +
+        '<div><h3><a href="/resources/webinar/example/">Example</a></h3><p>A summary.</p><ul><li>Headless delivery</li></ul></div></li></ul>',
+    );
+  });
+
+  it("gives an invalid marker's contents the body's rules: it is not the CMS's block", () => {
+    const output = render(CARD_MARKER.replace('data-count="3"', 'data-count="0"'));
+    expect(output).toContain('<div class="wp-block-resource-hub-related-resources rh-related"><h2>More on Headless delivery</h2><ul><li><p>');
+    expect(output).not.toContain("rh-card");
+    expect(output).not.toContain("role=");
+    expect(output).not.toContain("aria-");
+  });
+
+  it("keeps only role=list, only on a list, and no other aria attribute, inside a marker", () => {
+    const output = render(
+      CARD_MARKER.replace('<ul class="rh-card-grid" role="list">', '<ul class="rh-card-grid" role="navigation" aria-hidden="true">').replace(
+        '<article class="rh-card">',
+        '<article class="rh-card" role="list" aria-label="Row">',
+      ),
+    );
+    expect(output).toContain('<ul class="rh-card-grid"><li><article class="rh-card"><p');
+    expect(output).not.toContain("navigation");
+    expect(output).not.toContain("aria-hidden");
+    expect(output).not.toContain('aria-label="Row"');
+    // The topics list keeps its role and label.
+    expect(output).toContain('<ul class="rh-card__topics" role="list" aria-label="Topics">');
+  });
+
+  it("keeps the app's other classes out, even inside a marker", () => {
+    const output = render(CARD_MARKER.replace('<p class="rh-card__summary">', '<p class="rh-card__summary rh-shell rh-related">'));
+    expect(output).toContain('<p class="rh-card__summary">A summary.</p>');
+  });
+
+  it("keeps aria-label only as exactly Topics and only on the row's topics list", () => {
+    for (const label of ["Topics on cms.example", "topics", " Topics", "Navigation"]) {
+      const output = render(CARD_MARKER.replace('aria-label="Topics"', `aria-label="${label}"`));
+      expect(output, label).toContain('<ul class="rh-card__topics" role="list"><li');
+      expect(output, label).not.toContain("aria-label");
+    }
+    // "Topics" on the grid, or on a topics list that is not inside a row, is dropped too.
+    const onGrid = render(CARD_MARKER.replace('<ul class="rh-card-grid" role="list">', '<ul class="rh-card-grid" role="list" aria-label="Topics">'));
+    expect(onGrid).toContain('<ul class="rh-card-grid" role="list"><li>');
+    const outsideRow = render(withTail('<ul class="rh-card__topics" aria-label="Topics" role="list"><li>Loose</li></ul>'));
+    expect(outsideRow).toContain('<ul role="list"><li>Loose</li></ul></div>');
+    expect(outsideRow.match(/aria-label="Topics"/g)).toHaveLength(1);
+  });
+
+  it("shifts the block's heading and the rows' titles with the body's headings", () => {
+    const renderBlock = vi.fn<RenderBlock>(() => null);
+    const output = render(`<h1>Top</h1>${CARD_MARKER}`, { renderBlock });
+    expect(renderBlock.mock.calls[0]?.[0].headingLevel).toBe("h3");
+    const [, fallback] = renderBlock.mock.calls[0] ?? [];
+    const markup = renderToStaticMarkup(<>{fallback}</>);
+    expect(markup).toContain("<h3>More on Headless delivery</h3>");
+    expect(markup).toContain('<h4 class="rh-card__title">');
+    expect(output).toBe("<h2>Top</h2>");
+  });
+
+  it("keeps rh-card__link only on a link inside an article.rh-card of the same marker, so its stretched ::after cannot reach past a row", () => {
+    const LINK = '<a class="rh-card__link" href="/resources/webinar/stray/">Stray</a>';
+    const STRAY = '<a href="/resources/webinar/stray/">Stray</a>';
+    const withRow = (extra: string) => CARD_MARKER.replace("<h2>More on Headless delivery</h2>", `<h2>More on Headless delivery</h2>${extra}`);
+    // Straight inside the marker, in a list item, in an article without the row's class, in a div posing as a row.
+    for (const extra of [LINK, `<p>${LINK}</p>`, `<ul><li>${LINK}</li></ul>`, `<article>${LINK}</article>`, `<div class="rh-card">${LINK}</div>`]) {
+      const output = render(withRow(extra));
+      expect(output, extra).toContain(STRAY);
+      // The row the CMS wrote keeps its own link's class.
+      expect(output.match(/class="rh-card__link"/g), extra).toHaveLength(1);
+    }
+    // A marker nested in a row of another: the inner marker is a scope of its own, outside any row.
+    const nested = CARD_MARKER.replace(
+      '<p class="rh-card__summary">',
+      `<div data-rh-block="related-resources" data-count="3" data-topic="headless-delivery" data-topic-id="9" data-exclude="15">${LINK}</div><p class="rh-card__summary">`,
+    );
+    const output = render(nested);
+    expect(output).toContain(STRAY);
+    expect(output.match(/class="rh-card__link"/g)).toHaveLength(1);
+  });
+
+  it("keeps each row class only on the element it belongs on, and the inner ones only inside a row", () => {
+    const output = render(
+      withTail('<div class="rh-card"><p class="rh-card__title">x</p></div><ol class="rh-card__topics"><li class="rh-card__topic">y</li></ol><p class="rh-card__summary">z</p>')
+        .replace('<span class="rh-card__type">', '<span class="rh-card__type rh-card-grid">')
+        .replace('<p class="rh-card__summary">A summary.</p>', '<div class="rh-card__summary">A summary.</div>'),
+    );
+    expect(output).toContain("</ul><div><p>x</p></div><ol><li>y</li></ol><p>z</p></div>");
+    expect(output).toContain('<span class="rh-card__type">Webinar</span>');
+    expect(output).toContain("<div>A summary.</div>");
+    // The rows the CMS wrote keep every class.
+    for (const name of ["rh-card-grid", "rh-card", "rh-card__meta", "rh-card__body", "rh-card__title", "rh-card__link", "rh-card__topics", "rh-card__topic"]) {
+      expect(output, name).toContain(`class="${name}"`);
+    }
+  });
+
+  it("drops rh-card__link on any element but a link, even inside a row", () => {
+    const output = render(CARD_MARKER.replace('<p class="rh-card__summary">A summary.</p>', '<p class="rh-card__summary"><span class="rh-card__link">A summary.</span></p>'));
+    expect(output).toContain('<p class="rh-card__summary"><span>A summary.</span></p>');
+    expect(output.match(/class="rh-card__link"/g)).toHaveLength(1);
+  });
+
+  it("drops rh-card__title on an h1 and keeps it on an h6", () => {
+    const title = (tag: string) => CARD_MARKER.replace('<h3 class="rh-card__title">', `<${tag} class="rh-card__title">`).replace("</h3>", `</${tag}>`);
+    // The h1 makes the body's headings one level down, so it renders as an h2 and the marker's heading as an h3.
+    const onH1 = render(title("h1"));
+    expect(onH1).toContain('<div class="rh-card__body"><h2><a class="rh-card__link"');
+    expect(onH1).not.toContain("rh-card__title");
+    expect(render(title("h6"))).toContain('<div class="rh-card__body"><h6 class="rh-card__title"><a class="rh-card__link"');
+  });
+
+  it("drops a row class written in another case: the list is exact", () => {
+    const output = render(CARD_MARKER.replace('class="rh-card__link"', 'class="RH-CARD__LINK"'));
+    expect(output).toContain('<h3 class="rh-card__title"><a href="/resources/webinar/example/">Example</a></h3>');
+    expect(output).not.toMatch(/rh-card__link/i);
+  });
+
+  it("decides a nested marker's wrapper outside any row, so it keeps no row class from the row around it", () => {
+    const nested = CARD_MARKER.replace(
+      '<p class="rh-card__summary">',
+      '<div class="rh-card__body" data-rh-block="related-resources" data-count="3" data-topic="headless-delivery" data-topic-id="9" data-exclude="15"><p>Inner</p></div><p class="rh-card__summary">',
+    );
+    const output = render(nested);
+    expect(output).toContain('<div class="rh-related"><p>Inner</p></div><p class="rh-card__summary">');
+    // The row's own body keeps its class.
+    expect(output.match(/class="rh-card__body"/g)).toHaveLength(1);
+  });
+
+  it("gives an invalid marker inside a valid one the body's rules", () => {
+    const output = render(
+      withTail(`<div data-rh-block="related-resources" data-count="0"><ul class="rh-card-grid" role="list">${ROW}</ul></div>`),
+    );
+    expect(output.match(/<article class="rh-card">/g)).toHaveLength(1);
+    expect(output).toContain('<div class="rh-related"><ul><li><p><span>Webinar</span>');
+  });
+
+  it("keeps the rows in the fallback of a marker past the cap and of one inside a link", () => {
+    const renderBlock = vi.fn<RenderBlock>(() => <aside>related</aside>);
+    const capped = render(CARD_MARKER.repeat(6), { renderBlock });
+    expect(renderBlock).toHaveBeenCalledTimes(5);
+    expect(capped.match(/<aside>related<\/aside>/g)).toHaveLength(5);
+    expect(capped.match(/<article class="rh-card">/g)).toHaveLength(1);
+    expect(capped).toContain('<ul class="rh-card-grid" role="list">');
+
+    const linked = render(`<a href="/resources/">${CARD_MARKER}</a>`, { renderBlock });
+    expect(renderBlock).toHaveBeenCalledTimes(5);
+    expect(linked).toContain('<article class="rh-card">');
+    // The row's own link is unwrapped inside the outer link, as any nested link is.
+    expect(linked).toContain('<h3 class="rh-card__title">Example</h3>');
   });
 });
 
