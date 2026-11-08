@@ -173,10 +173,28 @@ final class OutgoingPingsTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Every sender the plugin removes has a case above, and they are all of core's senders.
+	 * Every sender the plugin removes has a case above, and they are all of core's senders: after
+	 * boot, nothing is left on `do_all_pings` but 7.1's environment check at priority 1, which
+	 * older cores do not have. A sender a later core adds fails this test.
 	 */
 	public function test_every_sender_has_a_case(): void {
 		$this->assertSame( OutgoingPings::SENDERS, array_keys( self::senders() ) );
+
+		$expected = array();
+		if ( function_exists( 'wp_maybe_disable_outgoing_pings_for_environment' ) ) {
+			$expected[] = '1 wp_maybe_disable_outgoing_pings_for_environment';
+		}
+
+		$left = array();
+		if ( isset( $GLOBALS['wp_filter']['do_all_pings'] ) ) {
+			foreach ( $GLOBALS['wp_filter']['do_all_pings']->callbacks as $priority => $callbacks ) {
+				foreach ( array_keys( $callbacks ) as $callback ) {
+					$left[] = $priority . ' ' . $callback;
+				}
+			}
+		}
+
+		$this->assertEqualsCanonicalizing( $expected, $left );
 	}
 
 	/**
