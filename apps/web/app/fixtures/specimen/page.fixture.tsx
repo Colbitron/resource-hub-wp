@@ -42,7 +42,7 @@ import { StillThemeFieldset } from "./StillThemeFieldset";
 // own stylesheet, as on the real pages (ResourceArticle `resource.css` and
 // `prose.css`, PageArticle and WelcomePage `page.css`, the 404 page
 // `not-found.css`, ResourceCard the shared `card.css`).
-import "@/components/listing.css";
+import "@colbitron/resource-hub-ui/listing.css";
 import "@colbitron/resource-hub-ui/prose.css";
 import "./specimen.css";
 

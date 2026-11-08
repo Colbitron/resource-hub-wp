@@ -1,10 +1,46 @@
 /*
  * The listing pages: heading, filters, the count line, the two section
- * headings (Featured, Latest), the empty state and pagination, built on the
- * shared tokens (packages/ui/DESIGN.md, "Components"). The rows are
- * `.rh-card` in the shared card.css, which ResourceCard imports, and the
- * lead is `.rh-lead` in lead.css, which FeaturedLead imports. These classes
- * are the front end's own, not part of the contract.
+ * headings (Featured, Latest), the empty state and pagination (DESIGN.md,
+ * "Components"). Class names are part of the contract (ADR 0033; see
+ * `packages/ui/README.md`): the front end's <ListingPage>, <FilterNav> and
+ * <Pagination> (`apps/web/components/`) render the markup, and the CMS
+ * block theme's library templates will render the same. The rows are
+ * `.rh-card` in card.css and the lead is `.rh-lead` in lead.css, which the
+ * consumer loads beside this file.
+ *
+ * Built only on the tokens in tokens.css, which the consumer loads first.
+ *
+ * Markup, in page order (the lead's section, or the list alone, or the
+ * empty state, then the pagination):
+ *   <header class="rh-listing__header">
+ *     <h1>…</h1>
+ *     <p class="rh-listing__count">…</p>
+ *   </header>
+ *   <nav class="rh-filters" aria-label="…">
+ *     <div class="rh-filters__group">
+ *       <span class="rh-filters__name" id="…">…</span>
+ *       <ul class="rh-filters__list" aria-labelledby="…" role="list">
+ *         <li><a class="rh-filters__link" href="…" aria-current="true">…</a></li>
+ *       </ul>
+ *     </div>
+ *   </nav>
+ *   <div class="rh-listing__lead">
+ *     <h2 class="rh-listing__section">Featured</h2>
+ *     …lead.css's lead…
+ *   </div>
+ *   <div class="rh-listing__latest">
+ *     <h2 class="rh-listing__section">Latest</h2>
+ *     <ul class="rh-card-grid" role="list">…</ul>
+ *   </div>
+ *   <div class="rh-listing__empty"><p>…</p></div>
+ *   <nav class="rh-pagination" aria-label="Pagination">
+ *     <ul class="rh-pagination__list" role="list">
+ *       <li class="rh-pagination__step"><a class="rh-pagination__link" href="…" rel="prev">Previous</a></li>
+ *       <li><a class="rh-pagination__link" href="…" aria-current="page">2</a></li>
+ *       <li><span class="rh-pagination__gap" aria-hidden="true">…</span></li>
+ *       <li class="rh-pagination__step rh-pagination__step--next"><a class="rh-pagination__link" href="…" rel="next">Next</a></li>
+ *     </ul>
+ *   </nav>
  *
  * The page is one flat surface: hierarchy comes from the type, from two
  * weights of rule (a hairline, `--rh-color-border` at `--rh-border-width`,

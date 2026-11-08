@@ -23,6 +23,7 @@
 		"prose.css",
 		"related.css",
 		"lead.css",
+		"listing.css",
 		"type-accents.json",
 		"README.md",
 		"DESIGN.md"
@@ -40,6 +41,7 @@
 		"./prose.css": "./prose.css",
 		"./related.css": "./related.css",
 		"./lead.css": "./lead.css",
+		"./listing.css": "./listing.css",
 		"./type-accents.json": "./type-accents.json"
 	},
 	"scripts": {

@@ -13,7 +13,7 @@ import { plainText, toCard } from "@/lib/wp/cards";
 import type { ResourceListing } from "@/lib/wp/resources";
 import type { WpTerm } from "@/lib/wp/schemas/rest";
 
-import "./listing.css";
+import "@colbitron/resource-hub-ui/listing.css";
 
 /**
  * The one listing behind the eight listing routes under `app/resources/`
