@@ -39,7 +39,7 @@ A filterable resources library: WordPress models it and pushes changes, Next.js 
 | Running and testing the front end, its configuration, routes and images | `apps/web/README.md`, `apps/web/e2e/README.md` |
 | Why the system has its shape | `docs/adr/` (14 records) |
 | Why one class or module does what it does | Its docblock |
-| What is not built yet | Issue #89 (the CMS theme, slice 5) and the open follow-ups #85 (lab measurement), #86 (CMS pages' LCP image) and #87 (the related list's scale path) |
+| What is not built yet | Issue #89 (the CMS theme, slice 5) and the open follow-ups #85 (lab measurement) and #87 (the related list's scale path) |
 
 ## Standards and workflow
 

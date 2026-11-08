@@ -194,6 +194,27 @@ test.describe("the root", () => {
 });
 
 test.describe("pages at their paths", () => {
+  test("a page leads with its body's first image, preloaded at high priority, and keeps every later one lazy (issue #86)", async ({ page }) => {
+    const slug = `lead-image-${Date.now().toString(36)}`;
+    const figure = (name: string) =>
+      `<figure class="wp-block-image"><img src="{{origin}}/wp-content/uploads/2026/11/content-model.png" alt="${name}" width="240" height="160" /></figure>`;
+    const created = await cms.createPage({ title: "Lead image", slug, content: `<p>Intro.</p>${figure("First")}<p>More.</p>${figure("Second")}${figure("Third")}` });
+    await page.goto(created.path);
+    const body = page.locator(".rh-page__body");
+    const first = body.getByRole("img", { name: "First" });
+    expect(await first.evaluate((img) => (img as HTMLImageElement).loading)).not.toBe("lazy");
+    await expect(first).toHaveAttribute("fetchpriority", "high");
+    for (const name of ["Second", "Third"]) {
+      const later = body.getByRole("img", { name });
+      expect(await later.evaluate((img) => (img as HTMLImageElement).loading), name).toBe("lazy");
+      await expect(later).not.toHaveAttribute("fetchpriority", /./);
+    }
+    const preload = page.locator('link[rel="preload"][as="image"]');
+    await expect(preload).toHaveCount(1);
+    await expect(preload).toHaveAttribute("fetchpriority", "high");
+    await expect(preload).toHaveAttribute("imagesrcset", (await first.getAttribute("srcset"))!);
+  });
+
   test("a nested page renders at its parent chain, with its title, canonical and excerpt", async ({ request }) => {
     const path = `/${ABOUT.slug}/${TEAM.slug}/`;
     const html = await expectPage(await get(request, path), TEAM.title, path);
