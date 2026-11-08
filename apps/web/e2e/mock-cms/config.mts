@@ -95,8 +95,9 @@ export function appServerEnv(env: Env = process.env): Record<string, string> {
 /**
  * True when `RH_E2E_PREBUILT=1`: the app in `.next` was already built by an
  * earlier run with `appServerEnv()` on the same ports, so the harness starts
- * it without building again. CI sets it for the screenshot and Lighthouse
- * runs, which follow the end-to-end run and reuse its build.
+ * it without building again. A local run after `pnpm web:test:e2e` sets it
+ * to reuse that build; CI never does, since each of its jobs runs on its
+ * own sandbox and builds its own copy (`e2e/README.md`).
  */
 export function prebuilt(env: Env = process.env): boolean {
   return env.RH_E2E_PREBUILT === "1";

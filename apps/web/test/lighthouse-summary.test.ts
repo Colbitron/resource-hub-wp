@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cell, median, medianTable, type Lhr } from "../e2e/lighthouse-summary.mts";
+import { cell, coverageProblems, median, medianTable, type Lhr } from "../e2e/lighthouse-summary.mts";
 
 // The medians Lighthouse's runner prints and puts in CI's job summary
 // (e2e/lighthouse-summary.mts).
@@ -74,5 +74,32 @@ describe("medianTable", () => {
         "",
       ].join("\n"),
     );
+  });
+});
+
+describe("coverageProblems", () => {
+  const home = "http://localhost:3310/";
+  const library = "http://localhost:3310/resources/";
+  const runs = (url: string, count: number) => Array.from({ length: count }, () => lhr(url, {}));
+
+  it("is empty when every expected URL has its runs and nothing else was measured", () => {
+    expect(coverageProblems([...runs(home, 5), ...runs(library, 5)], [home, library], 5)).toEqual([]);
+  });
+
+  it("names a URL with no runs, as when a shard's reports never arrived", () => {
+    expect(coverageProblems(runs(home, 5), [home, library], 5)).toEqual([`${library} has 0 runs, not 5`]);
+  });
+
+  it("names a URL with too few or too many runs", () => {
+    expect(coverageProblems([...runs(home, 4), ...runs(library, 10)], [home, library], 5)).toEqual([
+      `${home} has 4 runs, not 5`,
+      `${library} has 10 runs, not 5`,
+    ]);
+  });
+
+  it("names a URL that was measured but not expected", () => {
+    expect(coverageProblems([...runs(home, 5), ...runs(library, 5)], [home], 5)).toEqual([
+      `${library} was measured but is not a Lighthouse URL`,
+    ]);
   });
 });

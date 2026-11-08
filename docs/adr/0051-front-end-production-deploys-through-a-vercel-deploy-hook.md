@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-11-05
+amended: 2026-11-07
 ---
 
 # The front end's production deploys come from CI through a Vercel deploy hook
@@ -25,3 +26,11 @@ The deploy order puts the CMS first and the front end second: the front end goes
 - A narrow window remains between the head check and Vercel reading `main`, which only a deploy that names the commit would close.
 - Rotating the hook means creating a new one, updating the secret and deleting the old one. The procedure, the project settings and the rollback steps are in [`docs/runbooks/deploy.md`](../runbooks/deploy.md).
 - The first-deploy check closed on 2026-11-06: the setting is read from `apps/web/vercel.json` and does not block deploy hooks. The evidence is in the [runbook](../runbooks/deploy.md#the-front-end-deploy).
+
+## Amendments
+
+### 2026-11-07: `deploy-web` runs on Depot CI
+
+**What changed.** `deploy-web` runs on Depot CI, because CI moved there (ADR 0053). The single `web` job it needed was split into parallel front-end jobs, so it now needs `deploy` plus every one of them: the checks (lint, typecheck, unit tests, the production build and its fixture-route check), the end-to-end suite, the screenshots and brand images, the Lighthouse shards and the job that merges their medians. `VERCEL_DEPLOY_HOOK_URL` is a Depot CI secret, no longer a GitHub repository secret, because the job that reads it moved with CI.
+
+**What did not.** The hook, the head check before it fires and the rest of this record are unchanged: the front end still deploys only after the CMS, only from `main`, and only when every front-end job has passed on the commit the run tested.

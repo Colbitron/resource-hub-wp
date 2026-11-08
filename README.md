@@ -7,7 +7,7 @@ The plugin models a filterable resources library: a `resource` post type with `r
 ## Layout
 
 ```
-/                                        pnpm workspace root: .wp-env.json, CI, CLAUDE.md, this README
+/                                        pnpm workspace root: .wp-env.json, CLAUDE.md, this README
 ├─ wp-content/plugins/resource-hub-wp/   the WordPress plugin (its own README.md and CLAUDE.md)
 ├─ wp-content/themes/resource-hub/       the CMS's block theme, planned for slice 5; not here yet
 ├─ apps/web/                             the Next.js front end (its own README.md and CLAUDE.md)
@@ -15,6 +15,8 @@ The plugin models a filterable resources library: a `resource` post type with `r
 ├─ docs/adr/                             the hard-to-reverse decisions, one sequence for the whole project
 ├─ docs/architecture/                    how revalidation and caching work, for contributors
 ├─ docs/runbooks/                        deploying, rolling back, rotating secrets
+├─ .depot/                               CI on Depot CI (ADR 0053): the gate, the deploys, the screenshot baselines
+├─ .github/workflows/                    the two workflows left on GitHub Actions: preview Lighthouse, the ADR check
 └─ .claude/rules/                        path-scoped rules for agents, loaded only when a matching file is touched
 ```
 
@@ -29,7 +31,7 @@ Everything marked done exists on `main` and is green in CI.
 | wp-env environment, PHP 8.4, latest WordPress | done |
 | Composer, PSR-4 autoloader, PHPCS, PHPUnit, Playwright | done |
 | Block build toolchain (`@wordpress/scripts`) | done |
-| GitHub Actions gate | done |
+| CI gate on Depot CI ([ADR 0053](docs/adr/0053-ci-runs-on-depot-ci.md)) | done |
 | Hosted CMS on Cloudways, PHP 8.4, HTTPS ([ADR 0005](docs/adr/0005-hosted-wordpress-on-cloudways.md)) | done |
 | Deploy job from `main` to the host | done |
 | `resource` post type, taxonomies and the one-type rule ([ADR 0007](docs/adr/0007-one-post-type-with-a-type-taxonomy.md), [ADR 0024](docs/adr/0024-type-paths-mirrored-on-both-sites.md)) | done |
@@ -124,15 +126,17 @@ The wp-env scripts run from the root, where `.wp-env.json` is; the rest delegate
 
 ## Testing
 
-Every pull request and every push to `main` runs `.github/workflows/ci.yml`: the CMS gate (the schema test, PHPCS, PHPUnit, then Playwright against the wp-env tests site) and the `web` job (lint, typecheck, unit tests, build, Playwright against a mock CMS with an axe scan, then the specimen's pixel screenshots and Lighthouse CI on the same build). PHPUnit reinstalls the tests site, so it runs before Playwright and the specs activate the plugin themselves; the details are in the plugin's README and `apps/web/e2e/README.md`. Three more workflows sit beside it in `.github/workflows/`. `preview-lighthouse.yml` runs Lighthouse against each pull request's Vercel preview once Vercel reports it deployed and posts the result as a comment on the pull request; it never blocks a merge (`apps/web/e2e/README.md`, "The design gates"). `screenshot-baselines.yml`, run by hand, regenerates the specimen's screenshot baselines on a GitHub runner (`apps/web/e2e/README.md`). `adr-approval.yml` fails a pull request that changes an ADR, or the guards on them, without the `adr-approved` label, which only the owner applies (`.claude/rules/adr.md`).
+CI runs on Depot CI ([ADR 0053](docs/adr/0053-ci-runs-on-depot-ci.md)), from `.depot/workflows/`, in GitHub Actions' workflow syntax; its checks reach pull requests through Depot's GitHub app. Every push to `main` runs all of `.depot/workflows/ci.yml`, and every pull request the jobs its changed paths reach (`docs/runbooks/deploy.md`, "Which jobs a pull request runs"). The jobs start together once a few-second scope job has answered, so a run waits about three minutes, for the slowest: the CMS gate (the schema test, PHPCS, PHPUnit, then Playwright against the wp-env tests site); the front end's checks (lint, typecheck, unit tests, the production build); its end-to-end suite against a mock CMS with an axe scan; the specimen's pixel screenshots and the brand images; and, on `main` only, Lighthouse CI in five shards by URL, whose medians one more job merges. PHPUnit reinstalls the tests site, so it runs before Playwright and the specs activate the plugin themselves; the details are in the plugin's README and `apps/web/e2e/README.md`. `.depot/workflows/screenshot-baselines.yml`, run by hand with `depot ci run` or `depot ci dispatch`, regenerates the specimen's screenshot baselines on a Depot CI sandbox (`apps/web/e2e/README.md`). Runs, logs and artifacts are read with `depot ci status`, `depot ci logs` and `depot ci artifacts`.
+
+Two workflows stay on GitHub Actions, in `.github/workflows/`. `preview-lighthouse.yml` runs Lighthouse against each pull request's Vercel preview once Vercel reports it deployed and posts the result as a comment on the pull request; it never blocks a merge, still uses Actions minutes and does not run if the GitHub limit is reached again, and moving it to Depot CI, whose compatibility page lists its `deployment_status` trigger as supported, is a follow-up (`apps/web/e2e/README.md`, "The design gates"). `adr-approval.yml` fails a pull request that changes an ADR, or the guards on them, without the `adr-approved` label, which only the owner applies; a copy in `.depot/workflows/` runs beside it. GitHub's copy is the check of record only while GitHub Actions runs jobs, and Depot's is trusted only once a test after the merge shows Depot CI runs `main`'s copy, as GitHub does (`.claude/rules/adr.md`).
 
 ## Deployment
 
-A push to `main` deploys the CMS first, by rsync over SSH from CI after the gate passes, then starts the front end's Vercel production build through a deploy hook once the `web` job has passed too ([ADR 0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md)). Pull requests never deploy and get Vercel previews. The secrets, the rollback steps for each side, secret rotation and the host notes are in [`docs/runbooks/deploy.md`](docs/runbooks/deploy.md).
+A push to `main` deploys the CMS first, by rsync over SSH from CI after the gate passes, then starts the front end's Vercel production build through a deploy hook once every front-end job has passed too ([ADR 0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md)). Pull requests never deploy and get Vercel previews. The secrets, the rollback steps for each side, secret rotation and the host notes are in [`docs/runbooks/deploy.md`](docs/runbooks/deploy.md).
 
 ## Decisions
 
-Thirteen records under [`docs/adr/`](docs/adr/) hold the decisions that are expensive to undo. Everything else is explained where it lives: [`docs/architecture/revalidation.md`](docs/architecture/revalidation.md) (how a change reaches the front end), [`docs/architecture/caching.md`](docs/architecture/caching.md) (caching, URLs and redirects, with the measurements), the [deploy runbook](docs/runbooks/deploy.md), the contract in [`packages/ui/README.md`](packages/ui/README.md), the visual system in [`packages/ui/DESIGN.md`](packages/ui/DESIGN.md), and the docblocks.
+Fourteen records under [`docs/adr/`](docs/adr/) hold the decisions that are expensive to undo. Everything else is explained where it lives: [`docs/architecture/revalidation.md`](docs/architecture/revalidation.md) (how a change reaches the front end), [`docs/architecture/caching.md`](docs/architecture/caching.md) (caching, URLs and redirects, with the measurements), the [deploy runbook](docs/runbooks/deploy.md), the contract in [`packages/ui/README.md`](packages/ui/README.md), the visual system in [`packages/ui/DESIGN.md`](packages/ui/DESIGN.md), and the docblocks.
 
 - [0005](docs/adr/0005-hosted-wordpress-on-cloudways.md) The CMS is hosted on Cloudways so Vercel can reach it over HTTPS; PHP is pinned to 8.4 to match.
 - [0007](docs/adr/0007-one-post-type-with-a-type-taxonomy.md) One `resource` post type with a `resource_type` taxonomy, because core REST has no cross-type collection that filters by taxonomy; `featured` is a term in a code-managed `resource_flag` taxonomy, not meta, because term relationships are indexed and `hierarchical` is what keeps editors from creating flags.
@@ -145,8 +149,9 @@ Thirteen records under [`docs/adr/`](docs/adr/) hold the decisions that are expe
 - [0033](docs/adr/0033-one-repository-for-the-plugin-the-front-end-and-the-contract.md) One repository and one pnpm workspace hold the plugin, the front end and the contract package, which is never published, with wp-env as the only local environment.
 - [0040](docs/adr/0040-the-cms-url-never-reaches-the-browser.md) The CMS URL never reaches the browser: server-side reads, a `/media/` rewrite and one rewriting pass over rendered HTML; exposure, not security.
 - [0043](docs/adr/0043-fetch-cache-with-tags-without-cache-components.md) The caching model: the `fetch` Data Cache with tags as the only HTTP cache, cleared by the union of each event's states, with a build that prerenders a bounded set when the CMS answers and never fails because of it.
-- [0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md) The front end's production deploy is a fire-and-forget Vercel deploy hook fired by CI after the CMS deploy and the `web` job.
+- [0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md) The front end's production deploy is a fire-and-forget Vercel deploy hook fired by CI after the CMS deploy and every front-end job.
 - [0052](docs/adr/0052-the-front-end-renders-the-cms-pages.md) The front end renders the CMS's pages, learning the tree through one plugin route by path and hearing of changes through a `page` event and one `pages` tag.
+- [0053](docs/adr/0053-ci-runs-on-depot-ci.md) CI, the deploys included, runs on Depot CI, because GitHub Actions' free plan ran out of minutes and an Actions outage would stop every merge and deploy.
 
 ## Contract with the front end
 

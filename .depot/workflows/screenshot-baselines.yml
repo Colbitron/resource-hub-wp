@@ -1,0 +1,83 @@
+# Depot CI Migration
+# Source: .github/workflows/screenshot-baselines.yml
+#
+# Changes made:
+# - Changed GitHub runs-on labels to their Depot equivalents
+
+# Edited after the migration, for Depot CI:
+# - the header below describes running this on Depot CI
+# - Node and the dependencies come from the shared setup action
+#   (.depot/actions/setup-js), as in ci.yml, which caches the pnpm store
+#   without saving a copy per run, and install the front end alone
+
+# Regenerates the specimen's screenshot baselines on a Depot CI sandbox, for
+# when a laptop's render and CI's disagree. Baselines are normally made on a
+# laptop (`pnpm web:test:screenshots:update`), in the same pinned Docker image
+# CI compares in, but an Apple-silicon laptop renders under amd64 emulation;
+# if CI then fails on a pixel-level difference that no design change explains,
+# run this workflow on the branch, download the `screenshot-baselines`
+# artifact, unzip it over apps/web/e2e/__screenshots__/, look at the images,
+# and commit them. CI's own failed run has the runner's render too: the
+# actual images are in its web-screenshot-traces artifact.
+#
+# Two ways to run it, both from the Depot CLI:
+# - `depot ci run --workflow .depot/workflows/screenshot-baselines.yml` from
+#   a checkout of the branch. It uploads the branch's unpushed commits and
+#   uncommitted edits to tracked files as a patch, so it works before the
+#   branch is pushed; untracked files are not uploaded, so commit new ones
+#   first. If git reads the patch as a rename into .depot/ (a file deleted
+#   elsewhere with a similar one added there, as when .github/workflows/
+#   ci.yml moved), Depot fails it with "Failed to apply workspace patch ...
+#   No such file or directory", because it applies only the .depot/ side;
+#   run with rename detection off for that command:
+#   GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=diff.renames
+#   GIT_CONFIG_VALUE_0=false depot ci run --workflow ...
+# - `depot ci dispatch --repo Colbitron/resource-hub-wp
+#   --workflow screenshot-baselines.yml --ref <branch>` for a pushed branch.
+# Then `depot ci artifacts list <run-id>` names the artifact's ID, and
+# `depot ci artifacts download <artifact-id> --output-file baselines.zip`
+# fetches it (apps/web/e2e/README.md, "Screenshots").
+#
+# Manual only, read-only, and it never commits: the artifact stays in the
+# run on Depot CI, and the baselines reach a branch only through a person's
+# commit and the pull request's diff.
+name: Screenshot baselines
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baselines:
+    name: Regenerate the specimen's screenshot baselines
+    runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node, pnpm and the JavaScript dependencies
+        uses: ./.depot/actions/setup-js
+        with:
+          filter: resource-hub-web...
+
+      # Builds the fixture app against the mock CMS, starts the pinned image's
+      # browser server, and rewrites every baseline, matching or not
+      # (`--update-snapshots=all`), so the artifact is a complete set from
+      # this runner.
+      - name: Regenerate the baselines
+        working-directory: apps/web
+        run: node e2e/screenshots.mts --update-snapshots=all
+
+      - name: Upload the baselines
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshot-baselines
+          path: apps/web/e2e/__screenshots__/
+          if-no-files-found: error
+          retention-days: 7

@@ -39,6 +39,7 @@
 		"web:test:screenshots": "pnpm --filter resource-hub-web test:screenshots",
 		"web:test:screenshots:update": "pnpm --filter resource-hub-web test:screenshots:update",
 		"web:test:lighthouse": "pnpm --filter resource-hub-web test:lighthouse",
+		"web:test:lighthouse:quick": "pnpm --filter resource-hub-web test:lighthouse:quick",
 		"web:lighthouse:preview": "pnpm --filter resource-hub-web lighthouse:preview",
 		"images:generate": "node tools/featured-images/generate.mts",
 		"images:import": "tools/featured-images/import.sh"

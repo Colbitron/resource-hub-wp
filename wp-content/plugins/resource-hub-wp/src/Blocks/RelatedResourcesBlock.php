@@ -24,7 +24,7 @@ use WP_Term;
  * the post the block sits in, on any host post type. No picks, no fill from other topics.
  *
  * Registration reads `build/related-resources/block.json`, not `blocks/related-resources/block.json`:
- * the deploy syncs `build/` and `src/` to the host and leaves `blocks/` behind (`.github/workflows/ci.yml`,
+ * the deploy syncs `build/` and `src/` to the host and leaves `blocks/` behind (`.depot/workflows/ci.yml`,
  * "Sync the plugin"), and the compiled `block.json` sits beside the script and the stylesheet it names.
  * Without a build the block is simply not registered, as the editor scripts are not enqueued without
  * theirs; `pnpm build` is part of running the plugin (`README.md`). The stylesheet is the shared

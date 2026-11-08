@@ -13,7 +13,7 @@
  * client by construction. Starting refuses when that version and the image's
  * differ.
  *
- * The image is pinned to linux/amd64, the platform of GitHub's runners, so an
+ * The image is pinned to linux/amd64, the platform of CI's runners, so an
  * Apple-silicon laptop renders under emulation the same pixels CI does.
  * `RH_PW_DOCKER_PLATFORM` overrides it. The container gets a name of its own
  * and a free host port from Docker, and only that container is stopped;

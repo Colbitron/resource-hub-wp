@@ -2,7 +2,7 @@
  * The Docker image the screenshot tests run Chromium in
  * (`e2e/screenshots.mts`), pinned by digest so every run, on a laptop and
  * in CI, uses the same bytes: a tag can be re-pushed, a digest cannot.
- * CI's background pull reads the same constant (`.github/workflows/ci.yml`).
+ * CI's background pull reads the same constant (`.depot/workflows/ci.yml`).
  *
  * The image reference is built from the two constants below, so the tag's
  * version and the digest are each written once. The version must equal the

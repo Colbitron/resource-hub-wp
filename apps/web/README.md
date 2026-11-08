@@ -23,7 +23,8 @@ pnpm web:test        # vitest run (unit tests, test/*.test.ts and lib/*.test.ts)
 pnpm web:test:e2e    # playwright test (e2e/*.spec.ts, against the mock CMS in e2e/mock-cms/), axe included
 pnpm web:test:screenshots         # the design specimen against its pixel baselines, in Docker
 pnpm web:test:screenshots:update  # rewrite the baselines after a design change
-pnpm web:test:lighthouse          # Lighthouse CI on the sampled URLs, mobile budgets
+pnpm web:test:lighthouse          # Lighthouse CI on the sampled URLs, mobile budgets, five runs per URL
+pnpm web:test:lighthouse:quick    # the same, one run per URL: the smell test before pushing a front-end change
 pnpm web:lighthouse:preview       # Lighthouse on a Vercel preview, the comment written to a file (needs VERCEL_PROTECTION_BYPASS)
 pnpm web:build       # clears .next/cache/fetch-cache, then next build
 ```
@@ -69,7 +70,7 @@ The final gate run on the shipped build, a separate run of the same command, mea
 
 ## Status
 
-The listings, the single resource with its related section, the related-resources block's swap in a body, the CMS's pages, the data layer, the content renderer and the revalidation route are in, all ISR; the plugin's side of the related route and the block is described in [its README](../../wp-content/plugins/resource-hub-wp/README.md). CI lints, typechecks, builds and runs the unit and end-to-end tests, then the design gates on the same build: axe, the specimen's screenshots and Lighthouse CI ([`e2e/README.md`](e2e/README.md#the-design-gates)). A separate, non-blocking workflow measures each pull request's Vercel preview with Lighthouse at the gate's settings and posts the medians as a comment on the pull request (same section).
+The listings, the single resource with its related section, the related-resources block's swap in a body, the CMS's pages, the data layer, the content renderer and the revalidation route are in, all ISR; the plugin's side of the related route and the block is described in [its README](../../wp-content/plugins/resource-hub-wp/README.md). CI lints, typechecks, builds and runs the unit and end-to-end tests, and the design gates, as parallel jobs that each build the same commit: axe and the specimen's screenshots on every push to `main` and every pull request that reaches `apps/` or a shared path, and Lighthouse CI, sharded by URL, on `main` and dispatches only ([`e2e/README.md`](e2e/README.md#the-design-gates)). A separate, non-blocking workflow measures each pull request's Vercel preview with Lighthouse at the gate's settings and posts the medians as a comment on the pull request (same section).
 
 ## Possible next steps
 

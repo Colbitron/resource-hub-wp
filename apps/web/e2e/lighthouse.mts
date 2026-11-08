@@ -3,7 +3,16 @@
  * CMS, the same two servers the Playwright suite starts, and prints the
  * median of each budgeted number per URL.
  *
- *   node e2e/lighthouse.mts
+ *   node e2e/lighthouse.mts            five runs per URL, as CI
+ *   node e2e/lighthouse.mts --quick    one run per URL unless RH_LIGHTHOUSE_RUNS says
+ *                                      otherwise: the local smell test before a push
+ *
+ * `--quick` sets `RH_LIGHTHOUSE_RUNS=1` when it is unset, before the config
+ * is read, and `lhci` inherits it; `RH_LIGHTHOUSE_URLS` narrows the URLs
+ * (`lighthouse-shard.mts`). The assertions are the same either way, so a
+ * missed budget fails a quick run too; one run is noisier than the median
+ * of five, and main's five-run medians in CI are the record. The config
+ * refuses both settings in CI.
  *
  * Starts the mock first, then builds the app with the test environment
  * (`appServerEnv`) and stamps the build (`build-stamp.mts`), unless
@@ -32,16 +41,26 @@ import { createRequire } from "node:module";
 
 import { assertPrebuilt, writeBuildStamp } from "./build-stamp.mts";
 import { appServerEnv, appSiteOrigin, mockCmsOrigin, mockCmsPort, prebuilt, webPort } from "./mock-cms/config.mts";
+import { DEFAULT_RUNS } from "./lighthouse-shard.mts";
 import { medianTable, type Lhr } from "./lighthouse-summary.mts";
-import { SAMPLED_URLS } from "./sampled-urls.mts";
 
 const APP_DIR = new URL("..", import.meta.url).pathname;
 const RAW_DIR = join(APP_DIR, ".lighthouseci");
 const REPORT_DIR = join(APP_DIR, "lighthouse-results");
 
+const QUICK = process.argv.slice(2).includes("--quick");
+if (QUICK && !process.env.RH_LIGHTHOUSE_RUNS) process.env.RH_LIGHTHOUSE_RUNS = "1";
+
 const require = createRequire(import.meta.url);
+const COLLECT: { numberOfRuns: number; url: string[] } = require("../lighthouserc.cjs").ci.collect;
 /** The runs per URL, read from the config the assertions use, for the summary's heading. */
-const RUNS: number = require("../lighthouserc.cjs").ci.collect.numberOfRuns;
+const RUNS = COLLECT.numberOfRuns;
+/**
+ * The URLs `lhci collect` measures, read from the config too, so the warm-up
+ * requests the same list, one shard of it when `RH_LIGHTHOUSE_SHARD` names
+ * one (`lighthouse-shard.mts`).
+ */
+const URLS = COLLECT.url;
 
 const children: ChildProcess[] = [];
 
@@ -131,8 +150,7 @@ async function main(): Promise<number> {
 
   // One request per URL renders each ISR listing and fills the Data Cache,
   // as a reader after the first would find it.
-  const urls = SAMPLED_URLS.filter((sample) => sample.lighthouse).map((sample) => `${app}${sample.path}`);
-  for (const url of urls) {
+  for (const url of URLS) {
     const response = await fetch(url);
     await response.arrayBuffer();
     if (!response.ok) throw new Error(`${url} answered ${response.status} while warming.`);
@@ -147,7 +165,8 @@ async function main(): Promise<number> {
   const asserted = run("pnpm", ["exec", "lhci", "assert", config]);
 
   const table = summary();
-  console.log(`\n${table}\nCollected in ${Math.round((Date.now() - started) / 1000)} s; reports in lighthouse-results/.`);
+  const smell = RUNS < DEFAULT_RUNS ? ` ${RUNS} run(s) per URL: a smell test, noisier than the median of five; main's five-run medians in CI are the record.` : "";
+  console.log(`\n${table}\nCollected in ${Math.round((Date.now() - started) / 1000)} s; reports in lighthouse-results/.${smell}`);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, table);
 
   return asserted !== 0 ? asserted : uploaded;

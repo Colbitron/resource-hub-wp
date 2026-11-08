@@ -1,13 +1,22 @@
 # Lighthouse on each pull request's Vercel preview, reported as one comment
 # on the pull request. Informational: it is not a required check, and a
 # measurement that fails is reported in the comment rather than as a red
-# job (see the measure job). The blocking gate stays in ci.yml, against
-# `next start` and the mock CMS, where it measures the code, not the
-# content; this run sees what the gate cannot: the CDN, HTTP/2 and TLS,
-# compression, the hosted image optimiser's AVIF sizes and the hosted CMS's
-# real images and pages. How it works, its URL list, its cost against the
-# image optimiser's allowance and how to make it blocking later are in
-# apps/web/e2e/README.md ("The design gates").
+# job (see the measure job). The blocking gate stays in CI, on Depot CI
+# (.depot/workflows/ci.yml), against `next start` and the mock CMS, where
+# it measures the code, not the content; this run sees what the gate
+# cannot: the CDN, HTTP/2 and TLS, compression, the hosted image
+# optimiser's AVIF sizes and the hosted CMS's real images and pages. How
+# it works, its URL list, its cost against the image optimiser's allowance
+# and how to make it blocking later are in apps/web/e2e/README.md ("The
+# design gates").
+#
+# It stays on GitHub Actions for now while the rest of CI runs on Depot CI
+# (ADR 0053); moving it is a follow-up. Depot CI's compatibility page lists
+# on.deployment_status as supported (https://depot.dev/docs/ci/compatibility),
+# so the trigger is no obstacle. It still uses GitHub Actions minutes, and
+# if the GitHub limit is reached again it does not run; it is
+# informational, so nothing waits on it and that costs a comment, never a
+# merge or a deploy.
 #
 # Trigger: GitHub's deployment_status event, which Vercel sends when a
 # deployment it created on GitHub changes state. It fires only while the
@@ -93,7 +102,7 @@ jobs:
     if: needs.pr.outputs.number != ''
     runs-on: ubuntu-latest
     # Five runs per URL take about a minute per URL on these runners (the
-    # gate's timing in ci.yml), eight URLs here, plus the install.
+    # gate's timing when it ran here), eight URLs here, plus the install.
     timeout-minutes: 25
     # One run per pull request: a newer preview of the same pull request
     # cancels an older run, whose comment it would only overwrite.
@@ -122,7 +131,7 @@ jobs:
 
       # The deployed commit, which is what GitHub runs this workflow from.
       # Nothing here talks to GitHub through git after the checkout, so the
-      # token is not left in .git/config, as in ci.yml's deploy job.
+      # token is not left in .git/config, as in CI's deploy job.
       - name: Check out
         uses: actions/checkout@v7
         with:
@@ -136,10 +145,15 @@ jobs:
         with:
           node-version: 24
 
-      # The pnpm store is restored from the entry main's CI saved (the same
-      # path and key as ci.yml's "Locate the pnpm store"; see the comments
-      # there) and never saved: this job runs for pull requests only, and
-      # per-pull-request entries were what filled the repository's cache.
+      # The pnpm store is restored from GitHub's Actions cache (the same
+      # path and key as "Locate the pnpm store" in
+      # .depot/actions/setup-js; see the comments there) and never saved:
+      # this job runs for pull requests only, and per-pull-request entries
+      # were what filled the repository's cache. main's CI saved the entry
+      # it reads while CI ran on GitHub Actions; on Depot CI (ADR 0053) it
+      # saves to Depot's cache instead, so once GitHub evicts main's last
+      # entry this restore misses and the install downloads every package.
+      # That costs this informational job time, nothing else.
       - name: Locate the pnpm store
         id: pnpm-store
         run: |
