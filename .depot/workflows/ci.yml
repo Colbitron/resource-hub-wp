@@ -1422,19 +1422,34 @@ jobs:
       # unchanged, so a failure there leaves the previous theme active.
       # Already active, nothing is switched.
       #
-      # Then one call that loads WordPress with the theme as a reader's
-      # request would, plugins included: a functions.php that fatals on the
-      # host fails it. Then, when this step switched the theme, it switches
-      # back to the one it found, with `--skip-themes` so the broken theme's
-      # functions.php is not loaded for the switch, and fails the job, so the
-      # site is never left on a theme that cannot load. When the theme was
-      # already active, there is nothing to switch back to: the synced files
-      # are live, and the job fails with the rollback in the error.
+      # Then two checks. `theme is-active` loads WordPress with the theme and
+      # the plugins, so it runs functions.php and `init`: a functions.php
+      # that fatals on the host fails it. It renders no template and no
+      # block, so the second check is a real render: an anonymous request
+      # for a theme page, which the lockdown answers with a 404 drawn by the
+      # theme's templates/404.html. It must be a 404 carrying `rh-not-found`
+      # in a class attribute, which only that template writes on the CMS.
+      # The path is the CMS's own /resources/ with a query string unique to
+      # the run, so no cache layer in front of the host can answer it.
+      #
+      # When either check fails and this step switched the theme, it
+      # switches back to the one it found, with `--skip-themes` so the new
+      # theme's functions.php is not loaded for the switch, and fails the
+      # job, so the site is never left on a theme that cannot load or
+      # render. When the theme was already active, there is nothing to
+      # switch back to: the synced files are live, and the job fails with
+      # the rollback in the error. A check that cannot run (ssh dropping,
+      # the home URL unreadable, curl failing) counts as failed, so a
+      # network fault can switch back a theme that was fine; the next deploy
+      # tries again (docs/runbooks/deploy.md, "Activating the theme").
+      #
       # Checked in wp-env on 2026-11-08 with WP-CLI 2.12.0: an active theme's
       # `theme activate` exits 0 with a warning; a missing theme or one with
       # no index template exits 1 and leaves the stylesheet as it was; a
       # functions.php that throws fails the next call that loads WordPress,
-      # and `theme activate <previous> --skip-themes` then switches back.
+      # and `theme activate <previous> --skip-themes` then switches back;
+      # the anonymous 404 of a theme page is the theme's, with
+      # `rh-not-found`, and Twenty Twenty-Five's has no such class.
       - name: Activate the theme
         run: |
           dir=$(printf '%q' "$WP_ROOT")
@@ -1449,6 +1464,23 @@ jobs:
             exit 1
           fi
           echo "The host's theme was $previous."
+
+          # Fails the step after a failed check, switching back first when
+          # this step switched the theme. $1 says what failed.
+          fail_check() {
+            if [ "$previous" != resource-hub ]; then
+              # shellcheck disable=SC2029
+              if ssh deploy "cd $dir && $WP_CLI theme activate $(printf '%q' "$previous") --skip-themes"; then
+                echo "::error::$1 with resource-hub active on the host, so $previous was activated again. Read this step's log for the error."
+              else
+                echo "::error::$1 with resource-hub active on the host, and switching back to $previous failed too. Switch back by hand: $WP_CLI theme activate $previous --skip-themes, from the WordPress root (docs/runbooks/deploy.md, \"Rolling back\")."
+              fi
+            else
+              echo "::error::$1 with resource-hub, which was already active, after its files were synced. Read this step's log for the error, then roll back (docs/runbooks/deploy.md, \"Rolling back\")."
+            fi
+            exit 1
+          }
+
           if [ "$previous" != resource-hub ]; then
             # shellcheck disable=SC2029
             ssh deploy "cd $dir && $WP_CLI theme activate resource-hub" || {
@@ -1456,21 +1488,25 @@ jobs:
               exit 1
             }
           fi
+
           # shellcheck disable=SC2029
-          if ! ssh deploy "cd $dir && $WP_CLI theme is-active resource-hub"; then
-            if [ "$previous" != resource-hub ]; then
-              # shellcheck disable=SC2029
-              if ssh deploy "cd $dir && $WP_CLI theme activate $(printf '%q' "$previous") --skip-themes"; then
-                echo "::error::WordPress failed to load with resource-hub active on the host, so $previous was activated again. Read this step's log for the error."
-              else
-                echo "::error::WordPress failed to load with resource-hub active on the host, and switching back to $previous failed too. Switch back by hand: $WP_CLI theme activate $previous --skip-themes, from the WordPress root (docs/runbooks/deploy.md, \"Rolling back\")."
-              fi
-            else
-              echo "::error::WordPress failed to load with resource-hub, which was already active, after its files were synced. Read this step's log for the error, then roll back (docs/runbooks/deploy.md, \"Rolling back\")."
-            fi
-            exit 1
+          ssh deploy "cd $dir && $WP_CLI theme is-active resource-hub" || fail_check "WordPress failed to load"
+
+          # shellcheck disable=SC2029
+          home=$(ssh deploy "cd $dir && $WP_CLI option get home --skip-plugins --skip-themes") || home=''
+          case "$home" in
+            https://*) ;;
+            *) fail_check "The site's home option could not be read as an https URL (got '$home'), so the theme's 404 could not be checked," ;;
+          esac
+          url="${home%/}/resources/?rh-deploy-check=${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}"
+          body="$RUNNER_TEMP/theme-404.html"
+          status=$(curl -sS --max-time 20 --retry 3 --retry-delay 5 -o "$body" -w '%{http_code}' "$url") || status="no answer"
+          marker=no
+          grep -qE 'class="([^"]* )?rh-not-found( [^"]*)?"' "$body" 2>/dev/null && marker=yes
+          if [ "$status" != 404 ] || [ "$marker" != yes ]; then
+            fail_check "The theme's 404 did not render for an anonymous request (got HTTP $status and rh-not-found: $marker, at $url)"
           fi
-          echo "resource-hub is the active theme."
+          echo "resource-hub is the active theme, and an anonymous theme page gets its 404."
 
       # Activation clears the rewrite rules only when the plugin was inactive,
       # so a deploy that changes the permalink structure (ADR 0024) would keep
