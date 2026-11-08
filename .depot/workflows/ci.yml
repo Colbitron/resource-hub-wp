@@ -311,12 +311,15 @@ jobs:
       # the runner that saved the cache. Left in place, the record makes wp-env
       # skip the install on empty databases, and the afterStart hook then fails
       # with "The site you have requested is not installed". Deleting it keeps
-      # the downloads (the core and test-library checkouts, which wp-env
-      # fetches into rather than cloning again) and costs only the setup a
-      # fresh runner needs anyway. Deleting it here, not before the save, also
-      # covers entries already saved with the record in them.
+      # the downloads and costs only the setup a fresh runner needs anyway:
+      # wp-env fetches into an existing git checkout rather than cloning it
+      # again, which covers the unpinned core and the test library here (a zip
+      # source would be downloaded again). Deleting it here, not before the
+      # save, also covers entries already saved with the record in them. The
+      # step runs on every restore, not only an exact hit: on a miss there is
+      # nothing to delete, and a partial match from restore-keys, if one is
+      # ever added, restores the record while cache-hit reads false.
       - name: Forget the restored wp-env setup record
-        if: steps.wp-env-cache.outputs.cache-hit == 'true'
         run: rm -fv "${WP_ENV_HOME:?}"/*/wp-env-cache.json
 
       - name: Start wp-env
