@@ -36,6 +36,7 @@ use ResourceHub\Rest\RelatedCache;
 use ResourceHub\Rest\RelatedRoute;
 use ResourceHub\Rest\ResolveRoute;
 use ResourceHub\Revalidation\Revalidation;
+use ResourceHub\Security\OutgoingPings;
 use ResourceHub\Security\Pings;
 use ResourceHub\Security\XmlRpc;
 
@@ -109,6 +110,7 @@ final class Plugin {
 		( new NoCacheHeader() )->register();
 		( new XmlRpc() )->register();
 		( new Pings() )->register();
+		( new OutgoingPings() )->register();
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			\WP_CLI::add_command( 'resource-hub seed', SeedCommand::class );

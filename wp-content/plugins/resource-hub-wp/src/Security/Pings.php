@@ -40,9 +40,9 @@ namespace ResourceHub\Security;
  *
  * Core's own switch, the `wp_should_disable_pings_for_environment` filter, was not used. It
  * exists only from WordPress 7.1, and the plugin's floor is 6.9. It also stops the pings this CMS
- * sends, which is a separate call. By default it refuses trackbacks only outside the `production`
- * environment type, so it protects wp-env but not a site whose type is `production`, which is
- * also what core assumes when none is set.
+ * sends, which {@see OutgoingPings} turns off separately. By default it refuses trackbacks only
+ * outside the `production` environment type, so it protects wp-env but not a site whose type is
+ * `production`, which is also what core assumes when none is set.
  *
  * The lockdown ({@see \ResourceHub\Lockdown\Gate}) does not close the endpoint either. It makes
  * an anonymous `wp-trackback.php?p=<id>` query a 404, so that form never finds a post. But
@@ -57,8 +57,8 @@ namespace ResourceHub\Security;
  * `pings_open()` itself.
  *
  * Pings this CMS sends to other sites (pingbacks to the links in a post, trackbacks to its
- * `to_ping` URLs, from cron after a publish) are a different path, which this class does not
- * touch.
+ * `to_ping` URLs and update-service pings, from cron after a publish) are a different path:
+ * {@see OutgoingPings} turns them off.
  */
 final class Pings {
 	/**

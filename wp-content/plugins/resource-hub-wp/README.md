@@ -20,7 +20,8 @@ src/
   Revalidation/          events, queue, dispatcher, sender, results, config, PostHog
   Pages/                 page path rules shared by the page route and page events
   Lockdown/              anonymous visitors get a 404 from theme pages; robots, sitemaps, oEmbed
-  Security/              XML-RPC off; incoming trackbacks and pingbacks off for every post type
+  Security/              XML-RPC off; incoming trackbacks and pingbacks off for every post type;
+                         no outgoing pingbacks, trackbacks, update-service pings or enclosure fetches
   Admin/                 the status page, the list column, the term notice, result wording
   Editor/                enqueues the editor scripts below
   Cli/                   the two WP-CLI commands
