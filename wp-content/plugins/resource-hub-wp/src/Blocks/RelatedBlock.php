@@ -37,7 +37,9 @@ use WP_Query;
  *   Anything but a published resource renders nothing, even in a preview the article's other blocks render
  *   for: `RelatedItems` caches the selection under the host's ID in the entry the public related route
  *   serves, and the route answers only for published hosts, so a host that is not published never reaches
- *   it and nothing about a draft's relations is computed or stored for the public read.
+ *   it and nothing about a draft's relations is computed or stored for the public read. A host without
+ *   exactly one type renders nothing too, as the meta, summary and source blocks, since the front end does
+ *   not render that resource's page at all.
  * - **The rows.** The selection's IDs are read as posts in its order, published resources only, as the
  *   front end reads them with `include=…&orderby=include` (`getResourcesByIds`); one no longer published
  *   between the cache and the render is left out, as that read would leave it out. A resource whose title
@@ -127,7 +129,7 @@ final class RelatedBlock {
 	public function render( array $attributes, string $content, WP_Block $block ): string {
 		$post = ContextResource::from( $block );
 
-		if ( null === $post ) {
+		if ( null === $post || null === ResourceCardMarkup::type( $post ) ) {
 			return '';
 		}
 

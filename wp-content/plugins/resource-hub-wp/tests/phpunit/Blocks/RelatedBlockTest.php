@@ -229,7 +229,7 @@ final class RelatedBlockTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Anything but a published resource, or one nothing is related to, renders nothing.
+	 * Anything but a published resource with exactly one type, or one nothing is related to, renders nothing.
 	 */
 	public function test_renders_nothing_without_a_published_resource_or_relations(): void {
 		$this->resource( 'Someone else', array( $this->topic ) );
@@ -239,6 +239,10 @@ final class RelatedBlockTest extends WP_UnitTestCase {
 		$this->assertSame( '', $this->render( $this->resource( 'Alone' ) ), 'No picks and no topics.' );
 		$this->assertSame( '', $this->render( $this->resource( 'A draft', array( $this->topic ), array(), array( 'post_status' => 'draft' ) ) ), 'A draft.' );
 		$this->assertSame( '', $this->render( $this->resource( 'Wrong context', array( $this->topic ) ), 'post' ), 'A postType context that is not resource.' );
+
+		$untyped = $this->resource( 'No type', array( $this->topic ) );
+		wp_set_object_terms( $untyped, array(), Taxonomies::TYPE );
+		$this->assertSame( '', $this->render( $untyped ), 'A host without exactly one type, as the article\'s other blocks.' );
 	}
 
 	/**

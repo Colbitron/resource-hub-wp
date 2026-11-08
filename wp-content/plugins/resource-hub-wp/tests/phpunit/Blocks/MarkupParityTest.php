@@ -188,8 +188,9 @@ final class MarkupParityTest extends WP_UnitTestCase {
 	 * samples in name order: the front end's related section, `RelatedList` with the samples' rows at `h3`.
 	 *
 	 * Picks, so the order is the editor's and not the samples' dates; the count is the section's, so a fourth
-	 * sample would not be a row. The host is a factory resource with no type, topics or picks of its own
-	 * beyond the samples, which the block does not render anything of.
+	 * sample would not be a row. The host is a factory resource with a type of its own, since the block
+	 * renders nothing for a host without exactly one, and no topics or picks beyond the samples; the block
+	 * renders nothing of the host itself.
 	 */
 	public function test_related_section_matches_the_fixture(): void {
 		$picks = array();
@@ -204,6 +205,7 @@ final class MarkupParityTest extends WP_UnitTestCase {
 				'post_status' => 'publish',
 			)
 		);
+		wp_set_object_terms( $host, array( self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) ) ), Taxonomies::TYPE );
 		update_post_meta( $host, Meta::RELATED_PICKS, $picks );
 
 		$this->assertSame( self::fixture( 'related.html' ), self::normalise( $this->render( RelatedBlock::NAME, $host ) ) );
