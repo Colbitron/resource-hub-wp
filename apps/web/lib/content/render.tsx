@@ -55,13 +55,15 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   whose path lies under it, with no user name or password, becomes
  *   `/media/…`; with a width and a height it renders through `next/image`,
  *   otherwise as a lazy `<img>` with its `srcset` rebuilt from the candidates
- *   that are CMS images too. An image on any other host stays a plain lazy
- *   `<img>` by its `src` alone, since it says nothing about the CMS. An image
+ *   that are CMS images too. An image on any other host stays a plain
+ *   `<img>` by its `src` alone, lazy unless it is the lead (below), since it
+ *   says nothing about the CMS. An image
  *   that names a CMS host but is not a CMS image (`http:` where the CMS is
  *   `https:`, another port, a path outside uploads, credentials in the URL)
  *   is dropped: it cannot be served through `/media/` and showing it would
  *   show the CMS's address. With `leadImage`, the first image the pass
- *   renders is not lazy and is fetched at high priority (`takeLead`).
+ *   renders, of any of these kinds, is not lazy and is fetched at high
+ *   priority (`takeLead`); every other image is lazy.
  * - The CMS host: no attribute this pass renders names it (`mentionsCms`),
  *   except the `href` or `cite` of a `mailto:` or `tel:` URL. An
  *   internationalised host is looked for in its punycode and its Unicode
@@ -1205,11 +1207,24 @@ function linkTo(href: string, text?: string): ReactElement {
  * featured image, which is otherwise the page's one priority image, so a page
  * never has two. The design specimen's own prose sample leaves it off.
  *
+ * An image inside a related-resources marker that is handed to
+ * `renderBlock` never takes the lead: its fallback may be swapped for the
+ * front end's own list, which would leave the page with no lead and the
+ * body's real first image lazy (`marker`).
+ *
  * Rejected: promoting only an image within a byte or position threshold of
  * the body's start, to avoid fetching early an image deep in a long body. A
  * byte offset says nothing about where an image lands in the viewport, and
  * the cost it avoids is one image fetched early that a reader scrolling down
- * fetches anyway, while a threshold set wrong leaves the LCP lazy again.
+ * fetches anyway, while a threshold set wrong leaves the LCP lazy again. The
+ * cost accepted: a first image inside a closed `<details>`, or far below the
+ * fold, still gets a head preload at High for every visitor, readers who
+ * never scroll included. Rejected too: a guard on the declared size, for a
+ * body whose first image is a small icon or badge, which takes the lead
+ * while a hero further down stays lazy, as every image was lazy before this
+ * rule; a size guard cannot judge an unsized image and would add a
+ * heuristic to a critical path. Emoji stay text, and WordPress's smilies,
+ * under `wp-includes`, are dropped by `classifyImage`.
  */
 function takeLead(context: Context): boolean {
   const lead = context.leadImagePending;
@@ -1421,11 +1436,20 @@ function marker(node: Element, attributes: Attributes, context: Context): ReactE
   // The wrapper always carries the contract's class, once, after any the CMS wrote.
   const classes = typeof wrapperProps.className === "string" ? wrapperProps.className.split(" ") : [];
   wrapperProps.className = (classes.includes(MARKER_CLASS) ? classes : [...classes, MARKER_CLASS]).join(" ");
+  // A fallback handed on may be swapped out, so no image in it takes the lead (`takeLead`); the slot passes to the body after it.
+  // A fallback that is not handed on always renders, and an image in it may take the lead like any other.
+  const leadImagePending = context.leadImagePending;
+  if (props !== null) {
+    context.leadImagePending = false;
+  }
   const fallback = createElement(
     "div",
     checked(wrapperProps, context),
     inScope(context, marked === null ? "none" : "marker", () => children(node, context)),
   );
+  if (props !== null) {
+    context.leadImagePending = leadImagePending;
+  }
   if (props === null) {
     return fallback;
   }

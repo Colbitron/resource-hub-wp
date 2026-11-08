@@ -410,15 +410,50 @@ describe("images", () => {
     });
 
     it("leads with the first image whatever its kind: an unsized CMS image or an external one, preloaded by React with its referrer policy", () => {
-      expect(images(render(`<img src="${UPLOAD}" alt="">${SIZED("b")}`, { leadImage: true }))).toEqual([
-        '<img alt="" src="/media/2026/11/photo.jpg" fetchPriority="high"/>',
-        '<img alt="b" loading="lazy" width="240" height="160" decoding="async" data-nimg="1" style="color:transparent" sizes="(max-width: 44rem) calc(-2rem + 100vw), 42rem"/>',
-      ]);
+      const unsized = render(`<img src="${UPLOAD}" alt="">${SIZED("b")}`, { leadImage: true });
+      const [lead, later] = images(unsized);
+      expect(lead).toBe('<img alt="" src="/media/2026/11/photo.jpg" fetchPriority="high"/>');
+      expect(later).toContain('alt="b"');
+      expect(later).toContain('loading="lazy"');
+      expect(later).not.toContain("fetchPriority");
+      expect(preloads(unsized)).toEqual(['<link rel="preload" as="image" href="/media/2026/11/photo.jpg" fetchPriority="high"/>']);
       const external = render(`<img src="https://images.example/a.jpg" alt="">${SIZED("b")}`, { leadImage: true });
       expect(images(external)[0]).toBe('<img alt="" src="https://images.example/a.jpg" fetchPriority="high" referrerPolicy="no-referrer"/>');
       expect(preloads(external)).toEqual([
         '<link rel="preload" as="image" href="https://images.example/a.jpg" fetchPriority="high" referrerPolicy="no-referrer"/>',
       ]);
+    });
+
+    it("leads with an image inside a link and a <picture>, which the pass unwraps to the <img>", () => {
+      const output = render(`<p><a href="https://cms.example/resources/"><picture><source srcset="${UPLOAD} 1x">${SIZED("a")}</picture></a></p>${SIZED("b")}`, {
+        leadImage: true,
+      });
+      expect(output).toContain('<a href="/resources/">');
+      const [first, second] = images(output);
+      expect(first).toContain('alt="a"');
+      expect(first).toContain('fetchPriority="high"');
+      expect(second).toContain('loading="lazy"');
+      expect(preloads(output)).toHaveLength(1);
+    });
+
+    it("gives no image in a marker handed to renderBlock the lead, swapped out or kept, and passes it to the body's next image", () => {
+      const body = `${MARKER.replace("</div>", `${SIZED("in-marker")}</div>`)}${SIZED("after")}`;
+      for (const [name, renderBlock] of [
+        ["swapped", () => <p>The front end&apos;s list</p>],
+        ["kept", (_props, fallback) => fallback],
+      ] satisfies [string, RenderBlock][]) {
+        const output = render(body, { leadImage: true, renderBlock });
+        const lead = images(output).filter((tag) => tag.includes("fetchPriority"));
+        expect(lead, name).toHaveLength(1);
+        expect(lead[0], name).toContain('alt="after"');
+        expect(preloads(output), name).toHaveLength(1);
+        expect(preloads(output)[0], name).toContain("after.jpg");
+      }
+      // A marker not handed on (here, one inside a link) always renders its fallback, so its image may lead.
+      const linked = render(`<a href="/resources/">${MARKER.replace("</div>", `${SIZED("in-marker")}</div>`)}</a>${SIZED("after")}`, { leadImage: true });
+      const linkedLead = images(linked).filter((tag) => tag.includes("fetchPriority"));
+      expect(linkedLead).toHaveLength(1);
+      expect(linkedLead[0]).toContain('alt="in-marker"');
     });
 
     it("passes the lead over a dropped image to the next one that renders", () => {
