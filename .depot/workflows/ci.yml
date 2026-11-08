@@ -85,7 +85,7 @@
 # The deploy job runs after the gate, only on main and on manual dispatch, and
 # syncs the plugin, from wp-content/plugins/resource-hub-wp, Relevanssi and
 # the CMS theme, from wp-content/themes/resource-hub, to the Cloudways host
-# (ADR 0005). The deploy-web job runs after deploy and every front-end
+# (ADR 0005), and activates all three. The deploy-web job runs after deploy and every front-end
 # job, and starts the front end's production deploy on Vercel through a
 # deploy hook (ADR 0051).
 #
@@ -1335,7 +1335,8 @@ jobs:
       # The CMS block theme, after the plugin: its templates render the
       # plugin's blocks, and the plugin's blocks only ever gain, so a failure
       # here leaves a newer plugin beside the theme as it was, which still
-      # renders, and no step after this one runs.
+      # renders, and no step after this one runs. The theme is activated
+      # below, only once this has succeeded.
       #
       # The same shape as the plugin's sync: the source is the theme
       # directory itself, the target THEME_DIR, built from the checked
@@ -1391,10 +1392,76 @@ jobs:
           # shellcheck disable=SC2029
           ssh deploy "cd $dir && { $WP_CLI plugin is-active relevanssi || $WP_CLI plugin activate relevanssi; }"
 
+      # The CMS theme is the site's theme on every deploy, as the plugin is
+      # its plugin: its 404, the one theme page anonymous visitors get (ADR
+      # 0031), lists no pages, and logged-in previews look like the front
+      # end (issue #89). After the plugins, whose blocks its templates
+      # render, and before the flush, so the rules are regenerated after the
+      # deploy's last change.
+      #
+      # The theme the site runs is read first (`--skip-themes`, so a broken
+      # one cannot stop the read). When it is not this one, `theme activate`
+      # switches to it; WP-CLI refuses a theme it cannot find or that has no
+      # style.css or index template, exiting 1 with the stylesheet option
+      # unchanged, so a failure there leaves the previous theme active.
+      # Already active, nothing is switched.
+      #
+      # Then one call that loads WordPress with the theme as a reader's
+      # request would, plugins included: a functions.php that fatals on the
+      # host fails it. Then, when this step switched the theme, it switches
+      # back to the one it found, with `--skip-themes` so the broken theme's
+      # functions.php is not loaded for the switch, and fails the job, so the
+      # site is never left on a theme that cannot load. When the theme was
+      # already active, there is nothing to switch back to: the synced files
+      # are live, and the job fails with the rollback in the error.
+      # Checked in wp-env on 2026-11-08 with WP-CLI 2.12.0: an active theme's
+      # `theme activate` exits 0 with a warning; a missing theme or one with
+      # no index template exits 1 and leaves the stylesheet as it was; a
+      # functions.php that throws fails the next call that loads WordPress,
+      # and `theme activate <previous> --skip-themes` then switches back.
+      - name: Activate the theme
+        run: |
+          dir=$(printf '%q' "$WP_ROOT")
+          # $dir and $WP_CLI are meant to expand on the runner; printf %q has quoted $dir for the remote shell.
+          # shellcheck disable=SC2029
+          previous=$(ssh deploy "cd $dir && $WP_CLI option get stylesheet --skip-plugins --skip-themes") || {
+            echo "::error::Could not read the host's active theme. The theme was not switched."
+            exit 1
+          }
+          if ! [[ "$previous" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::The host's active theme is not a theme directory name (got '$previous'). The theme was not switched."
+            exit 1
+          fi
+          echo "The host's theme was $previous."
+          if [ "$previous" != resource-hub ]; then
+            # shellcheck disable=SC2029
+            ssh deploy "cd $dir && $WP_CLI theme activate resource-hub" || {
+              echo "::error::wp theme activate resource-hub failed on the host; $previous is still the active theme."
+              exit 1
+            }
+          fi
+          # shellcheck disable=SC2029
+          if ! ssh deploy "cd $dir && $WP_CLI theme is-active resource-hub"; then
+            if [ "$previous" != resource-hub ]; then
+              # shellcheck disable=SC2029
+              if ssh deploy "cd $dir && $WP_CLI theme activate $(printf '%q' "$previous") --skip-themes"; then
+                echo "::error::WordPress failed to load with resource-hub active on the host, so $previous was activated again. Read this step's log for the error."
+              else
+                echo "::error::WordPress failed to load with resource-hub active on the host, and switching back to $previous failed too. Switch back by hand: $WP_CLI theme activate $previous --skip-themes, from the WordPress root (docs/runbooks/deploy.md, \"Rolling back\")."
+              fi
+            else
+              echo "::error::WordPress failed to load with resource-hub, which was already active, after its files were synced. Read this step's log for the error, then roll back (docs/runbooks/deploy.md, \"Rolling back\")."
+            fi
+            exit 1
+          fi
+          echo "resource-hub is the active theme."
+
       # Activation clears the rewrite rules only when the plugin was inactive,
       # so a deploy that changes the permalink structure (ADR 0024) would keep
       # serving the old rules. A soft flush regenerates them in the database
-      # on every deploy and writes no files. Run from the WordPress root for
+      # on every deploy and writes no files. It runs after the last
+      # activation, the theme's, so the rules it writes are those of the
+      # plugins and the theme as deployed. Run from the WordPress root for
       # the reason given above.
       - name: Flush rewrite rules
         run: |
