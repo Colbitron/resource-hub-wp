@@ -20,9 +20,16 @@ use WP_Term;
  * Makes the CMS's collection pages paginate and list as the front end's do (`apps/web/components/ListingPage.tsx`).
  *
  * The theme's collection templates render the main query through `core/query` with `inherit`, so what
- * the page lists is what the main query finds. Three things about that list are the front end's and
+ * the page lists is what the main query finds. Five things about that list are the front end's and
  * not core's defaults, and this sets them on the main query of a collection ({@see Collection}):
  *
+ * - **Published resources only.** The front end lists published resources and nothing else. Core's
+ *   main query, given no `post_status`, adds `OR post_status = 'private'` for a user who may read
+ *   private posts, so an editor's collection would count a private resource and give it a row the
+ *   `resource-card` block renders nothing into (an empty `<li>`), and a collection holding only
+ *   private resources would show "1 resource" and no empty state. `post_status` is set to `publish`
+ *   on `pre_get_posts`, so the count, the rows, the pagination and the empty state are the front
+ *   end's for every user. A preview of a private resource is its single page, which this leaves alone.
  * - **Twelve to a page** (`Collection::PER_PAGE`), the front end's `RESOURCES_PER_PAGE`, in place of
  *   Settings > Reading's count, on `pre_get_posts`, so the two sites' pages hold the same resources
  *   and `/page/{n}/` means the same page on both.
@@ -60,7 +67,7 @@ final class CollectionQuery {
 	public const LATEST = 'Latest';
 
 	/**
-	 * Hooks the three effects.
+	 * Hooks the effects.
 	 */
 	public function register(): void {
 		add_action( 'pre_get_posts', array( $this, 'set_per_page' ) );
@@ -71,7 +78,7 @@ final class CollectionQuery {
 	}
 
 	/**
-	 * Twelve resources to a page on a collection's main query. Hooked to `pre_get_posts`.
+	 * Twelve published resources to a page on a collection's main query. Hooked to `pre_get_posts`.
 	 *
 	 * @param WP_Query $query The query being set up.
 	 */
@@ -80,6 +87,7 @@ final class CollectionQuery {
 			return;
 		}
 
+		$query->set( 'post_status', 'publish' );
 		$query->set( 'posts_per_page', Collection::PER_PAGE );
 	}
 

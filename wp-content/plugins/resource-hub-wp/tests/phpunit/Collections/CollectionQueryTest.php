@@ -96,6 +96,42 @@ final class CollectionQueryTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * An editor's collection lists published resources only, as the front end does: a private one is not counted, not given a row, and does not keep the empty state away.
+	 */
+	public function test_private_resources_are_left_out_for_an_editor(): void {
+		$this->resource( 'Published', 'ebook', array( 'caching' ) );
+		$private = $this->resource( 'Private ebook', 'ebook', array( 'caching' ), '2026-11-02 09:30:00' );
+		$alone   = $this->resource( 'Private webinar', 'webinar', array( 'testing' ) );
+		foreach ( array( $private, $alone ) as $id ) {
+			wp_update_post(
+				array(
+					'ID'          => $id,
+					'post_status' => 'private',
+				)
+			);
+		}
+		$this->assertTrue( current_user_can( 'read_private_posts' ), 'An editor may read private posts, so core would list them.' );
+
+		$this->go_to( home_url( '/resources/ebook/' ) );
+		$this->assertSame( 1, $GLOBALS['wp_query']->found_posts );
+		$html = $this->render_collection_part();
+		$this->assertStringContainsString( '<p class="rh-listing__count">1 resource</p>', $html );
+		$this->assertSame( 1, substr_count( $html, '<li class="wp-block-post' ), 'One row, the published resource\'s.' );
+		$this->assertStringNotContainsString( 'status-private', $html );
+		$this->assertStringNotContainsString( 'Private ebook', $html );
+
+		foreach ( array( '/resources/webinar/', '/resources/topic/testing/', '/resources/webinar/topic/testing/' ) as $path ) {
+			$this->go_to( home_url( $path ) );
+			$this->assertFalse( is_404(), $path );
+			$this->assertSame( 0, $GLOBALS['wp_query']->found_posts, $path );
+			$html = $this->render_collection_part();
+			$this->assertStringNotContainsString( 'rh-listing__count', $html, "{$path} has no count." );
+			$this->assertStringNotContainsString( '<li class="wp-block-post', $html, "{$path} has no rows." );
+			$this->assertStringContainsString( '<div class="rh-listing__empty">', $html, "{$path} shows the empty state." );
+		}
+	}
+
+	/**
 	 * The lead is the newest featured resource with exactly one type, on the library's first page only.
 	 */
 	public function test_lead_is_the_newest_featured_resource_with_one_type(): void {

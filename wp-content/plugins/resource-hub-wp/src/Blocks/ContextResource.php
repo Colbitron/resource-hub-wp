@@ -24,8 +24,12 @@ use WP_Post;
  * - **`from()`: published only**, for the blocks that list resources: the card and the related section.
  *   They show what the front end shows, and the front end lists only published resources, so a draft, a
  *   scheduled, private or trashed resource, and any other post type, gets nothing from either. The card
- *   lives in query loops, which ask for published posts anyway. The related section must not pass anything
- *   else into `RelatedItems`, whose cache entry is the public related route's too (`RelatedBlock`).
+ *   lives in query loops, and a loop is not limited to published posts by itself: a main query with no
+ *   `post_status` also finds private posts for a user who may read them, and a `core/query` of its own
+ *   can ask for any status, so the card checks rather than trusts the loop. The collection templates'
+ *   main query asks for published resources only (`CollectionQuery::set_per_page()`), so no empty row is
+ *   left there. The related section must not pass anything else into `RelatedItems`, whose cache entry
+ *   is the public related route's too (`RelatedBlock`).
  * - **`readable()`: published, or readable by the current user**, for the article's own blocks, the meta
  *   line, the summary and the source line. The theme's pages are for editors and logged-in previews
  *   (ADR 0031), and a preview of a draft or scheduled resource is the page it will become, so those blocks
