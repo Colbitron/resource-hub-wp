@@ -9,11 +9,15 @@ declare(strict_types=1);
 
 namespace ResourceHub\Tests\Blocks;
 
+use ResourceHub\Blocks\CollectionHeadBlock;
+use ResourceHub\Blocks\FeaturedLeadBlock;
 use ResourceHub\Blocks\RelatedBlock;
 use ResourceHub\Blocks\ResourceCardBlock;
 use ResourceHub\Blocks\ResourceMetaBlock;
 use ResourceHub\Blocks\ResourceSummaryBlock;
 use ResourceHub\Blocks\TypeAccents;
+use ResourceHub\Collections\Lead;
+use ResourceHub\Collections\Routes;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\MetaRules;
 use ResourceHub\ContentModel\PostType;
@@ -26,14 +30,22 @@ use WP_UnitTestCase;
 
 /**
  * Each sample resource in `packages/ui/fixtures/markup/{case}.json`, stored with core's functions, renders
- * through the `resource-card`, `resource-meta` and `resource-summary` blocks exactly as `{case}.card.html`,
- * `{case}.meta.html` and `{case}.summary.html` say (an empty file where nothing renders), which is what the
- * front end's `ResourceCard` and `ResourceArticle` render from the same samples
- * (`apps/web/test/markup-parity.test.tsx`). The `related` block renders the first three
- * samples, in name order, as the picks of a host resource exactly as `related.html` says, which is what
- * the front end's `RelatedList` renders from the same samples as the resource page's related section. So
- * a change to either side's markup fails one of the two tests until the fixtures, and the other side,
+ * through the `resource-card`, `resource-meta`, `resource-summary` and `featured-lead` blocks exactly as
+ * `{case}.card.html`, `{case}.meta.html`, `{case}.summary.html` (an empty file where nothing renders) and
+ * `{case}.lead.html` say, which is what the front end's `ResourceCard`, `ResourceArticle` and
+ * `FeaturedSection` render from the same samples (`apps/web/test/markup-parity.test.tsx`). The `related`
+ * block renders the first three samples, in name order, as the picks of a host resource exactly as
+ * `related.html` says, which is what the front end's `RelatedList` renders from the same samples as the
+ * resource page's related section. And each scene in `collection/{case}.json` (terms, resources and a
+ * request), stored and requested, renders through the `collection-head` block exactly as
+ * `collection/{case}.head.html` says, what the front end's `CollectionHead` renders from the same scene.
+ * So a change to either side's markup fails one of the two tests until the fixtures, and the other side,
  * follow.
+ *
+ * The lead and the head read the main query, so those cases set pretty permalinks with the plugin's
+ * collection rules and request the page with `go_to()`, as a reader would; the lead case flags the
+ * sample featured first. The samples have no featured image, so the lead fixtures hold a lead without
+ * one; the image box is `FeaturedLeadBlockTest`'s.
  *
  * The samples are in the REST API's forms, so this test first proves that storing each gives those forms
  * back (the rendered title, the stored term names, the stored summary), or the comparison would test a
@@ -69,6 +81,9 @@ final class MarkupParityTest extends WP_UnitTestCase {
 		$this->set_permalink_structure( '/%postname%/' );
 		( new PostType() )->register();
 		( new Taxonomies() )->register();
+		( new Routes() )->add_rules();
+		delete_option( 'rewrite_rules' );
+		Lead::forget();
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 	}
 
@@ -99,7 +114,24 @@ final class MarkupParityTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The samples are there, each with its two fixtures.
+	 * The collection scenes, one per file in `collection/`; the front end's test reads the same directory.
+	 *
+	 * @return array<string, array{string}>
+	 */
+	public static function collection_cases(): array {
+		$cases = array();
+		$files = glob( self::markup_dir() . '/collection/*.json' );
+
+		foreach ( false === $files ? array() : $files as $file ) {
+			$name           = basename( $file, '.json' );
+			$cases[ $name ] = array( $name );
+		}
+
+		return $cases;
+	}
+
+	/**
+	 * The samples are there, each with its three fixtures, and the scenes with theirs.
 	 */
 	public function test_finds_the_samples(): void {
 		$this->assertFileIsReadable( self::markup_dir() . '/full.json', 'packages/ui is not mounted: run `pnpm env:start` after a change to .wp-env.json.' );
@@ -112,9 +144,18 @@ final class MarkupParityTest extends WP_UnitTestCase {
 			$this->assertFileIsReadable( self::markup_dir() . '/' . $name . '.card.html' );
 			$this->assertFileIsReadable( self::markup_dir() . '/' . $name . '.meta.html' );
 			$this->assertFileIsReadable( self::markup_dir() . '/' . $name . '.summary.html' );
+			$this->assertFileIsReadable( self::markup_dir() . '/' . $name . '.lead.html' );
 		}
 
 		$this->assertFileIsReadable( self::markup_dir() . '/related.html' );
+
+		foreach ( array( 'library', 'type', 'topic', 'type-topic', 'empty-type' ) as $name ) {
+			$this->assertArrayHasKey( $name, self::collection_cases() );
+		}
+
+		foreach ( array_keys( self::collection_cases() ) as $name ) {
+			$this->assertFileIsReadable( self::markup_dir() . '/collection/' . $name . '.head.html' );
+		}
 	}
 
 	/**
@@ -212,6 +253,69 @@ final class MarkupParityTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The lead block renders `{case}.lead.html`, the front end's lead section, for the sample flagged featured on the library's first page.
+	 *
+	 * @dataProvider cases
+	 *
+	 * @param string $name The case.
+	 */
+	public function test_featured_lead_matches_the_fixture( string $name ): void {
+		$post = $this->store( self::sample( $name ) );
+		wp_set_object_terms( $post, array( ( new Taxonomies() )->ensure_featured_flag() ), Taxonomies::FLAG );
+		Lead::forget();
+
+		$this->go_to( home_url( '/resources/' ) );
+		$this->assertFalse( is_404() );
+
+		$this->assertSame( self::fixture( $name . '.lead.html' ), self::normalise( $this->render( FeaturedLeadBlock::NAME, null ) ) );
+	}
+
+	/**
+	 * The head block renders `collection/{case}.head.html` for the scene's request, with the scene's terms and resources stored.
+	 *
+	 * @dataProvider collection_cases
+	 *
+	 * @param string $name The case.
+	 */
+	public function test_collection_head_matches_the_fixture( string $name ): void {
+		$scene = wp_json_file_decode( self::markup_dir() . '/collection/' . $name . '.json', array( 'associative' => true ) );
+		$this->assertIsArray( $scene );
+
+		$types  = array();
+		$topics = array();
+		foreach ( $scene['types'] as $type ) {
+			$types[ $type['slug'] ] = $this->term( Taxonomies::TYPE, $type );
+		}
+		foreach ( $scene['topics'] as $topic ) {
+			$topics[ $topic['slug'] ] = $this->term( Taxonomies::TOPIC, $topic );
+		}
+		foreach ( $scene['resources'] as $i => $resource ) {
+			$post = self::factory()->post->create(
+				array(
+					'post_type'   => PostType::NAME,
+					'post_status' => 'publish',
+					'post_title'  => 'Resource ' . ( $i + 1 ),
+				)
+			);
+			wp_set_object_terms( $post, array( $types[ $resource['type'] ] ), Taxonomies::TYPE );
+			wp_set_object_terms( $post, array_map( fn ( string $slug ): int => $topics[ $slug ], $resource['topics'] ), Taxonomies::TOPIC );
+		}
+
+		$path = '/resources/';
+		if ( isset( $scene['request']['type'] ) ) {
+			$path .= $scene['request']['type'] . '/';
+		}
+		if ( isset( $scene['request']['topic'] ) ) {
+			$path .= 'topic/' . $scene['request']['topic'] . '/';
+		}
+
+		$this->go_to( home_url( $path ) );
+		$this->assertFalse( is_404(), $path );
+
+		$this->assertSame( self::fixture( 'collection/' . $name . '.head.html' ), self::normalise( $this->render( CollectionHeadBlock::NAME, null ) ) );
+	}
+
+	/**
 	 * Stores a sample as a published resource, with its type's accent row mapped onto the type's term; its ID.
 	 *
 	 * @param array<string, mixed> $sample The decoded sample.
@@ -264,27 +368,25 @@ final class MarkupParityTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * One block, rendered for a post through `WP_Block`, with the context a post template gives it.
+	 * One block, rendered through `WP_Block`: for a post, with the context a post template gives it, or with no context.
 	 *
-	 * @param string $name The block's name.
-	 * @param int    $post The post.
+	 * @param string   $name The block's name.
+	 * @param int|null $post The post, or null for a block that reads the main query.
 	 */
-	private function render( string $name, int $post ): string {
-		$parsed = array(
+	private function render( string $name, ?int $post ): string {
+		$parsed  = array(
 			'blockName'    => $name,
 			'attrs'        => array(),
 			'innerBlocks'  => array(),
 			'innerHTML'    => '',
 			'innerContent' => array(),
 		);
+		$context = null === $post ? array() : array(
+			'postId'   => $post,
+			'postType' => PostType::NAME,
+		);
 
-		return ( new WP_Block(
-			$parsed,
-			array(
-				'postId'   => $post,
-				'postType' => PostType::NAME,
-			)
-		) )->render();
+		return ( new WP_Block( $parsed, $context ) )->render();
 	}
 
 	/**

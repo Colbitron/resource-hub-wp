@@ -37,6 +37,18 @@
  * width and a related-resources block in its body to `related.css`'s
  * heading. The first describe also checks the resource page's two
  * stylesheets stay off the other templates.
+ *
+ * The third describe does the same for the collection pages, rendered by
+ * the theme's collection templates and the plugin's collection blocks
+ * (`listing.css`, `lead.css`, `card.css`, and the theme's `assets/pagination.css`
+ * over core's pagination block): the library with its lead, a type and a
+ * topic collection, the filter bar's state, the rows' levels and the
+ * pagination. The tests site has plain permalinks, so each collection is
+ * requested by the query vars the plugin's rewrite rules map to
+ * (`?post_type=resource`, `?resource_type=…`, `?resource_topic=…`, `&paged=2`);
+ * the rules themselves are PHPUnit's (`RoutesTest`). Its last test holds
+ * `listing.css` to the collections and `lead.css` to the library's first
+ * page, and keeps both off a page, the welcome, the 404 and a resource.
  */
 const { test, expect } = require( './fixtures' );
 const {
@@ -44,6 +56,14 @@ const {
 	deleteResourcePage,
 	flatPng,
 } = require( './resource-page-seed' );
+const {
+	createCollection,
+	deleteCollection,
+	COUNT,
+} = require( './collection-content' );
+
+/** Resources to a page on a collection, the front end's `RESOURCES_PER_PAGE`. */
+const PER_PAGE = 12;
 
 /** The page's body: one of each element `prose.css` styles that a core block prints, with core's large quote and dots separator styles, and an image set to expand on click. */
 const CONTENT = [
@@ -1290,5 +1310,445 @@ test.describe( "A CMS resource page computes the front end's styles", () => {
 		expect(
 			await page.evaluate( () => document.documentElement.scrollWidth )
 		).toBeLessThanOrEqual( 360 );
+	} );
+} );
+
+test.describe( "A CMS collection computes the front end's styles", () => {
+	let content;
+
+	test.beforeAll( async ( { requestUtils } ) => {
+		content = await createCollection( requestUtils, Date.now() );
+	} );
+
+	test.afterAll( async ( { requestUtils } ) => {
+		if ( content ) {
+			await deleteCollection( requestUtils, content );
+		}
+	} );
+
+	/**
+	 * Holds the element `selector` matches to `declarations`, resolved on a
+	 * probe inside `context`.
+	 *
+	 * @param {import('@playwright/test').Page} page         The page.
+	 * @param {string}                          selector     The element on the CMS page.
+	 * @param {Record<string, string>}          declarations What the package's rule declares.
+	 * @param {string}                          [context]    Where the tokens resolve; `main` by default.
+	 */
+	async function holds(
+		page,
+		selector,
+		declarations,
+		context = 'main.rh-main'
+	) {
+		expect(
+			await computed( page, selector, Object.keys( declarations ) ),
+			selector
+		).toEqual( await resolve( page, context, declarations ) );
+	}
+
+	for ( const colorScheme of [ 'light', 'dark' ] ) {
+		test( `the library: the head, the filters, the lead, the list and the pagination (${ colorScheme })`, async ( {
+			page,
+		} ) => {
+			await page.emulateMedia( { colorScheme } );
+			await page.setViewportSize( { width: 1280, height: 900 } );
+			await page.goto( '/?post_type=resource' );
+
+			// The head: listing.css's header row, the one h1 and the muted count.
+			await expect( page.locator( 'h1' ) ).toHaveCount( 1 );
+			await expect( page.locator( 'h1#rh-listing-heading' ) ).toHaveText(
+				'Resources'
+			);
+			await holds( page, '.rh-listing__header', {
+				display: 'flex',
+				'flex-wrap': 'wrap',
+				'align-items': 'baseline',
+				'column-gap': 'var(--rh-space-4)',
+				'row-gap': 'var(--rh-space-1)',
+				'margin-bottom': 'var(--rh-space-4)',
+			} );
+			await expect( page.locator( '.rh-listing__count' ) ).toContainText(
+				'resources'
+			);
+			await holds( page, '.rh-listing__count', {
+				color: 'var(--rh-color-text-muted)',
+				'margin-top': '0px',
+			} );
+
+			// The filters: two labelled rows between hairlines, plain links at
+			// least 2rem tall, the current one heavier with the strong underline.
+			const nav = page.getByRole( 'navigation', {
+				name: 'Filter resources',
+			} );
+			await expect( nav ).toHaveCount( 1 );
+			await holds( page, 'nav.rh-filters', {
+				'border-top-width': 'var(--rh-border-width)',
+				'border-top-color': 'var(--rh-color-border)',
+				'border-bottom-width': 'var(--rh-border-width)',
+				'margin-bottom': 'var(--rh-space-6)',
+			} );
+			await holds( page, '#rh-filter-type.rh-filters__name', {
+				'text-transform': 'uppercase',
+				'font-size': 'var(--rh-text-sm)',
+				'letter-spacing': 'var(--rh-tracking-label)',
+				color: 'var(--rh-color-text-muted)',
+			} );
+			await holds(
+				page,
+				'#rh-filter-type + .rh-filters__list li:nth-child(2) .rh-filters__link',
+				{
+					display: 'inline-flex',
+					'min-height': '2rem',
+					'font-size': 'var(--rh-text-sm)',
+					color: 'var(--rh-color-text)',
+					'text-decoration-line': 'none',
+					'font-weight': '400',
+				}
+			);
+			const currentAll = page.locator(
+				'.rh-filters__link[aria-current="true"]'
+			);
+			await expect( currentAll ).toHaveCount( 2 );
+			await expect( currentAll.first() ).toHaveText( 'All types' );
+			await holds(
+				page,
+				'#rh-filter-type + .rh-filters__list .rh-filters__link[aria-current="true"]',
+				{
+					'font-weight': '600',
+					'text-decoration-line': 'underline',
+					'text-decoration-thickness':
+						'var(--rh-border-width-strong)',
+				}
+			);
+			expect(
+				(
+					await page
+						.locator( '.rh-filters__link' )
+						.first()
+						.boundingBox()
+				).height
+			).toBeGreaterThanOrEqual( 32 );
+
+			// The lead: the Featured heading over its strong rule, then the
+			// lead's two columns, the image's box and the title at xl.
+			await expect( page.locator( '.rh-listing__lead' ) ).toHaveCount(
+				1
+			);
+			await holds( page, '.rh-listing__lead', {
+				'margin-bottom': 'var(--rh-space-7)',
+			} );
+			await holds( page, '.rh-listing__lead > .rh-listing__section', {
+				'border-bottom-width': 'var(--rh-border-width-strong)',
+				'border-bottom-color': 'var(--rh-color-text)',
+				'font-size': 'var(--rh-text-md)',
+				'margin-bottom': 'var(--rh-space-5)',
+				'padding-bottom': 'var(--rh-space-2)',
+			} );
+			await expect( page.locator( '.rh-lead' ) ).toHaveCount( 1 );
+			await holds( page, '.rh-lead', {
+				display: 'flex',
+				'flex-wrap': 'wrap',
+				'column-gap': 'var(--rh-space-6)',
+				'row-gap': 'var(--rh-space-5)',
+			} );
+			await holds( page, '.rh-lead__media', {
+				'aspect-ratio': '16 / 9',
+				'border-top-left-radius': 'var(--rh-radius)',
+				'background-color': 'var(--rh-color-surface-raised)',
+				overflow: 'hidden',
+			} );
+			const img = page.locator( '.rh-lead__media > img' );
+			await expect( img ).toHaveAttribute( 'width', /^[1-9][0-9]*$/ );
+			await expect( img ).toHaveAttribute( 'height', /^[1-9][0-9]*$/ );
+			await expect( img ).toHaveAttribute( 'fetchpriority', 'high' );
+			await expect( img ).toHaveAttribute( 'loading', 'eager' );
+			await expect( img ).toHaveAttribute(
+				'sizes',
+				'(min-width: 72rem) 39rem, (min-width: 44rem) 58vw, 100vw'
+			);
+			await expect( img ).toHaveJSProperty( 'complete', true );
+			const media = await box( page, '.rh-lead__media' );
+			const body = await box( page, '.rh-lead__body' );
+			expect( body.x, 'two columns at 1280 px' ).toBeGreaterThan(
+				media.x + media.width
+			);
+			expect( media.width / media.height ).toBeCloseTo( 16 / 9, 1 );
+			await holds(
+				page,
+				'.rh-lead__title',
+				{
+					'font-size': 'var(--rh-text-xl)',
+					'margin-top': '0px',
+					'margin-bottom': '0px',
+				},
+				'.rh-lead__body'
+			);
+			await holds(
+				page,
+				'.rh-lead__summary',
+				{
+					'font-size': 'var(--rh-text-md)',
+					color: 'var(--rh-color-text-muted)',
+					'max-width': 'var(--rh-measure)',
+				},
+				'.rh-lead__body'
+			);
+			await expect( page.locator( 'h3.rh-lead__title' ) ).toHaveText(
+				content.lead.title.raw
+			);
+			// The lead's meta line is the row's, laid as one line.
+			await expect(
+				page.locator( '.rh-lead .rh-card__type' )
+			).toHaveText( 'Guide' );
+			await holds( page, '.rh-lead .rh-card__meta', {
+				'flex-grow': '0',
+				'flex-shrink': '0',
+			} );
+
+			// The list under "Latest": the heading's rule with no space under
+			// it, eleven rows at h3, the lead not among them, and the page's one
+			// image is the lead's.
+			const latest = page.locator( '.rh-listing__latest' );
+			await expect( latest ).toHaveCount( 1 );
+			await expect(
+				latest.locator( '> .rh-listing__section' )
+			).toHaveText( 'Latest' );
+			await holds( page, '.rh-listing__latest > .rh-listing__section', {
+				'margin-bottom': '0px',
+				'border-bottom-width': 'var(--rh-border-width-strong)',
+			} );
+			// Twelve on the page, one of them the lead, so eleven rows.
+			const rows = latest.locator( 'ul.rh-card-grid > li' );
+			await expect( rows ).toHaveCount( PER_PAGE - 1 );
+			await expect( latest.locator( 'h3.rh-card__title' ) ).toHaveCount(
+				PER_PAGE - 1
+			);
+			await expect( latest.locator( 'h2.rh-card__title' ) ).toHaveCount(
+				0
+			);
+			await expect(
+				latest.getByRole( 'link', { name: content.lead.title.raw } )
+			).toHaveCount( 0 );
+			await expect( page.locator( 'main img' ) ).toHaveCount( 1 );
+			// card.css's rows: a hairline under each, the first row's top
+			// padding its own, and no margin from core's flow layout.
+			await holds( page, 'ul.rh-card-grid > li:first-child', {
+				'border-bottom-width': 'var(--rh-border-width)',
+				'border-bottom-color': 'var(--rh-color-border)',
+				'margin-top': '0px',
+				'margin-bottom': '0px',
+			} );
+			await holds( page, 'ul.rh-card-grid > li:nth-child(2)', {
+				'margin-top': '0px',
+			} );
+			await holds( page, 'ul.rh-card-grid', {
+				'margin-top': '0px',
+				'margin-bottom': '0px',
+				'padding-left': '0px',
+			} );
+
+			// The pagination: core's block as listing.css's, on a strong rule,
+			// each link a box at least 2.5rem square, the current number heavier
+			// with the strong underline, Next at the right edge and no Previous.
+			const pagination = page.getByRole( 'navigation', {
+				name: 'Pagination',
+			} );
+			await expect( pagination ).toHaveCount( 1 );
+			await expect( pagination ).toHaveClass( /rh-pagination/ );
+			await holds( page, 'nav.rh-pagination', {
+				'margin-top': 'var(--rh-space-7)',
+				'padding-top': 'var(--rh-space-3)',
+				'border-top-width': 'var(--rh-border-width-strong)',
+				'border-top-color': 'var(--rh-color-text)',
+				display: 'flex',
+				'align-items': 'center',
+				'column-gap': 'var(--rh-space-1)',
+			} );
+			await holds( page, '.rh-pagination .page-numbers.current', {
+				'font-weight': 'var(--rh-weight-heading)',
+				'text-decoration-line': 'underline',
+				'text-decoration-thickness': 'var(--rh-border-width-strong)',
+				'min-width': '2.5rem',
+				'min-height': '2.5rem',
+				'font-variant-numeric': 'tabular-nums',
+				color: 'var(--rh-color-text)',
+			} );
+			await expect(
+				page.locator( '.rh-pagination .page-numbers.current' )
+			).toHaveText( '1' );
+			await holds( page, '.rh-pagination a.page-numbers', {
+				'font-weight': '600',
+				'text-decoration-line': 'none',
+				'min-height': '2.5rem',
+			} );
+			await expect(
+				page.locator(
+					'.rh-pagination .wp-block-query-pagination-previous'
+				)
+			).toHaveCount( 0 );
+			const next = page.locator(
+				'.rh-pagination .wp-block-query-pagination-next'
+			);
+			await expect( next ).toHaveText( 'Next' );
+			const navBox = await box( page, 'nav.rh-pagination' );
+			const nextBox = await box(
+				page,
+				'.rh-pagination .wp-block-query-pagination-next'
+			);
+			expect( nextBox.x + nextBox.width ).toBeCloseTo(
+				navBox.x + navBox.width,
+				0
+			);
+			expect( nextBox.height ).toBeGreaterThanOrEqual( 40 );
+		} );
+	}
+
+	test( 'a type collection: its heading, its current filters, no lead, rows at h2', async ( {
+		page,
+	} ) => {
+		await page.setViewportSize( { width: 1280, height: 900 } );
+		await page.goto( `/?resource_type=${ content.type.slug }` );
+
+		await expect( page.locator( 'h1#rh-listing-heading' ) ).toHaveText(
+			'Guide resources'
+		);
+		await expect( page.locator( '.rh-listing__count' ) ).toHaveText(
+			`${ COUNT } resources`
+		);
+		const current = page.locator(
+			'.rh-filters__link[aria-current="true"]'
+		);
+		await expect( current ).toHaveCount( 2 );
+		await expect( current.nth( 0 ) ).toHaveText( 'Guide' );
+		await expect( current.nth( 1 ) ).toHaveText( 'All topics' );
+		// A topic link keeps the type; "All types" clears it.
+		await expect(
+			page.getByRole( 'link', { name: 'Caching', exact: true } )
+		).toHaveAttribute(
+			'href',
+			new RegExp(
+				`/resources/${ content.type.slug }/topic/${ content.topics[ 0 ].slug }/$`
+			)
+		);
+		await expect(
+			page.getByRole( 'link', { name: 'All types' } )
+		).toHaveAttribute( 'href', /\/resources\/$/ );
+		await expect( page.locator( '.rh-lead' ) ).toHaveCount( 0 );
+		await expect( page.locator( '.rh-listing__latest' ) ).toHaveCount( 0 );
+		await expect( page.locator( 'h2.rh-card__title' ) ).toHaveCount(
+			PER_PAGE
+		);
+		await expect( page.locator( 'h3.rh-card__title' ) ).toHaveCount( 0 );
+		await expect( page.locator( 'main img' ) ).toHaveCount( 0 );
+	} );
+
+	test( 'a topic collection, and its second page', async ( { page } ) => {
+		await page.setViewportSize( { width: 1280, height: 900 } );
+		const topic = content.topics[ 0 ];
+		await page.goto( `/?resource_topic=${ topic.slug }` );
+
+		await expect( page.locator( 'h1#rh-listing-heading' ) ).toHaveText(
+			'Resources on Caching'
+		);
+		const current = page.locator(
+			'.rh-filters__link[aria-current="true"]'
+		);
+		await expect( current.nth( 0 ) ).toHaveText( 'All types' );
+		await expect( current.nth( 1 ) ).toHaveText( 'Caching' );
+		await expect( page.locator( '.rh-lead' ) ).toHaveCount( 0 );
+		await expect( page.locator( 'article.rh-card' ) ).toHaveCount(
+			PER_PAGE
+		);
+
+		// Page 2: Previous at the left edge, the current number 2, no Next, and the one row left.
+		await page.goto( `/?resource_topic=${ topic.slug }&paged=2` );
+		await expect( page.locator( 'h1#rh-listing-heading' ) ).toHaveText(
+			'Resources on Caching'
+		);
+		await expect( page.locator( 'article.rh-card' ) ).toHaveCount(
+			COUNT - PER_PAGE
+		);
+		await expect(
+			page.locator( '.rh-pagination .page-numbers.current' )
+		).toHaveText( '2' );
+		await expect(
+			page.locator( '.rh-pagination .wp-block-query-pagination-next' )
+		).toHaveCount( 0 );
+		const previous = page.locator(
+			'.rh-pagination .wp-block-query-pagination-previous'
+		);
+		await expect( previous ).toHaveText( 'Previous' );
+		const navBox = await box( page, 'nav.rh-pagination' );
+		const previousBox = await box(
+			page,
+			'.rh-pagination .wp-block-query-pagination-previous'
+		);
+		expect( previousBox.x ).toBeCloseTo( navBox.x, 0 );
+	} );
+
+	test( 'the library at 360 px: one column, the lead stacked, nothing sideways', async ( {
+		page,
+	} ) => {
+		await page.setViewportSize( { width: 360, height: 800 } );
+		await page.goto( '/?post_type=resource' );
+
+		const media = await box( page, '.rh-lead__media' );
+		const body = await box( page, '.rh-lead__body' );
+		const gutter = parseFloat(
+			( await resolve( page, 'body', { width: 'var(--rh-space-4)' } ) )
+				.width
+		);
+		expect( media.x ).toBeCloseTo( gutter, 1 );
+		expect( media.width ).toBeCloseTo( 360 - 2 * gutter, 1 );
+		expect( body.x ).toBeCloseTo( media.x, 1 );
+		expect(
+			await page.evaluate( () => document.documentElement.scrollWidth )
+		).toBeLessThanOrEqual( 360 );
+	} );
+
+	test( "the collections' stylesheets load on the collections only, and the lead's on the library's first page only", async ( {
+		page,
+		requestUtils,
+	} ) => {
+		const cmsPage = await requestUtils.createPage( {
+			title: `Collection styles sample ${ Date.now() }`,
+			content:
+				'<!-- wp:paragraph --><p>A page.</p><!-- /wp:paragraph -->',
+			status: 'publish',
+		} );
+		const topic = content.topics[ 0 ];
+		try {
+			// [ url, status, listing.css, lead.css ]. `?p=` with an ID no post
+			// has is a 404 under any permalink structure; the tests site has
+			// none, so an unknown path would be the welcome.
+			for ( const [ url, status, listing, lead ] of [
+				[ cmsPage.link, 200, false, false ],
+				[ '/', 200, false, false ],
+				[ '/?p=999999999', 404, false, false ],
+				[ content.lead.link, 200, false, false ],
+				[ '/?post_type=resource', 200, true, true ],
+				[ '/?post_type=resource&paged=2', 200, true, false ],
+				[ `/?resource_type=${ content.type.slug }`, 200, true, false ],
+				[ `/?resource_topic=${ topic.slug }`, 200, true, false ],
+			] ) {
+				const response = await page.goto( url );
+				expect( response.status(), url ).toBe( status );
+				await expect(
+					page.locator( 'link#resource-hub-listing-css' ),
+					`listing.css on ${ url }`
+				).toHaveCount( listing ? 1 : 0 );
+				await expect(
+					page.locator( 'link#resource-hub-lead-css' ),
+					`lead.css on ${ url }`
+				).toHaveCount( lead ? 1 : 0 );
+			}
+		} finally {
+			await requestUtils.rest( {
+				method: 'DELETE',
+				path: `/wp/v2/pages/${ cmsPage.id }`,
+				params: { force: true },
+			} );
+		}
 	} );
 } );

@@ -1,0 +1,22 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "resource-hub/collection-empty",
+	"version": "0.1.0",
+	"title": "Collection Empty State",
+	"category": "theme",
+	"icon": "info-outline",
+	"description": "The sentence a collection page shows when it lists nothing, and a link back to the library on a filtered page, as the front end shows them. Rendered on the server for a Query Loop's no-results block.",
+	"keywords": [ "resource", "collection", "empty", "no results" ],
+	"textdomain": "resource-hub",
+	"ancestor": [ "core/query-no-results" ],
+	"supports": {
+		"html": false,
+		"className": false,
+		"customClassName": false,
+		"reusable": false,
+		"multiple": false
+	},
+	"editorScript": "file:./index.js",
+	"style": [ "resource-hub-tokens" ]
+}

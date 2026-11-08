@@ -204,6 +204,82 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The library is `archive-resource.html`: the collection head's `h1`, each resource a row.
+	 */
+	public function test_library_is_the_resource_archive(): void {
+		$this->collection_content();
+
+		$this->assertSame( 'resource-hub//archive-resource', $this->template_for( get_post_type_archive_link( 'resource' ) ) );
+		$this->assertTrue( is_post_type_archive( 'resource' ) );
+		$this->assertOneHeading( 'Resources' );
+		$this->assertSame( 2, substr_count( $this->html, '<article class="rh-card">' ) );
+		$this->assertStringContainsString( 'rh-filters', $this->html );
+		// One page: core's pagination block prints nothing, as the front end's `Pagination` renders nothing for a single page.
+		$this->assertStringNotContainsString( 'wp-block-query-pagination', $this->html );
+	}
+
+	/**
+	 * A type is `taxonomy-resource_type.html`, headed as the front end heads it.
+	 */
+	public function test_type_is_the_type_taxonomy_template(): void {
+		$this->collection_content();
+
+		$this->assertSame( 'resource-hub//taxonomy-resource_type', $this->template_for( get_term_link( 'webinar', 'resource_type' ) ) );
+		$this->assertOneHeading( 'Webinar resources' );
+		$this->assertSame( 1, substr_count( $this->html, '<article class="rh-card">' ) );
+	}
+
+	/**
+	 * A topic is `taxonomy-resource_topic.html`.
+	 */
+	public function test_topic_is_the_topic_taxonomy_template(): void {
+		$this->collection_content();
+
+		$this->assertSame( 'resource-hub//taxonomy-resource_topic', $this->template_for( get_term_link( 'caching', 'resource_topic' ) ) );
+		$this->assertOneHeading( 'Resources on Caching' );
+		$this->assertSame( 2, substr_count( $this->html, '<article class="rh-card">' ) );
+	}
+
+	/**
+	 * A type within a topic sets both taxonomies' query vars. Core resolves the template of the taxonomy
+	 * whose term is the queried object, the first of the two in its taxonomy order, which the tests
+	 * re-register in varying orders; the two templates are the same shell around the collection part
+	 * (`test_collection_templates_are_identical()` holds them to it), so either is right, and the head
+	 * names both terms.
+	 */
+	public function test_type_within_topic_is_a_taxonomy_template(): void {
+		$this->collection_content();
+
+		$this->assertContains(
+			$this->template_for( home_url( '/?resource_type=webinar&resource_topic=caching' ) ),
+			array( 'resource-hub//taxonomy-resource_type', 'resource-hub//taxonomy-resource_topic' )
+		);
+		$this->assertTrue( is_tax() );
+		$this->assertSame( 'webinar', get_query_var( 'resource_type' ) );
+		$this->assertSame( 'caching', get_query_var( 'resource_topic' ) );
+		$this->assertOneHeading( 'Webinar resources on Caching' );
+		$this->assertSame( 1, substr_count( $this->html, '<article class="rh-card">' ) );
+	}
+
+	/**
+	 * The three collection templates are the same file byte for byte: the shell around the collection part.
+	 * Core picks one of the two taxonomy templates for a type within a topic by its taxonomy order, which
+	 * no one sets (`test_type_within_topic_is_a_taxonomy_template()`), so that pick may not matter; a change
+	 * to one template is a change to all three, or a way to tell them apart that this test should name.
+	 */
+	public function test_collection_templates_are_identical(): void {
+		$dir      = WP_CONTENT_DIR . '/themes/resource-hub/templates/';
+		$library  = $dir . 'archive-resource.html';
+		$template = (string) file_get_contents( $library ); // phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- The theme's own template, read by a test.
+		$this->assertStringContainsString( '<!-- wp:template-part {"slug":"collection"} /-->', $template );
+
+		foreach ( array( 'taxonomy-resource_type.html', 'taxonomy-resource_topic.html' ) as $file ) {
+			$this->assertFileIsReadable( $dir . $file );
+			$this->assertSame( $template, file_get_contents( $dir . $file ), "{$file} differs from archive-resource.html." ); // phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- The theme's own template, read by a test.
+		}
+	}
+
+	/**
 	 * An archive is `index.html`, under the archive's title as its one `h1`, its posts' titles `h2`.
 	 */
 	public function test_archive_is_the_index(): void {
@@ -232,6 +308,46 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 		$this->assertSame( 'resource-hub//404', $this->template_for( home_url( '/?page_id=987654' ) ) );
 		$this->assertTrue( is_404() );
 		$this->assertOneHeading( 'Page not found' );
+	}
+
+	/**
+	 * Two published resources: an ebook and a webinar, both on the topic "Caching". Plain permalinks, so each
+	 * collection is requested by its query vars, as core's term links give them.
+	 */
+	private function collection_content(): void {
+		$ebook   = self::factory()->term->create(
+			array(
+				'taxonomy' => 'resource_type',
+				'slug'     => 'ebook',
+				'name'     => 'Ebook',
+			)
+		);
+		$webinar = self::factory()->term->create(
+			array(
+				'taxonomy' => 'resource_type',
+				'slug'     => 'webinar',
+				'name'     => 'Webinar',
+			)
+		);
+		$caching = self::factory()->term->create(
+			array(
+				'taxonomy' => 'resource_topic',
+				'slug'     => 'caching',
+				'name'     => 'Caching',
+			)
+		);
+
+		foreach ( array( $ebook, $webinar ) as $type ) {
+			$id = self::factory()->post->create(
+				array(
+					'post_type'   => 'resource',
+					'post_status' => 'publish',
+					'post_title'  => 'A resource',
+				)
+			);
+			wp_set_object_terms( $id, array( $type ), 'resource_type' );
+			wp_set_object_terms( $id, array( $caching ), 'resource_topic' );
+		}
 	}
 
 	/**

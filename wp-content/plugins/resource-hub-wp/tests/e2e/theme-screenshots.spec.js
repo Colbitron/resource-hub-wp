@@ -1,7 +1,8 @@
 /**
- * Pixel baselines of the CMS theme: a page and a resource as a logged-in
- * editor previews them, and the 404 every anonymous visitor gets, at 1280
- * and 360 px, in the light and the dark scheme.
+ * Pixel baselines of the CMS theme: a page, a resource, the library with its
+ * lead and a topic collection as a logged-in editor previews them, and the
+ * 404 every anonymous visitor gets, at 1280 and 360 px, in the light and the
+ * dark scheme.
  *
  * The second of the two parity checks the owner chose (issue #89), beside
  * the computed styles in `theme-parity.spec.js`: a template, a part, a
@@ -22,13 +23,20 @@
  * emulation on Apple silicon, or pulling the image on a cold machine, takes
  * a while, hence the long timeouts.
  *
- * The page and the resource are shot logged in, with the admin bar hidden and
- * its margin on `<html>` taken off by a style added to the page
- * (`theme-screenshots.css`), since the front end has no admin bar; the 404 is
- * shot anonymously, as visitors get it. The resource is the one
+ * The page, the resource and the collections are shot logged in, with the
+ * admin bar hidden and its margin on `<html>` taken off by a style added to
+ * the page (`theme-screenshots.css`), since the front end has no admin bar;
+ * the 404 is shot anonymously, as visitors get it. The resource is the one
  * `resource-page-seed.js` makes, with fixed titles, dates, a drawn image and
  * a pick and a topic match in its related section, so its baseline moves
- * only when the design does. Baselines are in `__snapshots__/` beside this file. A missing one
+ * only when the design does. The collections' content is
+ * `collection-content.js`'s: fixed titles, dates and summaries, a type, two
+ * topics and thirteen resources, the newest featured with a drawn image, on
+ * the tests site, which has plain permalinks, so the library is
+ * `/?post_type=resource` and the topic `/?resource_topic=…`. The library
+ * lists every published resource on the site, the resource page's seed
+ * included, so a spec that left resources behind moves its baseline.
+ * Baselines are in `__snapshots__/` beside this file. A missing one
  * fails in CI and is written locally; to change one on purpose, run
  * `pnpm test:e2e -- --update-snapshots` with the same `WP_BASE_URL`, look at
  * the images and commit them with the change. No retry: a difference that
@@ -57,6 +65,10 @@ const {
 	seedResourcePage,
 	deleteResourcePage,
 } = require( './resource-page-seed' );
+const {
+	createCollection,
+	deleteCollection,
+} = require( './collection-content' );
 
 const WIDTHS = [ 1280, 360 ];
 const SCHEMES = [ 'light', 'dark' ];
@@ -99,6 +111,7 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 	let browser;
 	let cmsPage;
 	let seed;
+	let collection;
 	/** The process listeners that stop the container, removed in `afterAll`. */
 	const listeners = [];
 
@@ -157,6 +170,7 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 			status: 'publish',
 		} );
 		seed = await seedResourcePage( requestUtils );
+		collection = await createCollection( requestUtils, Date.now() );
 	} );
 
 	test.afterAll( async ( { requestUtils } ) => {
@@ -172,6 +186,9 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 			}
 			if ( seed ) {
 				await deleteResourcePage( requestUtils, seed );
+			}
+			if ( collection ) {
+				await deleteCollection( requestUtils, collection );
 			}
 		} finally {
 			await browser?.close().catch( () => undefined );
@@ -274,6 +291,48 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 				);
 				await page.context().close();
 			} );
+			for ( const [ name, url, heading ] of [
+				[ 'library', '/?post_type=resource', 'Resources' ],
+				[
+					'topic',
+					() => `/?resource_topic=${ collection.topics[ 0 ].slug }`,
+					'Resources on Caching',
+				],
+			] ) {
+				test( `the ${ name } at ${ width }px, ${ colorScheme }`, async ( {
+					requestUtils,
+				} ) => {
+					const page = await open( {
+						baseURL: requestUtils.baseURL,
+						width,
+						colorScheme,
+						loggedIn: true,
+					} );
+					await load( page, typeof url === 'function' ? url() : url );
+					await expect( page.locator( '#wpadminbar' ) ).toHaveCount(
+						1
+					);
+					await page.addStyleTag( { path: HIDE_ADMIN_BAR } );
+					await expect( page.locator( '#wpadminbar' ) ).toBeHidden();
+					await expect(
+						page.getByRole( 'heading', { level: 1 } )
+					).toHaveText( heading );
+					// The lead's image is drawn before the shot.
+					for ( const img of await page
+						.locator( 'main img' )
+						.all() ) {
+						await expect( img ).toHaveJSProperty(
+							'complete',
+							true
+						);
+					}
+					await expect( page, BASELINE_HINT ).toHaveScreenshot(
+						`${ name }-${ width }-${ colorScheme }.png`,
+						SCREENSHOT
+					);
+					await page.context().close();
+				} );
+			}
 
 			test( `the 404 at ${ width }px, ${ colorScheme }`, async ( {
 				requestUtils,

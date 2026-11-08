@@ -1,0 +1,94 @@
+/*
+ * Core's query pagination drawn as the front end's (listing.css, `.rh-pagination*`;
+ * DESIGN.md, "The pagination"): Previous, the page numbers and Next as text links
+ * on a strong rule, each at least 2.5rem square, the current number heavier and
+ * underlined with the strong line, a gap in the muted ink.
+ *
+ * The one accepted DOM difference between a CMS collection page and the front
+ * end's: the front end's `Pagination` writes `nav.rh-pagination > ul.rh-pagination__list > li > a.rh-pagination__link`,
+ * where core's `query-pagination` block writes a `nav` (the template gives it the
+ * `rh-pagination` class, so listing.css draws the rule and the space above it)
+ * holding `a.wp-block-query-pagination-previous`, a `div.wp-block-query-pagination-numbers`
+ * of `.page-numbers` (`a`, `span.current`, `span.dots`) and
+ * `a.wp-block-query-pagination-next`. This file maps core's classes to the same
+ * declarations as listing.css's, token for token, and is the theme's own rather
+ * than the package's: the front end never renders core's markup. Loaded inline
+ * after listing.css on the collection templates (functions.php).
+ *
+ * The page-number list itself can differ too, from four pages on: core's
+ * `paginate_links()` (`mid_size` 1, `end_size` 1) writes a gap where the front
+ * end's `pageWindow()` lists every page up to seven. Previous, Next, the current
+ * page and every link's target agree; only which numbers show between them can
+ * part. That is accepted with the DOM, not re-rendered here.
+ *
+ * Specificity: core's flex layout for the block is written to generated
+ * `.wp-container-core-query-pagination-is-layout-*` and `.is-layout-flex`
+ * classes, one class each, so every rule here names two classes.
+ */
+
+.rh-pagination.wp-block-query-pagination {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: flex-start;
+	gap: var(--rh-space-1);
+}
+
+/* The numbers' wrapper joins the row, so the gap runs between every link. */
+.rh-pagination .wp-block-query-pagination-numbers {
+	display: contents;
+}
+
+.rh-pagination .page-numbers,
+.rh-pagination .wp-block-query-pagination-previous,
+.rh-pagination .wp-block-query-pagination-next {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 2.5rem;
+	min-height: 2.5rem;
+	margin: 0;
+	padding: var(--rh-space-1) var(--rh-space-2);
+	color: var(--rh-color-text);
+	font-size: var(--rh-text-base);
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	text-decoration: none;
+	text-decoration-thickness: var(--rh-border-width);
+	text-underline-offset: 0.3em;
+}
+
+.rh-pagination a.page-numbers:hover,
+.rh-pagination .wp-block-query-pagination-previous:hover,
+.rh-pagination .wp-block-query-pagination-next:hover {
+	text-decoration: underline;
+}
+
+.rh-pagination .page-numbers.current {
+	font-weight: var(--rh-weight-heading);
+	text-decoration: underline;
+	text-decoration-thickness: var(--rh-border-width-strong);
+}
+
+.rh-pagination .page-numbers.dots {
+	color: var(--rh-color-text-muted);
+	font-weight: 400;
+}
+
+.rh-pagination.wp-block-query-pagination > .wp-block-query-pagination-previous {
+	margin-right: auto;
+}
+
+.rh-pagination.wp-block-query-pagination > .wp-block-query-pagination-next {
+	margin-left: auto;
+}
+
+@media (forced-colors: active) {
+	.rh-pagination .page-numbers.current {
+		outline: 2px solid CanvasText;
+		outline-offset: 2px;
+		text-decoration: underline;
+		text-decoration-thickness: 0.2em;
+		text-underline-offset: 0.2em;
+	}
+}

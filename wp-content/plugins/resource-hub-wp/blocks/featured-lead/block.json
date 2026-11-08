@@ -1,0 +1,21 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "resource-hub/featured-lead",
+	"version": "0.1.0",
+	"title": "Featured Lead",
+	"category": "theme",
+	"icon": "star-filled",
+	"description": "The newest featured resource, large, under a Featured heading, as the front end's library shows it on its first page. Rendered on the server; empty on every other page and when nothing is featured.",
+	"keywords": [ "resource", "featured", "lead", "library" ],
+	"textdomain": "resource-hub",
+	"supports": {
+		"html": false,
+		"className": false,
+		"customClassName": false,
+		"reusable": false,
+		"multiple": false
+	},
+	"editorScript": "file:./index.js",
+	"style": [ "resource-hub-tokens", "resource-hub-card" ]
+}
