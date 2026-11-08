@@ -67,7 +67,7 @@ interface MarkerOptions {
   readonly extra?: string;
 }
 
-/** A marker as the CMS block (a sibling branch, issue #50) writes it, with one row linking to a seeded resource on the CMS's origin. */
+/** A marker as the CMS block (`RelatedResourcesBlock` in the plugin) writes it, with one row linking to a seeded resource on the CMS's origin. */
 function marker({ topic, count = 3, heading = `More on ${topic}`, shape = "cards", extra = "" }: MarkerOptions): string {
   const origin = mockCmsOrigin();
   const href = `${origin}/resources/case-study/one-content-model-five-channels/`;

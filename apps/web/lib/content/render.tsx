@@ -100,7 +100,7 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   the fallback and `renderBlock` is not called; one whose `renderBlock`
  *   throws renders the fallback too. The post ID passed in `postId` wins
  *   over the marker's `data-exclude`.
- * - The marker's rows: the CMS block (a sibling branch, issue #50) writes
+ * - The marker's rows: the CMS block (`RelatedResourcesBlock` in the plugin) writes
  *   the row markup of `packages/ui/card.css` (its header comment) inside
  *   the marker, so that the fallback, which renders when the marker is
  *   invalid, past the cap, or its block's fetch failed, is the same rows
@@ -264,7 +264,7 @@ const ID_PREFIX = "c-";
  * The most related-resources blocks one body renders. Each costs the server
  * a related-route call and a resources fetch; a resource needs one, and
  * five leaves room. Markers past it render their fallback, the CMS's own
- * list of links, as an invalid marker does.
+ * rows, as an invalid marker does.
  */
 export const MAX_MARKERS = 5;
 
@@ -356,7 +356,7 @@ interface CardClassPlace {
 const ROW_TITLE_ELEMENTS: ReadonlySet<string> = new Set(["h2", "h3", "h4", "h5", "h6"]);
 
 /**
- * The classes of the row markup the CMS block (a sibling branch, issue #50)
+ * The classes of the row markup the CMS block (`RelatedResourcesBlock` in the plugin)
  * writes inside the marker (`packages/ui/card.css`, its header comment),
  * kept only inside a valid marker's wrapper (`Context.scope`), and
  * each only on the element it belongs on: an exact list, so a body can name
@@ -1331,7 +1331,7 @@ function markerProps(node: Element, attributes: MarkerAttributes, context: Conte
 
 /**
  * The block marker, as the contract in `packages/ui/README.md` states it,
- * with the row markup the CMS block (a sibling branch, issue #50) writes
+ * with the row markup the CMS block (`RelatedResourcesBlock` in the plugin) writes
  * inside it. The fallback is the wrapper with its `class` and its children
  * through the pass; the `data-*` attributes are read here and never
  * rendered, so the marker stays on the server. The wrapper always carries

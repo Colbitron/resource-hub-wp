@@ -2,7 +2,7 @@
 
 A headless WordPress demo in one repository ([ADR 0033](docs/adr/0033-one-repository-for-the-plugin-the-front-end-and-the-contract.md)): a WordPress plugin, `resource-hub`, with the `wp-env` environment it runs in; a Next.js front end on Vercel that reads the site over REST and is told when to revalidate; and the contract package both share. It is a demonstration of a pattern, written fresh, not production code.
 
-The plugin models a filterable resources library: a `resource` post type with `resource_topic`, `resource_type` and `resource_flag` taxonomies, REST-exposed meta (`summary`, `source_url`, and the editor's `related_picks`), three custom REST routes (old-slug resolution, a page lookup by path, and the related resources for a resource, merged from the picks and its topics), and a hook that notifies the front end in batches whenever a public resource, one of its terms or a page changes. The front end renders that library, the CMS's static front page at `/` and every other published page at its path from its own server, and rebuilds pages on demand. The related-resources block's render callback and the front end's related section are what remains of the slice.
+The plugin models a filterable resources library: a `resource` post type with `resource_topic`, `resource_type` and `resource_flag` taxonomies, REST-exposed meta (`summary`, `source_url`, and the editor's `related_picks`), three custom REST routes (old-slug resolution, a page lookup by path, and the related resources for a resource, merged from the picks and its topics), and a hook that notifies the front end in batches whenever a public resource, one of its terms or a page changes. The front end renders that library, the CMS's static front page at `/` and every other published page at its path from its own server, and rebuilds pages on demand. The `resource-hub/related-resources` block puts the newest resources in one topic into any page or resource body, as a marker the front end swaps for its own list, and the resource page shows a related section from the related route, which puts the editor's picks ahead of the newest resources sharing a topic.
 
 ## Layout
 
@@ -43,8 +43,9 @@ Everything marked done exists on `main` and is green in CI.
 | The CMS's pages on the front end: the static front page at `/`, every published page at its path, `GET /resource-hub/v1/page` and page events ([ADR 0052](docs/adr/0052-the-front-end-renders-the-cms-pages.md)) | done |
 | Front-end production deploy through a Vercel deploy hook ([ADR 0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md)); first-deploy check closed 2026-11-06 | done |
 | `GET /resource-hub/v1/related/{id}` and `related_picks`, with the related list's salted object cache ([issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50)) | done |
-| The `resource-hub/related-resources` block's render callback, the picks editor and the front end's related section ([issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50)) | slice 4 |
-| CMS block theme | slice 5 |
+| The `resource-hub/related-resources` block's render callback and its marker with card rows, the picks editor, and the front end's related section and its swap of the marker ([issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50)) | done |
+| Follow-ups: real-browser lab measurement ([issue #85](https://github.com/Colbitron/resource-hub-wp/issues/85)), the CMS pages' lazy-loaded LCP image ([issue #86](https://github.com/Colbitron/resource-hub-wp/issues/86)), the related list's scale path ([issue #87](https://github.com/Colbitron/resource-hub-wp/issues/87)) | open |
+| CMS block theme ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | slice 5 |
 
 ## Architecture
 
@@ -55,7 +56,7 @@ flowchart LR
             editor["Editor saves a resource or a page"]
             cpt["resource post type<br/>resource_topic, resource_type, resource_flag<br/>meta: summary, source_url, related_picks"]
             rest["REST<br/>/wp/v2/resources, /wp/v2/pages<br/>/resource-hub/v1/resolve<br/>/resource-hub/v1/page<br/>/resource-hub/v1/related"]
-            block["related-resources block (slice 4)<br/>server-rendered marker + fallback"]
+            block["related-resources block<br/>server-rendered marker + card-row fallback"]
             hook["Revalidation hook<br/>wp_after_insert_post, before_delete_post,<br/>term and option hooks; sent from WP-Cron"]
             theme["Block theme (slice 5)<br/>logged-in users only;<br/>404 for anonymous visitors"]
             editor --> cpt
@@ -84,10 +85,10 @@ flowchart LR
     ui -.->|"workspace:*"| pages
 
     classDef planned stroke-dasharray: 5 5
-    class theme,block planned
+    class theme planned
 ```
 
-The front end reads content through the core REST API and the custom routes, always from the Next.js server, so the CMS's address never reaches a browser; it rewrites CMS links to its own domain and CMS images to its `/media/` path. WordPress pushes a small bearer-authenticated batch when content changes, from a cron request after the save, so it never renders pages for the front end and the editor never waits on it; each result is stored on the objects it covered and, when configured, sent to PostHog. The CMS's own theme pages exist only for logged-in users and previews, and answer anyone else with a 404. Both sides take the schemas and the shared styles from `packages/ui` through the pnpm workspace, so a contract change is one pull request; the package is never published. The block and the theme (dashed above) are planned.
+The front end reads content through the core REST API and the custom routes, always from the Next.js server, so the CMS's address never reaches a browser; it rewrites CMS links to its own domain and CMS images to its `/media/` path. WordPress pushes a small bearer-authenticated batch when content changes, from a cron request after the save, so it never renders pages for the front end and the editor never waits on it; each result is stored on the objects it covered and, when configured, sent to PostHog. The CMS's own theme pages exist only for logged-in users and previews, and answer anyone else with a 404. Both sides take the schemas and the shared styles from `packages/ui` through the pnpm workspace, so a contract change is one pull request; the package is never published. The theme (dashed above) is planned.
 
 ## Getting started
 

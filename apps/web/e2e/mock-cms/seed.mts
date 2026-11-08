@@ -184,7 +184,7 @@ export const MEDIA: MediaSeed[] = [
 /** The newest resource's date; each later row is one day older. Site time, no offset. */
 export const SEED_DATE = "2026-11-01T09:00:00";
 
-/** One row of a block marker's fallback, as the CMS block (a sibling branch, issue #50) writes it. */
+/** One row of a block marker's fallback, as the CMS block (`RelatedResourcesBlock` in the plugin) writes it. */
 interface MarkerRow {
   type: string;
   /** The `<time>`'s `datetime` (UTC with a `Z`, as the block's `gmdate('Y-m-d\TH:i:s\Z')`) and its text, the publication date. */
@@ -198,13 +198,12 @@ interface MarkerRow {
 }
 
 /**
- * The `resource-hub/related-resources` block as the CMS block (a sibling
- * branch, issue #50; `packages/ui/README.md`, "Block marker") writes it,
- * imitated here until that branch lands: the wrapper
- * with its `data-*` attributes, the block's `<h2>`, and under it the row
- * markup of `packages/ui/card.css` (its header comment) for the resources
- * the CMS found, with `role="list"` on the two lists and no `data-accent`,
- * which is the front end's. The front end swaps the whole wrapper for its
+ * The `resource-hub/related-resources` block as the CMS block
+ * (`RelatedResourcesBlock` in the plugin; `packages/ui/README.md`, "Block
+ * marker") writes it: the wrapper with its `data-*` attributes, the
+ * block's `<h2>`, and under it the row markup of `packages/ui/card.css`
+ * (its header comment) for the resources the CMS found, with `role="list"`
+ * on the two lists and no `data-accent`, which is the front end's. The front end swaps the whole wrapper for its
  * own list and renders this only when that read fails.
  */
 function relatedMarker(topicId: number, exclude: number, heading: string, rows: MarkerRow[]): string {

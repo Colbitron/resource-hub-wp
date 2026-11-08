@@ -16,10 +16,10 @@ Headless WordPress with Next.js over REST (GraphQL as a stretch); React and Type
 
 A filterable resources library: WordPress models it and pushes changes, Next.js renders it and rebuilds pages on demand.
 
-- **The plugin**, `resource-hub`, at `wp-content/plugins/resource-hub-wp/`: the `resource` post type and its taxonomies and meta, the resolve, page and related REST routes, the revalidation hook, the lockdown that keeps the CMS's theme pages for logged-in users, and the settings status page. Registered in the plugin, not a theme. It runs in a `wp-env` environment configured at the repository root and is deployed to the hosted CMS. The `resource-hub/related-resources` block's render callback is slice 4 (issue #50); the block directory holds an editor scaffold only.
+- **The plugin**, `resource-hub`, at `wp-content/plugins/resource-hub-wp/`: the `resource` post type and its taxonomies and meta, the resolve, page and related REST routes, the revalidation hook, the lockdown that keeps the CMS's theme pages for logged-in users, and the settings status page. Registered in the plugin, not a theme. It runs in a `wp-env` environment configured at the repository root and is deployed to the hosted CMS. Slice 4 is built: the related route and `related_picks` with the editor's picker for them, the `resource-hub/related-resources` block (registered from `build/`; its render callback writes the contract's marker with card rows inside), and on the front end the resource page's related section and the swap of the block's marker for its own list.
 - **The front end**, a Next.js App Router app in TypeScript at `apps/web/`, deployed on Vercel: it renders the library, the CMS's static front page at `/` and every published page at its path from the WordPress REST API, always on its own server, and revalidates on demand when the CMS says so.
 - **The contract package**, `@colbitron/resource-hub-ui` at `packages/ui/`: the JSON Schemas both sides check themselves against (ADR 0010) and the stylesheets and the one typeface both render with (`tokens.css`, `card.css`, `fonts/`), consumed through the pnpm workspace and never published (ADR 0033).
-- **The CMS theme, planned for slice 5**, at `wp-content/themes/resource-hub/`: a full block theme on the `packages/ui` tokens and CSS, for editors and logged-in previews only; anonymous visitors get a 404 (ADR 0031). The directory does not exist yet.
+- **The CMS theme, planned for slice 5**, at `wp-content/themes/resource-hub/`: a full block theme on the `packages/ui` tokens and CSS, for editors and logged-in previews only; anonymous visitors get a 404 (ADR 0031). The directory does not exist yet; its spec is issue #89.
 - **Documentation:** `README.md` at the root with the architecture diagram and the layout; one ADR per hard-to-reverse decision under `docs/adr/`; topic pages under `docs/architecture/`; procedures under `docs/runbooks/`.
 
 ## The contract between the CMS and the front end
@@ -39,7 +39,7 @@ A filterable resources library: WordPress models it and pushes changes, Next.js 
 | Running and testing the front end, its configuration, routes and images | `apps/web/README.md`, `apps/web/e2e/README.md` |
 | Why the system has its shape | `docs/adr/` (13 records) |
 | Why one class or module does what it does | Its docblock |
-| What is not built yet | Issue #50 (slice 4 and the theme notes) |
+| What is not built yet | Issue #89 (the CMS theme, slice 5) and the open follow-ups #85 (lab measurement), #86 (CMS pages' LCP image) and #87 (the related list's scale path) |
 
 ## Standards and workflow
 

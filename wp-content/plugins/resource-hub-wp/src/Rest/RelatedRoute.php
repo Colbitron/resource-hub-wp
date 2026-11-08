@@ -23,7 +23,7 @@ use WP_REST_Server;
 /**
  * Answers `{ "items": [ { "id", "source": "pick" | "topic" } ] }` (`related-response.schema.json`)
  * for a published resource, or core's `WP_Error` shape for a 400 or a 404 (see
- * `packages/ui/README.md`). The front end does not read it yet; when it does, it reads the objects
+ * `packages/ui/README.md`). The front end's related section reads it, then reads the objects
  * with `GET /wp/v2/resources?include={ids}&orderby=include&_embed`, so one code path renders a
  * resource everywhere and this route stays small and cacheable.
  *
@@ -262,7 +262,7 @@ final class RelatedRoute {
 				'fields'              => 'ids',
 				'no_found_rows'       => true,
 				'ignore_sticky_posts' => true,
-				'tax_query'           => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query -- The topic fill is the route's one job and a tax query by definition; its result is cached under the salted key for a day, and the scale path is a search index or a precomputed list (issue #50), never raw SQL.
+				'tax_query'           => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query -- The topic fill is the route's one job and a tax query by definition; its result is cached under the salted key for a day, and the scale path is a search index or a precomputed list (issue #87), never raw SQL.
 					array(
 						'taxonomy' => Taxonomies::TOPIC,
 						'field'    => 'term_id',

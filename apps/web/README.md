@@ -69,7 +69,7 @@ The final gate run on the shipped build, a separate run of the same command, mea
 
 ## Status
 
-The listings, the single resource with its related section, the related-resources block's swap in a body, the CMS's pages, the data layer, the content renderer and the revalidation route are in, all ISR ([issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50) holds the plugin's side of the related route and the block). CI lints, typechecks, builds and runs the unit and end-to-end tests, then the design gates on the same build: axe, the specimen's screenshots and Lighthouse CI ([`e2e/README.md`](e2e/README.md#the-design-gates)). A separate, non-blocking workflow measures each pull request's Vercel preview with Lighthouse at the gate's settings and posts the medians as a comment on the pull request (same section).
+The listings, the single resource with its related section, the related-resources block's swap in a body, the CMS's pages, the data layer, the content renderer and the revalidation route are in, all ISR; the plugin's side of the related route and the block is described in [its README](../../wp-content/plugins/resource-hub-wp/README.md). CI lints, typechecks, builds and runs the unit and end-to-end tests, then the design gates on the same build: axe, the specimen's screenshots and Lighthouse CI ([`e2e/README.md`](e2e/README.md#the-design-gates)). A separate, non-blocking workflow measures each pull request's Vercel preview with Lighthouse at the gate's settings and posts the medians as a comment on the pull request (same section).
 
 ## Possible next steps
 

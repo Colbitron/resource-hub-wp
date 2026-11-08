@@ -296,7 +296,7 @@
  * than card.css's single classes, so the overrides below give a row back
  * its own spacing, sizes and link; the row's own rules do the rest.
  *
- * The CMS block (a sibling branch, issue #50) writes the same row markup
+ * The CMS block (`RelatedResourcesBlock` in the plugin) writes the same row markup
  * inside the marker, so a fallback renders as rows too. A marker that
  * still holds a plain list of links, the shape before the rows, keeps its
  * old rendering: each link on a row between hairlines, in the ink,
