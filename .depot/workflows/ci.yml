@@ -83,10 +83,11 @@
 # both.
 #
 # The deploy job runs after the gate, only on main and on manual dispatch, and
-# syncs the plugin, from wp-content/plugins/resource-hub-wp, to the Cloudways
-# host (ADR 0005). The deploy-web job runs after deploy and every front-end
-# job, and starts the front end's production deploy on Vercel through a
-# deploy hook (ADR 0051).
+# syncs the plugin, from wp-content/plugins/resource-hub-wp, Relevanssi and
+# the CMS theme, from wp-content/themes/resource-hub, to the Cloudways host
+# (ADR 0005), and activates all three. The deploy-web job runs after deploy
+# and every front-end job, and starts the front end's production deploy on
+# Vercel through a deploy hook (ADR 0051).
 #
 # Lighthouse against the Vercel preview of each pull request that reaches
 # the front end is a separate, non-blocking workflow,
@@ -248,6 +249,14 @@ jobs:
       - name: Test the deploy's plugin checksum check
         if: github.event_name == 'pull_request'
         run: node --test .depot/scripts/plugin-checksums.test.mjs
+
+      # The deploy's theme sync is an allowlist the deploy alone exercises,
+      # so its tests hold it to the theme as committed: every file the theme
+      # loads is shipped, and every tracked file is shipped or named as
+      # staying behind (.depot/scripts/theme-allowlist.test.mjs).
+      - name: Test the deploy's theme allowlist
+        if: github.event_name == 'pull_request'
+        run: node --test .depot/scripts/theme-allowlist.test.mjs
 
       # The runner's own Node and git; nothing is installed.
       - name: Test the scope rules and CI result's verdict
@@ -994,6 +1003,8 @@ jobs:
       # root, which is that value without the plugin suffix. RELEVANSSI_DIR is
       # Relevanssi's directory beside it, built from that same checked root
       # with a fixed suffix, so its rsync --delete can reach no other plugin.
+      # THEME_DIR is the CMS theme's directory, built the same way, so its
+      # rsync --delete can reach no other theme.
       - name: Check the deploy path
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
@@ -1016,6 +1027,7 @@ jobs:
           echo "REMOTE_DIR=$path" >> "$GITHUB_ENV"
           echo "WP_ROOT=$wp_root" >> "$GITHUB_ENV"
           echo "RELEVANSSI_DIR=$wp_root/wp-content/plugins/relevanssi" >> "$GITHUB_ENV"
+          echo "THEME_DIR=$wp_root/wp-content/themes/resource-hub" >> "$GITHUB_ENV"
 
       # The deploy never talks to GitHub after checkout, so the token is not
       # left in .git/config.
@@ -1034,8 +1046,43 @@ jobs:
         with:
           save-store: 'true'
 
+      # The plugin's blocks and the CMS theme's build/, which copies the
+      # contract package's tokens, stylesheets and font into the theme.
       - name: Build the block
         run: pnpm build
+
+      # The theme's build/ is gitignored and the theme sync below sends it as
+      # it finds it, so a build that wrote nothing would ship a theme that
+      # registers no stylesheet and serves no font, quietly: functions.php
+      # skips registration without build/assets.php. So the manifest, the
+      # tokens and every file theme.json loads (`file:./`, Figtree) must be
+      # there, non-empty, before anything reaches the host. theme.json is read
+      # into a variable first, so a jq failure fails the step rather than
+      # quietly emptying the list.
+      - name: Check the theme's build
+        working-directory: wp-content/themes/resource-hub
+        run: |
+          loads=$(jq -r '.. | strings | select(startswith("file:./")) | ltrimstr("file:./")' theme.json) || {
+            echo "::error::wp-content/themes/resource-hub/theme.json could not be read. Nothing was deployed."
+            exit 1
+          }
+          missing=0
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            if [ ! -s "$file" ]; then
+              echo "::error::wp-content/themes/resource-hub/$file is missing or empty after pnpm build. Nothing was deployed."
+              missing=1
+            fi
+          done < <(printf '%s\n' build/assets.php build/tokens.css "$loads")
+          exit "$missing"
+
+      # The same tests the scope job runs on every pull request, run again
+      # here on the commit being deployed: two pull requests can each pass
+      # alone and still merge into a main whose theme loads a file the sync
+      # does not ship, and nothing else would catch it before the host. Node
+      # and git only, from the checkout; no secret reaches this step.
+      - name: Test the theme allowlist
+        run: node --test .depot/scripts/theme-allowlist.test.mjs
 
       # Composer's download cache, kept across deploys so that while the two
       # locks are unchanged neither install downloads a dist: on a hit each
@@ -1300,6 +1347,47 @@ jobs:
             '--exclude=*' \
             ./ "deploy:$REMOTE_DIR/"
 
+      # The CMS block theme, after the plugin: its templates render the
+      # plugin's blocks, and the plugin's blocks only ever gain, so a failure
+      # here leaves a newer plugin beside the theme as it was, which still
+      # renders, and no step after this one runs. The theme is activated
+      # below, only once this has succeeded.
+      #
+      # The same shape as the plugin's sync: the source is the theme
+      # directory itself, the target THEME_DIR, built from the checked
+      # WordPress root with a fixed suffix, so --delete can reach no other
+      # theme; the same flags, for the same reasons; and an allowlist of what
+      # WordPress loads at runtime, the final '*' excluding the rest:
+      # style.css (the theme's header), theme.json, functions.php and the
+      # inc/ files it requires, templates/ and parts/, assets/ (the
+      # pagination stylesheet functions.php reads), js/ (the theme
+      # control's script inc/theme-control.php reads), and build/, the
+      # copies of the contract package's files and their manifest, which
+      # functions.php and theme.json load. README.md, package.json, scripts/
+      # (the build), figtree.sha256 (a test's record) and node_modules/ stay
+      # behind. A new runtime file or directory must be added here;
+      # .depot/scripts/theme-allowlist.test.mjs fails until every tracked
+      # file in the theme is either shipped here or named there as staying
+      # behind, and until every file the theme loads is shipped.
+      - name: Sync the theme
+        working-directory: wp-content/themes/resource-hub
+        run: |
+          : "${THEME_DIR:?THEME_DIR is not set; the deploy path check did not run.}"
+          rsync --archive --compress --no-owner --no-group --chmod=D755,F644 \
+            --omit-dir-times --timeout=120 \
+            --delete-delay --delay-updates --itemize-changes \
+            '--include=/style.css' \
+            '--include=/theme.json' \
+            '--include=/functions.php' \
+            '--include=/inc/***' \
+            '--include=/templates/***' \
+            '--include=/parts/***' \
+            '--include=/assets/***' \
+            '--include=/js/***' \
+            '--include=/build/***' \
+            '--exclude=*' \
+            ./ "deploy:$THEME_DIR/"
+
       # WP-CLI runs from the WordPress root. It would walk up from the plugin
       # directory to find WordPress, but it evaluates wp-config.php without
       # changing directory, so the host's relative require('wp-salt.php')
@@ -1324,10 +1412,112 @@ jobs:
           # shellcheck disable=SC2029
           ssh deploy "cd $dir && { $WP_CLI plugin is-active relevanssi || $WP_CLI plugin activate relevanssi; }"
 
+      # The CMS theme is the site's theme on every deploy, as the plugin is
+      # its plugin: its 404, the one theme page anonymous visitors get (ADR
+      # 0031), lists no pages, and logged-in previews look like the front
+      # end (issue #89). After the plugins, whose blocks its templates
+      # render, and before the flush, so the rules are regenerated after the
+      # deploy's last change.
+      #
+      # The theme the site runs is read first (`--skip-themes`, so a broken
+      # one cannot stop the read). When it is not this one, `theme activate`
+      # switches to it; WP-CLI refuses a theme it cannot find or that has no
+      # style.css or index template, exiting 1 with the stylesheet option
+      # unchanged, so a failure there leaves the previous theme active.
+      # Already active, nothing is switched.
+      #
+      # Then two checks. `theme is-active` loads WordPress with the theme and
+      # the plugins, so it runs functions.php and `init`: a functions.php
+      # that fatals on the host fails it. It renders no template and no
+      # block, so the second check is a real render: an anonymous request
+      # for a theme page, which the lockdown answers with a 404 drawn by the
+      # theme's templates/404.html. It must be a 404 carrying `rh-not-found`
+      # in a class attribute, which only that template writes on the CMS.
+      # The path is the CMS's own /resources/ with a query string unique to
+      # the run, so no cache layer in front of the host can answer it.
+      #
+      # When either check fails and this step switched the theme, it
+      # switches back to the one it found, with `--skip-themes` so the new
+      # theme's functions.php is not loaded for the switch, and fails the
+      # job, so the site is never left on a theme that cannot load or
+      # render. When the theme was already active, there is nothing to
+      # switch back to: the synced files are live, and the job fails with
+      # the rollback in the error. A check that cannot run (ssh dropping,
+      # the home URL unreadable, curl failing) counts as failed, so a
+      # network fault can switch back a theme that was fine; the next deploy
+      # tries again (docs/runbooks/deploy.md, "Activating the theme").
+      #
+      # Checked in wp-env on 2026-11-08 with WP-CLI 2.12.0: an active theme's
+      # `theme activate` exits 0 with a warning; a missing theme or one with
+      # no index template exits 1 and leaves the stylesheet as it was; a
+      # functions.php that throws fails the next call that loads WordPress,
+      # and `theme activate <previous> --skip-themes` then switches back;
+      # the anonymous 404 of a theme page is the theme's, with
+      # `rh-not-found`, and Twenty Twenty-Five's has no such class.
+      - name: Activate the theme
+        run: |
+          dir=$(printf '%q' "$WP_ROOT")
+          # $dir and $WP_CLI are meant to expand on the runner; printf %q has quoted $dir for the remote shell.
+          # shellcheck disable=SC2029
+          previous=$(ssh deploy "cd $dir && $WP_CLI option get stylesheet --skip-plugins --skip-themes") || {
+            echo "::error::Could not read the host's active theme. The theme was not switched."
+            exit 1
+          }
+          if ! [[ "$previous" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::The host's active theme is not a theme directory name (got '$previous'). The theme was not switched."
+            exit 1
+          fi
+          echo "The host's theme was $previous."
+
+          # Fails the step after a failed check, switching back first when
+          # this step switched the theme. $1 says what failed.
+          fail_check() {
+            if [ "$previous" != resource-hub ]; then
+              # shellcheck disable=SC2029
+              if ssh deploy "cd $dir && $WP_CLI theme activate $(printf '%q' "$previous") --skip-themes"; then
+                echo "::error::$1 with resource-hub active on the host, so $previous was activated again. Read this step's log for the error."
+              else
+                echo "::error::$1 with resource-hub active on the host, and switching back to $previous failed too. Switch back by hand: $WP_CLI theme activate $previous --skip-themes, from the WordPress root (docs/runbooks/deploy.md, \"Rolling back\")."
+              fi
+            else
+              echo "::error::$1 with resource-hub, which was already active, after its files were synced. Read this step's log for the error, then roll back (docs/runbooks/deploy.md, \"Rolling back\")."
+            fi
+            exit 1
+          }
+
+          if [ "$previous" != resource-hub ]; then
+            # shellcheck disable=SC2029
+            ssh deploy "cd $dir && $WP_CLI theme activate resource-hub" || {
+              echo "::error::wp theme activate resource-hub failed on the host; $previous is still the active theme."
+              exit 1
+            }
+          fi
+
+          # shellcheck disable=SC2029
+          ssh deploy "cd $dir && $WP_CLI theme is-active resource-hub" || fail_check "WordPress failed to load"
+
+          # shellcheck disable=SC2029
+          home=$(ssh deploy "cd $dir && $WP_CLI option get home --skip-plugins --skip-themes") || home=''
+          case "$home" in
+            https://*) ;;
+            *) fail_check "The site's home option could not be read as an https URL (got '$home'), so the theme's 404 could not be checked," ;;
+          esac
+          url="${home%/}/resources/?rh-deploy-check=${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}"
+          body="$RUNNER_TEMP/theme-404.html"
+          status=$(curl -sS --max-time 20 --retry 3 --retry-delay 5 -o "$body" -w '%{http_code}' "$url") || status="no answer"
+          marker=no
+          grep -qE 'class="([^"]* )?rh-not-found( [^"]*)?"' "$body" 2>/dev/null && marker=yes
+          if [ "$status" != 404 ] || [ "$marker" != yes ]; then
+            fail_check "The theme's 404 did not render for an anonymous request (got HTTP $status and rh-not-found: $marker, at $url)"
+          fi
+          echo "resource-hub is the active theme, and an anonymous theme page gets its 404."
+
       # Activation clears the rewrite rules only when the plugin was inactive,
       # so a deploy that changes the permalink structure (ADR 0024) would keep
       # serving the old rules. A soft flush regenerates them in the database
-      # on every deploy and writes no files. Run from the WordPress root for
+      # on every deploy and writes no files. It runs after the last
+      # activation, the theme's, so the rules it writes are those of the
+      # plugins and the theme as deployed. Run from the WordPress root for
       # the reason given above.
       - name: Flush rewrite rules
         run: |
