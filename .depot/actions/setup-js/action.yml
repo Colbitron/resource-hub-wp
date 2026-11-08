@@ -1,0 +1,90 @@
+# pnpm, Node 24 and the workspace's JavaScript dependencies, for every CI job
+# that runs Node (.depot/workflows/ci.yml). The repository must be checked
+# out first, since this action is read from it.
+#
+# The pnpm store is cached by hand rather than with setup-node's
+# `cache: pnpm`, which saves on every run (see the comment above `jobs` in
+# ci.yml). The path comes from `pnpm store path --silent`, the command
+# setup-node runs, and the key is the one setup-node v7 builds
+# (src/cache-restore.ts: node-cache-<RUNNER_OS>-<os.arch()>-pnpm-<hash of
+# pnpm-lock.yaml>, where os.arch() is Node's process.arch), so entries
+# setup-node saved still hit. actions/cache also versions an entry by its
+# path string, so a different path, even to the same directory, would miss.
+#
+# A pull request that changes the lockfile misses the key and falls back to
+# main's latest store, so pnpm downloads only what changed. main gets no
+# fallback: after a lockfile change it installs into an empty store and saves
+# that, so main's entry holds the current lockfile's packages and never piles
+# up the ones it dropped.
+name: Set up Node, pnpm and the JavaScript dependencies
+description: pnpm from package.json's packageManager, Node 24, the pnpm store from the cache, and pnpm install --frozen-lockfile.
+
+inputs:
+  filter:
+    description: >-
+      A pnpm --filter selector, such as resource-hub-web..., to install only
+      that part of the workspace (the front-end jobs skip wp-env's and the
+      plugin's packages); empty installs the whole workspace.
+    required: false
+    default: ''
+  save-store:
+    description: >-
+      'true' lets this job save the pnpm store, on main only (SAVE_CACHES).
+      Only a whole-workspace install may: a store saved from a filtered
+      install would lack the rest of the workspace's packages, and every job
+      would then hit that partial entry and never save a full one.
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up pnpm
+      uses: pnpm/action-setup@v6
+      # Reads the version from the packageManager field in package.json.
+
+    - name: Set up Node
+      uses: actions/setup-node@v7
+      with:
+        node-version: 24
+
+    - name: Locate the pnpm store
+      id: pnpm-store
+      shell: bash
+      run: |
+        store=$(pnpm store path --silent)
+        arch=$(node -p process.arch)
+        if [[ "$store" != /* ]] || [ -z "$arch" ]; then
+          echo "::error::Could not read the pnpm store path (got: $store) or Node's architecture (got: $arch)."
+          exit 1
+        fi
+        {
+          echo "path=$store"
+          echo "key-prefix=node-cache-$RUNNER_OS-$arch-pnpm-"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Restore the pnpm store
+      id: pnpm-cache
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: ${{ steps.pnpm-store.outputs.key-prefix }}${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: ${{ env.SAVE_CACHES != 'true' && steps.pnpm-store.outputs.key-prefix || '' }}
+
+    - name: Install JavaScript dependencies
+      shell: bash
+      env:
+        FILTER: ${{ inputs.filter }}
+      run: |
+        if [ -n "$FILTER" ]; then
+          pnpm install --frozen-lockfile --filter "$FILTER"
+        else
+          pnpm install --frozen-lockfile
+        fi
+
+    - name: Save the pnpm store
+      if: inputs.save-store == 'true' && env.SAVE_CACHES == 'true' && steps.pnpm-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}

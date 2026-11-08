@@ -6,6 +6,9 @@
  *
  * - The URLs are `e2e/sampled-urls.mts`, the list the axe scan reads too:
  *   every sampled URL except the 404, which Lighthouse refuses to score.
+ *   `RH_LIGHTHOUSE_SHARD=i/n` narrows them to one shard of the list
+ *   (`e2e/lighthouse-shard.mts`), which is how CI spreads them across
+ *   parallel jobs; unset, every URL is measured.
  * - Lighthouse's default config is the mobile preset: a Moto G Power-sized
  *   screen and simulated slow 4G with a 4x CPU slowdown. No preset is named,
  *   because LHCI's presets are `desktop`, `perf` and `experimental`.
@@ -26,6 +29,7 @@
 
 const { chromium } = require("@playwright/test");
 
+const { shard } = require("./e2e/lighthouse-shard.mts");
 const { appSiteOrigin } = require("./e2e/mock-cms/config.mts");
 const { SAMPLED_URLS } = require("./e2e/sampled-urls.mts");
 
@@ -34,7 +38,10 @@ const median = { aggregationMethod: "median" };
 module.exports = {
   ci: {
     collect: {
-      url: SAMPLED_URLS.filter((sample) => sample.lighthouse).map((sample) => `${appSiteOrigin()}${sample.path}`),
+      url: shard(
+        SAMPLED_URLS.filter((sample) => sample.lighthouse),
+        process.env.RH_LIGHTHOUSE_SHARD,
+      ).map((sample) => `${appSiteOrigin()}${sample.path}`),
       numberOfRuns: 5,
       chromePath: chromium.executablePath(),
       settings: {

@@ -33,15 +33,21 @@ import { createRequire } from "node:module";
 import { assertPrebuilt, writeBuildStamp } from "./build-stamp.mts";
 import { appServerEnv, appSiteOrigin, mockCmsOrigin, mockCmsPort, prebuilt, webPort } from "./mock-cms/config.mts";
 import { medianTable, type Lhr } from "./lighthouse-summary.mts";
-import { SAMPLED_URLS } from "./sampled-urls.mts";
 
 const APP_DIR = new URL("..", import.meta.url).pathname;
 const RAW_DIR = join(APP_DIR, ".lighthouseci");
 const REPORT_DIR = join(APP_DIR, "lighthouse-results");
 
 const require = createRequire(import.meta.url);
+const COLLECT: { numberOfRuns: number; url: string[] } = require("../lighthouserc.cjs").ci.collect;
 /** The runs per URL, read from the config the assertions use, for the summary's heading. */
-const RUNS: number = require("../lighthouserc.cjs").ci.collect.numberOfRuns;
+const RUNS = COLLECT.numberOfRuns;
+/**
+ * The URLs `lhci collect` measures, read from the config too, so the warm-up
+ * requests the same list, one shard of it when `RH_LIGHTHOUSE_SHARD` names
+ * one (`lighthouse-shard.mts`).
+ */
+const URLS = COLLECT.url;
 
 const children: ChildProcess[] = [];
 
@@ -131,8 +137,7 @@ async function main(): Promise<number> {
 
   // One request per URL renders each ISR listing and fills the Data Cache,
   // as a reader after the first would find it.
-  const urls = SAMPLED_URLS.filter((sample) => sample.lighthouse).map((sample) => `${app}${sample.path}`);
-  for (const url of urls) {
+  for (const url of URLS) {
     const response = await fetch(url);
     await response.arrayBuffer();
     if (!response.ok) throw new Error(`${url} answered ${response.status} while warming.`);

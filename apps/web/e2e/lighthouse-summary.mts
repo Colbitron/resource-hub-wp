@@ -51,3 +51,22 @@ export function medianTable(runs: readonly Lhr[], runsPerUrl: number): string {
   }
   return `### Lighthouse (mobile, median of ${runsPerUrl})\n\n${rows.join("\n")}\n`;
 }
+
+/**
+ * What is missing or extra in runs merged from several Lighthouse shards
+ * (`lighthouse-merge.mts`): each expected URL should have exactly
+ * `runsPerUrl` runs, and no other URL any. Empty when the runs are
+ * complete, so a shard whose reports never arrived cannot leave a URL out
+ * of the table unnoticed.
+ */
+export function coverageProblems(runs: readonly Lhr[], expectedUrls: readonly string[], runsPerUrl: number): string[] {
+  const counts = new Map<string, number>();
+  for (const lhr of runs) counts.set(lhr.requestedUrl, (counts.get(lhr.requestedUrl) ?? 0) + 1);
+  const problems = expectedUrls
+    .filter((url) => counts.get(url) !== runsPerUrl)
+    .map((url) => `${url} has ${counts.get(url) ?? 0} runs, not ${runsPerUrl}`);
+  for (const url of counts.keys()) {
+    if (!expectedUrls.includes(url)) problems.push(`${url} was measured but is not a Lighthouse URL`);
+  }
+  return problems;
+}
