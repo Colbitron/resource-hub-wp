@@ -160,4 +160,4 @@ Fourteen records under [`docs/adr/`](docs/adr/) hold the decisions that are expe
 
 ## License
 
-GPL-2.0-or-later.
+GPL-2.0-or-later; the full text is in [`LICENSE`](LICENSE). The Figtree font in `packages/ui/fonts/` is under its own licence, the SIL Open Font License 1.1 ([`LICENSE-Figtree.txt`](packages/ui/fonts/LICENSE-Figtree.txt)).
