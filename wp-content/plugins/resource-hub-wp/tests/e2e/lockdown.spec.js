@@ -62,6 +62,7 @@ async function usePrettyPermalinks( requestUtils ) {
 
 test.describe( 'CMS lockdown', () => {
 	let type;
+	let topic;
 	let resource;
 
 	test.beforeAll( async ( { requestUtils } ) => {
@@ -74,6 +75,15 @@ test.describe( 'CMS lockdown', () => {
 			path: '/wp/v2/resource_type',
 			data: { name: `E2E type ${ stamp }`, slug: `e2e-type-${ stamp }` },
 		} );
+		// A published resource also needs a topic and a summary (RequiredFields).
+		topic = await requestUtils.rest( {
+			method: 'POST',
+			path: '/wp/v2/resource_topic',
+			data: {
+				name: `E2E topic ${ stamp }`,
+				slug: `e2e-topic-${ stamp }`,
+			},
+		} );
 		resource = await requestUtils.rest( {
 			method: 'POST',
 			path: '/wp/v2/resources',
@@ -82,6 +92,8 @@ test.describe( 'CMS lockdown', () => {
 				slug: `e2e-locked-${ stamp }`,
 				status: 'publish',
 				resource_type: [ type.id ],
+				resource_topic: [ topic.id ],
+				meta: { summary: 'An e2e summary.' },
 			},
 		} );
 	} );
@@ -95,6 +107,12 @@ test.describe( 'CMS lockdown', () => {
 		await requestUtils.rest( {
 			method: 'DELETE',
 			path: `/wp/v2/resource_type/${ type.id }`,
+			params: { force: true },
+		} );
+
+		await requestUtils.rest( {
+			method: 'DELETE',
+			path: `/wp/v2/resource_topic/${ topic.id }`,
 			params: { force: true },
 		} );
 	} );

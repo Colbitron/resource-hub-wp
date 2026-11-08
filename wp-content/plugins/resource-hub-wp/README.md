@@ -11,7 +11,7 @@ resource-hub.php         plugin header, autoloader check, activation hook, boot
 src/
   Plugin.php             wires every component onto WordPress hooks
   ContentModel/          post type, taxonomies, meta and its rules, permalinks, one-type rule,
-                         reserved slugs, slug escapes, used-type protection
+                         required fields, reserved slugs, slug escapes, used-type protection
   Rest/                  resolve route, page route, related route and its salted cache, the no-cache
                          header on anonymous REST reads
   Revalidation/          events, queue, dispatcher, sender, results, config, PostHog
@@ -24,7 +24,7 @@ src/
   Seed/                  the seeder behind `wp resource-hub seed`
 blocks/related-resources/  the block scaffold (editor only; the render callback is slice 4)
 editor/                  block-editor scripts: resource details panel with the related picks control,
-                         type radios, revalidation notice
+                         type radios, required-fields notice and lock, revalidation notice
 admin/status-page/       the status page's picker script
 tests/phpunit/           PHPUnit, run inside the wp-env tests container
 tests/e2e/               Playwright against the wp-env tests site
@@ -56,6 +56,12 @@ The revalidation settings come from the `RESOURCE_HUB_FRONTEND_URL` and `RESOURC
 Both run through `pnpm wp` (the dev site) or `pnpm wp:tests` (the tests site).
 
 - `wp resource-hub seed [--count=<n>]` seeds the five types, the topics and `--count` fictional resources (default `Seeder::DEFAULT_COUNT`, 12; the catalogue holds 16). Safe to rerun.
+- Not a command of the plugin's, but the one-liner for the host after the required-fields rule: every published or scheduled resource that lacks a title, a topic or a summary (`RequiredFields::missing_stored()`), as ID and title, and nothing written. The editor keeps such a resource's Update button off until someone fills the gap.
+
+  ```sh
+  wp eval 'foreach ( get_posts( array( "post_type" => "resource", "post_status" => array( "publish", "future" ), "posts_per_page" => -1, "fields" => "ids" ) ) as $id ) { if ( ResourceHub\ContentModel\RequiredFields::missing_stored( $id ) ) { WP_CLI::line( $id . "\t" . get_post( $id )->post_title ); } }'
+  ```
+
 - `wp resource-hub decode-slugs [--apply]` lists every `resource` post and every term in the three taxonomies whose stored slug still holds a percent escape the front end's router decodes (one of `A-Z a-z 0-9 - _ . ! ~ * ' ( )`), with the decoded slug and anything already holding it. A dry run unless given `--apply`, which saves each through core (`wp_update_post()`, `wp_update_term()`), so the old slug is kept in `_wp_old_slug` and the front end is revalidated as on any save. A term whose decoded slug another term has is skipped and reported: core refuses it, and an editor must type a new slug. Slugs saved since the `SlugEscapes` rule need no repair; only a cron publish of a scheduled resource bypasses it, because it writes the status alone.
 
 ## Testing
@@ -73,6 +79,7 @@ Three gates, all run by `.github/workflows/ci.yml` on every pull request and pus
 Things to know:
 
 - **PHPUnit reinstalls the tests site.** The bootstrap drops and reinstalls the tests database, which deactivates every plugin there. CI runs PHPUnit before Playwright, and every Playwright spec imports `test` from `tests/e2e/fixtures.js`, a worker-scoped fixture that activates the plugin before any spec runs. The dev site on 8888 is untouched.
+- **Publishing in a test takes all four fields.** A public resource needs a title, one type, a topic and a summary (`OneType`, `RequiredFields`), so a PHPUnit test that publishes through REST, and every Playwright spec that publishes, sends or stores them; `tests/e2e/required-fields.spec.js` covers the editor's notice, lock and checklist, with an axe scan of the sidebar through `@axe-core/playwright`, the workspace's accessibility scanner.
 - **Payloads are validated against the shared schemas.** `tests/phpunit/Revalidation/SchemaValidator.php` registers every schema in `packages/ui/schemas/` under its `$id` with `opis/json-schema` (draft 2020-12, cross-file `$ref`s) and checks every payload a test builds. `SchemaTest` runs the package's `revalidate-request.*.json` fixtures through the PHP validator, so the two validators agree on the request schema. No PHP test runs the other schemas' fixtures, and Ajv's strict compile runs only under `pnpm test:schemas`. `opis/json-schema` is a dev dependency and is never shipped.
 - **`build/` is not committed.** CI builds it before the gate runs; locally, run `pnpm build` (or `pnpm start` to watch) after `pnpm env:start`. `webpack.config.js` extends the `@wordpress/scripts` config with the non-block entries under `editor/` and `admin/`.
 - **PHP 8.4 in wp-env, CI and on the host.** The declared floor (`Requires PHP`, `composer.json`, PHPCS `testVersion`) stays at 8.2 and is not exercised by CI.

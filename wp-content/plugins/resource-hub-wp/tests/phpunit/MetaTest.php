@@ -357,7 +357,9 @@ final class MetaTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * POSTs a new resource with the given meta as the current user.
+	 * POSTs a new resource with the given meta as the current user. A draft: the meta rules are
+	 * the same at every status, and a public resource must also have a type, a topic and a
+	 * non-blank summary (OneType, RequiredFields), which is their tests' concern, not this one's.
 	 *
 	 * @param array<string, mixed> $meta Meta values to send.
 	 */
@@ -365,11 +367,9 @@ final class MetaTest extends WP_UnitTestCase {
 		$request = new WP_REST_Request( 'POST', '/wp/v2/resources' );
 		$request->set_body_params(
 			array(
-				'title'          => 'A resource',
-				'status'         => 'publish',
-				'meta'           => $meta,
-				// A published resource needs exactly one type (OneType).
-				Taxonomies::TYPE => array( self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) ) ),
+				'title'  => 'A resource',
+				'status' => 'draft',
+				'meta'   => $meta,
 			)
 		);
 

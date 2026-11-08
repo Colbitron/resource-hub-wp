@@ -3,13 +3,14 @@
  * and the featured flag comes back through the flag-filtered collection, and
  * the editor shows the "Resource details" panel for the post type, the Types
  * panel as radio buttons, and a Flags panel nobody can add to. Publishing
- * without a type fails with the server's message.
+ * waits for a type, chosen with the radio buttons.
  */
 const { test, expect } = require( './fixtures' );
 
 test.describe( 'Resource content model', () => {
 	let featuredId;
 	let type;
+	let topic;
 	const createdIds = [];
 
 	test.beforeAll( async ( { requestUtils } ) => {
@@ -27,6 +28,15 @@ test.describe( 'Resource content model', () => {
 			path: '/wp/v2/resource_type',
 			data: { name: `E2E type ${ stamp }`, slug: `e2e-type-${ stamp }` },
 		} );
+		// A published resource also needs a topic and a summary (RequiredFields).
+		topic = await requestUtils.rest( {
+			method: 'POST',
+			path: '/wp/v2/resource_topic',
+			data: {
+				name: `E2E topic ${ stamp }`,
+				slug: `e2e-topic-${ stamp }`,
+			},
+		} );
 	} );
 
 	test.afterAll( async ( { requestUtils } ) => {
@@ -41,6 +51,11 @@ test.describe( 'Resource content model', () => {
 		await requestUtils.rest( {
 			method: 'DELETE',
 			path: `/wp/v2/resource_type/${ type.id }`,
+			params: { force: true },
+		} );
+		await requestUtils.rest( {
+			method: 'DELETE',
+			path: `/wp/v2/resource_topic/${ topic.id }`,
 			params: { force: true },
 		} );
 	} );
@@ -62,6 +77,7 @@ test.describe( 'Resource content model', () => {
 				meta: { summary, source_url: sourceUrl },
 				resource_flag: [ featuredId ],
 				resource_type: [ type.id ],
+				resource_topic: [ topic.id ],
 			},
 		} );
 		createdIds.push( flagged.id );
@@ -74,6 +90,8 @@ test.describe( 'Resource content model', () => {
 				slug: `e2e-plain-${ stamp }`,
 				status: 'publish',
 				resource_type: [ type.id ],
+				resource_topic: [ topic.id ],
+				meta: { summary: 'An e2e summary.' },
 			},
 		} );
 		createdIds.push( unflagged.id );
@@ -153,33 +171,39 @@ test.describe( 'Resource content model', () => {
 			postType: 'resource',
 			title: `E2E no type ${ Date.now() }`,
 		} );
+		// The topic and the summary publishing also needs, set through the
+		// store; their panels are the required-fields spec's concern.
+		await page.evaluate(
+			( topicId ) =>
+				window.wp.data.dispatch( 'core/editor' ).editPost( {
+					resource_topic: [ topicId ],
+					meta: { summary: 'An e2e summary.' },
+				} ),
+			topic.id
+		);
 
+		// With no type, the pre-publish sidebar's Publish button is off: the
+		// required-fields plugin locks saving while the sidebar is open, so the
+		// editor never sends the server a save that breaks the one-type rule
+		// (PHPUnit covers the server's refusal).
 		await page
 			.getByRole( 'region', { name: 'Editor top bar' } )
 			.getByRole( 'button', { name: 'Publish', exact: true } )
 			.click();
-		await page
-			.getByRole( 'region', { name: 'Editor publish' } )
-			.getByRole( 'button', { name: 'Publish', exact: true } )
-			.click();
-
-		// The editor's own notice, not the screen-reader copy of it.
 		await expect(
 			page
-				.getByRole( 'region', { name: 'Editor content' } )
-				.getByText(
-					'Publishing failed. A resource needs a type to be published or scheduled. Choose one in the Types panel.'
-				)
-		).toBeVisible();
+				.getByRole( 'region', { name: 'Editor publish' } )
+				.getByRole( 'button', { name: 'Publish', exact: true } )
+		).toHaveAttribute( 'aria-disabled', 'true' );
 
 		const postId = await page.evaluate( () =>
 			window.wp.data.select( 'core/editor' ).getCurrentPostId()
 		);
 		createdIds.push( postId );
 
-		// Choose the type in the Types panel and publish again: the radio's
-		// choice is what the save sends, so the server accepts it. (The URL's
-		// shape is PHPUnit's to check: the tests site has plain permalinks.)
+		// Choose the type in the Types panel and publish: the radio's choice
+		// is what the save sends, so the server accepts it. (The URL's shape
+		// is PHPUnit's to check: the tests site has plain permalinks.)
 		await page
 			.getByRole( 'region', { name: 'Editor publish' } )
 			.getByRole( 'button', { name: 'Cancel' } )

@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace ResourceHub\Tests;
 
+use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\OneType;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\Taxonomies;
@@ -141,6 +142,7 @@ final class OneTypeAdminTest extends WP_Ajax_UnitTestCase {
 				'post_title'  => 'Published',
 			)
 		);
+		$this->give_topic_and_summary( $post_id );
 
 		$this->quick_edit(
 			$post_id,
@@ -333,7 +335,20 @@ final class OneTypeAdminTest extends WP_Ajax_UnitTestCase {
 			wp_set_object_terms( $post_id, $type_id, Taxonomies::TYPE );
 		}
 
+		$this->give_topic_and_summary( $post_id );
+
 		return $post_id;
+	}
+
+	/**
+	 * Gives a resource the topic and the summary a public resource also needs (RequiredFields),
+	 * so these tests exercise the type rule alone.
+	 *
+	 * @param int $post_id Resource ID.
+	 */
+	private function give_topic_and_summary( int $post_id ): void {
+		wp_set_object_terms( $post_id, self::factory()->term->create( array( 'taxonomy' => Taxonomies::TOPIC ) ), Taxonomies::TOPIC );
+		update_post_meta( $post_id, Meta::SUMMARY, 'A summary' );
 	}
 
 	/**

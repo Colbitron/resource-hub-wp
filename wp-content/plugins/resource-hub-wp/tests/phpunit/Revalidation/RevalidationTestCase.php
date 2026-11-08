@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace ResourceHub\Tests\Revalidation;
 
+use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\Taxonomies;
 use ResourceHub\Revalidation\Config;
@@ -175,6 +176,8 @@ abstract class RevalidationTestCase extends WP_UnitTestCase {
 			array_map( fn( string $topic ): int => $this->term_id( Taxonomies::TOPIC, $topic ), $topics ),
 			Taxonomies::TOPIC
 		);
+		// A REST save of a public resource needs a stored summary (RequiredFields); events never carry it.
+		update_post_meta( $post_id, Meta::SUMMARY, 'Summary of ' . $slug );
 
 		$this->queue->clear();
 

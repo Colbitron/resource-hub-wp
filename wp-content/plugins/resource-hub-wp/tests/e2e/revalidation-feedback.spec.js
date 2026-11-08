@@ -137,6 +137,7 @@ const shownNotices = ( page ) => page.evaluate( () => window.rhNotices );
 
 test.describe( 'Revalidation feedback', () => {
 	let type;
+	let topic;
 	const createdIds = [];
 	const createdPageIds = [];
 
@@ -146,6 +147,15 @@ test.describe( 'Revalidation feedback', () => {
 			method: 'POST',
 			path: '/wp/v2/resource_type',
 			data: { name: `E2E type ${ stamp }`, slug: `e2e-type-${ stamp }` },
+		} );
+		// A published resource also needs a topic and a summary (RequiredFields).
+		topic = await requestUtils.rest( {
+			method: 'POST',
+			path: '/wp/v2/resource_topic',
+			data: {
+				name: `E2E topic ${ stamp }`,
+				slug: `e2e-topic-${ stamp }`,
+			},
 		} );
 	} );
 
@@ -171,6 +181,11 @@ test.describe( 'Revalidation feedback', () => {
 			path: `/wp/v2/resource_type/${ type.id }`,
 			params: { force: true },
 		} );
+		await requestUtils.rest( {
+			method: 'DELETE',
+			path: `/wp/v2/resource_topic/${ topic.id }`,
+			params: { force: true },
+		} );
 	} );
 
 	test( 'publishing in the editor shows the revalidation notice, and reloading shows it again', async ( {
@@ -193,6 +208,16 @@ test.describe( 'Revalidation feedback', () => {
 			await typesPanel.click();
 		}
 		await page.getByRole( 'radio', { name: type.name } ).check();
+		// The topic and the summary publishing also needs, set through the
+		// store; their panels are the required-fields spec's concern.
+		await page.evaluate(
+			( topicId ) =>
+				window.wp.data.dispatch( 'core/editor' ).editPost( {
+					resource_topic: [ topicId ],
+					meta: { summary: 'An e2e summary.' },
+				} ),
+			topic.id
+		);
 		await editor.publishPost();
 
 		const postId = await page.evaluate( () =>
@@ -395,15 +420,20 @@ test.describe( 'Revalidation feedback', () => {
 		await collectNotices( page );
 
 		stubbing = true;
-		const postId = await page.evaluate( async ( typeId ) => {
-			const { dispatch, select } = window.wp.data;
-			dispatch( 'core/editor' ).editPost( {
-				status: 'publish',
-				resource_type: [ typeId ],
-			} );
-			await dispatch( 'core/editor' ).savePost();
-			return select( 'core/editor' ).getCurrentPostId();
-		}, type.id );
+		const postId = await page.evaluate(
+			async ( { typeId, topicId } ) => {
+				const { dispatch, select } = window.wp.data;
+				dispatch( 'core/editor' ).editPost( {
+					status: 'publish',
+					resource_type: [ typeId ],
+					resource_topic: [ topicId ],
+					meta: { summary: 'An e2e summary.' },
+				} );
+				await dispatch( 'core/editor' ).savePost();
+				return select( 'core/editor' ).getCurrentPostId();
+			},
+			{ typeId: type.id, topicId: topic.id }
+		);
 		createdIds.push( postId );
 
 		await expect
@@ -442,15 +472,20 @@ test.describe( 'Revalidation feedback', () => {
 		await collectNotices( page );
 
 		stubbing = true;
-		const postId = await page.evaluate( async ( typeId ) => {
-			const { dispatch, select } = window.wp.data;
-			dispatch( 'core/editor' ).editPost( {
-				status: 'publish',
-				resource_type: [ typeId ],
-			} );
-			await dispatch( 'core/editor' ).savePost();
-			return select( 'core/editor' ).getCurrentPostId();
-		}, type.id );
+		const postId = await page.evaluate(
+			async ( { typeId, topicId } ) => {
+				const { dispatch, select } = window.wp.data;
+				dispatch( 'core/editor' ).editPost( {
+					status: 'publish',
+					resource_type: [ typeId ],
+					resource_topic: [ topicId ],
+					meta: { summary: 'An e2e summary.' },
+				} );
+				await dispatch( 'core/editor' ).savePost();
+				return select( 'core/editor' ).getCurrentPostId();
+			},
+			{ typeId: type.id, topicId: topic.id }
+		);
 		createdIds.push( postId );
 
 		await expect
@@ -522,15 +557,20 @@ test.describe( 'Revalidation feedback', () => {
 			await collectNotices( page );
 
 			stubbing = true;
-			const postId = await page.evaluate( async ( typeId ) => {
-				const { dispatch, select } = window.wp.data;
-				dispatch( 'core/editor' ).editPost( {
-					status: 'publish',
-					resource_type: [ typeId ],
-				} );
-				await dispatch( 'core/editor' ).savePost();
-				return select( 'core/editor' ).getCurrentPostId();
-			}, type.id );
+			const postId = await page.evaluate(
+				async ( { typeId, topicId } ) => {
+					const { dispatch, select } = window.wp.data;
+					dispatch( 'core/editor' ).editPost( {
+						status: 'publish',
+						resource_type: [ typeId ],
+						resource_topic: [ topicId ],
+						meta: { summary: 'An e2e summary.' },
+					} );
+					await dispatch( 'core/editor' ).savePost();
+					return select( 'core/editor' ).getCurrentPostId();
+				},
+				{ typeId: type.id, topicId: topic.id }
+			);
 			createdIds.push( postId );
 
 			await expect
@@ -625,15 +665,20 @@ test.describe( 'Revalidation feedback', () => {
 		} );
 		await collectNotices( page );
 
-		const postId = await page.evaluate( async ( typeId ) => {
-			const { dispatch, select } = window.wp.data;
-			dispatch( 'core/editor' ).editPost( {
-				status: 'publish',
-				resource_type: [ typeId ],
-			} );
-			await dispatch( 'core/editor' ).savePost();
-			return select( 'core/editor' ).getCurrentPostId();
-		}, type.id );
+		const postId = await page.evaluate(
+			async ( { typeId, topicId } ) => {
+				const { dispatch, select } = window.wp.data;
+				dispatch( 'core/editor' ).editPost( {
+					status: 'publish',
+					resource_type: [ typeId ],
+					resource_topic: [ topicId ],
+					meta: { summary: 'An e2e summary.' },
+				} );
+				await dispatch( 'core/editor' ).savePost();
+				return select( 'core/editor' ).getCurrentPostId();
+			},
+			{ typeId: type.id, topicId: topic.id }
+		);
 		createdIds.push( postId );
 
 		// The first save's poll is running and reading pending; save again.
@@ -719,15 +764,20 @@ test.describe( 'Revalidation feedback', () => {
 		await collectNotices( page );
 
 		phase = 1;
-		const postId = await page.evaluate( async ( typeId ) => {
-			const { dispatch, select } = window.wp.data;
-			dispatch( 'core/editor' ).editPost( {
-				status: 'publish',
-				resource_type: [ typeId ],
-			} );
-			await dispatch( 'core/editor' ).savePost();
-			return select( 'core/editor' ).getCurrentPostId();
-		}, type.id );
+		const postId = await page.evaluate(
+			async ( { typeId, topicId } ) => {
+				const { dispatch, select } = window.wp.data;
+				dispatch( 'core/editor' ).editPost( {
+					status: 'publish',
+					resource_type: [ typeId ],
+					resource_topic: [ topicId ],
+					meta: { summary: 'An e2e summary.' },
+				} );
+				await dispatch( 'core/editor' ).savePost();
+				return select( 'core/editor' ).getCurrentPostId();
+			},
+			{ typeId: type.id, topicId: topic.id }
+		);
 		createdIds.push( postId );
 
 		// The first save's poll is reading pending; the second save is refused.
@@ -794,6 +844,8 @@ test.describe( 'Revalidation feedback', () => {
 				slug: `e2e-status-page-${ stamp }`,
 				status: 'publish',
 				resource_type: [ type.id ],
+				resource_topic: [ topic.id ],
+				meta: { summary: 'An e2e summary.' },
 			},
 		} );
 		createdIds.push( published.id );
@@ -836,6 +888,8 @@ test.describe( 'Revalidation feedback', () => {
 					title: `E2E ${ name } ${ stamp }`,
 					status: 'publish',
 					resource_type: [ type.id ],
+					resource_topic: [ topic.id ],
+					meta: { summary: 'An e2e summary.' },
 				},
 			} );
 			createdIds.push( created.id );

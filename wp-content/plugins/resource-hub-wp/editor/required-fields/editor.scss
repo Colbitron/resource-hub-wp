@@ -1,0 +1,25 @@
+/**
+ * The required-fields plugin's editor styles: spacing only. Colours, type
+ * and the notice itself are the editor's own components, so the states look
+ * like the rest of the sidebar and follow the admin colour scheme.
+ */
+
+// A panel's inline state sits flush with the panel's padding, above its control.
+.resource-hub-required-state.components-notice {
+	margin: 0 0 12px;
+}
+
+// The pre-publish checklist: one row per field, the name, the state and the link.
+.resource-hub-required-fields__list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.resource-hub-required-fields__item {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0 8px;
+	margin: 0 0 8px;
+}
