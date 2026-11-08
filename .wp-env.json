@@ -1,7 +1,11 @@
 {
 	"phpVersion": "8.4",
 	"plugins": [ "./wp-content/plugins/resource-hub-wp" ],
+	"themes": [ "./wp-content/themes/resource-hub" ],
 	"mappings": {
 		"packages/ui": "./packages/ui"
+	},
+	"lifecycleScripts": {
+		"afterStart": "wp-env run cli wp theme activate resource-hub && wp-env run tests-cli wp theme activate resource-hub"
 	}
 }
