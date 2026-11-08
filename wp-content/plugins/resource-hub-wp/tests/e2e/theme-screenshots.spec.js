@@ -39,10 +39,13 @@
  * matches the design, regenerate the baselines as above.
  *
  * The container is stopped in `afterAll`, and also on the worker's exit and on
- * SIGINT, SIGTERM and SIGHUP, as the front end's `screenshots.mts` and
- * `render-brand-images.mts` do, so a crash or a Ctrl-C does not leave an
- * `rh-playwright-*` container running. A worker killed outright (SIGKILL)
- * cannot clean up; `docker ps --filter name=rh-playwright-` finds what is left.
+ * SIGINT, SIGTERM and SIGHUP, so a crash or a Ctrl-C does not leave an
+ * `rh-playwright-*` container running. Unlike the front end's
+ * `screenshots.mts`, which is its own process, a signal here never exits
+ * the worker, so `afterAll` still deletes the test page (`stopOnExit`). A
+ * worker killed outright (SIGKILL) cannot clean up; `docker ps --filter
+ * name=rh-playwright-` finds a container left, and the tests site a page
+ * titled "A sample page".
  */
 const path = require( 'node:path' );
 const { chromium } = require( '@playwright/test' );
@@ -70,8 +73,8 @@ const SCREENSHOT = {
 const BASELINE_HINT =
 	"A CMS screenshot differs from its baseline. If WordPress or Playwright was updated (wp-env runs the latest WordPress; apps/web/e2e/playwright-image.mts pins the image) and the diff in the artifacts is core's change, not a regression, regenerate the baselines with `WP_BASE_URL=<the tests site> pnpm test:e2e -- --update-snapshots` from the repository root, look at the images and commit them";
 
-/** The worker's exit codes for the signals the container is stopped on. */
-const SIGNAL_EXIT = { SIGHUP: 129, SIGINT: 130, SIGTERM: 143 };
+/** The signals the container is stopped on, besides the worker's exit. */
+const SIGNALS = [ 'SIGINT', 'SIGTERM', 'SIGHUP' ];
 
 /** The page's body: fixed copy, so the baseline moves only when the design does. */
 const CONTENT = [
@@ -91,18 +94,22 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 	/** The process listeners that stop the container, removed in `afterAll`. */
 	const listeners = [];
 
-	/** Stops the container on the worker's exit or a signal, as well as in `afterAll`. */
+	/**
+	 * Stops the container on the worker's exit or a signal, as well as in
+	 * `afterAll`. A signal only stops the container: it never exits the
+	 * worker, so Playwright's own shutdown still runs `afterAll`, which
+	 * deletes the test page (a Ctrl-C reaches the worker as SIGINT while the
+	 * runner stops it). Listening for SIGTERM and SIGHUP also takes away
+	 * Node's default of exiting on them, so a worker sent one directly keeps
+	 * running: its shots fail on the closed browser and `afterAll` cleans up.
+	 * `BrowserContainer.stop()` is synchronous and does nothing the second
+	 * time.
+	 */
 	function stopOnExit() {
 		const stop = () => container?.stop();
 		listeners.push( [ 'exit', stop ] );
-		for ( const [ signal, code ] of Object.entries( SIGNAL_EXIT ) ) {
-			listeners.push( [
-				signal,
-				() => {
-					stop();
-					process.exit( code );
-				},
-			] );
+		for ( const signal of SIGNALS ) {
+			listeners.push( [ signal, stop ] );
 		}
 		for ( const [ event, listener ] of listeners ) {
 			process.on( event, listener );
@@ -144,17 +151,22 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 	} );
 
 	test.afterAll( async ( { requestUtils } ) => {
-		await browser?.close();
-		container?.stop();
-		for ( const [ event, listener ] of listeners.splice( 0 ) ) {
-			process.off( event, listener );
-		}
-		if ( cmsPage ) {
-			await requestUtils.rest( {
-				method: 'DELETE',
-				path: `/wp/v2/pages/${ cmsPage.id }`,
-				params: { force: true },
-			} );
+		// The page first: a browser whose container a signal stopped can
+		// throw on close, and the page must go whatever happens to it.
+		try {
+			if ( cmsPage ) {
+				await requestUtils.rest( {
+					method: 'DELETE',
+					path: `/wp/v2/pages/${ cmsPage.id }`,
+					params: { force: true },
+				} );
+			}
+		} finally {
+			await browser?.close().catch( () => undefined );
+			container?.stop();
+			for ( const [ event, listener ] of listeners.splice( 0 ) ) {
+				process.off( event, listener );
+			}
 		}
 	} );
 
