@@ -18,9 +18,18 @@
  * {@see RESOURCE_HUB_THEME_UNRENDERED}) is not read; its whitespace, as JavaScript's `\s` counts it
  * (so U+FEFF and the no-break spaces too), is collapsed to one space and trimmed, and it is cut to
  * {@see RESOURCE_HUB_THEME_TABLE_LABEL_MAX} UTF-16 code units at the last space within them, as a
- * JavaScript string's length counts. One difference, on purpose: the zero-width space, non-joiner
- * and joiner (U+200B to U+200D) are removed too, so a caption of nothing else names the region
- * "Table", where the front end's label keeps them (its card titles drop them).
+ * JavaScript string's length counts. Two differences:
+ *
+ * - On purpose, the zero-width space, non-joiner and joiner (U+200B to U+200D) are removed too, so
+ *   a caption of nothing else names the region "Table", where the front end's label keeps them
+ *   (its card titles drop them).
+ * - The front end also drops every word of a caption that names the CMS's host or install path
+ *   (`withoutCmsMentions`), because a label is an attribute and the CMS's address must never reach
+ *   its browser (ADR 0040). The theme keeps those words: on the CMS's own pages that address is the
+ *   page's own origin, so there is nothing to hide, and matching the front end would mean a second
+ *   copy of its host matching (whole host labels, any case, ports, each of the CMS's base URLs)
+ *   for a caption that names the CMS. A caption with the CMS's address in it is labelled with it
+ *   here and without it on the front end.
  *
  * Presentation only, so it lives in the theme, and only on the theme's pages: the filter is added
  * on `template_redirect`, which core fires for a page it renders with a template and never for a
@@ -56,7 +65,9 @@ const RESOURCE_HUB_THEME_TABLE_LABEL = 'Table';
 
 /**
  * Elements whose content the front end's pass never renders, so a caption's label never reads
- * it: its `UNRENDERED_CONTENT`, upper-case as the parser names HTML elements.
+ * it: its `UNRENDERED_CONTENT`, by local name upper-cased. The parser upper-cases only an HTML
+ * element's `tagName`; an `<svg>` or `<math>` and what is inside it keep their own case, so the
+ * comparison upper-cases `localName` itself.
  */
 const RESOURCE_HUB_THEME_UNRENDERED = array(
 	'SCRIPT',
@@ -191,7 +202,7 @@ function resource_hub_theme_rendered_text( Dom\Node $node ): string {
 	foreach ( $node->childNodes as $child ) {
 		if ( $child instanceof Dom\Text ) {
 			$text .= $child->data;
-		} elseif ( $child instanceof Dom\Element && ! in_array( $child->tagName, RESOURCE_HUB_THEME_UNRENDERED, true ) ) {
+		} elseif ( $child instanceof Dom\Element && ! in_array( strtoupper( $child->localName ), RESOURCE_HUB_THEME_UNRENDERED, true ) ) {
 			$text .= resource_hub_theme_rendered_text( $child );
 		}
 	}
@@ -240,9 +251,10 @@ function resource_hub_theme_label_text( string $text ): string {
 	$text = (string) preg_replace( '/[\x{200B}-\x{200D}]/u', '', $text );
 	$text = trim( (string) preg_replace( '/[\s\p{Z}\x{FEFF}]+/u', ' ', $text ), ' ' );
 
+	// The cut needs at most one character past the cap, so a huge caption is not split whole.
 	$units = 0;
 	$cut   = '';
-	foreach ( mb_str_split( $text ) as $character ) {
+	foreach ( mb_str_split( mb_substr( $text, 0, RESOURCE_HUB_THEME_TABLE_LABEL_MAX + 1 ) ) as $character ) {
 		$width = mb_ord( $character ) > 0xFFFF ? 2 : 1;
 		if ( $units + $width > RESOURCE_HUB_THEME_TABLE_LABEL_MAX ) {
 			// Too long. The front end cuts at the last space at or before the cap's index, which

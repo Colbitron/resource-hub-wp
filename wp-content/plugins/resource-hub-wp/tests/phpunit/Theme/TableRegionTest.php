@@ -113,6 +113,18 @@ final class TableRegionTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * An inline SVG's or MathML's text is not read either, though the parser keeps those elements'
+	 * names in lower case; a huge caption is cut as a short one is.
+	 */
+	public function test_svg_and_math_text_is_not_read(): void {
+		$label = fn ( string $caption ): string => $this->region_attributes( resource_hub_theme_table_region( $this->block( "<figcaption>{$caption}</figcaption>" ) ) )['aria-label'];
+
+		$this->assertSame( 'Prices by plan', $label( 'Prices<svg viewBox="0 0 1 1"><title>A chart</title><text>1</text></svg> by plan' ) );
+		$this->assertSame( 'Prices by plan', $label( 'Prices <math><mi>x</mi></math>by plan' ) );
+		$this->assertSame( rtrim( str_repeat( 'word ', 30 ) ), $label( str_repeat( 'word ', 200000 ) ) );
+	}
+
+	/**
 	 * The cap counts UTF-16 code units, as the front end's string length does: a character outside
 	 * the Basic Multilingual Plane counts two and is never cut in half; a space just past the cap
 	 * is a word boundary, as `lastIndexOf( ' ', 150 )` finds it.
