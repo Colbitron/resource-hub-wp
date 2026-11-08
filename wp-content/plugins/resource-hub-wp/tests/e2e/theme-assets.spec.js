@@ -174,9 +174,13 @@ test.describe( "The theme's stylesheets", () => {
 			)
 		).toMatch( /^"?Figtree"?,/ );
 
-		// The lockup's stylesheet, from the package's brand.css.
+		// The lockup's stylesheet, from the package's brand.css: its gap and
+		// the wordmark's weight. Not its `display`: brand.css says
+		// `inline-flex`, which the header's flex row computes as `flex`, on
+		// the front end as here.
 		const lockup = page.locator( 'a.rh-brand' );
-		await expect( lockup ).toHaveCSS( 'display', 'inline-flex' );
+		await expect( lockup ).toHaveCSS( 'column-gap', '8px' );
+		await expect( lockup ).toHaveCSS( 'font-weight', '700' );
 		await expect( lockup.locator( '.rh-brand__mark' ) ).toBeVisible();
 	} );
 
