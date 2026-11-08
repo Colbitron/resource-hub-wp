@@ -8,13 +8,16 @@
  *
  * The site is given a published page, a resource and a post open to pings,
  * each with a title no fixed text contains, and a type and a topic with such
- * names, so a listing, a title or a term on the 404 would show up. Each is asked for as an anonymous visitor at a path that
- * would otherwise render it, and the 404 is read twice: as HTML from a request
- * context, for the head and the headers, and in a browser with no session,
- * for what a visitor's accessibility tree shows. The theme's own lockup is
- * checked first in each, so a blank or foreign page cannot pass. The paths
- * work under any permalink structure, since `?page_id=` and `?p=` are 404s
- * like every pretty path, and the resource is asked for at its own link.
+ * names, so a listing, a title or a term on the 404 would show up. Each is
+ * asked for as an anonymous visitor at a path that would otherwise render
+ * it, and the 404 is read twice: as HTML from a request context, for the
+ * head and the headers, and in a browser with no session, for what a
+ * visitor's accessibility tree shows. The theme's own lockup is checked
+ * first in each, so a blank or foreign page cannot pass. The paths work
+ * under any permalink structure, since `?page_id=` and `?p=` are 404s like
+ * every pretty path, and the resource is asked for at its own link. The
+ * pingback pattern allows other tokens in `rel`, such as
+ * `rel="alternate pingback"`.
  */
 const { request } = require( '@playwright/test' );
 const { test: base, expect } = require( './fixtures' );
@@ -153,7 +156,9 @@ test.describe( "The theme's 404 for anonymous visitors", () => {
 			expect( html, path ).toContain( 'Page not found' );
 
 			expect( headers[ 'x-pingback' ], path ).toBeUndefined();
-			expect( html, path ).not.toMatch( /rel\s*=\s*["']?pingback/i );
+			expect( html, path ).not.toMatch(
+				/rel\s*=\s*["']?[^"'>]*\bpingback\b/i
+			);
 			expect( html, path ).not.toContain( 'xmlrpc.php' );
 
 			expect( html, path ).not.toMatch( /<nav\b/i );

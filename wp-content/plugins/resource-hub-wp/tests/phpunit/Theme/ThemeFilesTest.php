@@ -109,7 +109,7 @@ final class ThemeFilesTest extends WP_UnitTestCase {
 	public function test_no_theme_file_mentions_pingbacks(): void {
 		$files = array_filter(
 			$this->theme_files(),
-			static fn ( string $path ): bool => in_array( pathinfo( $path, PATHINFO_EXTENSION ), self::RENDERED_EXTENSIONS, true )
+			static fn ( string $path ): bool => in_array( strtolower( pathinfo( $path, PATHINFO_EXTENSION ) ), self::RENDERED_EXTENSIONS, true )
 		);
 
 		$this->assertNotEmpty( $files );
