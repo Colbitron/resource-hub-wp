@@ -53,9 +53,17 @@ export const CHROMIUM_ARGS = ["--no-zygote"] as const;
 /** The header a plain `chromium.connect()` sends so the server launches its browser with `CHROMIUM_ARGS`, as the test runner does. */
 export const LAUNCH_HEADERS = { "x-playwright-launch-options": JSON.stringify({ args: CHROMIUM_ARGS }) } as const;
 
-function docker(args: string[], env: NodeJS.ProcessEnv = process.env): { status: number | null; stdout: string; stderr: string } {
+/**
+ * Runs `docker` with `args`. `error` is set when `docker` could not be run
+ * at all (not installed, not on `PATH`), which Node reports as a spawn
+ * error rather than a status.
+ */
+function docker(
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): { status: number | null; stdout: string; stderr: string; error?: Error } {
   const result = spawnSync("docker", args, { encoding: "utf8", env });
-  return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+  return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "", error: result.error };
 }
 
 /**
@@ -164,6 +172,11 @@ export class BrowserContainer {
       ],
       { ...process.env, [PATH_VARIABLE]: this.#endpointPath },
     );
+    if (run.error) {
+      throw new Error(
+        `Could not run docker (${run.error.message}): the screenshot tests draw in Playwright's Linux image and need Docker installed, running and on PATH.`,
+      );
+    }
     if (run.status !== 0) {
       throw new Error(`docker run failed:\n${this.redact(run.stderr)}`);
     }

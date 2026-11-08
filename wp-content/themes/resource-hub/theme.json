@@ -192,6 +192,16 @@
 				"typography": {
 					"fontSize": "var:preset|font-size|2-xl"
 				}
+			},
+			"h2": {
+				"typography": {
+					"fontSize": "var:preset|font-size|xl"
+				}
+			},
+			"h3": {
+				"typography": {
+					"fontSize": "var:preset|font-size|lg"
+				}
 			}
 		}
 	},

@@ -1,13 +1,13 @@
 <?php
 /**
- * The Resource Hub theme's stylesheets: the shared tokens, Figtree's fallback faces and the lockup.
+ * The Resource Hub theme's stylesheets, and its adjustments to core's table and image blocks.
  *
- * `theme.json` does the rest of the styling: it registers Figtree from `build/fonts/` and maps its
- * colour, type and spacing presets to the `--rh-` tokens, which this file loads. Every file named
- * here is a copy of the contract package's (`@colbitron/resource-hub-ui`), made by `pnpm build`
- * (`scripts/build.mjs`) into `build/`, because the host never sees the workspace. Without a build
- * nothing is registered and the pages render in the browser's defaults, as before this theme had
- * assets.
+ * `theme.json` does the editor-facing styling: it registers Figtree from `build/fonts/` and maps its
+ * colour, type and spacing presets to the `--rh-` tokens, which this file loads, and mirrors the
+ * document's base styles for the editor canvas. Every stylesheet named here is a copy of the
+ * contract package's (`@colbitron/resource-hub-ui`), made by `pnpm build` (`scripts/build.mjs`)
+ * into `build/`, because the host never sees the workspace. Without a build nothing is registered
+ * and the pages render in the browser's defaults, as before this theme had assets.
  *
  * @package ResourceHub
  */
@@ -18,40 +18,47 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+require_once __DIR__ . '/inc/table-region.php';
+require_once __DIR__ . '/inc/image-lightbox.php';
+
 /**
- * Registers the three stylesheets from `build/`, on `init`.
+ * Registers the stylesheets from `build/`, on `init`.
  *
- * - `resource-hub-tokens`: `tokens.css`, the `--rh-` custom properties, with `color-scheme: light
- *   dark` and every colour a `light-dark()` pair, so the CMS follows the reader's system preference
- *   by default, as the front end does (`packages/ui/DESIGN.md`, "Theme and colour scheme"). The
- *   handle is shared with the plugin's related-resources block, which lists it in its `block.json`;
- *   the plugin registers its own copy at a later priority only when this has not, so a page with the
- *   block loads the tokens once (`ResourceHub\Blocks\SharedTokens` in the plugin).
- * - `resource-hub-figtree-fallback`: the size-adjusted faces `--rh-font-sans` lists after Figtree,
- *   so a page drawn before the font file lands takes nearly the space it will in Figtree.
- * - `resource-hub-brand`: the lockup in `parts/header.html`, on the tokens.
- *
- * Each version is the first 20 characters of the copy's SHA-256 from `build/assets.php`, so a
- * changed file gets a new URL.
+ * The theme's one list of its stylesheets is `ASSETS` in `scripts/build.mjs`, which writes it into
+ * `build/assets.php`: each copy's SHA-256, and each stylesheet's handle, its file and the handles it
+ * loads after (the tokens; the fallback faces; the lockup; the document and the shell every template
+ * sits in; the article, the welcome and the 404's column). Each is registered from there, its
+ * version the first 20 characters of its copy's SHA-256, so a changed file gets a new URL.
+ * `resource-hub-tokens` is shared with the plugin's related-resources block, which lists it in its
+ * `block.json`; the plugin registers its own copy at a later priority only when this has not, so a
+ * page with the block loads the tokens once (`ResourceHub\Blocks\SharedTokens` in the plugin).
+ * `tokens.css` sets `color-scheme: light dark` and writes every colour as a `light-dark()` pair, so
+ * the CMS follows the reader's system preference by default, as the front end does
+ * (`packages/ui/DESIGN.md`, "Theme and colour scheme").
  */
 function resource_hub_theme_register_styles(): void {
 	if ( ! is_readable( __DIR__ . '/build/assets.php' ) ) {
 		return;
 	}
 
-	$hashes  = require __DIR__ . '/build/assets.php';
-	$version = static fn ( string $file ): string => substr( (string) ( $hashes[ $file ] ?? '' ), 0, 20 );
+	$assets = require __DIR__ . '/build/assets.php';
+	// A build from before the manifest had `styles` returned the hashes alone; without the table
+	// there is nothing to register, quietly, until the next `pnpm build`.
+	if ( ! is_array( $assets['styles'] ?? null ) ) {
+		return;
+	}
 
-	wp_register_style( 'resource-hub-tokens', get_theme_file_uri( 'build/tokens.css' ), array(), $version( 'tokens.css' ) );
-	wp_register_style( 'resource-hub-figtree-fallback', get_theme_file_uri( 'build/fonts/figtree-fallback.css' ), array(), $version( 'fonts/figtree-fallback.css' ) );
-	wp_register_style( 'resource-hub-brand', get_theme_file_uri( 'build/brand.css' ), array( 'resource-hub-tokens' ), $version( 'brand.css' ) );
+	foreach ( $assets['styles'] as $handle => list( $file, $deps ) ) {
+		wp_register_style( $handle, get_theme_file_uri( 'build/' . $file ), $deps, substr( (string) ( $assets['copies'][ $file ] ?? '' ), 0, 20 ) );
+	}
 }
 // At init's default priority, so the theme registers `resource-hub-tokens` before the plugin's
 // fallback registration at priority 20 (`SharedTokens::PRIORITY`) and its copy is the one served.
 add_action( 'init', 'resource_hub_theme_register_styles' );
 
 /**
- * Enqueues the three stylesheets on the CMS's own pages and in the editor canvas, on `enqueue_block_assets`.
+ * Enqueues the tokens, the fallback faces and the lockup on the CMS's own pages and in the editor
+ * canvas, on `enqueue_block_assets`.
  *
  * That one hook reaches both: core fires it from `wp_enqueue_scripts` on the front of the site, and
  * again while it collects the iframed editor canvas's assets, so an editor's preview and the canvas
@@ -63,6 +70,9 @@ add_action( 'init', 'resource_hub_theme_register_styles' );
  * its stylesheet did before the handle existed.) `add_editor_style()` is not used, because it inlines
  * a copy of the file into the editor's settings, which would load the tokens a second time beside the
  * block's handle.
+ *
+ * The document and the components are not loaded in the canvas: see
+ * {@see resource_hub_theme_enqueue_page_styles()}.
  *
  * Caveat: if core ever draws the canvas without an iframe, the canvas is part of that admin page, so
  * it would get the tokens through the block's handle but not the fallback faces or the lockup's CSS.
@@ -77,3 +87,88 @@ function resource_hub_theme_enqueue_styles(): void {
 	wp_enqueue_style( 'resource-hub-brand' );
 }
 add_action( 'enqueue_block_assets', 'resource_hub_theme_enqueue_styles' );
+
+/**
+ * The shell's height under the admin bar, which only the CMS has.
+ *
+ * `shell.css` makes `.rh-shell` at least the viewport's height, `100dvh`, so the footer sits at the
+ * bottom of a short page. For a logged-in user core adds the admin bar and pushes `<html>` down by
+ * its height (`margin-top`, 32 px, or 46 px at 782 px and under), so a short page was that much
+ * taller than the viewport and scrolled. Core's `admin-bar.css` gives that height as
+ * `--wp-admin--admin-bar--height` on `<html>`, so under `body.admin-bar` the shell's minimum is the
+ * viewport less it: `100vh` first, for an engine without `dvh`, as `shell.css` writes it. The front
+ * end has no admin bar, so this is the theme's, added inline after `shell.css`, not the package's.
+ */
+const RESOURCE_HUB_THEME_ADMIN_BAR_SHELL = 'body.admin-bar .rh-shell { min-height: calc(100vh - var(--wp-admin--admin-bar--height, 0px)); min-height: calc(100dvh - var(--wp-admin--admin-bar--height, 0px)); }';
+
+/**
+ * Enqueues the document, the shell and the template's components on the CMS's own pages, after
+ * core's global styles, on `wp_enqueue_scripts` at priority 20.
+ *
+ * **After core's global styles.** `base.css` styles bare elements (`body`, `a`, the headings), as
+ * `theme.json`'s base styles do, at the same specificity, so whichever prints last wins a tie.
+ * Core enqueues its global styles (`global-styles-inline-css`, which also carries any Styles change
+ * an editor saves in the Site Editor) on `wp_enqueue_scripts` at priority 10, so enqueuing these at
+ * 20 prints them after: on a CMS page the package's rules win, and the page computes what the front
+ * end computes from the same file, which loads no global styles at all. The values agree today
+ * (`theme.json` mirrors `base.css` from the same tokens); the order decides only when they part, as
+ * after a Site Editor Styles change, which never reaches the front end either. Order, not a
+ * dependency on the `global-styles` handle, so a renamed handle cannot drop `base.css` from the page.
+ *
+ * **Not in the editor canvas.** The canvas is an editing surface, not a page: it has no shell, and
+ * core lays its content out itself, a constrained layout of `layout.contentSize` with the editor's
+ * own spacing and focus styles. There `theme.json`'s base styles, which core injects into the
+ * canvas, give the body, links and `h1`–`h3` the same type, sizes and colours `base.css` does, so an
+ * editor's content reads in the site's type and colours, in the editor's column rather than the
+ * site's. `base.css`'s bare-element margins and `*` box sizing would reach the editor's own controls
+ * drawn inside the iframe, and the shell and the article are the page around the content, which the
+ * canvas shows only when an editor turns on the template preview.
+ *
+ * **Per template.** Every template sits in the shell. The 404 (`is_404()`) loads `not-found.css`;
+ * `home.html` (`is_home()`: `/` while the front page shows posts, the CMS's state today, and the
+ * posts page under a static front page) loads `welcome.css` after `page.css`; every other template,
+ * `page.html` and `index.html`, renders the article and loads `prose.css` and `page.css`.
+ *
+ * **Core block styles that fight the body's.** Core enqueues each block's stylesheet as the block
+ * renders, before `wp_head`, and five draw over what `prose.css` gives the same elements, which the
+ * front end, loading no core CSS, never shows: `wp-block-table` (a border on every side of every
+ * cell, a 3 px rule under the head, a fixed table layout, the scroll on the figure rather than the
+ * region), `wp-block-code` (the code inside the block set as a block that breaks spaces, not the
+ * inset's inline code), `wp-block-separator` (its dots style: three dots, with the hairline's
+ * border taken off `!important`),
+ * `wp-block-quote` (the large style's own padding, margins and italic, right-aligned citation,
+ * where the front end draws every quote as the one inset) and `wp-block-image` (a margin under the
+ * caption, and the alignment, sizing and lightbox rules, none of which the front end draws). They
+ * are dequeued here, on the CMS's own pages only; the editor canvas keeps them. Without the image
+ * stylesheet a lightbox's overlay would show, so those pages also render every image with its
+ * lightbox off (`inc/image-lightbox.php`), as the front end shows it. `theme-parity.spec.js` holds
+ * each element to `prose.css`. The other core block styles a body can bring set box sizing,
+ * wrapping or classes an editor opts into, and stay. Core's button look is not a block stylesheet
+ * but core's default `theme.json` element style, printed in the global styles both the pages and the
+ * canvas share, so it is not removed here: a button block is a filled button on the CMS and a link
+ * on the front end (the theme's README, "Not built yet").
+ */
+function resource_hub_theme_enqueue_page_styles(): void {
+	wp_enqueue_style( 'resource-hub-base' );
+	wp_enqueue_style( 'resource-hub-shell' );
+	wp_add_inline_style( 'resource-hub-shell', RESOURCE_HUB_THEME_ADMIN_BAR_SHELL );
+
+	if ( is_404() ) {
+		wp_enqueue_style( 'resource-hub-not-found' );
+	} elseif ( is_home() ) {
+		wp_enqueue_style( 'resource-hub-welcome' );
+	} else {
+		wp_enqueue_style( 'resource-hub-prose' );
+		wp_enqueue_style( 'resource-hub-page' );
+	}
+
+	foreach ( array( 'wp-block-table', 'wp-block-code', 'wp-block-separator', 'wp-block-quote', 'wp-block-image' ) as $handle ) {
+		wp_dequeue_style( $handle );
+	}
+}
+add_action( 'wp_enqueue_scripts', 'resource_hub_theme_enqueue_page_styles', 20 );
+
+// On a page core renders with a template: each core/table block in the front end's scroll region,
+// and each image block without its lightbox.
+add_action( 'template_redirect', 'resource_hub_theme_add_table_regions' );
+add_action( 'template_redirect', 'resource_hub_theme_add_lightbox_off' );

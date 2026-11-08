@@ -5,9 +5,9 @@
  * "Components", "The article"). Class names are part of the contract (ADR
  * 0033; see `packages/ui/README.md`): the front end's <PageArticle>
  * (`apps/web/components/PageArticle.tsx`) renders the markup, and the CMS
- * block theme's page template will render the same. The body's element
- * rules are `.rh-prose` in prose.css. The front end's welcome page also
- * uses `.rh-page` and `.rh-page__title`, with its own rules beside them.
+ * block theme's page template renders the same. The body's element
+ * rules are `.rh-prose` in prose.css. The welcome page also uses
+ * `.rh-page` and `.rh-page__title`, with welcome.css beside them.
  *
  * Built only on the tokens in tokens.css and the base styles in base.css,
  * which the consumer loads first.

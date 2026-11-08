@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "@colbitron/resource-hub-ui/tokens.css";
 import "@colbitron/resource-hub-ui/fonts/figtree-fallback.css";
 import "@colbitron/resource-hub-ui/base.css";
-import "./shell.css";
+import "@colbitron/resource-hub-ui/shell.css";
 
 import { BrandLockup } from "./Brand";
 import { HeaderSearch } from "./HeaderSearch";
@@ -19,7 +19,8 @@ import { ThemeToggle } from "./ThemeToggle";
  * every page. It imports the size-adjusted fallback faces beside them,
  * since `--rh-font-sans` in the tokens names those faces, then the shared
  * base styles (`base.css`: the document, the theme choice's colour scheme
- * and the skip link) before its own landmark layout (`shell.css`). Page
+ * and the skip link) before the landmarks' layout (`shell.css`, shared
+ * with the CMS block theme, which renders the same landmarks). Page
  * content is stacked under `main`, which carries `tabIndex={-1}` so the
  * skip link lands focus on it in every browser.
  *

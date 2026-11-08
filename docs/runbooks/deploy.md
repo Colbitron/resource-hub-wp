@@ -13,8 +13,8 @@ A push to `main` and every dispatch, on `main` or a tag, run every job; only a p
 | The pull request changes | Runs | About |
 |---|---|---|
 | only `wp-content/` (and inert paths) | the plugin's gate | 3.1 sandbox-minutes |
-| only `apps/` (and inert paths) | the front-end jobs | 3.6 |
-| `packages/`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.wp-env.json`, `.depot/`, `.gitignore`, any other path, or both `wp-content/` and `apps/` | the plugin's gate and the front-end jobs | 6.9 |
+| only `apps/` (and inert paths), but for the two files below | the front-end jobs | 3.6 |
+| `packages/`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.wp-env.json`, `.depot/`, `.gitignore`, `apps/web/e2e/browser-container.mts` or `apps/web/e2e/playwright-image.mts` (the pinned screenshot container, which the plugin's Playwright imports for the CMS theme's baselines; `PLUGIN_IMPORTS` in `ci-scope.mjs`), any other path, or both `wp-content/` and `apps/` | the plugin's gate and the front-end jobs | 6.9 |
 | only inert paths: `docs/`, `.claude/`, `.github/`, `tools/`, a Markdown file at the root | nothing but the scope job and `CI result` | 0.1 |
 
 **No pull request runs Lighthouse**, whatever it changes: the five `web-lighthouse` shards and `web-lighthouse-medians` show as skipped on every pull request and run on every push to `main` and every dispatch, which take about 17.9 sandbox-minutes with them ("CI cost", below). So a broken Lighthouse harness, unlike every other failure, first shows up on `main`, where it holds `deploy-web` back until a fix lands; the CMS deploy still goes ahead. In their place, before pushing a pull request that changes `apps/` (other than Markdown) or `packages/ui/`, the author runs `pnpm web:test:lighthouse:quick` and reads the medians, as part of the local gate before the push: a smell test on the author's machine, not a gate, with the full five-run `pnpm web:test:lighthouse` for a big change (`apps/web/e2e/README.md`, "Lighthouse CI"). `main`'s five-run medians are the measurement of record.
@@ -25,7 +25,7 @@ A skipped job shows as skipped in `depot ci status`, not as passed or failed; th
 
 **The ruleset pins the check's source to the `depot-code-access` app**, so a check of the same name from anything else cannot satisfy it. Depot offers extra check-publishing apps, Depot Checks, Depot Checks 2 and Depot Checks 3, for organizations that reach GitHub's API rate limits; they publish the same check names, so with a pin in place a check one of them published would block the merge. Do not connect them while the pin stands (<https://depot.dev/docs/ci/observability/github-checks>, read 2026-11-07). The check means only what the workflow behind it says: Depot runs a pull request's own copy of `ci.yml` and `.depot/scripts/`, so a pull request can change `ci-result` itself, and the required check is worth something only with the owner's review of every change under `.depot/`. A cancelled run's `CI / CI result` concludes `cancelled` or `failure`, never green, so a cancelled run blocks the merge until it is re-run.
 
-A new top-level path runs everything until a rule in `ci-scope.mjs` says otherwise; add the rule, and its case to `ci-scope.test.mjs`, in the pull request that adds the path.
+A new top-level path runs everything until a rule in `ci-scope.mjs` says otherwise; add the rule, and its case to `ci-scope.test.mjs`, in the pull request that adds the path. A plugin spec that imports another file under `apps/` fails `ci-scope.test.mjs`, which follows the plugin's imports into `apps/`, until the file is in `PLUGIN_IMPORTS`.
 
 ### Preview Lighthouse
 

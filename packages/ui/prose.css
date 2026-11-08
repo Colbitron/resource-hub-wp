@@ -5,7 +5,7 @@
  * `packages/ui/README.md`): the front end's <ResourceArticle> and
  * <PageArticle> (`apps/web/components/`) wrap the body the sanitiser in
  * `apps/web/lib/content/render.tsx` renders, and the CMS block theme's
- * templates will wrap the post content the same way. WordPress's block
+ * templates wrap the post content the same way. WordPress's block
  * classes are kept on the markup but nothing here depends on them. On the
  * front end a body never renders an `h1`: when it has one, the pass shows
  * every heading one level down, so the levels here start at `h2`.
@@ -25,7 +25,7 @@
  * the box's edge closes it, and scrolls a wide table sideways inside the
  * column. A table without it has no box, keeps every row's rule, and one
  * whose words are wider than the column overflows it. The CMS block theme
- * does not add the wrapper yet; it needs to (issue #89).
+ * wraps each table block's table the same way (its `inc/table-region.php`).
  *
  * The page is flat; inside the body three things are insets, boxed on the
  * raised surface with a hairline and the small radius, so a reader can tell a

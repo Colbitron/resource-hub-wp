@@ -5,14 +5,14 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { JOBS as CI_RESULT_JOBS } from './ci-result.mjs';
-import { changedPaths, main, pullRequestFilePaths, scopeOf, sidesOf } from './ci-scope.mjs';
+import { PLUGIN_IMPORTS, changedPaths, main, pullRequestFilePaths, scopeOf, sidesOf } from './ci-scope.mjs';
 
 const EVERYTHING = { plugin: true, web: true };
 
@@ -25,6 +25,9 @@ test( 'each path selects the sides it can affect', () => {
 		'apps/web/lighthouserc.cjs': [ 'web' ],
 		'apps/web/e2e/README.md': [ 'web' ],
 		'apps/web/CLAUDE.md': [ 'web' ],
+		'apps/web/e2e/browser-container.mts': [ 'plugin', 'web' ],
+		'apps/web/e2e/playwright-image.mts': [ 'plugin', 'web' ],
+		'apps/web/e2e/screenshots.mts': [ 'web' ],
 		'.wp-env.json': [ 'plugin', 'web' ],
 		'packages/ui/schemas/resource.schema.json': [ 'plugin', 'web' ],
 		'packages/ui/DESIGN.md': [ 'plugin', 'web' ],
@@ -48,6 +51,46 @@ test( 'each path selects the sides it can affect', () => {
 	};
 	for ( const [ path, sides ] of Object.entries( cases ) ) {
 		assert.deepEqual( [ ...sidesOf( path ) ], sides, path );
+	}
+} );
+
+const REPO = fileURLToPath( new URL( '../../', import.meta.url ) );
+const PLUGIN_E2E = 'wp-content/plugins/resource-hub-wp/tests/e2e';
+
+/**
+ * Every file under `apps/` the plugin's Playwright specs import, followed
+ * through the relative imports of what they import (`import(…)`,
+ * `require(…)` and `from …`), as repository-relative paths.
+ *
+ * @return {string[]} The paths, sorted.
+ */
+function pluginImportsFromApps() {
+	const specifiers = ( text ) =>
+		[ ...text.matchAll( /(?:import\s*\(\s*|require\s*\(\s*|from\s+)['"](\.{1,2}\/[^'"]+)['"]/g ) ].map( ( match ) => match[ 1 ] );
+	const found = new Set();
+	const queue = readdirSync( join( REPO, PLUGIN_E2E ) )
+		.filter( ( name ) => /\.[cm]?js$/.test( name ) )
+		.map( ( name ) => join( PLUGIN_E2E, name ) );
+	while ( queue.length > 0 ) {
+		const file = queue.shift();
+		for ( const specifier of specifiers( readFileSync( join( REPO, file ), 'utf8' ) ) ) {
+			const target = relative( REPO, resolve( REPO, dirname( file ), specifier ) );
+			if ( target.startsWith( 'apps/' ) && ! found.has( target ) ) {
+				found.add( target );
+				queue.push( target );
+			}
+		}
+	}
+	return [ ...found ].sort();
+}
+
+test( "the plugin's imports from apps/ run the plugin's gate", () => {
+	const imports = pluginImportsFromApps();
+	// The walk found the screenshot spec's import, so it is not passing on nothing.
+	assert.ok( imports.includes( 'apps/web/e2e/browser-container.mts' ), imports.join( ', ' ) );
+	assert.deepEqual( imports, [ ...PLUGIN_IMPORTS ].sort() );
+	for ( const path of imports ) {
+		assert.deepEqual( [ ...sidesOf( path ) ], [ 'plugin', 'web' ], path );
 	}
 } );
 

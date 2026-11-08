@@ -1,0 +1,15 @@
+/*
+ * Added by theme-screenshots.spec.js to a logged-in page before its shot: the admin bar
+ * a logged-in preview carries, the margin core puts on <html> for it, and its
+ * height, which the theme's shell subtracts, none of which the front end has. `html:root` outranks core's own
+ * `html { margin-top: 32px !important; }`.
+ */
+#wpadminbar {
+	display: none !important;
+}
+
+html:root {
+	margin-top: 0 !important;
+	/* The theme's shell subtracts this under the admin bar; with the bar gone, the shell is the front end's 100dvh. */
+	--wp-admin--admin-bar--height: 0px !important;
+}

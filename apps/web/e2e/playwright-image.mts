@@ -16,7 +16,12 @@
  * to the `Digest` that command prints at the top, the multi-platform index's
  * (`application/vnd.oci.image.index.v1+json`), not one of the per-platform
  * manifests listed under it; then regenerate the baselines
- * (`pnpm web:test:screenshots:update`) and commit all three together.
+ * (`pnpm web:test:screenshots:update`) and commit all three together. The
+ * CMS theme's baselines are drawn in the same image, by the plugin's
+ * `tests/e2e/theme-screenshots.spec.js`, whose `@playwright/test` must be
+ * the same version: move the plugin's with it and regenerate those too
+ * (`pnpm test:e2e -- --update-snapshots`, with `WP_BASE_URL` set to the
+ * wp-env tests site).
  * Checked for 1.64.1 on 2026-11-06: that digest is the index of
  * `v1.64.1-noble` (linux/amd64 and linux/arm64), and the installed
  * `playwright-core` has `cli.js` at its root, which the container runs.

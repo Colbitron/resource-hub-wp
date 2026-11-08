@@ -1,10 +1,29 @@
 /*
- * The page shell: the landmarks' layout the front end owns, built on the
- * shared tokens and on the shared base styles (`packages/ui/base.css`,
- * which Shell.tsx imports first, holds the document, the theme choice's
- * colour scheme and the skip link; packages/ui/DESIGN.md). This file owns
- * only the flex shell, its gutter, the header, `main` and the footer.
- * These classes are the front end's own, not part of the contract.
+ * The page shell: the landmarks' layout under every page, built on the
+ * shared tokens and on the shared base styles in base.css (the document,
+ * the theme choice's colour scheme and the skip link), which the consumer
+ * loads first. Class names are part of the contract (ADR 0033; see
+ * `packages/ui/README.md`, and `DESIGN.md`, "Layout"): the front end's
+ * <Shell> (`apps/web/components/Shell.tsx`) and the CMS block theme's
+ * templates and parts render the same landmarks, so an editor's preview
+ * sits in the same column as the site. This file owns only the flex shell,
+ * its gutter, the header, `main` and the footer.
+ *
+ * Markup (the front end's; the CMS theme's carries WordPress's block
+ * classes beside these, and has no search control in its header and no
+ * theme control in its footer yet):
+ *   <div class="rh-shell">
+ *     <header class="rh-header">
+ *       <div class="rh-shell__inner rh-header__inner">…the lockup, then the search control (header-search.css)…</div>
+ *     </header>
+ *     <main class="rh-shell__inner rh-main" id="main">…</main>
+ *     <footer class="rh-footer">
+ *       <div class="rh-shell__inner rh-footer__inner">
+ *         <div class="rh-footer__text"><p>…</p><p>…</p></div>
+ *         <div class="rh-footer__theme">…the theme control…</div>
+ *       </div>
+ *     </footer>
+ *   </div>
  */
 
 .rh-shell {

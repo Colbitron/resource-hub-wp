@@ -5,8 +5,8 @@
  * article"). Class names are part of the contract (ADR 0033; see
  * `packages/ui/README.md`): the front end's <NotFoundContent>
  * (`apps/web/components/NotFoundContent.tsx`) renders the markup, and the
- * CMS block theme's 404 template will render the same. Imported by the
- * component that renders the markup.
+ * CMS block theme's 404 template renders the same, with its own sentence
+ * and no link. Imported by the component that renders the markup.
  *
  * Built only on the tokens in tokens.css and the base styles in base.css,
  * which the consumer loads first.
