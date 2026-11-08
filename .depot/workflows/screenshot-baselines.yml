@@ -25,7 +25,13 @@
 #   a checkout of the branch. It uploads the branch's unpushed commits and
 #   uncommitted edits to tracked files as a patch, so it works before the
 #   branch is pushed; untracked files are not uploaded, so commit new ones
-#   first.
+#   first. If git reads the patch as a rename into .depot/ (a file deleted
+#   elsewhere with a similar one added there, as when .github/workflows/
+#   ci.yml moved), Depot fails it with "Failed to apply workspace patch ...
+#   No such file or directory", because it applies only the .depot/ side;
+#   run with rename detection off for that command:
+#   GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=diff.renames
+#   GIT_CONFIG_VALUE_0=false depot ci run --workflow ...
 # - `depot ci dispatch --repo Colbitron/resource-hub-wp
 #   --workflow screenshot-baselines.yml --ref <branch>` for a pushed branch.
 # Then `depot ci artifacts list <run-id>` names the artifact's ID, and
