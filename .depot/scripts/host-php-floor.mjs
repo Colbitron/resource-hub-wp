@@ -44,8 +44,9 @@
 //
 //   HOST_CLI_INFO=... COMPOSER_JSON=... node host-php-floor.mjs
 
-import { readFileSync, realpathSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
+
+import { runAsScript } from './entry-point.mjs';
 
 const VERSION = /^(\d+)\.(\d+)\.(\d+)(?:[-+~A-Za-z][0-9A-Za-z.+~-]*)?$/;
 const FLOOR = /^>=\s*(\d+)\.(\d+)(?:\.(\d+))?$/;
@@ -187,36 +188,8 @@ function escapeData( text ) {
 	return text.replaceAll( '%', '%25' ).replaceAll( '\r', '%0D' ).replaceAll( '\n', '%0A' );
 }
 
-/**
- * Whether this file is the script node was asked to run, rather than a
- * module a test imported. Both sides are compared as realpaths, since node
- * loads the main module through argv[1]'s realpath: with a symlink in the
- * checkout's path a plain comparison would be false, main() would never
- * run, and the step would exit 0 with no verdict, a pass. For the same
- * reason a path that cannot be resolved is 'error', never 'skip'.
- *
- * @param {string|undefined} argv1    The script path node was given.
- * @param {string}           self     This module's file path.
- * @param {(path: string) => string} realpath Resolves a path.
- * @return {'run'|'skip'|'error'} Run main(), stay a module, or fail.
- */
-export function entryPoint( argv1, self, realpath = realpathSync ) {
-	if ( ! argv1 ) {
-		return 'skip';
-	}
-	try {
-		return realpath( argv1 ) === realpath( self ) ? 'run' : 'skip';
-	} catch {
-		return 'error';
-	}
-}
-
-switch ( entryPoint( process.argv[ 1 ], fileURLToPath( import.meta.url ) ) ) {
-	case 'run':
-		process.exitCode = main();
-		break;
-	case 'error':
-		console.log( "::error::host-php-floor.mjs could not tell whether it was run as the script, so it fails rather than pass without checking. Nothing was deployed." );
-		process.exitCode = 1;
-		break;
-}
+runAsScript(
+	import.meta.url,
+	main,
+	'host-php-floor.mjs could not tell whether it was run as the script, so it fails rather than pass without checking. Nothing was deployed.'
+);

@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { check, cliInfoVersion, entryPoint, main, meets, parseFloor, parseVersion } from './host-php-floor.mjs';
+import { check, cliInfoVersion, main, meets, parseFloor, parseVersion } from './host-php-floor.mjs';
 
 const SCRIPT = fileURLToPath( new URL( './host-php-floor.mjs', import.meta.url ) );
 const PLUGIN_COMPOSER = fileURLToPath( new URL( '../../wp-content/plugins/resource-hub-wp/composer.json', import.meta.url ) );
@@ -137,18 +137,27 @@ test( 'the root require.php is the whole platform floor', () => {
 	assert.equal( lock.platform.php, composer.require.php, 'composer.lock is behind composer.json; run `pnpm composer update --lock`' );
 } );
 
-test( 'the entry point runs main() or fails, and never skips it on an unresolvable path', () => {
-	const same = ( path ) => path.replace( /^\/link/, '/real' );
-	assert.equal( entryPoint( '/real/host-php-floor.mjs', '/real/host-php-floor.mjs', same ), 'run' );
-	assert.equal( entryPoint( '/link/host-php-floor.mjs', '/real/host-php-floor.mjs', same ), 'run' );
-	assert.equal( entryPoint( '/real/other.test.mjs', '/real/host-php-floor.mjs', same ), 'skip' );
-	assert.equal( entryPoint( undefined, '/real/host-php-floor.mjs', same ), 'skip' );
-	const missing = () => {
-		throw new Error( 'ENOENT' );
+// entry-point.mjs's own cases are in ci-result.test.mjs; this is the wiring.
+// A main() that never ran would exit 0, a pass, so a script path that
+// cannot be resolved, or none at all, must fail the step without checking.
+test( 'the script fails when it cannot tell it was run as the script', () => {
+	const run = ( preload ) => {
+		try {
+			execFileSync( process.execPath, [ '--import', `data:text/javascript,${ encodeURIComponent( preload ) }`, SCRIPT ], {
+				env: { PATH: process.env.PATH, COMPOSER_JSON: PLUGIN_COMPOSER, HOST_CLI_INFO: cliInfo( '99.0.0' ) },
+				stdio: 'pipe',
+				encoding: 'utf8',
+			} );
+			return { status: 0, stdout: '' };
+		} catch ( error ) {
+			return { status: error.status, stdout: error.stdout };
+		}
 	};
-	assert.equal( entryPoint( '/gone/host-php-floor.mjs', '/real/host-php-floor.mjs', missing ), 'error' );
-	// The real resolver on a path that does not exist.
-	assert.equal( entryPoint( join( tmpdir(), 'host-php-floor-missing', 'x.mjs' ), SCRIPT ), 'error' );
+	for ( const preload of [ `process.argv[1] = ${ JSON.stringify( join( tmpdir(), 'host-php-floor-gone', 'host-php-floor.mjs' ) ) };`, 'process.argv.splice( 1 );' ] ) {
+		const failed = run( preload );
+		assert.equal( failed.status, 1, preload );
+		assert.equal( failed.stdout, '::error::host-php-floor.mjs could not tell whether it was run as the script, so it fails rather than pass without checking. Nothing was deployed.\n', preload );
+	}
 } );
 
 // The script as the deploy step runs it: inputs through env only, one line

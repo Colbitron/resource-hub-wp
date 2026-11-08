@@ -1,6 +1,7 @@
-// Tests for ci-result.mjs, run by the `scope` job with ci-scope's
-// (`node --test .depot/scripts/ci-scope.test.mjs .depot/scripts/ci-result.test.mjs`),
-// so a broken verdict fails scope and therefore CI result itself. Plain
+// Tests for ci-result.mjs, and entry-point.mjs's own cases, run by the
+// `scope` job with ci-scope's (`node --test .depot/scripts/ci-scope.test.mjs
+// .depot/scripts/ci-result.test.mjs`), so a broken verdict fails scope and
+// therefore CI result itself. Plain
 // node:test, as there. `depot ci run` reports event `api`, so these are
 // where a pull request's skips are tried before a real pull request.
 
@@ -13,6 +14,7 @@ import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { JOBS, main, verdicts } from './ci-result.mjs';
+import { entryPoint } from './entry-point.mjs';
 
 const SCRIPT = fileURLToPath( new URL( './ci-result.mjs', import.meta.url ) );
 
@@ -138,5 +140,48 @@ test( 'the script runs main() when reached through a symlink', () => {
 		}
 	} finally {
 		rmSync( dir, { recursive: true, force: true } );
+	}
+} );
+
+// entry-point.mjs, which ci-result.mjs and host-php-floor.mjs share: run
+// main() only on positive evidence, stay a module only on positive evidence,
+// and fail on anything else, never skip.
+test( 'the entry point runs main(), stays a module or fails, and never skips on doubt', () => {
+	const same = ( path ) => path.replace( /^\/link/, '/real' );
+	assert.equal( entryPoint( '/real/ci-result.mjs', '/real/ci-result.mjs', same ), 'run' );
+	assert.equal( entryPoint( '/link/ci-result.mjs', '/real/ci-result.mjs', same ), 'run' );
+	assert.equal( entryPoint( '/real/ci-result.test.mjs', '/real/ci-result.mjs', same ), 'skip' );
+	// No script path: node ran no file, so it cannot be told.
+	for ( const argv1 of [ undefined, '' ] ) {
+		assert.equal( entryPoint( argv1, '/real/ci-result.mjs', same ), 'error', String( argv1 ) );
+	}
+	const missing = () => {
+		throw new Error( 'ENOENT' );
+	};
+	assert.equal( entryPoint( '/gone/ci-result.mjs', '/real/ci-result.mjs', missing ), 'error' );
+	// The real resolver on a path that does not exist, as argv[1] and as the module.
+	assert.equal( entryPoint( join( tmpdir(), 'ci-result-missing', 'x.mjs' ), SCRIPT ), 'error' );
+	assert.equal( entryPoint( SCRIPT, join( tmpdir(), 'ci-result-missing', 'x.mjs' ) ), 'error' );
+} );
+
+// The step as ci.yml runs it, with a preload that breaks argv[1] for real
+// before the script evaluates: a path realpathSync cannot resolve, then no
+// path at all. Even in an environment that would pass, the script must exit
+// 1 with an ::error:: and print no verdict, since main() did not run.
+test( 'the script exits 1 with an ::error:: when it cannot tell it was run as the script', () => {
+	const run = ( preload ) => {
+		try {
+			execFileSync( process.execPath, [ '--import', `data:text/javascript,${ encodeURIComponent( preload ) }`, SCRIPT ], { env: { PATH: process.env.PATH, ...pr( {} ) }, stdio: 'pipe', encoding: 'utf8' } );
+			return { status: 0, stdout: '' };
+		} catch ( error ) {
+			return { status: error.status, stdout: error.stdout };
+		}
+	};
+	// The preload itself is sound: left alone, the same run passes.
+	assert.equal( run( 'void 0;' ).status, 0 );
+	for ( const preload of [ `process.argv[1] = ${ JSON.stringify( join( tmpdir(), 'ci-result-gone', 'ci-result.mjs' ) ) };`, 'process.argv.splice( 1 );' ] ) {
+		const failed = run( preload );
+		assert.equal( failed.status, 1, preload );
+		assert.equal( failed.stdout, '::error::ci-result.mjs could not tell whether it was run as the script, so CI result fails rather than pass without a verdict.\n', preload );
 	}
 } );
