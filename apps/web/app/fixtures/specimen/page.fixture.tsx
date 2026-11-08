@@ -43,7 +43,7 @@ import { StillThemeFieldset } from "./StillThemeFieldset";
 // `prose.css`, PageArticle and WelcomePage `page.css`, the 404 page
 // `not-found.css`, ResourceCard the shared `card.css`).
 import "@/components/listing.css";
-import "@/components/prose.css";
+import "@colbitron/resource-hub-ui/prose.css";
 import "./specimen.css";
 
 /**

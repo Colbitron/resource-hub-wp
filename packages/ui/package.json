@@ -20,6 +20,7 @@
 		"brand.css",
 		"base.css",
 		"theme-toggle.css",
+		"prose.css",
 		"type-accents.json",
 		"README.md",
 		"DESIGN.md"
@@ -34,6 +35,7 @@
 		"./brand.css": "./brand.css",
 		"./base.css": "./base.css",
 		"./theme-toggle.css": "./theme-toggle.css",
+		"./prose.css": "./prose.css",
 		"./type-accents.json": "./type-accents.json"
 	},
 	"scripts": {
