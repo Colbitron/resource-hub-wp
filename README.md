@@ -10,7 +10,7 @@ The plugin models a filterable resources library: a `resource` post type with `r
 /                                        pnpm workspace root: .wp-env.json, CLAUDE.md, this README
 ├─ wp-content/plugins/resource-hub-wp/   the WordPress plugin (its own README.md and CLAUDE.md)
 ├─ site-plugins/                         Composer project for the third-party plugins beside it, Relevanssi so far (its own README.md)
-├─ wp-content/themes/resource-hub/       the CMS's block theme, slice 5: skeleton and assets so far (its own README.md)
+├─ wp-content/themes/resource-hub/       the CMS's block theme, for editors and logged-in previews (its own README.md)
 ├─ apps/web/                             the Next.js front end (its own README.md and CLAUDE.md)
 ├─ packages/ui/                          @colbitron/resource-hub-ui: the contract's JSON Schemas, shared styles and DESIGN.md
 ├─ docs/adr/                             the hard-to-reverse decisions, one sequence for the whole project
@@ -21,7 +21,7 @@ The plugin models a filterable resources library: a `resource` post type with `r
 └─ .claude/rules/                        path-scoped rules for agents, loaded only when a matching file is touched
 ```
 
-The theme is a block theme for editors and logged-in previews: anonymous visitors get the lockdown's 404 ([ADR 0031](docs/adr/0031-cms-theme-pages-are-for-logged-in-users.md)), rendered with this theme's 404 template, in wp-env and on the hosted CMS, where every `main` deploy ships the theme and activates it ([`docs/runbooks/deploy.md`](docs/runbooks/deploy.md), "Activating the theme"). It draws with the `packages/ui` tokens and CSS, so a logged-in preview looks like the front end, and is still being built in slice 5.
+The theme is a block theme for editors and logged-in previews: anonymous visitors get the lockdown's 404 ([ADR 0031](docs/adr/0031-cms-theme-pages-are-for-logged-in-users.md)), rendered with this theme's 404 template, in wp-env and on the hosted CMS, where every `main` deploy ships the theme and activates it ([`docs/runbooks/deploy.md`](docs/runbooks/deploy.md), "Activating the theme"). It draws with the `packages/ui` tokens and CSS, so a logged-in preview looks like the front end; the gaps that remain are in its README ("Not built yet").
 
 ## Status
 
@@ -50,12 +50,14 @@ Everything marked done exists on `main` and is green in CI.
 | Follow-ups: real-browser lab measurement ([issue #85](https://github.com/Colbitron/resource-hub-wp/issues/85)), the related list's scale path ([issue #87](https://github.com/Colbitron/resource-hub-wp/issues/87)) | open |
 | Search engine: Relevanssi (free) from wpackagist through `site-plugins/`, configured in the plugin's code, indexed by `wp resource-hub search-index`, synced and activated by the deploy ([issue #115](https://github.com/Colbitron/resource-hub-wp/issues/115)) | done |
 | `GET /resource-hub/v1/search`, the route that queries Relevanssi ([issue #115](https://github.com/Colbitron/resource-hub-wp/issues/115), PR #121) | done |
-| The front end's `/search/` page and the theme's search template ([issue #115](https://github.com/Colbitron/resource-hub-wp/issues/115)) | planned |
+| The front end's `/search/` page ([issue #115](https://github.com/Colbitron/resource-hub-wp/issues/115)) | done |
+| The theme's search template and its header search control ([issue #115](https://github.com/Colbitron/resource-hub-wp/issues/115), PR 4), after the header search redesign ([issue #128](https://github.com/Colbitron/resource-hub-wp/issues/128)) | open |
 | CMS block theme skeleton: header, footer, `index` and `404` templates, active on both wp-env sites, its 404 listing no pages and printing no pingback link ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
 | CMS block theme assets: the `packages/ui` tokens, Figtree and its fallback faces, and the lockup, built into the theme and loaded on its pages and in the editor canvas, one copy of the tokens beside the related-resources block ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
 | CMS block theme foundation: every template in the front end's shell, the page and welcome templates, the base, shell and component stylesheets after core's global styles, tables in the front end's scroll region, and computed-style and screenshot parity checks ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
 | CMS block theme deploy: an allowlist sync to the host and activation on every deploy, kept only once WordPress loads with it and its anonymous 404 renders ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
-| CMS block theme: the plugin's blocks, the single-resource and collection templates and the footer's System / Light / Dark control ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | slice 5 |
+| CMS block theme: the plugin's blocks, the single-resource and collection templates and the footer's System / Light / Dark control ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
+| Theme follow-ups: hardening the theme allowlist test ([issue #138](https://github.com/Colbitron/resource-hub-wp/issues/138)), the featured-image generator's accent map from the shared table ([issue #102](https://github.com/Colbitron/resource-hub-wp/issues/102)), and the parity gaps the theme's README lists | open |
 
 ## Architecture
 
@@ -65,10 +67,10 @@ flowchart LR
         subgraph wp["WordPress on Cloudways: wp-content/"]
             editor["Editor saves a resource or a page"]
             cpt["resource post type<br/>resource_topic, resource_type, resource_flag<br/>meta: summary, source_url, related_picks"]
-            rest["REST<br/>/wp/v2/resources, /wp/v2/pages<br/>/resource-hub/v1/resolve<br/>/resource-hub/v1/page<br/>/resource-hub/v1/related"]
+            rest["REST<br/>/wp/v2/resources, /wp/v2/pages<br/>/resource-hub/v1/resolve<br/>/resource-hub/v1/page<br/>/resource-hub/v1/related<br/>/resource-hub/v1/search"]
             block["related-resources block<br/>server-rendered marker + card-row fallback"]
             hook["Revalidation hook<br/>wp_after_insert_post, before_delete_post,<br/>term and option hooks; sent from WP-Cron"]
-            theme["Block theme (slice 5, in progress)<br/>logged-in users only;<br/>404 for anonymous visitors"]
+            theme["Block theme<br/>logged-in users only;<br/>404 for anonymous visitors"]
             editor --> cpt
             cpt --> rest
             cpt --> block
@@ -80,7 +82,7 @@ flowchart LR
 
         subgraph next["Next.js on Vercel: apps/web/"]
             api["POST /api/revalidate/<br/>Bearer secret"]
-            pages["/ (the static front page)<br/>/{page}/…/<br/>/resources/<br/>/resources/{type}/{slug}/"]
+            pages["/ (the static front page)<br/>/{page}/…/<br/>/resources/<br/>/resources/{type}/{slug}/<br/>/search/"]
             api --> pages
         end
     end
@@ -93,12 +95,9 @@ flowchart LR
     ui -.->|"workspace:*"| block
     ui -.->|"workspace:*"| theme
     ui -.->|"workspace:*"| pages
-
-    classDef building stroke-dasharray: 5 5
-    class theme building
 ```
 
-The front end reads content through the core REST API and the custom routes, always from the Next.js server, so the CMS's address never reaches a browser; it rewrites CMS links to its own domain and CMS images to its `/media/` path. WordPress pushes a small bearer-authenticated batch when content changes, from a cron request after the save, so it never renders pages for the front end and the editor never waits on it; each result is stored on the objects it covered and, when configured, sent to PostHog. The CMS's own theme pages exist only for logged-in users and previews, and answer anyone else with a 404. Both sides take the schemas and the shared styles from `packages/ui` through the pnpm workspace, so a contract change is one pull request; the package is never published. The theme (dashed above) is still being built in slice 5; the CMS deploy ships it and activates it.
+The front end reads content through the core REST API and the custom routes, always from the Next.js server, so the CMS's address never reaches a browser; it rewrites CMS links to its own domain and CMS images to its `/media/` path. WordPress pushes a small bearer-authenticated batch when content changes, from a cron request after the save, so it never renders pages for the front end and the editor never waits on it; each result is stored on the objects it covered and, when configured, sent to PostHog. The CMS's own theme pages exist only for logged-in users and previews, and answer anyone else with a 404. Both sides take the schemas and the shared styles from `packages/ui` through the pnpm workspace, so a contract change is one pull request; the package is never published. Every CMS deploy ships the theme and activates it.
 
 ## Getting started
 
