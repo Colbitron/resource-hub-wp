@@ -57,13 +57,14 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   otherwise as a lazy `<img>` with its `srcset` rebuilt from the candidates
  *   that are CMS images too. An image on any other host stays a plain
  *   `<img>` by its `src` alone, lazy unless it is the lead (below), since it
- *   says nothing about the CMS. An image
- *   that names a CMS host but is not a CMS image (`http:` where the CMS is
- *   `https:`, another port, a path outside uploads, credentials in the URL)
- *   is dropped: it cannot be served through `/media/` and showing it would
- *   show the CMS's address. With `leadImage`, the first image the pass
- *   renders, of any of these kinds, is not lazy and is fetched at high
- *   priority (`takeLead`); every other image is lazy.
+ *   says nothing about the CMS. An image that names a CMS host but is not a
+ *   CMS image (`http:` where the CMS is `https:`, another port, a path
+ *   outside uploads, credentials in the URL) is dropped: it cannot be served
+ *   through `/media/` and showing it would show the CMS's address. With
+ *   `leadImage`, the first image the pass renders, of any of these kinds, is
+ *   not lazy and is fetched at high priority, except that an image in a
+ *   related-resources fallback the front end may swap out never takes the
+ *   lead (`takeLead`); every other image is lazy.
  * - The CMS host: no attribute this pass renders names it (`mentionsCms`),
  *   except the `href` or `cite` of a `mailto:` or `tel:` URL. An
  *   internationalised host is looked for in its punycode and its Unicode
@@ -194,7 +195,9 @@ export interface RenderContentOptions {
   /**
    * True when nothing above the body on the page is an image, so the body's
    * first image is the page's likely LCP element: that image renders as the
-   * lead (`takeLead`). Defaults to false, every image lazy.
+   * lead, unless it is in a related-resources fallback the front end may
+   * swap out, which never takes it (`takeLead`). Defaults to false, every
+   * image lazy.
    */
   readonly leadImage?: boolean;
 }
@@ -1170,6 +1173,17 @@ function inScope<T>(context: Context, scope: MarkupScope, render: () => T): T {
   }
 }
 
+/** `render()` with the lead's slot closed (`takeLead`), and the slot put back after, however `render` ends. */
+function withoutLead<T>(context: Context, render: () => T): T {
+  const pending = context.leadImagePending;
+  context.leadImagePending = false;
+  try {
+    return render();
+  } finally {
+    context.leadImagePending = pending;
+  }
+}
+
 /** A link to a URL, for embeds and media: `text` defaults to the rewritten URL. */
 function linkTo(href: string, text?: string): ReactElement {
   return createElement("a", { href, rel: "noopener noreferrer" }, text ?? href);
@@ -1178,8 +1192,9 @@ function linkTo(href: string, text?: string): ReactElement {
 /**
  * Whether the image being rendered is the lead, and the lead's slot spent if
  * so. The lead image: with `leadImage`, the first image the pass renders, in
- * document order, of whatever kind, is not lazy and is fetched at high
- * priority, and every later image stays lazy (issue #86).
+ * document order, of whatever kind, outside a marker handed to `renderBlock`
+ * (below), is not lazy and is fetched at high priority, and every later
+ * image stays lazy (issue #86).
  *
  * Why the first: a CMS page has no featured image, so the body's first image
  * is the topmost image on the page and its likely LCP element (the welcome
@@ -1210,7 +1225,7 @@ function linkTo(href: string, text?: string): ReactElement {
  * An image inside a related-resources marker that is handed to
  * `renderBlock` never takes the lead: its fallback may be swapped for the
  * front end's own list, which would leave the page with no lead and the
- * body's real first image lazy (`marker`).
+ * body's real first image lazy (`marker`, `withoutLead`).
  *
  * Rejected: promoting only an image within a byte or position threshold of
  * the body's start, to avoid fetching early an image deep in a long body. A
@@ -1436,20 +1451,14 @@ function marker(node: Element, attributes: Attributes, context: Context): ReactE
   // The wrapper always carries the contract's class, once, after any the CMS wrote.
   const classes = typeof wrapperProps.className === "string" ? wrapperProps.className.split(" ") : [];
   wrapperProps.className = (classes.includes(MARKER_CLASS) ? classes : [...classes, MARKER_CLASS]).join(" ");
+  const renderChildren = () => inScope(context, marked === null ? "none" : "marker", () => children(node, context));
   // A fallback handed on may be swapped out, so no image in it takes the lead (`takeLead`); the slot passes to the body after it.
   // A fallback that is not handed on always renders, and an image in it may take the lead like any other.
-  const leadImagePending = context.leadImagePending;
-  if (props !== null) {
-    context.leadImagePending = false;
-  }
   const fallback = createElement(
     "div",
     checked(wrapperProps, context),
-    inScope(context, marked === null ? "none" : "marker", () => children(node, context)),
+    props === null ? renderChildren() : withoutLead(context, renderChildren),
   );
-  if (props !== null) {
-    context.leadImagePending = leadImagePending;
-  }
   if (props === null) {
     return fallback;
   }
