@@ -110,6 +110,19 @@ const ASSETS = [
 		handle: 'resource-hub-not-found',
 		deps: [ 'resource-hub-base' ],
 	},
+	// The collection templates: the head, the filters, the section headings,
+	// the empty state and the space over the pagination (the plugin's
+	// collection blocks name the handle too), and the library's lead.
+	{
+		file: 'listing.css',
+		handle: 'resource-hub-listing',
+		deps: [ 'resource-hub-base' ],
+	},
+	{
+		file: 'lead.css',
+		handle: 'resource-hub-lead',
+		deps: [ 'resource-hub-base' ],
+	},
 ];
 
 /**

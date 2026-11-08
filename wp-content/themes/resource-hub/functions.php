@@ -133,9 +133,25 @@ const RESOURCE_HUB_THEME_ADMIN_BAR_SHELL = 'body.admin-bar .rh-shell { min-heigh
  * resource page, whether or not the related block renders anything, because the front end's resource
  * route always carries it and the same file draws the heading of a related-resources block in the
  * body; the meta line's labels (`card-labels.css`) and the related rows (`card.css`) come with the
- * plugin's blocks, through their `block.json`, only where they render; every other template,
- * `page.html`, `singular.html` and `index.html`, renders the page's article and loads `prose.css`
- * and `page.css`.
+ * plugin's blocks, through their `block.json`, only where they render; the collection templates
+ * (`archive-resource.html`, `taxonomy-resource_type.html` and `taxonomy-resource_topic.html`, which
+ * `is_post_type_archive( 'resource' )` and `is_tax()` on the two taxonomies pick out) load
+ * `listing.css`, with the theme's own `assets/pagination.css` inline after it, and the library's
+ * first page `lead.css` too, the one page the plugin's `featured-lead` block renders on; every other
+ * template, `page.html`, `singular.html` and `index.html`, renders the page's article and loads
+ * `prose.css` and `page.css`.
+ * The plugin's collection blocks name the `resource-hub-listing` and `resource-hub-lead` handles in
+ * their `block.json` as well, so the Site Editor's canvas has them; on the pages the enqueue here is
+ * what loads them, whether or not a block rendered anything.
+ *
+ * **Core's pagination as the front end's.** The collection part renders core's `query-pagination`
+ * block, whose markup is WordPress's own (the one accepted DOM difference from the front end's
+ * `Pagination`), with the `rh-pagination` class on its `nav` so `listing.css` draws the rule above it.
+ * `assets/pagination.css`, the theme's one stylesheet of its own, maps core's `.page-numbers`,
+ * `.current`, `.dots`, previous and next classes to the declarations `listing.css` makes for
+ * `.rh-pagination__link`, `[aria-current]`, `__gap` and `__step`, token for token, and is added inline
+ * after `listing.css` (`wp_add_inline_style()`, as the admin-bar rule is), rather than copied into
+ * `build/` and registered: the manifest lists copies of the package's files, and this is not one.
  *
  * **Core block styles that fight the body's.** Core enqueues each block's stylesheet as the block
  * renders, before `wp_head`, and six draw over what `prose.css` or `resource.css` gives the same elements, which the
@@ -172,6 +188,13 @@ function resource_hub_theme_enqueue_page_styles(): void {
 		wp_enqueue_style( 'resource-hub-prose' );
 		wp_enqueue_style( 'resource-hub-resource' );
 		wp_enqueue_style( 'resource-hub-related' );
+	} elseif ( resource_hub_theme_is_collection() ) {
+		wp_enqueue_style( 'resource-hub-listing' );
+		wp_add_inline_style( 'resource-hub-listing', resource_hub_theme_pagination_css() );
+
+		if ( is_post_type_archive( 'resource' ) && ! is_paged() ) {
+			wp_enqueue_style( 'resource-hub-lead' );
+		}
 	} else {
 		wp_enqueue_style( 'resource-hub-prose' );
 		wp_enqueue_style( 'resource-hub-page' );
@@ -182,6 +205,32 @@ function resource_hub_theme_enqueue_page_styles(): void {
 	}
 }
 add_action( 'wp_enqueue_scripts', 'resource_hub_theme_enqueue_page_styles', 20 );
+
+/**
+ * Whether the request is a collection page: the resource archive, or a type or topic archive.
+ *
+ * The same test the plugin's `Collection::is_collection()` makes of the main query, for the templates
+ * `archive-resource.html`, `taxonomy-resource_type.html` and `taxonomy-resource_topic.html`.
+ */
+function resource_hub_theme_is_collection(): bool {
+	return is_post_type_archive( 'resource' ) || is_tax( array( 'resource_type', 'resource_topic' ) );
+}
+
+/**
+ * The theme's `assets/pagination.css`: core's pagination block drawn as the front end's (see
+ * {@see resource_hub_theme_enqueue_page_styles()}), or nothing when the file is missing.
+ */
+function resource_hub_theme_pagination_css(): string {
+	$file = __DIR__ . '/assets/pagination.css';
+
+	if ( ! is_readable( $file ) ) {
+		return '';
+	}
+
+	$css = file_get_contents( $file ); // phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- The theme's own file, by a path built from __DIR__, never a remote URL.
+
+	return is_string( $css ) ? $css : '';
+}
 
 // On a page core renders with a template: each core/table block in the front end's scroll region,
 // and each image block without its lightbox.
