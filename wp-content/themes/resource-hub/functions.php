@@ -252,6 +252,6 @@ function resource_hub_theme_pagination_css(): string {
 add_action( 'template_redirect', 'resource_hub_theme_add_table_regions' );
 add_action( 'template_redirect', 'resource_hub_theme_add_lightbox_off' );
 
-// The theme control's script, inline in <head> before core prints the stylesheets at 8, so a stored
-// choice is applied before anything is painted (`inc/theme-control.php`).
+// The theme control's script, inline in <head> before any stylesheet <link> (core prints those at
+// 8), so a stored choice is applied before anything is painted (`inc/theme-control.php`).
 add_action( 'wp_head', 'resource_hub_theme_print_control_script', 1 );
