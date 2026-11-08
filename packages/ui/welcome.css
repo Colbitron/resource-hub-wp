@@ -1,0 +1,27 @@
+/*
+ * The welcome page, what `/` shows when the CMS has no static front page:
+ * the site's name, a sentence and a link, in the article's column of
+ * page.css (`.rh-page`), which the consumer loads first; its lead is the
+ * sentence. Class names are part of the contract (ADR 0033; see
+ * `packages/ui/README.md`): the front end's <WelcomePage>
+ * (`apps/web/components/WelcomePage.tsx`) renders the markup, and the CMS
+ * block theme's `templates/home.html`, which core uses for `/` in the same
+ * state, renders the same, so an editor sees the welcome the site shows.
+ *
+ * Built only on the tokens in tokens.css and the base styles in base.css.
+ *
+ * Markup:
+ *   <div class="rh-page rh-welcome">
+ *     <h1 class="rh-page__title">…</h1>
+ *     <p>…</p>
+ *     <p><a href="/resources/">…</a></p>
+ *   </div>
+ */
+
+.rh-welcome {
+	padding: var(--rh-space-5) 0;
+}
+
+.rh-welcome p {
+	font-size: var(--rh-text-md);
+}
