@@ -981,7 +981,9 @@ jobs:
       # A CR or LF is refused too, since the value is written to GITHUB_ENV,
       # where a newline would start a new variable. REMOTE_DIR carries the
       # checked value to the later steps, and WP_ROOT carries the WordPress
-      # root, which is that value without the plugin suffix.
+      # root, which is that value without the plugin suffix. RELEVANSSI_DIR is
+      # Relevanssi's directory beside it, built from that same checked root
+      # with a fixed suffix, so its rsync --delete can reach no other plugin.
       - name: Check the deploy path
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
@@ -1003,6 +1005,7 @@ jobs:
           wp_root="${path%/wp-content/plugins/resource-hub-wp}"
           echo "REMOTE_DIR=$path" >> "$GITHUB_ENV"
           echo "WP_ROOT=$wp_root" >> "$GITHUB_ENV"
+          echo "RELEVANSSI_DIR=$wp_root/wp-content/plugins/relevanssi" >> "$GITHUB_ENV"
 
       # The deploy never talks to GitHub after checkout, so the token is not
       # left in .git/config.
@@ -1039,6 +1042,33 @@ jobs:
       - name: Install PHP dependencies for production
         working-directory: wp-content/plugins/resource-hub-wp
         run: composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
+
+      # The third-party plugins the CMS runs beside ours, Relevanssi alone so
+      # far, from site-plugins/composer.lock into wp-content/plugins/ (its
+      # README). Only the installed plugin directory is sent below; this
+      # project's vendor/ holds Composer's installer and autoloader, which
+      # WordPress never loads.
+      - name: Install the third-party plugins
+        working-directory: site-plugins
+        run: composer install --no-dev --prefer-dist --no-interaction --no-progress
+
+      # The Relevanssi rsync below deletes on the host whatever its source
+      # lacks, so an empty or partial install would strip the host's copy.
+      # The source must hold the plugin's main file, at the version the lock
+      # pins, before anything is sent.
+      - name: Check Relevanssi's files
+        run: |
+          locked=$(jq -r '.packages[] | select(.name == "wpackagist-plugin/relevanssi") | .version' site-plugins/composer.lock)
+          main=wp-content/plugins/relevanssi/relevanssi.php
+          installed=''
+          if [ -f "$main" ]; then
+            installed=$(sed -n '/^ \* Version:/{s/^ \* Version: *//p;q;}' "$main")
+          fi
+          if [ -z "$locked" ] || [ "$locked" != "$installed" ]; then
+            echo "::error::wp-content/plugins/relevanssi holds version '$installed', but site-plugins/composer.lock pins '$locked'. Nothing was deployed."
+            exit 1
+          fi
+          echo "Relevanssi $installed is ready to sync."
 
       # The host key comes from a secret, so the first connection never trusts
       # an unknown key. The sandbox is discarded after the job, and the
@@ -1099,6 +1129,24 @@ jobs:
           export HOST_CLI_INFO
           node .depot/scripts/host-php-floor.mjs
 
+      # Relevanssi goes before the plugin, so a failure here leaves the
+      # plugin on the host as it was. The source is the installed plugin
+      # directory, checked above, and the target is RELEVANSSI_DIR, so rsync
+      # creates or replaces that one directory and nothing beside it. Every
+      # file is sent: the directory is the plugin's release as published,
+      # with nothing development-only to leave behind, so it takes no
+      # allowlist. The flags are the plugin sync's, below, for the same
+      # reasons: changed files swap in together, removals come after them,
+      # --delete-excluded is not set, and the directory's own mtime is never
+      # set.
+      - name: Sync Relevanssi
+        working-directory: wp-content/plugins/relevanssi
+        run: |
+          rsync --archive --compress --no-owner --no-group --chmod=D755,F644 \
+            --omit-dir-times --timeout=120 \
+            --delete-delay --delay-updates --itemize-changes \
+            ./ "deploy:$RELEVANSSI_DIR/"
+
       # The source is the plugin directory itself, so the allowlist paths and
       # the host layout match one to one and nothing else in the workspace
       # (apps/, packages/, the root tooling) is ever a candidate.
@@ -1147,6 +1195,16 @@ jobs:
           # shellcheck disable=SC2029
           ssh deploy "cd $dir && { $WP_CLI plugin is-active resource-hub-wp || $WP_CLI plugin activate resource-hub-wp; }"
 
+      # After the plugin, whose filters hold Relevanssi's settings in code,
+      # so its first activation creates its tables and stores none of the
+      # settings the plugin answers for. Idempotent for the reason above.
+      - name: Activate Relevanssi
+        run: |
+          dir=$(printf '%q' "$WP_ROOT")
+          # $dir and $WP_CLI are meant to expand on the runner; printf %q has quoted $dir for the remote shell.
+          # shellcheck disable=SC2029
+          ssh deploy "cd $dir && { $WP_CLI plugin is-active relevanssi || $WP_CLI plugin activate relevanssi; }"
+
       # Activation clears the rewrite rules only when the plugin was inactive,
       # so a deploy that changes the permalink structure (ADR 0024) would keep
       # serving the old rules. A soft flush regenerates them in the database
@@ -1158,6 +1216,21 @@ jobs:
           # $dir and $WP_CLI are meant to expand on the runner; printf %q has quoted $dir for the remote shell.
           # shellcheck disable=SC2029
           ssh deploy "cd $dir && $WP_CLI rewrite flush"
+
+      # Relevanssi's index holds what the plugin's settings selected when it
+      # was built, so it is rebuilt on every deploy: after Relevanssi's first
+      # activation its tables are empty, and a deploy is the only way those
+      # settings change. The command (the plugin's SearchIndex class) empties
+      # the index and indexes every resource and page again, so a rerun
+      # leaves the same index; it is one pass over a few dozen posts, and the
+      # job's timeout bounds it. It fails the deploy if Relevanssi is not
+      # active or the build stops early.
+      - name: Build the search index
+        run: |
+          dir=$(printf '%q' "$WP_ROOT")
+          # $dir and $WP_CLI are meant to expand on the runner; printf %q has quoted $dir for the remote shell.
+          # shellcheck disable=SC2029
+          ssh deploy "cd $dir && $WP_CLI resource-hub search-index"
 
       # The site's own home URL, read over SSH, so no hostname is committed and
       # no extra secret is needed. jq checks the body is the REST index, not

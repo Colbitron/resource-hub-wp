@@ -4,7 +4,7 @@ For the maintainer deploying the CMS or the front end, rolling either back, or r
 
 ## How a deploy happens
 
-Nothing is deployed by hand. A push to `main` runs the gate on Depot CI, then the `deploy` job syncs the plugin to the Cloudways host, then the `deploy-web` job starts the front end's Vercel production build. The CMS goes first and the front end second, so the front end never goes live ahead of the CMS it reads; additive contract changes make that order safe. The CMS deploy needs only the CMS gate, so a front-end failure never blocks a CMS deploy or a rollback. Pull requests and other branches never deploy; pull requests get Vercel preview deploys.
+Nothing is deployed by hand. A push to `main` runs the gate on Depot CI, then the `deploy` job syncs the plugin and Relevanssi to the Cloudways host, then the `deploy-web` job starts the front end's Vercel production build. The CMS goes first and the front end second, so the front end never goes live ahead of the CMS it reads; additive contract changes make that order safe. The CMS deploy needs only the CMS gate, so a front-end failure never blocks a CMS deploy or a rollback. Pull requests and other branches never deploy; pull requests get Vercel preview deploys.
 
 ## Which jobs a pull request runs
 
@@ -85,7 +85,7 @@ Six secrets feed the two deploy jobs, and a seventh the Preview Lighthouse workf
 | `DEPLOY_SSH_KEY` | Private half of a key used only for deploys |
 | `DEPLOY_HOST` | SSH hostname or IP of the server |
 | `DEPLOY_USER` | SSH user |
-| `DEPLOY_PATH` | Absolute path of the plugin directory itself, ending in `wp-content/plugins/resource-hub-wp`; the job refuses anything else, because `rsync --delete` into the wrong directory would remove other plugins |
+| `DEPLOY_PATH` | Absolute path of the plugin directory itself, ending in `wp-content/plugins/resource-hub-wp`; the job refuses anything else, because `rsync --delete` into the wrong directory would remove other plugins. Relevanssi's target, `wp-content/plugins/relevanssi` beside it, is derived from the same checked value |
 | `DEPLOY_KNOWN_HOSTS` | The server's pinned host key line or lines, so the sandbox never trusts on first use |
 | `VERCEL_DEPLOY_HOOK_URL` | The Vercel project's deploy hook for `main`; the URL is the credential |
 | `VERCEL_PROTECTION_BYPASS` | The Vercel project's deployment protection bypass secret (Vercel env var `VERC_DEP_PROT`), sent as `x-vercel-protection-bypass` by `.depot/workflows/preview-lighthouse.yml` to reach a pull request's preview; nothing else reads it |
@@ -124,7 +124,11 @@ The `deploy` job runs only after the gate passes, only for a push to `main` or a
 
 From a fresh checkout it builds the block, runs `composer install --no-dev` in the plugin directory, and rsyncs that directory over SSH into the plugin directory on the host with `--delete-delay --delay-updates`, so changed files swap in together at the end and stale ones are removed after. The rsync is an allowlist: the host receives `resource-hub.php`, `src/`, `build/` and `vendor/` and nothing else. **A new runtime file or directory has to be added to the allowlist in the workflow.** `packages/` never reaches the host.
 
-It then activates the plugin with WP-CLI if it is not active, runs `wp rewrite flush` (activation clears the rules only when the plugin was inactive, so a deploy that changes the permalink structure would otherwise keep the old rules), reads the site's `home` URL over SSH and requests `{home}/wp-json/` to check that the REST API answers. WP-CLI runs from the WordPress root, because the host's `wp-config.php` requires `wp-salt.php` by a relative path.
+Before that, it deploys Relevanssi, the free search plugin the CMS runs beside ours ([`site-plugins/README.md`](../../site-plugins/README.md)). It runs `composer install --no-dev` in `site-plugins/`, which puts the locked version in `wp-content/plugins/relevanssi/`, and fails unless that directory's `relevanssi.php` declares the version `site-plugins/composer.lock` pins, so an empty or partial install never reaches the next step. It then rsyncs that directory, whole, into `wp-content/plugins/relevanssi/` under the WordPress root that `DEPLOY_PATH` names, with the plugin sync's flags. The target is fixed, so the `--delete` there can only remove files inside Relevanssi's own directory. It goes first so that a failure leaves the plugin on the host as it was. `site-plugins/` itself, with its `vendor/`, stays behind.
+
+It then activates the plugin with WP-CLI if it is not active, then Relevanssi the same way (its first activation creates its tables; its settings are the plugin's code, so none is stored), runs `wp rewrite flush` (activation clears the rules only when the plugin was inactive, so a deploy that changes the permalink structure would otherwise keep the old rules), runs `wp resource-hub search-index`, which empties Relevanssi's index and indexes every resource and page again, reads the site's `home` URL over SSH and requests `{home}/wp-json/` to check that the REST API answers. The index build runs on every deploy: the index starts empty after the first activation, and a deploy is the only way the plugin's search settings change. It is idempotent, one pass over a few dozen posts, and it fails the deploy if Relevanssi is not active. WP-CLI runs from the WordPress root, because the host's `wp-config.php` requires `wp-salt.php` by a relative path.
+
+After a Relevanssi upgrade that changes its database version, Relevanssi upgrades its tables on the first admin page load (`relevanssi_admin_init`), not from WP-CLI, so the deploy's index build may run on the old tables. If that build fails, load any admin page and run `php8.4 /usr/local/bin/wp resource-hub search-index` from the WordPress root.
 
 If `/resources/` URLs 404 on the host after a change that the deploy did not flush, `php8.4 /usr/local/bin/wp rewrite flush` from the WordPress root is the manual equivalent (plain `wp` runs the host's 8.2; see [The host's CLI PHP](#the-hosts-cli-php)). Locally, `pnpm wp rewrite flush`.
 
@@ -163,6 +167,8 @@ depot ci dispatch --repo Colbitron/resource-hub-wp --workflow ci.yml --ref rollb
 Pushing a tag does not start CI, because the push trigger covers only `main`, so a tag deploy always takes that manual dispatch. The run goes through the gate before deploying. The tagged commit must contain the deploy job in `.depot/workflows/ci.yml`. A commit from before the move to Depot CI has none, so to roll back that far, branch from it, check out the current `.depot/` directory onto the branch, commit, and tag and dispatch that commit; this has not been exercised yet. A tag dispatch redeploys only the CMS.
 
 **The front end** is rolled back on Vercel, by promoting an earlier production deployment (Instant Rollback). A hook cannot deploy a tagged commit, because it always builds `main`. After an Instant Rollback, Vercel stops assigning the production domain to new deployments, so the deploys `deploy-web` starts afterwards still build but are not served until someone undoes the rollback or promotes a deployment on Vercel; a green CI run on `main` does not end it.
+
+A CMS rollback redeploys Relevanssi at the version that commit's `site-plugins/composer.lock` pins, and rebuilds its index. Rolling back to a commit from before Relevanssi leaves it on the host and active, since that commit's deploy job does not know it. The plugin at that commit does not use it, and Relevanssi then runs on its own defaults; to switch it off, run `php8.4 /usr/local/bin/wp plugin deactivate relevanssi` from the WordPress root.
 
 A CMS rollback and a front-end rollback are two separate actions. Because contract changes are additive, a CMS rolled back one step still serves a front end that is one step ahead.
 
