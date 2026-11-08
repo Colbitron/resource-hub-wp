@@ -28,7 +28,9 @@ use WP_UnitTestCase;
  *   content. An allow list, not a deny list, so a block added later that lists posts, pages or
  *   terms fails here until someone decides it is safe; `core/pattern` is left out because it pulls
  *   in markup this test cannot follow. {@see self::LISTING_BLOCKS} names the known offenders so a
- *   failure says which rule broke.
+ *   failure says which rule broke. An allowed block with block bindings (`metadata.bindings`) is
+ *   rejected as well: a binding fills a heading or a paragraph from a source such as post meta at
+ *   render time, so it would no longer print fixed content.
  * - **No pingback link.** A classic or compat `header.php` prints `<link rel="pingback">` itself,
  *   which the plugin's switch-off of XML-RPC cannot remove. A block theme has no `header.php`, and
  *   no file the theme renders from ({@see self::RENDERED_EXTENSIONS}) may mention pingbacks at all.
@@ -45,10 +47,11 @@ final class ThemeFilesTest extends WP_UnitTestCase {
 	private const SLUG = 'resource-hub';
 
 	/**
-	 * Extensions of the files WordPress builds the theme's pages from: templates and parts, PHP,
-	 * `theme.json`, and the stylesheets and scripts a later slice adds.
+	 * Extensions of the files WordPress builds the theme's pages from or a browser is served: templates
+	 * and parts, PHP in its several spellings, `theme.json`, and the stylesheets, scripts, images and
+	 * XML a later slice may add.
 	 */
-	private const RENDERED_EXTENSIONS = array( 'html', 'php', 'json', 'css', 'js' );
+	private const RENDERED_EXTENSIONS = array( 'html', 'htm', 'php', 'phtml', 'inc', 'json', 'css', 'js', 'svg', 'xml' );
 
 	/**
 	 * Blocks the 404 template and its parts may use: containers and fixed content only.
@@ -129,6 +132,8 @@ final class ThemeFilesTest extends WP_UnitTestCase {
 			$this->assertNotContains( $block['name'], self::LISTING_BLOCKS, $block['name'] . ' lists content, in ' . $block['file'] );
 			$this->assertContains( $block['name'], self::ALLOWED_404_BLOCKS, $block['name'] . ' is not on the 404 allow list, in ' . $block['file'] );
 
+			$this->assertArrayNotHasKey( 'bindings', $block['metadata'], $block['name'] . ' is bound to dynamic content, in ' . $block['file'] );
+
 			// Raw HTML is fixed content, but must not smuggle in a navigation landmark.
 			$this->assertDoesNotMatchRegularExpression( '/<nav\b/i', $block['html'], $block['file'] );
 		}
@@ -140,7 +145,7 @@ final class ThemeFilesTest extends WP_UnitTestCase {
 	 *
 	 * @param string   $file  Path relative to the theme directory.
 	 * @param string[] $parts The part slugs followed so far, in order; filled in.
-	 * @return array<int, array{name: string, file: string, html: string}>
+	 * @return array<int, array{name: string, file: string, html: string, metadata: array<string, mixed>}>
 	 */
 	private function blocks_of( string $file, array &$parts ): array {
 		$path = $this->theme_dir() . '/' . $file;
@@ -159,9 +164,10 @@ final class ThemeFilesTest extends WP_UnitTestCase {
 			}
 
 			$found[] = array(
-				'name' => $block['blockName'],
-				'file' => $file,
-				'html' => (string) $block['innerHTML'],
+				'name'     => $block['blockName'],
+				'file'     => $file,
+				'html'     => (string) $block['innerHTML'],
+				'metadata' => is_array( $block['attrs']['metadata'] ?? null ) ? $block['attrs']['metadata'] : array(),
 			);
 
 			if ( 'core/template-part' !== $block['blockName'] ) {
