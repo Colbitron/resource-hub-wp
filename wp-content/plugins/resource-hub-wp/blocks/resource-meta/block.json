@@ -1,0 +1,21 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "resource-hub/resource-meta",
+	"version": "0.1.0",
+	"title": "Resource Meta",
+	"category": "theme",
+	"icon": "tag",
+	"description": "The resource's type with its mark, its date and its topics, each linked to its listing, as the front end's resource page shows them under the title. Rendered on the server.",
+	"keywords": [ "resource", "type", "topics", "date" ],
+	"textdomain": "resource-hub",
+	"usesContext": [ "postId", "postType" ],
+	"supports": {
+		"html": false,
+		"className": false,
+		"customClassName": false,
+		"reusable": false
+	},
+	"editorScript": "file:./index.js",
+	"style": [ "resource-hub-tokens", "file:./style-index.css" ]
+}

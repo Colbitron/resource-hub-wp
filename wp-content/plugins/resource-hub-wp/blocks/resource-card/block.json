@@ -1,0 +1,28 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "resource-hub/resource-card",
+	"version": "0.1.0",
+	"title": "Resource Card",
+	"category": "theme",
+	"icon": "id-alt",
+	"description": "One resource as the front end's listing row: its type with its mark, its date, its title, summary and topics. Rendered on the server for each post a Query Loop lists.",
+	"keywords": [ "resource", "card", "row", "query" ],
+	"textdomain": "resource-hub",
+	"ancestor": [ "core/post-template" ],
+	"attributes": {
+		"level": {
+			"type": "integer",
+			"default": 2
+		}
+	},
+	"usesContext": [ "postId", "postType" ],
+	"supports": {
+		"html": false,
+		"className": false,
+		"customClassName": false,
+		"reusable": false
+	},
+	"editorScript": "file:./index.js",
+	"style": [ "resource-hub-tokens", "file:./style-index.css" ]
+}

@@ -1,0 +1,13 @@
+/*
+ * The block's stylesheet: the shared package's `card-labels.css`, the type
+ * mark and the topic labels the meta line borrows from the row, as the
+ * front end's `ResourceArticle` imports it alone for its meta line. The
+ * line's own layout and its links' underlines are the article's
+ * (`resource.css`), which the template that renders the article loads.
+ *
+ * The tokens are not imported here: `block.json` lists the shared
+ * `resource-hub-tokens` handle before this file in `style`
+ * (`src/Blocks/SharedTokens.php`). `wp-scripts build` inlines the import
+ * into `build/resource-meta/style-index.css`.
+ */
+@import "@colbitron/resource-hub-ui/card-labels.css";
