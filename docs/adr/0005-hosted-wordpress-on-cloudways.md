@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-11-03
+amended: 2026-11-07
 ---
 
 # The CMS runs on Cloudways (DigitalOcean 2 GB) so the front end can reach it
@@ -24,3 +25,9 @@ Four hosts were compared on the same checklist: PHP version parity with wp-env, 
 - **Configuration uses the constants path**: the plugin's settings are `define()`d in the host's `wp-config.php`, with the settings page as the fallback for hosts where that file is not editable.
 - **The no-filesystem-writes rule is ours to keep.** The host does not enforce a read-only codebase, so the rule is held by review and by PHPCS.
 - **The object cache is real on the host and only there.** wp-env has no persistent object cache, so PHPUnit cannot exercise persistence or invalidation; those get checked against the host.
+
+## Amendments
+
+### 2026-11-07
+
+The plugin's declared PHP floor is raised from 8.2 to 8.4, to match the pin: `Requires PHP` in `resource-hub.php`, `"php"` in the plugin's `composer.json` (with the lock's content hash) and PHPCS `testVersion`. The Consequences above said the floor stayed at 8.2 and was not exercised by CI. It could not be: the locked dev toolchain already needed 8.4 (`doctrine/instantiator` 2.1.0, which PHPUnit 9.6 pulls in, requires `php ^8.4`), so `composer install` refused to run on 8.2 and nothing could test it there. The host, wp-env and CI all run 8.4, so the floor now names the one version the plugin is tested on.

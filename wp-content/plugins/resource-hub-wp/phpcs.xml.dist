@@ -20,7 +20,7 @@
 	<arg name="parallel" value="8"/>
 
 	<config name="minimum_wp_version" value="6.9"/>
-	<config name="testVersion" value="8.2-"/>
+	<config name="testVersion" value="8.4-"/>
 
 	<rule ref="WordPress">
 		<!-- PSR-4 classes live in src/ with StudlyCase file names, not class-*.php. -->
