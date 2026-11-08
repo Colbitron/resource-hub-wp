@@ -57,7 +57,7 @@ Everything marked done exists on `main` and is green in CI.
 | CMS block theme foundation: every template in the front end's shell, the page and welcome templates, the base, shell and component stylesheets after core's global styles, tables in the front end's scroll region, and computed-style and screenshot parity checks ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
 | CMS block theme deploy: an allowlist sync to the host and activation on every deploy, kept only once WordPress loads with it and its anonymous 404 renders ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
 | CMS block theme: the plugin's blocks, the single-resource and collection templates and the footer's System / Light / Dark control ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
-| Theme follow-ups: hardening the theme allowlist test ([issue #138](https://github.com/Colbitron/resource-hub-wp/issues/138)) and the parity gaps the theme's README lists | open |
+| Theme follow-ups: the parity gaps the theme's README lists | open |
 
 ## Architecture
 
