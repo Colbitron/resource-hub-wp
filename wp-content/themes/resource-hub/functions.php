@@ -1,6 +1,6 @@
 <?php
 /**
- * The Resource Hub theme's stylesheets.
+ * The Resource Hub theme's stylesheets, and the table block's scroll region.
  *
  * `theme.json` does the editor-facing styling: it registers Figtree from `build/fonts/` and maps its
  * colour, type and spacing presets to the `--rh-` tokens, which this file loads, and mirrors the
@@ -17,6 +17,8 @@ declare(strict_types=1);
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
+
+require_once __DIR__ . '/inc/table-region.php';
 
 /**
  * Each stylesheet's handle, its copy under `build/`, and the handles it loads after.
@@ -160,3 +162,6 @@ function resource_hub_theme_enqueue_page_styles(): void {
 	}
 }
 add_action( 'wp_enqueue_scripts', 'resource_hub_theme_enqueue_page_styles', 20 );
+
+// Each core/table block on a page core renders with a template, in the front end's scroll region.
+add_action( 'template_redirect', 'resource_hub_theme_add_table_regions' );
