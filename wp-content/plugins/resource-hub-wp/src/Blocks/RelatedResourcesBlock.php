@@ -25,9 +25,11 @@ use WP_Term;
  * the deploy syncs `build/` and `src/` to the host and leaves `blocks/` behind (`.depot/workflows/ci.yml`,
  * "Sync the plugin"), and the compiled `block.json` sits beside the script and the stylesheet it names.
  * Without a build the block is simply not registered, as the editor scripts are not enqueued without
- * theirs; `pnpm build` is part of running the plugin (`README.md`). The stylesheet is the shared
- * package's `tokens.css` and `card.css`, inlined into `build/related-resources/style-index.css` by the
- * build and listed as the block's `style`, so core enqueues it where the block is used and nowhere else.
+ * theirs; `pnpm build` is part of running the plugin (`README.md`). The block has no stylesheet of its
+ * own: its `style` is two shared handles, `resource-hub-tokens` (`SharedTokens`) and then
+ * `resource-hub-card` (`SharedCard`), the shared package's `tokens.css` and `card.css` copied byte for
+ * byte into `build/shared/`, so core enqueues them where the block is used and nowhere else, and a page
+ * that also lists `resource-card` rows loads each once.
  *
  * The render is the contract's marker (`packages/ui/README.md`, "Block marker") around the heading and
  * rows in `card.css`'s markup, the same rows the front end's `ResourceCard` renders, titles at `h3`:

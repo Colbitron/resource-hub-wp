@@ -41,18 +41,24 @@ final class SharedTokensTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The block's styles are the shared handle first, then its own file, which no longer carries the tokens.
+	 * Every block lists the shared handle first, before the stylesheets that build on the tokens, none of which carries them.
 	 */
-	public function test_block_lists_the_shared_handle_before_its_own_style(): void {
-		$block = WP_Block_Type_Registry::get_instance()->get_registered( 'resource-hub/related-resources' );
+	public function test_blocks_list_the_shared_handle_first(): void {
+		foreach ( array( 'resource-hub/related-resources', 'resource-hub/resource-card', 'resource-hub/resource-meta' ) as $name ) {
+			$block = WP_Block_Type_Registry::get_instance()->get_registered( $name );
 
-		$this->assertNotNull( $block, 'Run `pnpm build`: the block is registered from build/.' );
-		$this->assertCount( 2, $block->style_handles );
-		$this->assertSame( SharedTokens::HANDLE, $block->style_handles[0], 'The tokens load before the row that builds on them.' );
+			$this->assertNotNull( $block, 'Run `pnpm build`: the blocks are registered from build/.' );
+			$this->assertCount( 2, $block->style_handles, $name );
+			$this->assertSame( SharedTokens::HANDLE, $block->style_handles[0], 'The tokens load before the styles that build on them.' );
+		}
 
-		$own = $this->read( dirname( __DIR__, 3 ) . '/build/related-resources/style-index.css' );
-		$this->assertStringContainsString( '.rh-card', $own );
-		$this->assertStringNotContainsString( '--rh-color-text:', $own, 'The block stylesheet should not inline tokens.css; it names the shared handle.' );
+		foreach ( array( 'shared/card.css', 'shared/card-labels.css', 'resource-meta/style-index.css' ) as $file ) {
+			$this->assertStringNotContainsString(
+				'--rh-color-text:',
+				$this->read( dirname( __DIR__, 3 ) . '/build/' . $file ),
+				$file . ' should not carry tokens.css; the blocks name the shared handle.'
+			);
+		}
 	}
 
 	/**

@@ -11,6 +11,7 @@ namespace ResourceHub\Tests\Blocks;
 
 use ResourceHub\Blocks\ResourceCardBlock;
 use ResourceHub\Blocks\ResourceCardMarkup;
+use ResourceHub\Blocks\SharedCard;
 use ResourceHub\Blocks\SharedTokens;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\PostType;
@@ -90,7 +91,7 @@ final class ResourceCardBlockTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The compiled block.json: the callback, the level, the context, no wrapper supports, the tokens and the row's stylesheet.
+	 * The compiled block.json: the callback, the level, the context, no wrapper supports, the tokens and the shared row.
 	 */
 	public function test_registered_from_build(): void {
 		$type = WP_Block_Type_Registry::get_instance()->get_registered( ResourceCardBlock::NAME );
@@ -103,16 +104,9 @@ final class ResourceCardBlockTest extends WP_UnitTestCase {
 		$this->assertFalse( $type->supports['className'] );
 		$this->assertFalse( $type->supports['customClassName'] );
 
-		$this->assertCount( 2, $type->style_handles );
-		$this->assertSame( SharedTokens::HANDLE, $type->style_handles[0] );
-		$style = wp_styles()->registered[ $type->style_handles[1] ] ?? null;
-		$this->assertNotNull( $style );
-		$this->assertStringEndsWith( '/build/resource-card/style-index.css', $style->src );
-
-		$css = file_get_contents( dirname( __DIR__, 3 ) . '/build/resource-card/style-index.css' ); // phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- A local file from the plugin's own build, read by a test, never a remote URL.
-		$this->assertStringNotContainsString( '--rh-color-text:', $css, 'The tokens come from the shared handle, never inlined.' );
-		$this->assertStringContainsString( '.rh-card__body', $css );
-		$this->assertStringContainsString( '.rh-card__type', $css );
+		// The related block's two shared handles and nothing of its own, so the row's rules load once.
+		$this->assertSame( array( SharedTokens::HANDLE, SharedCard::HANDLE ), $type->style_handles );
+		$this->assertFileDoesNotExist( dirname( __DIR__, 3 ) . '/build/resource-card/style-index.css' );
 	}
 
 	/**

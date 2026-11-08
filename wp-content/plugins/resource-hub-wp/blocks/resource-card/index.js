@@ -1,14 +1,14 @@
 /**
  * Registers the Resource Card block on the editor side. Rendering happens in
- * PHP (`src/Blocks/ResourceCardBlock.php`); this file wires the metadata, the
- * editor component and the stylesheet.
+ * PHP (`src/Blocks/ResourceCardBlock.php`); this file wires the metadata and
+ * the editor component. The stylesheets are handles that `block.json` names:
+ * the shared tokens and the shared row (`src/Blocks/SharedTokens.php`,
+ * `src/Blocks/SharedCard.php`).
  */
 import { registerBlockType } from '@wordpress/blocks';
 
 import metadata from './block.json';
 import Edit from './edit';
-// Extracted to build/resource-card/style-index.css, which block.json loads.
-import './style.css';
 
 registerBlockType( metadata.name, {
 	edit: Edit,

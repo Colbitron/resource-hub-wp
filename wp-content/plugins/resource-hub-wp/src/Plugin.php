@@ -15,6 +15,7 @@ use ResourceHub\Admin\TermNotice;
 use ResourceHub\Blocks\RelatedResourcesBlock;
 use ResourceHub\Blocks\ResourceCardBlock;
 use ResourceHub\Blocks\ResourceMetaBlock;
+use ResourceHub\Blocks\SharedCard;
 use ResourceHub\Blocks\SharedTokens;
 use ResourceHub\Cli\DecodeSlugsCommand;
 use ResourceHub\Cli\SearchIndexCommand;
@@ -110,6 +111,7 @@ final class Plugin {
 		( new ResourceCardBlock() )->register();
 		( new ResourceMetaBlock() )->register();
 		( new SharedTokens( $this->file ) )->register();
+		( new SharedCard( $this->file ) )->register();
 		add_action( 'rest_api_init', array( new ResolveRoute(), 'register' ) );
 		add_action( 'rest_api_init', array( new PageRoute(), 'register' ) );
 		$related_cache = new RelatedCache();

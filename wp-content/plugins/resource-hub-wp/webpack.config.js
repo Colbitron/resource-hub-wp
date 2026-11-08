@@ -11,19 +11,25 @@
  *
  * The build also emits the shared package's type-accent table, unchanged, as
  * `build/type-accents.json`, which `ResourceHub\Blocks\TypeAccents` reads
- * for the related-resources block's rows. The host gets only `build/`, `src/`
- * and `vendor/` from the deploy, never the workspace, so the table travels in
- * `build/` as the block's stylesheet does; a PHPUnit test fails when the copy
- * differs from the package's (`packages/ui/README.md`, "Type accents").
+ * for the type marks the plugin's blocks write (the related-resources rows,
+ * the resource-card row and the resource-meta line). The host gets only
+ * `build/`, `src/` and `vendor/` from the deploy, never the workspace, so the
+ * table travels in `build/` as the blocks' stylesheets do; a PHPUnit test
+ * fails when the copy differs from the package's (`packages/ui/README.md`,
+ * "Type accents").
  *
- * It also copies the shared package's `tokens.css` to `build/shared/`, byte
- * for byte, with a `tokens.asset.php` holding its version, for the
- * `resource-hub-tokens` handle the block and the theme share
- * (`src/Blocks/SharedTokens.php`). A copy and not an entry, because the
- * CSS minifier rewrites colours on the way (an `rgb()` with a slash came out
- * as a rounded `hsla()`), and the CMS should draw the package's own values.
- * The copy plugin is the one wp-scripts already configures, so no second
- * version of it is installed.
+ * It also copies three of the shared package's stylesheets to `build/shared/`,
+ * byte for byte, each with an `.asset.php` holding its version: `tokens.css`,
+ * for the `resource-hub-tokens` handle the blocks and the theme share
+ * (`src/Blocks/SharedTokens.php`), and `card.css` with `card-labels.css`
+ * beside it, for the `resource-hub-card` handle the related-resources and
+ * resource-card blocks share (`src/Blocks/SharedCard.php`). `card.css`
+ * imports `./card-labels.css`, so the two ship side by side, and the card's
+ * version is the hash of both, so a change to either gives `card.css` a new
+ * URL. Copies and not entries, because the CSS minifier rewrites colours on
+ * the way (an `rgb()` with a slash came out as a rounded `hsla()`), and the
+ * CMS should draw the package's own values. The copy plugin is the one
+ * wp-scripts already configures, so no second version of it is installed.
  */
 const { createHash } = require( 'crypto' );
 const { readFileSync } = require( 'fs' );
@@ -77,13 +83,15 @@ if ( ! copyPluginInstance ) {
 const CopyPlugin = copyPluginInstance.constructor;
 
 const tokens = require.resolve( '@colbitron/resource-hub-ui/tokens.css' );
+const card = require.resolve( '@colbitron/resource-hub-ui/card.css' );
+const cardLabels =
+	require.resolve( '@colbitron/resource-hub-ui/card-labels.css' );
 
-// The `.asset.php` convention the plugin's other builds follow: a version of 20 hex characters.
-const tokensAsset = ( content ) => {
-	const version = createHash( 'sha256' )
-		.update( content )
-		.digest( 'hex' )
-		.slice( 0, 20 );
+// The `.asset.php` convention the plugin's other builds follow: a version of 20 hex characters, from every file the stylesheet loads.
+const asset = ( ...contents ) => {
+	const hash = createHash( 'sha256' );
+	contents.forEach( ( content ) => hash.update( content ) );
+	const version = hash.digest( 'hex' ).slice( 0, 20 );
 	return `<?php return array( 'version' => '${ version }' );\n`;
 };
 
@@ -98,7 +106,15 @@ const config = {
 				{
 					from: tokens,
 					to: 'shared/tokens.asset.php',
-					transform: tokensAsset,
+					transform: ( content ) => asset( content ),
+				},
+				{ from: card, to: 'shared/card.css' },
+				{ from: cardLabels, to: 'shared/card-labels.css' },
+				{
+					from: card,
+					to: 'shared/card.asset.php',
+					transform: ( content ) =>
+						asset( content, readFileSync( cardLabels ) ),
 				},
 			],
 		} ),

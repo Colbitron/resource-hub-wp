@@ -33,9 +33,10 @@ use WP_Block;
  *   (`supports.className` and `customClassName` are off), so it is the front end's markup exactly. The
  *   list around it is the post template's: a template that wants the front end's list puts `rh-card-grid`
  *   on the post template, whose `<ul>` and `<li>` stand in for the front end's.
- * - **Styles.** `block.json` lists the shared `resource-hub-tokens` handle and then the block's
- *   `style-index.css`, the package's `card.css` inlined by the build, as the related block does, so core
- *   loads them in the editor and only where the block is used on the CMS's pages.
+ * - **Styles.** `block.json` lists two shared handles, `resource-hub-tokens` and then `resource-hub-card`
+ *   (`SharedCard`, the package's `card.css`), the related block's own two, so core loads them in the
+ *   editor and only where a block that uses them is on the CMS's pages, and a page with both blocks loads
+ *   the row's rules once.
  *
  * Registered from `build/resource-card/`, as the related block is from `build/related-resources/`, so
  * without a build the block is not registered.

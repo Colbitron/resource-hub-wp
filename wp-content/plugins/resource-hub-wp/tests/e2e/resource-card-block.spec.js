@@ -1,8 +1,10 @@
 /**
  * The Resource Card block in a Query Loop: on the CMS's own page, for a
  * logged-in user, each listed resource is a `card.css` row, styled by the
- * block's stylesheet on the shared tokens; in the editor, the post template's
- * block previews are the server's rows and log no console error. The markup
+ * shared `resource-hub-card` stylesheet on the shared tokens, and a page that
+ * also has the related-resources block loads that stylesheet once; in the
+ * editor, the post template's block previews are the server's rows and log
+ * no console error. The markup
  * itself is held to the front end's by the contract's markup fixtures
  * (`MarkupParityTest`, `apps/web/test/markup-parity.test.tsx`).
  */
@@ -20,6 +22,7 @@ test.describe( 'Resource Card block', () => {
 	let type;
 	let topic;
 	let host;
+	let both;
 	const resources = [];
 
 	test.beforeAll( async ( { requestUtils } ) => {
@@ -63,14 +66,26 @@ test.describe( 'Resource Card block', () => {
 				content: CONTENT,
 			},
 		} );
+		// The related-resources block's rows and the card rows on one page.
+		both = await requestUtils.rest( {
+			method: 'POST',
+			path: '/wp/v2/pages',
+			data: {
+				title: `E2E card list and related ${ stamp }`,
+				status: 'publish',
+				content: `<!-- wp:resource-hub/related-resources {"topic":${ topic.id }} /-->${ CONTENT }`,
+			},
+		} );
 	} );
 
 	test.afterAll( async ( { requestUtils } ) => {
-		await requestUtils.rest( {
-			method: 'DELETE',
-			path: `/wp/v2/pages/${ host.id }`,
-			params: { force: true },
-		} );
+		for ( const id of [ host.id, both.id ] ) {
+			await requestUtils.rest( {
+				method: 'DELETE',
+				path: `/wp/v2/pages/${ id }`,
+				params: { force: true },
+			} );
+		}
 		for ( const resource of resources ) {
 			await requestUtils.rest( {
 				method: 'DELETE',
@@ -114,11 +129,16 @@ test.describe( 'Resource Card block', () => {
 			).toHaveText( topic.name );
 		}
 
-		// The block's own stylesheet, once: a link, or a <style> when core
-		// inlines a small block style (`styles_inline_size_limit`).
+		// The shared row stylesheet, once, as a link: it has no `path` data,
+		// so core never inlines it, and the block has no stylesheet of its own.
+		await expect(
+			page.locator(
+				'link#resource-hub-card-css[href*="build/shared/card.css"]'
+			)
+		).toHaveCount( 1 );
 		await expect(
 			page.locator( '[id^="resource-hub-resource-card-style"]' )
-		).toHaveCount( 1 );
+		).toHaveCount( 0 );
 
 		// Styled: the tokens resolve, the list's hairlines, the row's layout and its labels apply, and the type's mark is drawn.
 		const styles = await list
@@ -150,6 +170,59 @@ test.describe( 'Resource Card block', () => {
 		expect( styles.listStyle ).toBe( 'none' );
 	} );
 
+	test( 'a page with the related block and the cards loads card.css once', async ( {
+		page,
+	} ) => {
+		await page.goto( both.link );
+
+		await expect(
+			page.locator(
+				'[data-rh-block="related-resources"] article.rh-card'
+			)
+		).toHaveCount( resources.length );
+		await expect(
+			page.locator(
+				'ul.rh-card-grid.wp-block-post-template article.rh-card'
+			)
+		).toHaveCount( resources.length );
+
+		// One link to the shared copy, no block stylesheet of either block's own.
+		await expect(
+			page.locator(
+				'link[rel="stylesheet"][href*="build/shared/card.css"]'
+			)
+		).toHaveCount( 1 );
+		await expect(
+			page.locator(
+				'[id^="resource-hub-related-resources-style"], [id^="resource-hub-resource-card-style"]'
+			)
+		).toHaveCount( 0 );
+
+		// Every rule in the document, `@import`ed sheets included: the row's
+		// rules and its labels' are each declared once.
+		const counts = await page.evaluate( () => {
+			const found = { body: 0, type: 0 };
+			const walk = ( rules ) => {
+				for ( const rule of rules ) {
+					if ( rule.styleSheet ) {
+						walk( rule.styleSheet.cssRules );
+					} else if ( rule.cssRules && ! rule.selectorText ) {
+						walk( rule.cssRules );
+					} else if ( rule.selectorText === '.rh-card__body' ) {
+						found.body++;
+					} else if ( rule.selectorText === '.rh-card__type' ) {
+						found.type++;
+					}
+				}
+			};
+			for ( const sheet of document.styleSheets ) {
+				walk( sheet.cssRules );
+			}
+			return found;
+		} );
+		expect( counts ).toEqual( { body: 1, type: 1 } );
+	} );
+
 	test( 'the editor previews each row from the server with no console error', async ( {
 		admin,
 		editor,
@@ -179,7 +252,7 @@ test.describe( 'Resource Card block', () => {
 		}
 		await expect(
 			editor.canvas.locator(
-				'link[rel="stylesheet"][href*="build/resource-card/style-index"]'
+				'link[rel="stylesheet"][href*="build/shared/card.css"]'
 			)
 		).toHaveCount( 1 );
 		await expect(
