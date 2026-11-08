@@ -21,24 +21,14 @@ use WP_UnitTestCase;
  * copy fails here. Then the rule `TypeAccents::accent()` applies, the front end's `typeAccent()`.
  */
 final class TypeAccentsTest extends WP_UnitTestCase {
+	use SetsTypeAccentsTable;
+
 	/**
 	 * Back to the build's table for the next test.
 	 */
 	public function tear_down(): void {
-		self::use_table( null );
+		self::reset_type_accents();
 		parent::tear_down();
-	}
-
-	/**
-	 * Replaces the table `TypeAccents` read on first use, for a test that needs a term's own ID in it; null reads the build again.
-	 *
-	 * Term IDs in the tests database are whatever the auto-increment gives, never the CMS's, so a render
-	 * test maps the term it created instead.
-	 *
-	 * @param array<int, array{slug: string, accent: string}>|null $table The table, or null.
-	 */
-	public static function use_table( ?array $table ): void {
-		( new \ReflectionProperty( TypeAccents::class, 'table' ) )->setValue( null, $table );
 	}
 
 	/**
@@ -100,12 +90,16 @@ final class TypeAccentsTest extends WP_UnitTestCase {
 			)
 		);
 
-		foreach ( TypeAccents::table() as $id => $row ) {
+		$table = TypeAccents::table();
+		$this->assertNotEmpty( $table );
+
+		foreach ( $table as $id => $row ) {
 			$this->assertSame( $row['accent'], TypeAccents::accent( $term( $id, $row['slug'] ) ), $row['slug'] );
+			$this->assertSame( TypeAccents::NEUTRAL, TypeAccents::accent( $term( $id, $row['slug'] . '-renamed' ) ), "{$row['slug']} renamed" );
 		}
-		$this->assertSame( 'cobalt', TypeAccents::accent( $term( 7, 'case-study' ) ) );
-		$this->assertSame( TypeAccents::NEUTRAL, TypeAccents::accent( $term( 999, 'article' ) ) );
-		$this->assertSame( TypeAccents::NEUTRAL, TypeAccents::accent( $term( 3, 'renamed' ) ) );
+
+		$unknown = max( array_keys( $table ) ) + 1;
+		$this->assertSame( TypeAccents::NEUTRAL, TypeAccents::accent( $term( $unknown, reset( $table )['slug'] ) ), 'An ID with no row.' );
 	}
 
 	/**
@@ -135,4 +129,5 @@ final class TypeAccentsTest extends WP_UnitTestCase {
 		$this->assertSame( array(), TypeAccents::read( $fixtures . '/invalid/type-accents.missing-slug.json' ) );
 		$this->assertSame( array(), TypeAccents::read( $fixtures . '/invalid/type-accents.bare-array.json' ) );
 	}
+
 }

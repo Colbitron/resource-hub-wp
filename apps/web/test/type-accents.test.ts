@@ -21,7 +21,7 @@ import { markToken, TYPE_ACCENTS, typeAccent } from "../lib/type-accents";
 const SEEDED_TYPES = TERMS.filter((term) => term.taxonomy === "resource_type");
 
 describe("the type-accent table", () => {
-  it("is the shared package's table, row for row, with no copy of its own", () => {
+  it("holds the shared package's rows, row for row", () => {
     expect(TYPE_ACCENTS).toEqual(table.types);
   });
 
@@ -36,16 +36,20 @@ describe("the type-accent table", () => {
     expect(new Set(accents).size).toBe(accents.length);
   });
 
-  it("maps each seeded type by its ID and slug", () => {
+  it("maps each seeded type by its ID and slug to its row's accent", () => {
     for (const term of SEEDED_TYPES) {
-      expect(typeAccent(term), term.slug).not.toBe("neutral");
+      const row = TYPE_ACCENTS.find(({ id }) => id === term.id);
+      expect(row, term.slug).toBeDefined();
+      expect(typeAccent(term), term.slug).toBe(row?.accent);
     }
-    expect(typeAccent({ id: 7, slug: "case-study" })).toBe("cobalt");
   });
 
   it("is neutral for an unknown ID, and for a known ID whose slug has changed", () => {
-    expect(typeAccent({ id: 999, slug: "article" })).toBe("neutral");
-    expect(typeAccent({ id: 3, slug: "renamed" })).toBe("neutral");
+    const unknown = Math.max(...TYPE_ACCENTS.map(({ id }) => id)) + 1;
+    for (const row of TYPE_ACCENTS) {
+      expect(typeAccent({ id: unknown, slug: row.slug }), row.slug).toBe("neutral");
+      expect(typeAccent({ id: row.id, slug: `${row.slug}-renamed` }), row.slug).toBe("neutral");
+    }
   });
 
   it("names the mark token for an accent, and the ink for neutral", () => {

@@ -25,6 +25,8 @@ use WP_UnitTestCase;
  * so the suite needs `pnpm build` first, as CI runs it.
  */
 final class RelatedResourcesBlockTest extends WP_UnitTestCase {
+	use SetsTypeAccentsTable;
+
 	/**
 	 * A type term's ID; every resource gets it, so the one-type rule holds.
 	 *
@@ -74,7 +76,7 @@ final class RelatedResourcesBlockTest extends WP_UnitTestCase {
 		);
 
 		// The tests database's term IDs are not the CMS's, so the type created here is given the webinar's row.
-		TypeAccentsTest::use_table(
+		self::use_type_accents(
 			array(
 				$this->type => array(
 					'slug'   => 'webinar',
@@ -88,7 +90,7 @@ final class RelatedResourcesBlockTest extends WP_UnitTestCase {
 	 * Back to plain permalinks, as the other suites expect, and to the build's type-accent table.
 	 */
 	public function tear_down(): void {
-		TypeAccentsTest::use_table( null );
+		self::reset_type_accents();
 		$this->set_permalink_structure( '' );
 		parent::tear_down();
 	}
