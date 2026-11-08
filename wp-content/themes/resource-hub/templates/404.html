@@ -1,13 +1,17 @@
-<!-- wp:template-part {"slug":"header","tagName":"header"} /-->
+<!-- wp:group {"className":"rh-shell"} -->
+<div class="wp-block-group rh-shell"><!-- wp:template-part {"slug":"header","tagName":"header","className":"rh-header"} /-->
 
-<!-- wp:group {"tagName":"main","layout":{"type":"constrained"}} -->
-<main class="wp-block-group"><!-- wp:heading {"level":1} -->
+<!-- wp:group {"tagName":"main","anchor":"main","className":"rh-shell__inner rh-main"} -->
+<main id="main" class="wp-block-group rh-shell__inner rh-main"><!-- wp:group {"className":"rh-not-found"} -->
+<div class="wp-block-group rh-not-found"><!-- wp:heading {"level":1} -->
 <h1 class="wp-block-heading">Page not found</h1>
 <!-- /wp:heading -->
 
 <!-- wp:paragraph -->
 <p>There is nothing at this address.</p>
-<!-- /wp:paragraph --></main>
+<!-- /wp:paragraph --></div>
+<!-- /wp:group --></main>
 <!-- /wp:group -->
 
-<!-- wp:template-part {"slug":"footer","tagName":"footer"} /-->
+<!-- wp:template-part {"slug":"footer","tagName":"footer","className":"rh-footer"} /--></div>
+<!-- /wp:group -->
