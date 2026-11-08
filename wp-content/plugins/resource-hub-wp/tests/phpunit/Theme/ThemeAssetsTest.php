@@ -15,8 +15,9 @@ use WP_UnitTestCase;
  * Holds `wp-content/themes/resource-hub/build/` to `packages/ui/`.
  *
  * The host never sees the pnpm workspace, so the theme's build (`scripts/build.mjs`) copies the
- * contract package's tokens, lockup stylesheet, Figtree, its licence and its fallback faces into the
- * theme, and `theme.json` and `functions.php` load the copies. `packages/ui/DESIGN.md` ("Consumers and
+ * contract package's tokens, lockup stylesheet, Figtree, its licence, its fallback faces, the base
+ * and shell styles and the component stylesheets its templates render into the theme, and
+ * `theme.json` and `functions.php` load the copies. `packages/ui/DESIGN.md` ("Consumers and
  * loading") promises that the copy of the font is byte for byte the package's, proved by a SHA-256
  * the theme records: that record is `figtree.sha256`, committed in the theme, so a new font file
  * fails here until the record is changed with it on purpose. Every other copy is compared with its
@@ -37,6 +38,12 @@ final class ThemeAssetsTest extends WP_UnitTestCase {
 		'fonts/figtree-latin-wght-normal.woff2' => 'fonts/figtree-latin-wght-normal.woff2',
 		'fonts/LICENSE-Figtree.txt'             => 'fonts/LICENSE-Figtree.txt',
 		'fonts/figtree-fallback.css'            => 'fonts/figtree-fallback.css',
+		'base.css'                              => 'base.css',
+		'shell.css'                             => 'shell.css',
+		'prose.css'                             => 'prose.css',
+		'page.css'                              => 'page.css',
+		'welcome.css'                           => 'welcome.css',
+		'not-found.css'                         => 'not-found.css',
 	);
 
 	/**

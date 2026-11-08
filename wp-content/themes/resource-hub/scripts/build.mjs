@@ -13,7 +13,15 @@
  *   Figtree, with `fonts/LICENSE-Figtree.txt` beside it, as the SIL Open Font
  *   License requires of a copy;
  * - `fonts/figtree-fallback.css`, the size-adjusted fallback faces
- *   `--rh-font-sans` lists after Figtree.
+ *   `--rh-font-sans` lists after Figtree;
+ * - `base.css` and `shell.css`, the document and the landmarks' layout
+ *   every template sits in;
+ * - `prose.css` and `page.css`, the article `page.html` and `index.html`
+ *   render, `welcome.css`, the welcome `home.html` renders beside
+ *   `page.css`, and `not-found.css`, the 404's column.
+ *
+ * The package's other component stylesheets are copied when a template
+ * renders their markup (`README.md`, "Not built yet").
  *
  * It also writes `build/assets.php`, which returns each copy's SHA-256 keyed
  * by its path under `build/`: `functions.php` takes the stylesheets' versions
@@ -47,6 +55,12 @@ const ASSETS = {
 		'@colbitron/resource-hub-ui/fonts/LICENSE-Figtree.txt',
 	'fonts/figtree-fallback.css':
 		'@colbitron/resource-hub-ui/fonts/figtree-fallback.css',
+	'base.css': '@colbitron/resource-hub-ui/base.css',
+	'shell.css': '@colbitron/resource-hub-ui/shell.css',
+	'prose.css': '@colbitron/resource-hub-ui/prose.css',
+	'page.css': '@colbitron/resource-hub-ui/page.css',
+	'welcome.css': '@colbitron/resource-hub-ui/welcome.css',
+	'not-found.css': '@colbitron/resource-hub-ui/not-found.css',
 };
 
 await rm( out, { recursive: true, force: true } );
