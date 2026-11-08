@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-11-07
-amended: 2026-11-07
+amended: [2026-11-07, 2026-11-07]
 ---
 
 # CI runs on Depot CI, the deploys included
@@ -42,3 +42,9 @@ Depot CI was chosen because it accepts personal accounts and ran the whole suite
 **What changed.** Preview Lighthouse runs on Depot CI from `.depot/workflows/preview-lighthouse.yml`, on `deployment_status`, and GitHub's copy is deleted, so GitHub Actions now runs only the ADR guard's GitHub copy. It measures only pull requests whose changed files reach the front end, by `ci-scope.mjs --pr-files`, and measures when those files cannot be read for certain. It comments as `depot-code-access[bot]`, still blocking nothing. A measured preview costs about 8.3 sandbox-minutes: about $41 a month at the pace above, $125 in all with the plan, and within the included minutes at four runs a day ([`docs/runbooks/deploy.md`](../runbooks/deploy.md), "CI cost"). Depot lists the trigger as supported; the first real event confirms it (the runbook's "Preview Lighthouse" checklist). This replaces the consequence "`preview-lighthouse.yml` stays on GitHub for now", which stays above as written; "each pull request's Vercel preview" above now means each front-end one.
 
 **What did not.** The decision and the other consequences: pull requests still run only the jobs their changes reach and never CI's Lighthouse, and the ADR guard keeps its GitHub copy.
+
+### 2026-11-07: Depot's copy of the ADR guard passed its trust test
+
+**What changed.** The trust test that "Depot's copy is trusted only once tested" waited on has run: a throwaway pull request, #100, closed without being merged or labelled, edited only `.depot/workflows/adr-approval.yml`, and Depot CI ran `main`'s copy of it on `pull_request_target`, not the pull request's, as GitHub does. So Depot's copy can stand as the check of record if GitHub's stops running. The test's instructions are gone from `.claude/rules/adr.md`, which now records the result and what is still unconfirmed on Depot.
+
+**What did not.** Both copies keep running and both stay guarded paths; retiring GitHub's copy is a separate decision for Colby. The consequence "Depot's copy is trusted only once tested; `.claude/rules/adr.md` has the test" stays above as written.
