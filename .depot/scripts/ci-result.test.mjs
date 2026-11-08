@@ -1,6 +1,7 @@
-// Tests for ci-result.mjs, and entry-point.mjs's own cases, run by the `scope` job with ci-scope's
-// (`node --test .depot/scripts/ci-scope.test.mjs .depot/scripts/ci-result.test.mjs`),
-// so a broken verdict fails scope and therefore CI result itself. Plain
+// Tests for ci-result.mjs, and entry-point.mjs's own cases, run by the
+// `scope` job with ci-scope's (`node --test .depot/scripts/ci-scope.test.mjs
+// .depot/scripts/ci-result.test.mjs`), so a broken verdict fails scope and
+// therefore CI result itself. Plain
 // node:test, as there. `depot ci run` reports event `api`, so these are
 // where a pull request's skips are tried before a real pull request.
 

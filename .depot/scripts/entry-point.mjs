@@ -1,7 +1,8 @@
 // Whether a .depot/scripts module is the script node was asked to run, for
-// the scripts a workflow step runs and a test imports: ci-result.mjs, which
-// decides CI / CI result, and host-php-floor.mjs, which guards the deploy.
-// Both export main() for their tests and run it only as the script.
+// the scripts a workflow step runs and a test imports: ci-scope.mjs, which
+// decides which jobs a pull request runs, ci-result.mjs, which decides CI /
+// CI result, and host-php-floor.mjs, which guards the deploy. Each exports
+// main() for its tests and runs it only as the script.
 //
 // It fails closed. A step whose script never called main() exits 0, which
 // GitHub reads as a pass with no verdict behind it, so anything short of
@@ -24,7 +25,7 @@
 // symlink in the checkout's path a plain comparison would be false, main()
 // would never run, and the step would exit 0.
 //
-// Tested through both scripts: ci-result.test.mjs holds this decision's own
+// Tested through the scripts: ci-result.test.mjs holds this decision's own
 // cases, and each script's tests run it as a subprocess, so the scope job's
 // existing test steps cover this file without a step of its own.
 

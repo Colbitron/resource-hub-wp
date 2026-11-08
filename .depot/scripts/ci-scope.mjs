@@ -73,7 +73,8 @@
 
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+
+import { runAsScript } from './entry-point.mjs';
 
 export const SIDES = [ 'plugin', 'web' ];
 
@@ -258,6 +259,14 @@ export function main( argv = process.argv.slice( 2 ), env = process.env ) {
 	return scope;
 }
 
-if ( import.meta.url === pathToFileURL( process.argv[ 1 ] ?? '' ).href ) {
-	main();
-}
+// Only as the script, and a failed step when it cannot tell whether it is
+// the script (entry-point.mjs): a scope step that exited 0 without writing
+// its outputs would leave every job behind it to read empty ones.
+runAsScript(
+	import.meta.url,
+	() => {
+		main();
+		return 0;
+	},
+	'ci-scope.mjs could not tell whether it was run as the script, so the scope job fails rather than pass without deciding.'
+);

@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -467,4 +467,42 @@ test( 'preview-lighthouse.yml measures only what the scope rules reach', () => {
 	assert.doesNotMatch( measure, /\.lighthouseci/ );
 	assert.match( measure, /path: apps\/web\/lighthouse-preview-results\/$/m );
 	assert.match( measure, /e2e\/preview-lighthouse\.mts/ );
+} );
+
+// The step as ci.yml runs it. Through a symlinked directory or file, main()
+// must still run and write the outputs; with argv[1] broken for real by a
+// preload (a path that does not resolve, then none), it must exit 1 with an
+// ::error:: and write nothing, since a scope step that exited 0 without
+// outputs would hand every job behind it empty ones.
+test( 'the script runs through symlinks, and fails when it cannot tell it was run as the script', () => {
+	const dir = mkdtempSync( join( tmpdir(), 'ci-scope-entry-' ) );
+	try {
+		const output = join( dir, 'output' );
+		const paths = join( dir, 'paths.txt' );
+		writeFileSync( paths, 'docs/a.md\n' );
+		symlinkSync( dirname( SCRIPT ), join( dir, 'scripts' ), 'dir' );
+		symlinkSync( SCRIPT, join( dir, 'ci-scope.mjs' ), 'file' );
+		const run = ( args ) => {
+			writeFileSync( output, '' );
+			try {
+				return { status: 0, stdout: execFileSync( process.execPath, [ ...args, '--paths-file', paths ], { cwd: dir, env: { PATH: process.env.PATH, GITHUB_OUTPUT: output }, stdio: 'pipe', encoding: 'utf8' } ), output: readFileSync( output, 'utf8' ) };
+			} catch ( error ) {
+				return { status: error.status, stdout: error.stdout, output: readFileSync( output, 'utf8' ) };
+			}
+		};
+		for ( const path of [ SCRIPT, join( dir, 'scripts', 'ci-scope.mjs' ), join( dir, 'ci-scope.mjs' ) ] ) {
+			const ran = run( [ path ] );
+			assert.equal( ran.status, 0, path );
+			assert.equal( ran.output, 'plugin=false\nweb=false\n', path );
+		}
+		const preloaded = ( preload ) => [ '--import', `data:text/javascript,${ encodeURIComponent( preload ) }`, SCRIPT ];
+		for ( const preload of [ `process.argv[1] = ${ JSON.stringify( join( dir, 'gone', 'ci-scope.mjs' ) ) };`, 'process.argv.splice( 1, 1 );' ] ) {
+			const failed = run( preloaded( preload ) );
+			assert.equal( failed.status, 1, preload );
+			assert.equal( failed.stdout, '::error::ci-scope.mjs could not tell whether it was run as the script, so the scope job fails rather than pass without deciding.\n', preload );
+			assert.equal( failed.output, '', preload );
+		}
+	} finally {
+		rmSync( dir, { recursive: true, force: true } );
+	}
 } );

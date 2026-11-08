@@ -22,9 +22,9 @@
 // It prints each job's result, writes a table to $GITHUB_STEP_SUMMARY, and
 // exits 1 on any problem. It exits 1 too when it cannot tell whether node
 // ran it as the script or a test imported it (entry-point.mjs), since a
-// main() that never ran would exit 0, a pass. A job added to ci.yml has to be named in
-// ci-result's needs (and here) or exempted; ci-scope.test.mjs fails until
-// it is one or the other.
+// main() that never ran would exit 0, a pass. A job added to ci.yml has to
+// be named in ci-result's needs (and here) or exempted; ci-scope.test.mjs
+// fails until it is one or the other.
 
 import { appendFileSync } from 'node:fs';
 
