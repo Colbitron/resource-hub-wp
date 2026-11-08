@@ -16,7 +16,7 @@ parts/footer.html    the publisher line
 
 No PHP: a block theme needs none, so there is no `functions.php` for PHPCS to lint.
 
-The lockup links to the CMS's own `/resources/`, the resource archive, which editors see and anonymous visitors get as a 404, by design: linking to the front end instead would put a link to it on the CMS domain, which ADR 0031 rules out.
+The lockup links to the CMS's own `/resources/` rather than to the front end: editors see the resource archive there, and anonymous visitors get the lockdown's 404. ADR 0031 rejects redirecting to the front end because each redirect is a link from the CMS domain to it, and the lockup follows the same reasoning.
 
 ## The two rules from issue #89
 
