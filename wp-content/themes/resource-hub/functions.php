@@ -27,7 +27,8 @@ require_once __DIR__ . '/inc/image-lightbox.php';
  * The theme's one list of its stylesheets is `ASSETS` in `scripts/build.mjs`, which writes it into
  * `build/assets.php`: each copy's SHA-256, and each stylesheet's handle, its file and the handles it
  * loads after (the tokens; the fallback faces; the lockup; the document and the shell every template
- * sits in; the article, the welcome and the 404's column). Each is registered from there, its
+ * sits in; the page's article, the resource's article and its related section, the welcome and the
+ * 404's column). Each is registered from there, its
  * version the first 20 characters of its copy's SHA-256, so a changed file gets a new URL.
  * `resource-hub-tokens` is shared with the plugin's related-resources block, which lists it in its
  * `block.json`; the plugin registers its own copy at a later priority only when this has not, so a
@@ -126,8 +127,15 @@ const RESOURCE_HUB_THEME_ADMIN_BAR_SHELL = 'body.admin-bar .rh-shell { min-heigh
  *
  * **Per template.** Every template sits in the shell. The 404 (`is_404()`) loads `not-found.css`;
  * `home.html` (`is_home()`: `/` while the front page shows posts, the CMS's state today, and the
- * posts page under a static front page) loads `welcome.css` after `page.css`; every other template,
- * `page.html` and `index.html`, renders the article and loads `prose.css` and `page.css`.
+ * posts page under a static front page) loads `welcome.css` after `page.css`; a single resource
+ * (`is_singular( 'resource' )`, `single-resource.html`) loads `prose.css`, `resource.css` and
+ * `related.css`, the front end's resource page's three, and not `page.css`: `related.css` on every
+ * resource page, whether or not the related block renders anything, because the front end's resource
+ * route always carries it and the same file draws the heading of a related-resources block in the
+ * body; the meta line's labels (`card-labels.css`) and the related rows (`card.css`) come with the
+ * plugin's blocks, through their `block.json`, only where they render; every other template,
+ * `page.html`, `singular.html` and `index.html`, renders the page's article and loads `prose.css`
+ * and `page.css`.
  *
  * **Core block styles that fight the body's.** Core enqueues each block's stylesheet as the block
  * renders, before `wp_head`, and five draw over what `prose.css` gives the same elements, which the
@@ -157,6 +165,10 @@ function resource_hub_theme_enqueue_page_styles(): void {
 		wp_enqueue_style( 'resource-hub-not-found' );
 	} elseif ( is_home() ) {
 		wp_enqueue_style( 'resource-hub-welcome' );
+	} elseif ( is_singular( 'resource' ) ) {
+		wp_enqueue_style( 'resource-hub-prose' );
+		wp_enqueue_style( 'resource-hub-resource' );
+		wp_enqueue_style( 'resource-hub-related' );
 	} else {
 		wp_enqueue_style( 'resource-hub-prose' );
 		wp_enqueue_style( 'resource-hub-page' );
