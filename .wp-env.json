@@ -3,9 +3,11 @@
 	"plugins": [ "./wp-content/plugins/resource-hub-wp" ],
 	"themes": [ "./wp-content/themes/resource-hub" ],
 	"mappings": {
-		"packages/ui": "./packages/ui"
+		"packages/ui": "./packages/ui",
+		"site-plugins": "./site-plugins",
+		"wp-content/plugins": "./wp-content/plugins"
 	},
 	"lifecycleScripts": {
-		"afterStart": "wp-env run cli wp theme activate resource-hub && wp-env run tests-cli wp theme activate resource-hub"
+		"afterStart": "wp-env run cli --env-cwd=site-plugins composer install --no-interaction --no-progress && wp-env run cli wp plugin activate relevanssi && wp-env run tests-cli wp plugin activate relevanssi && wp-env run cli wp theme activate resource-hub && wp-env run tests-cli wp theme activate resource-hub && for env in cli tests-cli; do if wp-env run $env wp cli has-command 'resource-hub search-index' > /dev/null 2>&1; then wp-env run $env wp resource-hub search-index || exit 1; else echo \"Search index not built on $env: the resource-hub plugin is inactive there or its vendor/ is missing. After pnpm composer install, run pnpm wp resource-hub search-index.\"; fi; done"
 	}
 }

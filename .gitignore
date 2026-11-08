@@ -8,6 +8,11 @@
 
 node_modules/
 vendor/
+
+# Third-party WordPress plugins, which Composer installs from site-plugins/composer.lock; only our
+# own plugin is committed.
+/wp-content/plugins/*
+!/wp-content/plugins/resource-hub-wp/
 .DS_Store
 
 .wp-env.override.json
