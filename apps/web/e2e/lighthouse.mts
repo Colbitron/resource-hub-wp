@@ -3,7 +3,16 @@
  * CMS, the same two servers the Playwright suite starts, and prints the
  * median of each budgeted number per URL.
  *
- *   node e2e/lighthouse.mts
+ *   node e2e/lighthouse.mts            five runs per URL, as CI
+ *   node e2e/lighthouse.mts --quick    one run per URL unless RH_LIGHTHOUSE_RUNS says
+ *                                      otherwise: the local smell test before a push
+ *
+ * `--quick` sets `RH_LIGHTHOUSE_RUNS=1` when it is unset, before the config
+ * is read, and `lhci` inherits it; `RH_LIGHTHOUSE_URLS` narrows the URLs
+ * (`lighthouse-shard.mts`). The assertions are the same either way, so a
+ * missed budget fails a quick run too; one run is noisier than the median
+ * of five, and main's five-run medians in CI are the record. The config
+ * refuses both settings in CI.
  *
  * Starts the mock first, then builds the app with the test environment
  * (`appServerEnv`) and stamps the build (`build-stamp.mts`), unless
@@ -32,11 +41,15 @@ import { createRequire } from "node:module";
 
 import { assertPrebuilt, writeBuildStamp } from "./build-stamp.mts";
 import { appServerEnv, appSiteOrigin, mockCmsOrigin, mockCmsPort, prebuilt, webPort } from "./mock-cms/config.mts";
+import { DEFAULT_RUNS } from "./lighthouse-shard.mts";
 import { medianTable, type Lhr } from "./lighthouse-summary.mts";
 
 const APP_DIR = new URL("..", import.meta.url).pathname;
 const RAW_DIR = join(APP_DIR, ".lighthouseci");
 const REPORT_DIR = join(APP_DIR, "lighthouse-results");
+
+const QUICK = process.argv.slice(2).includes("--quick");
+if (QUICK && !process.env.RH_LIGHTHOUSE_RUNS) process.env.RH_LIGHTHOUSE_RUNS = "1";
 
 const require = createRequire(import.meta.url);
 const COLLECT: { numberOfRuns: number; url: string[] } = require("../lighthouserc.cjs").ci.collect;
@@ -152,7 +165,8 @@ async function main(): Promise<number> {
   const asserted = run("pnpm", ["exec", "lhci", "assert", config]);
 
   const table = summary();
-  console.log(`\n${table}\nCollected in ${Math.round((Date.now() - started) / 1000)} s; reports in lighthouse-results/.`);
+  const smell = RUNS < DEFAULT_RUNS ? ` ${RUNS} run(s) per URL: a smell test, noisier than the median of five; main's five-run medians in CI are the record.` : "";
+  console.log(`\n${table}\nCollected in ${Math.round((Date.now() - started) / 1000)} s; reports in lighthouse-results/.${smell}`);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, table);
 
   return asserted !== 0 ? asserted : uploaded;

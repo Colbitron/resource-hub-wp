@@ -8,7 +8,9 @@
  *   every sampled URL except the 404, which Lighthouse refuses to score.
  *   `RH_LIGHTHOUSE_SHARD=i/n` narrows them to one shard of the list
  *   (`e2e/lighthouse-shard.mts`), which is how CI spreads them across
- *   parallel jobs; unset, every URL is measured.
+ *   parallel jobs; unset, every URL is measured. `RH_LIGHTHOUSE_URLS`, a
+ *   comma-separated list of those paths, narrows them for a local run of
+ *   one page, and fails on a path the list does not hold.
  * - Lighthouse's default config is the mobile preset: a Moto G Power-sized
  *   screen and simulated slow 4G with a 4x CPU slowdown. No preset is named,
  *   because LHCI's presets are `desktop`, `perf` and `experimental`.
@@ -19,6 +21,10 @@
  *   issue #76 (`e2e/README.md`, "Lighthouse CI").
  * - Five runs per URL; every assertion reads the median of the five, which
  *   moves only when three runs do, where the median of three moved with two.
+ *   `RH_LIGHTHOUSE_RUNS` changes it for a local run (`pnpm
+ *   web:test:lighthouse:quick` makes it one), with the same assertions on
+ *   noisier numbers. Both local settings are refused when `CI` is set
+ *   (`assertNoLocalOverrides`), so CI always runs and expects five.
  * - Lab numbers only: no field data and nothing sent anywhere. The reports
  *   are written to `lighthouse-results/` (the filesystem target), which CI
  *   uploads as an artifact; the repository is private, so LHCI's temporary
@@ -29,20 +35,25 @@
 
 const { chromium } = require("@playwright/test");
 
-const { shard } = require("./e2e/lighthouse-shard.mts");
+const { assertNoLocalOverrides, onlyPaths, runsPerUrl, shard } = require("./e2e/lighthouse-shard.mts");
 const { appSiteOrigin } = require("./e2e/mock-cms/config.mts");
 const { SAMPLED_URLS } = require("./e2e/sampled-urls.mts");
 
 const median = { aggregationMethod: "median" };
 
+assertNoLocalOverrides(process.env);
+
 module.exports = {
   ci: {
     collect: {
       url: shard(
-        SAMPLED_URLS.filter((sample) => sample.lighthouse),
+        onlyPaths(
+          SAMPLED_URLS.filter((sample) => sample.lighthouse),
+          process.env.RH_LIGHTHOUSE_URLS,
+        ),
         process.env.RH_LIGHTHOUSE_SHARD,
       ).map((sample) => `${appSiteOrigin()}${sample.path}`),
-      numberOfRuns: 5,
+      numberOfRuns: runsPerUrl(process.env.RH_LIGHTHOUSE_RUNS),
       chromePath: chromium.executablePath(),
       settings: {
         // A lab run on localhost; the sandbox flag only matters on CI runners

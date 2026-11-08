@@ -68,8 +68,8 @@
 # as a broken harness, still blocks the deploy. Lighthouse never runs on a
 # pull request, so it never decides a merge, and a broken harness first
 # shows up on main, where it holds deploy-web back until it is fixed; the
-# author's local run before pushing (apps/web/e2e/README.md, "Lighthouse
-# CI") is a smell test, not a gate. WCAG A and AA accessibility stays gated
+# author's `pnpm web:test:lighthouse:quick` before pushing
+# (apps/web/e2e/README.md, "Lighthouse CI") is a smell test, not a gate. WCAG A and AA accessibility stays gated
 # by the axe scan, which blocks both.
 #
 # The deploy job runs after the gate, only on main and on manual dispatch, and
@@ -584,9 +584,11 @@ jobs:
     # Never on a pull request (ADR 0053): the shards are most of a run's
     # sandbox-minutes, and until #76 a budget miss decides no merge anyway.
     # The cost is that a broken harness first shows up on main, where it
-    # holds deploy-web back; the author runs Lighthouse locally before
-    # pushing a front-end change, as a smell test (apps/web/e2e/README.md),
-    # and main's run is the measurement of record.
+    # holds deploy-web back; the author runs `pnpm web:test:lighthouse:quick`
+    # before pushing a front-end change, as a smell test
+    # (apps/web/e2e/README.md), and main's run is the measurement of record.
+    # The config refuses the quick settings when CI is set, so every shard
+    # runs five times per URL and the medians job expects five.
     #
     # Until #76 lands, a budget miss does not decide the deploy. The
     # runners vary about 2-3x in CPU speed, and the fixed 4x slowdown
