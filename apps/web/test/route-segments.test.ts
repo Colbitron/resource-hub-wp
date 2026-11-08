@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -13,12 +13,23 @@ import { describe, expect, it } from "vitest";
  * new page is held to the rule without being listed anywhere, and a second
  * dynamic route fails here until the ADR and the rule name it.
  *
- * "Dynamic" is read from the source, the same way the per-route tests read
- * it: a page that reads `searchParams`, calls `connection()`, `headers()` or
- * `cookies()`, or exports `dynamic`. Comments are dropped first, so prose
- * that names an API is not mistaken for a call. Test-only pages are
- * `page.fixture.tsx` (routes only under `RH_FIXTURES=1`) and are not pages
- * here.
+ * What it reads, exactly: each `page.tsx`, and every `layout` and
+ * `template` file in the page's directory or above it up to `app/`, since
+ * those render with the page and a request-time call in one makes every
+ * page under it dynamic. "Dynamic" is read from that source: `searchParams`,
+ * `connection()`, `headers()`, `cookies()`, an import from `next/headers`,
+ * `noStore()` or `unstable_noStore()`, a `cache: "no-store"` fetch option,
+ * or an `export const dynamic`. It also refuses a `loading` file anywhere on
+ * a page's path. Comments are dropped first, so prose that names an API is
+ * not mistaken for a call.
+ *
+ * What it does not read: the components, data modules and libraries a page
+ * imports. A request-time call deep in one of those is caught only by the
+ * end-to-end suite, where it turns an ISR route into a 500 or a page that is
+ * never stored. The search page's own modules (`components/SearchPage.tsx`,
+ * `components/SearchForm.tsx`, `lib/search-request.ts`) are read by the
+ * tests below. Test-only pages are `page.fixture.tsx` (routes only under
+ * `RH_FIXTURES=1`) and are not pages here.
  */
 
 const APP = fileURLToPath(new URL("../app", import.meta.url));
@@ -30,12 +41,41 @@ const DYNAMIC_ROUTES = ["app/search/page.tsx"];
 /** The ISR routes' interval, the literal each exports: the data layer's (`listing-routes.test.ts` checks the two are equal). */
 const ROUTE_REVALIDATE = 3600;
 
+/** The extensions Next.js reads a special file (`layout`, `template`, `loading`) from. */
+const EXTENSIONS = ["tsx", "ts", "jsx", "js"];
+
+function toRelative(path: string): string {
+  return relative(ROOT, path).split("\\").join("/");
+}
+
 function pages(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) return pages(path);
-    return entry.name === "page.tsx" ? [relative(ROOT, path).split("\\").join("/")] : [];
+    return entry.name === "page.tsx" ? [toRelative(path)] : [];
   });
+}
+
+/** The directories from `app/` down to the page's own, outermost first. */
+function directoriesOf(page: string): string[] {
+  const directories: string[] = [];
+  let dir = dirname(join(ROOT, page));
+  for (;;) {
+    directories.unshift(dir);
+    if (dir === APP || !dir.startsWith(APP)) break;
+    dir = dirname(dir);
+  }
+  return directories;
+}
+
+/** Every file named `name` (any extension) on the page's path, as relative paths. */
+function onPath(page: string, name: string): string[] {
+  return directoriesOf(page).flatMap((dir) => EXTENSIONS.map((extension) => join(dir, `${name}.${extension}`)).filter((file) => existsSync(file)).map(toRelative));
+}
+
+/** The files that render with the page: its layouts and templates, outermost first, and the page. */
+function renderedWith(page: string): string[] {
+  return [...onPath(page, "layout"), ...onPath(page, "template"), page];
 }
 
 function source(file: string): string {
@@ -47,14 +87,19 @@ function withoutComments(code: string): string {
   return code.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
+/** The request-time uses in `code` the rule names, other than `searchParams`. */
+const REQUEST_TIME = [
+  /\bconnection\s*\(/,
+  /\bheaders\s*\(/,
+  /\bcookies\s*\(/,
+  /from\s+["']next\/headers["']/,
+  /\b(?:unstable_)?noStore\s*\(/,
+  /\bcache\s*:\s*["']no-store["']/,
+  /^export const dynamic\b/m,
+];
+
 function isDynamic(code: string): boolean {
-  return (
-    /\bsearchParams\b/.test(code) ||
-    /\bconnection\s*\(/.test(code) ||
-    /\bheaders\s*\(/.test(code) ||
-    /\bcookies\s*\(/.test(code) ||
-    /^export const dynamic\b/m.test(code)
-  );
+  return /\bsearchParams\b/.test(code) || REQUEST_TIME.some((pattern) => pattern.test(code));
 }
 
 const ALL = pages(APP);
@@ -66,17 +111,30 @@ describe("the page routes", () => {
   });
 
   it("have one dynamic route, the search page, so a second fails here until ADR 0043 and the caching rule name it", () => {
-    const dynamic = ALL.filter((file) => isDynamic(withoutComments(source(file))));
+    const dynamic = ALL.filter((file) => renderedWith(file).some((rendered) => isDynamic(withoutComments(source(rendered)))));
     expect(dynamic).toEqual(DYNAMIC_ROUTES);
   });
 
+  it("read the root layout, and no layout or template on any page's path makes a request-time call", () => {
+    const shared = [...new Set(ALL.flatMap((page) => renderedWith(page).filter((file) => file !== page)))];
+    expect(shared).toContain("app/layout.tsx");
+    for (const file of shared) {
+      expect(isDynamic(withoutComments(source(file))), file).toBe(false);
+    }
+  });
+
+  it("have no loading file anywhere on their path, the search page included", () => {
+    for (const page of ALL) {
+      expect(onPath(page, "loading"), page).toEqual([]);
+    }
+  });
+
   for (const file of ALL.filter((page) => !DYNAMIC_ROUTES.includes(page))) {
-    it(`${file} is ISR: revalidate = ${ROUTE_REVALIDATE} as a literal and a generateStaticParams, with no loading.tsx`, () => {
+    it(`${file} is ISR: revalidate = ${ROUTE_REVALIDATE} as a literal and a generateStaticParams`, () => {
       const code = withoutComments(source(file));
       const matches = [...code.matchAll(/^export const revalidate = (.+);$/gm)];
       expect(matches.map((match) => match[1])).toEqual([String(ROUTE_REVALIDATE)]);
       expect(code).toMatch(/^export (?:async )?function generateStaticParams\(/m);
-      expect(existsSync(join(ROOT, file.replace(/page\.tsx$/, "loading.tsx")))).toBe(false);
     });
   }
 });
@@ -84,18 +142,16 @@ describe("the page routes", () => {
 describe("the search page, the one dynamic route", () => {
   const route = withoutComments(source("app/search/page.tsx"));
   // The page's own modules: what it renders and how it reads its request.
-  const modules = ["app/search/page.tsx", "components/SearchPage.tsx", "lib/search-request.ts"].map((file) => withoutComments(source(file)));
+  const modules = ["app/search/page.tsx", "components/SearchPage.tsx", "components/SearchForm.tsx", "lib/search-request.ts"].map((file) => withoutComments(source(file)));
 
-  it("is dynamic by its searchParams alone: no revalidate, no dynamic, no generateStaticParams, no other request-time API", () => {
+  it("is dynamic by its searchParams alone: no revalidate, no dynamic, no generateStaticParams, no other request-time use", () => {
     expect(route).toMatch(/\bsearchParams\b/);
     expect(route).not.toMatch(/^export const revalidate\b/m);
-    expect(route).not.toMatch(/^export const dynamic\b/m);
     expect(route).not.toMatch(/generateStaticParams/);
     for (const code of modules) {
-      expect(code).not.toMatch(/\bconnection\s*\(/);
-      expect(code).not.toMatch(/\bheaders\s*\(/);
-      expect(code).not.toMatch(/\bcookies\s*\(/);
-      expect(code).not.toMatch(/from "next\/headers"/);
+      for (const pattern of REQUEST_TIME) {
+        expect(code).not.toMatch(pattern);
+      }
     }
   });
 
@@ -108,8 +164,7 @@ describe("the search page, the one dynamic route", () => {
     }
   });
 
-  it("has no loading.tsx and no Suspense boundary, so a CMS error is a 500 before anything is sent, and has an error boundary that reads nothing from the error", () => {
-    expect(existsSync(join(APP, "search/loading.tsx"))).toBe(false);
+  it("has no Suspense boundary (and, above, no loading file), so a CMS error is a 500 before anything is sent, and has an error boundary that reads nothing from the error", () => {
     for (const code of modules) {
       expect(code).not.toMatch(/\bSuspense\b/);
     }

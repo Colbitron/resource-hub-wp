@@ -7,8 +7,10 @@ import { SearchForm } from "@/components/SearchForm";
 import { Pagination } from "@/components/Pagination";
 import { ResourceCard } from "@/components/ResourceCard";
 import { cmsUrls } from "@/lib/env";
-import { listingPath, searchPath } from "@/lib/routes";
+import { listingPath, SEARCH_PATH, searchPath } from "@/lib/routes";
 import type { SearchRequest } from "@/lib/search-request";
+import { DEFAULT_SHARE_IMAGE } from "@/lib/share-image";
+import { shareMetadata } from "@/lib/share-metadata";
 import { toCard, toPageCard } from "@/lib/wp/cards";
 import { MAX_SEARCH_PAGE, SEARCH_PER_PAGE } from "@/lib/wp/schemas/search";
 import { MAX_SEARCH_QUERY_LENGTH, MIN_SEARCH_QUERY_LENGTH, searchSite, type SearchHit, type SearchResults } from "@/lib/wp/search";
@@ -23,8 +25,9 @@ import "@colbitron/resource-hub-ui/listing.css";
  * renders the form and one state:
  *
  * - No query: the form alone.
- * - A query too short or too long: a sentence under the form, tied to the
- *   input by `aria-describedby`, and no request.
+ * - A query too short or too long, or holding a control character: a
+ *   sentence under the form, tied to the input by `aria-describedby`, the
+ *   input marked `aria-invalid`, and no request.
  * - Results: the count, the rows in the route's order, resources as the
  *   listing's row (`ResourceCard`) and pages as the same row with the label
  *   "Page" (`PageCard`), and the pagination up to the route's 10 pages, each
@@ -41,8 +44,9 @@ import "@colbitron/resource-hub-ui/listing.css";
  * amended). A `CmsError` from the reads is not caught: it reaches
  * `app/search/error.tsx`, as on every other route. Every read is the data
  * layer's `force-cache` fetch with `searchTags()`, so a repeated query is
- * answered from the Data Cache and a revalidation event clears it, though
- * the page itself is rendered on every request.
+ * expected to be answered from the Data Cache until a revalidation event
+ * clears it (measured under `next start`, not yet on Vercel), though the
+ * page itself is rendered on every request.
  *
  * The form is a plain GET form to `/search/`, so it works without
  * JavaScript and a submission is a full document load. The rows' links are
@@ -66,18 +70,48 @@ function countLine(total: number, query: string): string {
 }
 
 /**
- * The page's metadata, from the request alone, so it makes no request:
- * `noindex` in every state (issue #115: a page of results is not a page to
- * index, and an indexed one would invite junk queries), and a title that
- * names the query once there is one to search for.
+ * The results for `request`, or `null` when it asks for no search or the CMS
+ * has none: the page's one read. The page and `generateMetadata` both call
+ * it; the data layer memoises its fetches per render (`lib/wp/fetch.ts`),
+ * so the two make one set of CMS requests between them.
  */
-export function searchMetadata(request: SearchRequest): Metadata {
-  const robots = { index: false };
-  if (request.kind !== "search" && request.kind !== "no-such-page") {
-    return { title: "Search", robots };
+function resultsFor(request: SearchRequest): Promise<SearchResults | null> {
+  return request.kind === "search" ? searchSite(request.query, request.page) : Promise.resolve(null);
+}
+
+/** The `<title>`: the query is named only where there are results to name it by. */
+function titleFor(request: SearchRequest, results: SearchResults | null): string {
+  if (request.kind !== "search" || results === null) {
+    return "Search";
+  }
+  if (results.total === 0) {
+    return `No results for ${quoted(request.query)}`;
+  }
+  if (request.page > results.pages) {
+    return "Search";
   }
   const title = `Results for ${quoted(request.query)}`;
-  return { title: request.kind === "search" && request.page > 1 ? `${title}, page ${request.page}` : title, robots };
+  return request.page > 1 ? `${title}, page ${request.page}` : title;
+}
+
+/**
+ * The page's metadata: `noindex` in every state (issue #115: a page of
+ * results is not a page to index, and an indexed one would invite junk
+ * queries), a `<title>` that names the query where there are results or
+ * none (`titleFor`), and a link preview that never does: its Open Graph and
+ * X titles are "Search" whatever was asked, so a shared link cannot put a
+ * visitor's words on the site's card. Writing `openGraph` drops the
+ * file-based share image, so it names the default one, as every route that
+ * writes its own does (`lib/share-metadata.ts`). A `CmsError` from the read
+ * throws here as in the page, and the response is the same 500.
+ */
+export async function searchMetadata(request: SearchRequest): Promise<Metadata> {
+  const results = await resultsFor(request);
+  return {
+    title: titleFor(request, results),
+    robots: { index: false },
+    ...shareMetadata({ type: "website", title: "Search", url: SEARCH_PATH, images: [DEFAULT_SHARE_IMAGE] }),
+  };
 }
 
 /** A state's sentences under the form, the first one the input's description. */
@@ -153,13 +187,22 @@ function Results({ query, page, results }: { query: string; page: number; result
  * leaves the page before a byte is sent.
  */
 export async function SearchPage({ request }: { request: SearchRequest }) {
-  const results = request.kind === "search" ? await searchSite(request.query, request.page) : null;
+  const results = await resultsFor(request);
   return (
     <>
       <header className="rh-listing__header">
         <h1>Search</h1>
       </header>
-      <SearchForm input={request.input} describedBy={request.kind === "none" ? undefined : MESSAGE_ID} />
+      <SearchForm
+        input={request.input}
+        describedBy={request.kind === "none" ? undefined : MESSAGE_ID}
+        invalid={request.kind === "invalid" || request.kind === "too-short" || request.kind === "too-long"}
+      />
+      {request.kind === "invalid" && (
+        <Message>
+          <p id={MESSAGE_ID}>Your search has a character that can&rsquo;t be searched for. Try typing it again.</p>
+        </Message>
+      )}
       {request.kind === "too-short" && (
         <Message>
           <p id={MESSAGE_ID}>Enter at least {MIN_SEARCH_QUERY_LENGTH} characters to search.</p>

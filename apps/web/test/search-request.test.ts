@@ -33,6 +33,23 @@ describe("parseSearchRequest", () => {
     expect(parseSearchRequest({ q: `a${" ".repeat(200)}b` })).toMatchObject({ kind: "search", query: "a b" });
   });
 
+  it("refuses a control character left after normalising, NUL and DEL and C1 included, and sends no request", () => {
+    for (const q of ["ab\u0000", "a\u0001b", "ab\u001F", "ab\u007F", "ab\u0080", "ab\u009F"]) {
+      expect(parseSearchRequest({ q }), JSON.stringify(q)).toMatchObject({ kind: "invalid" });
+    }
+    // The field shows the words without them.
+    expect(parseSearchRequest({ q: "co\u0000re" })).toEqual({ kind: "invalid", input: "core" });
+    // A control character alone is still one, not an empty query.
+    expect(parseSearchRequest({ q: "\u0000" })).toMatchObject({ kind: "invalid" });
+    // It is checked before the length, so a short query with one is the control character's message.
+    expect(parseSearchRequest({ q: "a\u0000" })).toMatchObject({ kind: "invalid" });
+  });
+
+  it("collapses the whitespace control characters, as the CMS does, rather than refusing them", () => {
+    // Tab, line feed, vertical tab, form feed, carriage return and NEL (U+0085) are whitespace to both sides.
+    expect(parseSearchRequest({ q: "core\t\n\u000B\u000C\r\u0085vitals" })).toMatchObject({ kind: "search", query: "core vitals" });
+  });
+
   it("takes the first value of a parameter given twice", () => {
     expect(parseSearchRequest({ q: ["first", "second"], page: ["2", "3"] })).toMatchObject({ kind: "search", query: "first", page: 2 });
   });

@@ -45,6 +45,16 @@ async function robots(page: Page): Promise<string | null> {
   return page.locator('meta[name="robots"]').getAttribute("content");
 }
 
+/** The link preview's title and card, which never carry the visitor's words. */
+async function preview(page: Page): Promise<{ ogTitle: string | null; twitterTitle: string | null; card: string | null; ogImage: string | null }> {
+  return {
+    ogTitle: await page.locator('meta[property="og:title"]').getAttribute("content"),
+    twitterTitle: await page.locator('meta[name="twitter:title"]').getAttribute("content"),
+    card: await page.locator('meta[name="twitter:card"]').getAttribute("content"),
+    ogImage: await page.locator('meta[property="og:image"]').getAttribute("content"),
+  };
+}
+
 async function rowTitles(page: Page): Promise<string[]> {
   return page.locator("main .rh-card-grid .rh-card__title").allInnerTexts();
 }
@@ -114,6 +124,10 @@ test.describe("the search page", () => {
     expect(response?.headers()["cache-control"]).toContain("no-store");
     await expect(page).toHaveTitle(/^Results for “team”/);
     expect(await robots(page)).toBe("noindex");
+    // The tab names the query; the link preview never does, and keeps the site's share image and large card.
+    const card = await preview(page);
+    expect(card).toMatchObject({ ogTitle: "Search", twitterTitle: "Search", card: "summary_large_image" });
+    expect(card.ogImage).toMatch(/\/_next\/static\/media\/opengraph-image\.[^/]+\.png$/);
     await expect(page.getByText("3 results for “team”")).toBeVisible();
     // The seed: resource 21's summary says "team"; pages 62 (/about/team/) and 66 (/company/team/) are titled so.
     expect(await rowTitles(page)).toEqual(["Alt text at scale", "The team", "The company team"]);
@@ -162,6 +176,7 @@ test.describe("the search page", () => {
     await expect(page.getByText("There are no results on page 3.")).toBeVisible();
     await expect(page.getByRole("navigation", { name: "Pagination" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Go to the first page of results" })).toHaveAttribute("href", `/search/?q=${RUN}+paging`);
+    await expect(page).toHaveTitle(/^Search \|/);
   });
 
   test("answers a page the route would refuse with a 200 and no request", async ({ page }) => {
@@ -182,6 +197,9 @@ test.describe("the search page", () => {
     await expect(page.getByRole("link", { name: "browse all resources" })).toHaveAttribute("href", "/resources/");
     await expect(page.locator("main .rh-card")).toHaveCount(0);
     expect(await robots(page)).toBe("noindex");
+    await expect(page).toHaveTitle(new RegExp(`^No results for “${RUN}zzz”`));
+    expect(await preview(page)).toMatchObject({ ogTitle: "Search", twitterTitle: "Search" });
+    await expect(page.getByRole("searchbox")).not.toHaveAttribute("aria-invalid");
     await expectAccessible(page);
   });
 
@@ -192,12 +210,30 @@ test.describe("the search page", () => {
     const field = page.getByRole("searchbox", { name: "Search resources and pages" });
     await expect(field).toHaveValue("a");
     await expect(field).toHaveAccessibleDescription("Enter at least 2 characters to search.");
+    await expect(field).toHaveAttribute("aria-invalid", "true");
     expect(await robots(page)).toBe("noindex");
     await expectAccessible(page);
     const long = await page.goto(`/search/?q=${"a".repeat(101)}`);
     expect(long?.status()).toBe(200);
     await expect(page.getByRole("searchbox")).toHaveAccessibleDescription("Enter at most 100 characters to search.");
+    await expect(page.getByRole("searchbox")).toHaveAttribute("aria-invalid", "true");
     expect(await searchReads()).toEqual({});
+  });
+
+  test("refuses a query with a control character, NUL included, with a 200, the field marked invalid and no request", async ({ page }) => {
+    await cms.resetRequests();
+    for (const q of ["co%00re", "co%01re", "co%7Fre", "co%C2%80re"]) {
+      const response = await page.goto(`/search/?q=${q}`);
+      expect(response?.status(), q).toBe(200);
+      const field = page.getByRole("searchbox", { name: "Search resources and pages" });
+      await expect(field).toHaveAccessibleDescription("Your search has a character that can’t be searched for. Try typing it again.");
+      await expect(field).toHaveAttribute("aria-invalid", "true");
+      await expect(field).toHaveValue("core");
+      expect(await robots(page)).toBe("noindex");
+      await expect(page).toHaveTitle(/^Search \|/);
+    }
+    expect(await searchReads()).toEqual({});
+    await expectAccessible(page);
   });
 
   test("says search isn't available when the CMS has no search route, with a 200, never an error", async ({ page }) => {
@@ -219,7 +255,7 @@ test.describe("the search page", () => {
     expect(await response.text()).not.toContain(MOCK_CMS_HOST);
   });
 
-  test("renders on every request while a repeated query reads the CMS once, until a revalidation event clears it", async ({ request }) => {
+  test("renders on every request while a repeated query reads the CMS once, the page and its metadata together, until a revalidation event clears it", async ({ request }) => {
     await cms.resetRequests();
     const path = `/search/?q=${RUN}+cache`;
     for (let index = 0; index < 3; index++) {

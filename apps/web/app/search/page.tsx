@@ -11,8 +11,9 @@ import { parseSearchRequest } from "@/lib/search-request";
  * request, because a search is the visitor's own words and no set of
  * queries could be prerendered. What it keeps from the caching model: every
  * CMS read is still the data layer's `force-cache` fetch, tagged
- * `searchTags()`, so a repeated query is answered from the Data Cache, and a
- * revalidation event clears it; the cost is one function run per request,
+ * `searchTags()`, so a repeated query is expected to be answered from the
+ * Data Cache until a revalidation event clears it (measured under `next
+ * start`, not yet on Vercel); the cost is one function run per request,
  * bounded at the edge by the "Rate limit search" WAF rule
  * (`docs/architecture/caching.md`).
  *
@@ -27,8 +28,9 @@ import { parseSearchRequest } from "@/lib/search-request";
  * answers it with a 404 from the path alone (`lib/path-decision.ts`).
  *
  * The request is parsed from the query string alone (`parseSearchRequest`
- * in `lib/search-request.ts`), in the page and in `generateMetadata`, which
- * makes no request: its title and `noindex` need only the query.
+ * in `lib/search-request.ts`), in the page and in `generateMetadata`; the
+ * two read the CMS through the same memoised fetches, so one set of
+ * requests serves both (`searchMetadata` has the title rules).
  */
 
 export async function generateMetadata({ searchParams }: PageProps<"/search">): Promise<Metadata> {

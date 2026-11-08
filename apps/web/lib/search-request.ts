@@ -10,6 +10,13 @@ import { normalizeSearchQuery, searchQuery } from "./wp/search";
  * only on an ISR route (`components/DataNotFound.tsx`).
  *
  * - `none`: no `q`, or one that is only whitespace. The form alone.
+ * - `invalid`: a `q` that still holds a control character once normalised
+ *   (C0 or C1, NUL and DEL included; Unicode's `Cc`). The whitespace ones,
+ *   tab, line feed, carriage return and the like, are collapsed to spaces
+ *   by the normalisation first, as on the CMS, so a pasted line break is
+ *   not one. The CMS's route accepts the rest today; the front end is
+ *   stricter, since no reader means to search for them. A message beside
+ *   the form; no request.
  * - `too-short`, `too-long`: a `q` that is under 2 or over 100 code points
  *   once normalised, which the plugin's route would refuse with a 400
  *   (`searchQuery`). A message beside the form; no request.
@@ -22,13 +29,15 @@ import { normalizeSearchQuery, searchQuery } from "./wp/search";
  *   answers it with no items, the same state.
  *
  * `input` is `q` as the visitor typed it, so the form shows their words
- * again, whitespace and all; the query sent and every link built from it use
+ * again, whitespace and all (with its control characters removed in the
+ * `invalid` state, so the field never holds one); the query sent and every link built from it use
  * the normalised form, so one search has one URL per page. A parameter given
  * more than once (`?q=a&q=b`) counts its first value, as `URLSearchParams.get`
  * does.
  */
 export type SearchRequest =
   | { readonly kind: "none"; readonly input: string }
+  | { readonly kind: "invalid"; readonly input: string }
   | { readonly kind: "too-short"; readonly input: string }
   | { readonly kind: "too-long"; readonly input: string }
   | { readonly kind: "search"; readonly input: string; readonly query: string; readonly page: number }
@@ -36,6 +45,9 @@ export type SearchRequest =
 
 /** A query-string value as Next.js hands `searchParams` to a page. */
 export type SearchParamValue = string | string[] | undefined;
+
+/** A control character: Unicode's `Cc`, U+0000 to U+001F and U+007F to U+009F. */
+const CONTROL = /\p{Cc}/u;
 
 /** The first value of a parameter, or `""` when it is absent. */
 function first(value: SearchParamValue): string {
@@ -60,6 +72,9 @@ export function parseSearchRequest(params: { readonly q?: SearchParamValue; read
   const normalised = normalizeSearchQuery(input);
   if (normalised === "") {
     return { kind: "none", input };
+  }
+  if (CONTROL.test(normalised)) {
+    return { kind: "invalid", input: input.replace(/\p{Cc}/gu, "") };
   }
   const query = searchQuery(input);
   if (query === null) {

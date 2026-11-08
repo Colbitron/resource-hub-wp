@@ -20,21 +20,6 @@ export type PaginationProps = {
     }
 );
 
-/**
- * Previous and next links around the page numbers from `pageWindow`, inside
- * a `nav` named "Pagination", with `aria-current="page"` on the current
- * number. Each number is a link whose accessible name says "Page n", so the
- * list reads as pages and not as bare digits. Previous and next are left out
- * at the ends rather than disabled: a link that goes nowhere is a tab stop
- * for nothing. Renders nothing for a single page.
- *
- * A listing's links are `<Link>`s, prefetched as every ISR page is. The
- * search page's are plain links, a full document load each: the search page
- * is dynamic (ADR 0043, amended), so a prefetch would be a function run and
- * a CMS search for a page the reader may never open, counted by the edge's
- * rate limit, and a load starts focus at the top of the new page as the
- * form's own submission does.
- */
 interface PageLinkProps {
   href: string;
   /** A plain `<a>`, a full document load, rather than a client-side `<Link>`. */
@@ -57,6 +42,21 @@ function PageLink({ href, document, children, ...rest }: PageLinkProps) {
   );
 }
 
+/**
+ * Previous and next links around the page numbers from `pageWindow`, inside
+ * a `nav` named "Pagination", with `aria-current="page"` on the current
+ * number. Each number is a link whose accessible name says "Page n", so the
+ * list reads as pages and not as bare digits. Previous and next are left out
+ * at the ends rather than disabled: a link that goes nowhere is a tab stop
+ * for nothing. Renders nothing for a single page.
+ *
+ * A listing's links are `<Link>`s, prefetched as every ISR page is. The
+ * search page's are plain links, a full document load each: the search page
+ * is dynamic (ADR 0043, amended), so a prefetch would be a function run and
+ * a CMS search for a page the reader may never open, counted by the edge's
+ * rate limit, and a load starts focus at the top of the new page as the
+ * form's own submission does.
+ */
 export function Pagination({ filter, search, current, total }: PaginationProps) {
   if (total <= 1) {
     return null;

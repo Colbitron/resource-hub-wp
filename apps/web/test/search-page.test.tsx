@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SearchPage, searchMetadata } from "../components/SearchPage";
 import { parseSearchRequest } from "../lib/search-request";
+import { DEFAULT_SHARE_IMAGE } from "../lib/share-image";
 import { toPageCard, UNTITLED_PAGE } from "../lib/wp/cards";
 import { CmsError } from "../lib/wp/fetch";
 import { wpPageSchema, wpResourceSchema, type WpPage } from "../lib/wp/schemas/rest";
@@ -98,13 +99,30 @@ describe("the search page", () => {
     expect(html).not.toContain("rh-search-message");
   });
 
-  it("says a query is too short or too long beside the form, tied to the input, and reads nothing", async () => {
+  it("says a query is too short or too long beside the form, tied to the input and marking it invalid, and reads nothing", async () => {
     const short = await render({ q: "a" });
     expect(short).toContain('aria-describedby="rh-search-message"');
+    expect(short).toContain('aria-invalid="true"');
     expect(short).toContain('<p id="rh-search-message">Enter at least 2 characters to search.</p>');
     const long = await render({ q: "a".repeat(101) });
     expect(long).toContain('<p id="rh-search-message">Enter at most 100 characters to search.</p>');
+    expect(long).toContain('aria-invalid="true"');
     expect(search).not.toHaveBeenCalled();
+  });
+
+  it("says a query with a control character can't be searched, marks the field invalid, shows it without the character and reads nothing", async () => {
+    const html = await render({ q: "co\u0000re" });
+    expect(html).toContain('<p id="rh-search-message">Your search has a character that can\u2019t be searched for. Try typing it again.</p>');
+    expect(html).toContain('aria-invalid="true"');
+    expect(html.match(/<input [^>]*\/>/)?.[0]).toContain('value="core"');
+    expect(search).not.toHaveBeenCalled();
+  });
+
+  it("marks the field invalid only for a query that cannot be searched as it is", async () => {
+    search.mockResolvedValue({ items: [], total: 0, pages: 0 });
+    for (const params of [{}, { q: "zzzz" }, { q: "ab", page: "11" }]) {
+      expect(await render(params), JSON.stringify(params)).not.toContain("aria-invalid");
+    }
   });
 
   it("reads the normalised query and page, and lists resources and pages in the route's order", async () => {
@@ -195,17 +213,50 @@ describe("the search page", () => {
 });
 
 describe("searchMetadata", () => {
-  it("is noindex in every state, with a title naming the query once there is one", () => {
-    expect(searchMetadata(parseSearchRequest({}))).toEqual({ title: "Search", robots: { index: false } });
-    expect(searchMetadata(parseSearchRequest({ q: "a" }))).toEqual({ title: "Search", robots: { index: false } });
-    expect(searchMetadata(parseSearchRequest({ q: " core  vitals " }))).toEqual({ title: "Results for “core vitals”", robots: { index: false } });
-    expect(searchMetadata(parseSearchRequest({ q: "ab", page: "3" }))).toEqual({ title: "Results for “ab”, page 3", robots: { index: false } });
-    expect(searchMetadata(parseSearchRequest({ q: "ab", page: "99" }))).toEqual({ title: "Results for “ab”", robots: { index: false } });
+  async function metadata(params: { q?: string; page?: string }) {
+    return searchMetadata(parseSearchRequest(params));
+  }
+
+  it("is noindex in every state", async () => {
+    search.mockResolvedValue(results());
+    for (const params of [{}, { q: "a" }, { q: "ab" }, { q: "ab", page: "99" }]) {
+      expect((await metadata(params)).robots, JSON.stringify(params)).toEqual({ index: false });
+    }
   });
 
-  it("makes no request", () => {
-    searchMetadata(parseSearchRequest({ q: "ab" }));
+  it("names the query in the title only where there are results, or none", async () => {
+    search.mockResolvedValue(results());
+    expect((await metadata({ q: " core  vitals " })).title).toBe("Results for \u201Ccore vitals\u201D");
+    expect((await metadata({ q: "ab", page: "3" })).title).toBe("Results for \u201Cab\u201D, page 3");
+    search.mockResolvedValue({ items: [], total: 0, pages: 0 });
+    expect((await metadata({ q: "zzzz" })).title).toBe("No results for \u201Czzzz\u201D");
+    // A page past the last, a page the route would refuse, no route, and every state with no search: plain "Search".
+    search.mockResolvedValue({ items: [], total: 30, pages: 3 });
+    expect((await metadata({ q: "ab", page: "5" })).title).toBe("Search");
+    expect((await metadata({ q: "ab", page: "99" })).title).toBe("Search");
+    search.mockResolvedValue(null);
+    expect((await metadata({ q: "ab" })).title).toBe("Search");
+    for (const params of [{}, { q: "a" }, { q: "a".repeat(101) }, { q: "a\u0000b" }]) {
+      expect((await metadata(params)).title, JSON.stringify(params)).toBe("Search");
+    }
+  });
+
+  it("keeps the visitor's words off the link preview: Open Graph and X say Search, with the default share image", async () => {
+    search.mockResolvedValue(results());
+    const meta = await metadata({ q: "buy cheap things" });
+    expect(meta.openGraph).toMatchObject({ type: "website", title: "Search", url: "/search/" });
+    expect(JSON.stringify(meta.openGraph)).not.toContain("cheap");
+    // The card type follows from the image's URL, which a PNG import has only in a Next.js build: e2e/search.spec.ts pins the large card.
+    expect(meta.openGraph?.images).toEqual([DEFAULT_SHARE_IMAGE]);
+  });
+
+  it("reads only what the page reads: nothing with no search to make", async () => {
+    await metadata({ q: "ab", page: "11" });
+    await metadata({ q: "a" });
     expect(search).not.toHaveBeenCalled();
+    search.mockResolvedValue(results());
+    await metadata({ q: "ab", page: "2" });
+    expect(search).toHaveBeenCalledExactlyOnceWith("ab", 2);
   });
 });
 
