@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace ResourceHub\Tests\Theme;
 
+use ResourceHub\Pages\PostsPage;
+use WP_Query;
 use WP_UnitTestCase;
 
 /**
@@ -138,6 +140,34 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 		// The front page is still the page, and `/` is not touched.
 		$this->assertSame( 'resource-hub//page', $this->template_for( home_url( '/' ) ) );
 		$this->assertTrue( is_front_page() );
+	}
+
+	/**
+	 * For an anonymous visitor the posts page is the lockdown's 404, and `PostsPage` stands down: the gate
+	 * at priority 0 has already handled the request, so a `$preempt` that is not `false` is returned as it
+	 * came and the query is not touched, even one that is still the posts page.
+	 */
+	public function test_posts_page_stands_down_once_the_lockdown_has_answered(): void {
+		$front = self::factory()->post->create( array( 'post_type' => 'page' ) );
+		$posts = self::factory()->post->create( array( 'post_type' => 'page' ) );
+		update_option( 'show_on_front', 'page' );
+		update_option( 'page_on_front', $front );
+		update_option( 'page_for_posts', $posts );
+
+		wp_set_current_user( 0 );
+		$this->assertSame( 'resource-hub//404', $this->template_for( get_permalink( $posts ) ) );
+		$this->assertTrue( is_404() );
+
+		// The same request, as PostsPage receives it once an earlier callback has preempted.
+		$query = new WP_Query( array( 'page_id' => $posts ) );
+		$this->assertTrue( $query->is_posts_page );
+
+		$this->assertTrue( ( new PostsPage() )->is_404( true, $query ) );
+		$this->assertFalse( $query->is_404(), 'A preempted request is left as the earlier callback left it.' );
+		$this->assertTrue( $query->is_posts_page );
+
+		$this->assertSame( 'handled', ( new PostsPage() )->is_404( 'handled', $query ), 'Any preempting value comes back as it came.' );
+		$this->assertFalse( $query->is_404() );
 	}
 
 	/**
