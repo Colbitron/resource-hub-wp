@@ -5,6 +5,8 @@
 # - Changed GitHub runs-on labels to their Depot equivalents
 #
 # Edited after the migration, for Depot CI:
+# - this is the CI (ADR 0053); the source above is deleted, and git
+#   history keeps it, which is how a rollback restores it
 # - deploy and deploy-web also need the Depot CI variable
 #   DEPOT_DEPLOY_ENABLED == 'true' (unset until the cutover)
 # - the front end's one web job is split into parallel jobs, Lighthouse
@@ -61,7 +63,9 @@
 # deploy hook (ADR 0051).
 #
 # Lighthouse against each pull request's Vercel preview is a separate,
-# non-blocking workflow, preview-lighthouse.yml.
+# non-blocking workflow, .github/workflows/preview-lighthouse.yml, which
+# stays on GitHub Actions because Depot CI has no deployment_status trigger
+# (ADR 0053).
 name: CI
 
 # Pull requests run the gate once. A plain `push:` trigger alongside
@@ -142,8 +146,8 @@ jobs:
       - name: Build the block
         run: pnpm build
 
-      # wp-env picks ~/wp-env (no dot) on Linux hosts that have /snap, which the
-      # GitHub runners do. Pin the location so the cache path below is exact.
+      # wp-env picks ~/wp-env (no dot) on Linux hosts that have /snap, which
+      # GitHub's runners did. Pin the location so the cache path below is exact.
       # Playwright is a dependency of the plugin package, not the root, so its
       # version is read from there. A failed or garbled read fails the step
       # rather than caching under a key like playwright-Linux-: pnpm exits 0
@@ -660,11 +664,14 @@ jobs:
     # is always a dispatch.
     #
     # Depot CI cutover guard: the job runs only once the Depot CI variable
-    # DEPOT_DEPLOY_ENABLED is 'true'. While it is unset (the trial, and until
-    # the deploy secrets are in Depot and GitHub's copy of this workflow is
-    # retired), nothing here can reach the host, whatever the event or ref.
-    # At cutover, set the variable; once the GitHub copy is gone, drop the
-    # first line of the condition. deploy-web carries the same guard.
+    # DEPOT_DEPLOY_ENABLED is 'true'. While it is unset, nothing here can
+    # reach the host, whatever the event or ref. It kept the trial runs from
+    # deploying while GitHub's copy of this workflow still did; that copy is
+    # retired in the pull request that makes this the CI (ADR 0053), the
+    # variable is set just before it merges, and a follow-up drops the
+    # first line of the condition. Unsetting it is half of a rollback to
+    # GitHub Actions (docs/runbooks/deploy.md). deploy-web carries the same
+    # guard.
     if: >-
       vars.DEPOT_DEPLOY_ENABLED == 'true'
       && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
@@ -698,7 +705,7 @@ jobs:
         run: |
           for name in DEPLOY_SSH_KEY DEPLOY_HOST DEPLOY_USER DEPLOY_PATH DEPLOY_KNOWN_HOSTS; do
             [ -n "${!name}" ] || {
-              echo "::error::Repository secret $name is empty or not set."
+              echo "::error::Depot CI secret $name is empty or not set."
               exit 1
             }
           done
@@ -963,7 +970,7 @@ jobs:
           VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
         run: |
           [ -n "$VERCEL_DEPLOY_HOOK_URL" ] || {
-            echo "::error::Repository secret VERCEL_DEPLOY_HOOK_URL is empty or not set."
+            echo "::error::Depot CI secret VERCEL_DEPLOY_HOOK_URL is empty or not set."
             exit 1
           }
 
