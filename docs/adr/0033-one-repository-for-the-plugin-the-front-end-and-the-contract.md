@@ -2,7 +2,9 @@
 status: accepted
 date: 2026-11-04
 merges: 0001 and 0041 (2026-11-06)
-amended: 2026-11-07
+amended:
+  - 2026-11-07
+  - 2026-11-07
 ---
 
 # One repository holds the plugin, the front end and the contract package, in one pnpm workspace, with wp-env as the only local environment
@@ -40,3 +42,9 @@ The demo began as two repositories, one per side, with the plugin at this one's 
 **What changed.** CI runs on Depot CI (ADR 0053), not GitHub Actions, because GitHub's free plan ran out of minutes and an Actions outage would stop every merge and deploy. So "in GitHub Actions" under the wp-env decision now reads "on Depot CI": the same `wp-env` commands run the PHPUnit suite there, and wp-env is still the one environment, locally and in CI. The front end's single `web` job under Consequences is now parallel jobs beside the CMS gate: the checks, the end-to-end suite, the screenshots, the Lighthouse shards and the job that merges their medians. The CMS deploy still waits for the CMS gate only, and the front end's production deploy for the CMS deploy and every front-end job (ADR 0051).
 
 **What did not.** The decision is unchanged: one repository and one pnpm workspace hold the plugin, the front end and the contract package, which is never published, with wp-env on Docker as the only environment and its containers the source of truth for every result.
+
+### 2026-11-07: the CMS theme's skeleton exists
+
+**What changed.** `wp-content/themes/resource-hub/` now exists as a block theme skeleton, so "absent until the CMS theme arrives" under Consequences no longer holds. wp-env mounts it and activates it on both sites, and the Playwright fixture now activates the theme as well as the plugin, because PHPUnit's reinstall resets the tests site's theme. Its tokens, CSS and fonts come in a later slice-5 pull request, and, like the plugin's, they reach WordPress through a build, because the host never sees the workspace; that corrects "through the workspace". The deploy that ships the theme to the host is a later pull request too.
+
+**What did not.** The decision is unchanged: one repository and one pnpm workspace hold the plugin, the front end and the contract package, with wp-env as the only environment.
