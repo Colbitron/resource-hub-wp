@@ -21,7 +21,7 @@ function loadConfig(env: Record<string, string>): { status: number | null; stdou
   }
   const result = spawnSync(
     process.execPath,
-    ["-e", 'const c = require("./lighthouserc.cjs").ci.collect; console.log(JSON.stringify({ runs: c.numberOfRuns, paths: c.url.map((u) => new URL(u).pathname) }));'],
+    ["-e", 'const c = require("./lighthouserc.cjs").ci.collect; console.log(JSON.stringify({ runs: c.numberOfRuns, paths: c.url.map((u) => { const url = new URL(u); return url.pathname + url.search; }) }));'],
     { cwd: APP_DIR, encoding: "utf8", env: { ...base, ...env } },
   );
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };

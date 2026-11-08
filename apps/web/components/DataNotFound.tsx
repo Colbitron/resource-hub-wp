@@ -47,7 +47,9 @@ import { NotFoundContent } from "./NotFoundContent";
  *   there aborts the shell as before. It returns `NOT_FOUND_METADATA`.
  * - The route stays ISR (no `connection()`, no request-time API): a dynamic
  *   render streams the shell before the boundary fails, and its status would
- *   already be sent as a 200. The unit pins that a route "calls nothing
+ *   already be sent as a 200. So the search page, the one dynamic route,
+ *   never renders this (`test/route-segments.test.ts`): every state it has
+ *   is a 200. The unit pins that a route "calls nothing
  *   dynamic" read only the route files; a `connection()` or `headers()` in a
  *   layout or an imported component is caught only by the e2e suite (one in
  *   `app/resources/layout.tsx` turned every `/resources/**` request into a

@@ -6,7 +6,7 @@ import { cmsUrls } from "@/lib/env";
 import type { RenderedPage } from "@/lib/page-request";
 import { DEFAULT_SHARE_IMAGE } from "@/lib/share-image";
 import { shareMetadata } from "@/lib/share-metadata";
-import { plainText } from "@/lib/wp/cards";
+import { plainText, UNTITLED_PAGE } from "@/lib/wp/cards";
 import type { WpPage } from "@/lib/wp/schemas/rest";
 
 import "@colbitron/resource-hub-ui/page.css";
@@ -43,8 +43,8 @@ interface PageView {
   readonly canonical: string;
 }
 
-/** `title.rendered` as plain text, or a fixed name when it is only whitespace, so the heading is never empty. */
-export const UNTITLED_PAGE = "Untitled page";
+/** `title.rendered` as plain text, or a fixed name when it is only whitespace, so the heading is never empty (`UNTITLED_PAGE`, shared with the search results' page row). */
+export { UNTITLED_PAGE };
 
 function pageView(page: WpPage, path: string): PageView {
   const title = plainText(page.title.rendered);

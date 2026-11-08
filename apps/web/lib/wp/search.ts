@@ -12,8 +12,9 @@ import { MAX_SEARCH_PAGE, searchResponseSchema } from "./schemas/search";
  * the plugin's `GET /resource-hub/v1/search?q=…&page=n`, which answers one
  * page of matching resource and page IDs with their kinds, and then the
  * objects, read per kind with `include={ids}&orderby=include` as the related
- * section reads its resources. The `/search/` page that calls this is not
- * built yet.
+ * section reads its resources. The `/search/` page calls it
+ * (`components/SearchPage.tsx`), the one dynamic route (ADR 0043, amended):
+ * its render runs on every request, and these reads come from the Data Cache.
  *
  * The query is normalised here exactly as the plugin normalises it
  * (`SearchRoute::normalize_query()`): every run of whitespace becomes one

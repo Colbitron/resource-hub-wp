@@ -134,14 +134,32 @@ describe("isNotFoundPath", () => {
     for (const segment of RESERVED_ROOT_SEGMENTS) {
       if (segment === "resources") continue;
       // Reserved and not ours to answer, or reserved and a 404: never a page either way.
-      // `search` is a 404 until the search page (issue #115) lists its own path in OWN_ROUTE_PATHS.
+      // Under `api` and `search` only the routes in OWN_ROUTE_PATHS answer; anything deeper is a 404.
       const path = `/${segment}/x/`;
       expect(isNotFoundPath(path), path).toBe(segment === "api" || segment === "search");
+    }
+  });
+
+  it("leaves the search page to its route and answers anything under it with a 404", () => {
+    // `/search/` is the search page (issue #115), listed in OWN_ROUTE_PATHS; before it was built, it was a 404 from the path alone.
+    expect(isNotFoundPath("/search/")).toBe(false);
+    expect(isNotFoundPath("/search")).toBe(false);
+    for (const path of ["/search/x/", "/search/page/2/", "/search/x/y/", "/search/robots.txt"]) {
+      expect(isNotFoundPath(path), path).toBe(true);
     }
   });
 });
 
 describe("decidePath", () => {
+  it("leaves the search page alone, and answers a mixed-case form or anything under it with a 404", () => {
+    // The proxy is handed the pathname alone, so the query string never decides anything here.
+    expect(decidePath("/search/")).toBeNull();
+    // A reserved first segment is left in its case (lib/canonical-path.ts), so a mixed-case form is a 404, as `/API/revalidate/` is.
+    expect(decidePath("/Search/")).toEqual({ kind: "not-found" });
+    expect(decidePath("/API/revalidate/")).toEqual({ kind: "not-found" });
+    expect(decidePath("/search/x/")).toEqual({ kind: "not-found" });
+  });
+
   it("is null for a canonical path, the root and the front end's own routes", () => {
     for (const path of [ROOT_PATH, "/about/", "/about/team/", "/resources/", "/resources/webinar/example/", "/resources/topic/%e6%97%a5/page/2/", ...OWN_ROUTE_PATHS, "/_next/junk/", "/media/x/"]) {
       expect(decidePath(path), path).toBeNull();

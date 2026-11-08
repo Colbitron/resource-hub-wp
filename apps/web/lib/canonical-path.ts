@@ -46,11 +46,12 @@
  *    a chain of hops rather than one. No route can render such a segment, so
  *    it gets the route's 404 or Next.js's 400 with no redirect first.
  *    A path whose first segment is one of the front end's own other than the
- *    library (`api`, `media`, `_next`, in any case) is left alone whatever
- *    its case: the revalidate route, the uploads rewrite (where an upload's
- *    file name may legitimately carry upper-case letters) and the
- *    framework's assets are not pages, and the catch-all answers such a path
- *    with a 404 without a request.
+ *    library (`api`, `media`, `_next`, `search`, in any case) is left alone
+ *    whatever its case: the revalidate route, the uploads rewrite (where an
+ *    upload's file name may legitimately carry upper-case letters), the
+ *    framework's assets and the search page are not pages, and the
+ *    catch-all answers such a path with a 404 without a request, so
+ *    `/Search/` is a 404 as `/API/revalidate/` is.
  * 2. A trailing `/page/1/` is dropped from a `/resources/**` path: page 1 of a
  *    listing is the listing's own path (`listingPath` in `lib/routes.ts`), so
  *    `/resources/page/1/` is `/resources/` and

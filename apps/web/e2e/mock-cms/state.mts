@@ -255,6 +255,31 @@ export class MockState {
     return items;
   }
 
+  // --- Search (issue #115) ------------------------------------------------------
+
+  /**
+   * What the plugin's search route matches, in its order: the published
+   * resources whose title, summary or type or topic name holds `query`, and
+   * the served pages whose title or excerpt does, compared without regard to
+   * case, newest first, then by ID descending. The real engine (Relevanssi)
+   * ranks by relevance; the contract leaves the order to the engine, so the
+   * mock's is only stable, mixed and checkable.
+   */
+  search(query: string): { id: number; type: "resource" | "page"; date: string }[] {
+    const needle = query.toLowerCase();
+    const holds = (...texts: string[]) => texts.some((text) => text.toLowerCase().includes(needle));
+    const resources = this.published()
+      .filter((resource) => {
+        const names = [...resource.typeIds.map((id) => this.term("resource_type", id)?.name ?? ""), ...resource.topicIds.map((id) => this.term("resource_topic", id)?.name ?? "")];
+        return holds(resource.title, resource.summary, ...names);
+      })
+      .map((resource) => ({ id: resource.id, type: "resource" as const, date: resource.date }));
+    const pages = this.pages
+      .filter((page) => this.isServedPage(page) && holds(page.title, page.excerpt))
+      .map((page) => ({ id: page.id, type: "page" as const, date: page.date }));
+    return [...resources, ...pages].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  }
+
   // --- Pages (ADR 0052) --------------------------------------------------------
 
   page(id: number): PageRecord | undefined {
