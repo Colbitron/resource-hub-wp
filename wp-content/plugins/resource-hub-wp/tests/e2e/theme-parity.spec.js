@@ -34,7 +34,9 @@
  * creates with a pick and a topic match. A second resource, made here with a
  * topic of its own so the seeded page's related rows and its screenshots do
  * not change, holds a featured image narrower than the column to its own
- * width.
+ * width and a related-resources block in its body to `related.css`'s
+ * heading. The first describe also checks the resource page's two
+ * stylesheets stay off the other templates.
  */
 const { test, expect } = require( './fixtures' );
 const {
@@ -645,6 +647,34 @@ test.describe( "A CMS page computes the front end's styles", () => {
 		).toBeLessThanOrEqual( 360 );
 	} );
 
+	test( "the resource page's stylesheets stay off a page, the welcome and the 404", async ( {
+		page,
+	} ) => {
+		// `?p=` with an ID no post has is a 404 under any permalink structure;
+		// the tests site has none, so an unknown path would be the welcome.
+		for ( const [ url, status ] of [
+			[ cmsPage.link, 200 ],
+			[ '/', 200 ],
+			[ '/?p=999999999', 404 ],
+		] ) {
+			const response = await page.goto( url );
+			expect( response.status(), url ).toBe( status );
+			for ( const id of [
+				'resource-hub-resource',
+				'resource-hub-related',
+			] ) {
+				await expect(
+					page.locator( `link#${ id }-css` ),
+					`${ id } on ${ url }`
+				).toHaveCount( 0 );
+			}
+		}
+		// The 404 is the theme's, with its own stylesheet.
+		await expect(
+			page.locator( 'link#resource-hub-not-found-css' )
+		).toHaveCount( 1 );
+	} );
+
 	test( "a table block is drawn in the front end's scroll region", async ( {
 		page,
 		requestUtils,
@@ -809,6 +839,50 @@ test.describe( "A CMS resource page computes the front end's styles", () => {
 				'#wp-block-post-featured-image-css, #wp-block-post-featured-image-inline-css'
 			)
 		).toHaveCount( 0 );
+	} );
+
+	test( "a related-resources block in the body takes related.css's heading, which the theme loads for the page", async ( {
+		page,
+	} ) => {
+		await page.setViewportSize( { width: 1280, height: 900 } );
+		await page.goto( narrow.resource.link );
+
+		const block = page.locator(
+			'.rh-resource__body.rh-prose > .rh-related[data-rh-block="related-resources"]'
+		);
+		await expect( block ).toHaveCount( 1 );
+		await expect( block.locator( 'article.rh-card' ) ).toHaveCount( 3 );
+		// No related section of the page's own: nothing shares its topic.
+		await expect(
+			page.locator( 'article.rh-resource > section.rh-related' )
+		).toHaveCount( 0 );
+
+		// related.css's heading rule, which outranks prose.css's h2 margins
+		// and size; the probe takes the heading's size, so the tracking and
+		// the leading resolve in it.
+		const selector =
+			'.rh-resource__body .rh-related[data-rh-block="related-resources"] > h2';
+		const declarations = {
+			'margin-top': '0px',
+			'margin-bottom': '0px',
+			'padding-bottom': 'var(--rh-space-2)',
+			'border-bottom-width': 'var(--rh-border-width-strong)',
+			'border-bottom-style': 'solid',
+			'border-bottom-color': 'var(--rh-color-text)',
+			'font-size': 'var(--rh-text-md)',
+			'font-weight': 'var(--rh-weight-heading)',
+			'letter-spacing': 'var(--rh-tracking-heading)',
+			'line-height': 'calc(var(--rh-leading-tight) * var(--rh-text-md))',
+		};
+		expect(
+			await computed( page, selector, Object.keys( declarations ) )
+		).toEqual(
+			await resolve(
+				page,
+				'.rh-resource__body .rh-related[data-rh-block="related-resources"]',
+				declarations
+			)
+		);
 	} );
 
 	for ( const colorScheme of [ 'light', 'dark' ] ) {
