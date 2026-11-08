@@ -1,0 +1,47 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://raw.githubusercontent.com/Colbitron/resource-hub-wp/main/packages/ui/schemas/search-response.schema.json",
+	"title": "Search response",
+	"description": "The 200 body of GET /wp-json/resource-hub/v1/search?q=…&page=n, the plugin's search route: one page of the published resources and pages that match q, at a fixed 12 per page. q is trimmed and its whitespace runs collapsed to one space, and must then be 2 to 100 characters; page is 1 to 10 and defaults to 1. Anything else is answered with a WordPress REST error (wp-error.schema.json). The body lists IDs and kinds only, by design: the front end then reads the objects with GET /wp-json/wp/v2/resources?include={ids}&orderby=include&_embed and GET /wp-json/wp/v2/pages?include={ids}&orderby=include, so one code path renders a resource everywhere and this route stays small and cacheable.",
+	"type": "object",
+	"properties": {
+		"items": {
+			"description": "This page's matches in the search engine's order, resources and pages mixed. At most 12, the page size. Empty when nothing matches, and for a page past the last one.",
+			"type": "array",
+			"items": { "$ref": "#/$defs/item" },
+			"maxItems": 12
+		},
+		"total": {
+			"description": "How many published resources and pages match q in all, as the search engine counts them. Not capped: it can exceed what the 10 reachable pages hold, so a front end can say there are more results than it can show. 0 when nothing matches.",
+			"type": "integer",
+			"minimum": 0
+		},
+		"pages": {
+			"description": "How many pages of results can be asked for: total divided by 12 and rounded up, capped at 10, the largest page the route accepts. 0 when total is 0. Matches past the tenth page are counted in total and never listed.",
+			"type": "integer",
+			"minimum": 0,
+			"maximum": 10
+		}
+	},
+	"required": [ "items", "total", "pages" ],
+	"additionalProperties": false,
+	"$defs": {
+		"item": {
+			"description": "One match: its post ID and which kind of content it is, which says which core collection to read it from.",
+			"type": "object",
+			"properties": {
+				"id": {
+					"description": "The post ID of the match, to pass to its collection's include parameter.",
+					"$ref": "common.schema.json#/$defs/id"
+				},
+				"type": {
+					"description": "The match's post type: resource for a resource, read from /wp/v2/resources; page for a WordPress page the front end serves at its path, read from /wp/v2/pages.",
+					"type": "string",
+					"enum": [ "resource", "page" ]
+				}
+			},
+			"required": [ "id", "type" ],
+			"additionalProperties": false
+		}
+	}
+}

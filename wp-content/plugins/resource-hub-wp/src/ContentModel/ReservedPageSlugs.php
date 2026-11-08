@@ -13,8 +13,9 @@ use ResourceHub\Pages\PagePath;
 
 /**
  * The front end serves every published page at its path (ADR 0052), but its own routes come first:
- * `/resources/…` is the library, `/api/…` its route handlers, `/media/…` the uploads rewrite and
- * `/_next/…` the framework's. A top-level page slugged `resources`, `api`, `media` or `_next` could
+ * `/resources/…` is the library, `/api/…` its route handlers, `/media/…` the uploads rewrite,
+ * `/_next/…` the framework's and `/search/` the search page (issue #115). A top-level page slugged
+ * `resources`, `api`, `media`, `_next` or `search` could
  * never be reached there, so WordPress is told the slug is taken, the way core already treats
  * `embed` and the feed names for hierarchical post types: `wp_unique_post_slug()` appends a suffix
  * (`resources-2`) and the editor sees the slug it got. Only a page with no parent is affected, because
@@ -25,7 +26,7 @@ final class ReservedPageSlugs {
 	/**
 	 * The first path segments the front end's own routes use.
 	 */
-	public const SLUGS = array( 'resources', 'api', 'media', '_next' );
+	public const SLUGS = array( 'resources', 'api', 'media', '_next', 'search' );
 
 	/**
 	 * Hooks core's uniqueness check for hierarchical post types.

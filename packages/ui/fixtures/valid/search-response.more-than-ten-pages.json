@@ -1,0 +1,18 @@
+{
+	"items": [
+		{ "id": 301, "type": "resource" },
+		{ "id": 302, "type": "resource" },
+		{ "id": 303, "type": "resource" },
+		{ "id": 304, "type": "resource" },
+		{ "id": 305, "type": "resource" },
+		{ "id": 306, "type": "resource" },
+		{ "id": 307, "type": "resource" },
+		{ "id": 308, "type": "resource" },
+		{ "id": 309, "type": "resource" },
+		{ "id": 310, "type": "resource" },
+		{ "id": 311, "type": "resource" },
+		{ "id": 12, "type": "page" }
+	],
+	"total": 250,
+	"pages": 10
+}

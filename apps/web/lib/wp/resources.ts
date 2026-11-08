@@ -300,6 +300,18 @@ export async function getResourcesByIds(
   ids: readonly number[],
   { hostSlug }: GetResourcesByIdsOptions,
 ): Promise<WpResource[]> {
+  const tags = relatedTags(hostSlug);
+  return readResourcesByIds(ids, tags);
+}
+
+/**
+ * The published resources among `ids`, in the order given, read with `tags`:
+ * the one `include=` read behind `getResourcesByIds` and the search results
+ * (`searchSite` in `search.ts`), with the same rules and the same
+ * `RangeError`s for a bad ID or more than 100; `tags` are fixed before the
+ * request.
+ */
+export async function readResourcesByIds(ids: readonly number[], tags: readonly string[]): Promise<WpResource[]> {
   const wanted = [...new Set(ids)];
   const bad = wanted.find((id) => !isPostId(id));
   if (bad !== undefined) {
@@ -308,7 +320,6 @@ export async function getResourcesByIds(
   if (wanted.length > MAX_INCLUDE) {
     throw new RangeError(`At most ${MAX_INCLUDE} IDs can be read at once, not ${wanted.length}`);
   }
-  const tags = relatedTags(hostSlug);
   if (wanted.length === 0) {
     return [];
   }

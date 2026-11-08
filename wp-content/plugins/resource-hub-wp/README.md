@@ -2,7 +2,7 @@
 
 For a contributor new to the plugin: how to run it, test it and find your way around. The rules an agent follows on every edit are in [`CLAUDE.md`](CLAUDE.md) beside this file; the project's architecture, contract and decisions are in the [root README](../../../README.md).
 
-The plugin models a filterable resources library for a headless front end: the `resource` post type with its taxonomies and meta, three custom REST routes (resolve a slug, a page by path, and the resources related to one), the revalidation hook that tells the Next.js front end what changed, the lockdown that keeps the CMS's own pages for logged-in users, and the admin screens that show what happened. It is a demonstration of a pattern, written fresh, not production code.
+The plugin models a filterable resources library for a headless front end: the `resource` post type with its taxonomies and meta, four custom REST routes (resolve a slug, a page by path, the resources related to one, and a search of resources and pages), the revalidation hook that tells the Next.js front end what changed, the lockdown that keeps the CMS's own pages for logged-in users, and the admin screens that show what happened. It is a demonstration of a pattern, written fresh, not production code.
 
 ## Directory map
 
@@ -12,9 +12,9 @@ src/
   Plugin.php             wires every component onto WordPress hooks
   ContentModel/          post type, taxonomies, meta and its rules, permalinks, one-type rule,
                          required fields, reserved slugs, slug escapes, used-type protection
-  Rest/                  resolve route, page route, related route and its salted cache, the no-cache
-                         header on anonymous REST reads, RouteMatch (which route and handler a request
-                         reached, for the content-model REST guards)
+  Rest/                  resolve route, page route, related and search routes with their salted
+                         caches, the no-cache header on anonymous REST reads, RouteMatch (which route
+                         and handler a request reached, for the content-model REST guards)
   Blocks/                the related-resources block: registration from build/ and the render callback;
                          TypeAccents, the shared type-accent table from build/type-accents.json
   Revalidation/          events, queue, dispatcher, sender, results, config, PostHog

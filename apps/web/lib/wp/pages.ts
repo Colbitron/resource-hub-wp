@@ -1,7 +1,7 @@
 import "server-only";
 
 import { pageTags } from "../tags";
-import { CmsError, cmsGet } from "./fetch";
+import { CmsError, cmsGet, cmsGetListOk } from "./fetch";
 import { pageResponseSchema, type PageLookup } from "./schemas/page";
 import { wpPageSchema, type WpPage } from "./schemas/rest";
 
@@ -89,4 +89,39 @@ export async function getPageById(id: number): Promise<WpPage | null> {
     throw new CmsError(path, "schema", "the body is a different page", 200);
   }
   return result.data;
+}
+
+/** Core's largest `per_page`, and so the most IDs one `include` read can return. */
+const MAX_INCLUDE = 100;
+
+/**
+ * The published pages among `ids`, in the order given (`include` with
+ * `orderby=include`), read with `tags`: for the search results (`searchSite`
+ * in `search.ts`), after the plugin's search route has chosen and ordered
+ * them. Without `_embed`: a page's reader schema reads nothing embedded. An ID
+ * that is not a published page is absent, and so is a page the reader schema
+ * refuses, logged, as in every collection read (`cmsGetList` in `fetch.ts`).
+ * Repeated IDs are asked for once; no IDs is an empty list without a request.
+ * Throws a `RangeError` on a value that is not a post ID or on more than 100
+ * IDs: the caller passes IDs from a parsed response, so either is a bug.
+ */
+export async function readPagesByIds(ids: readonly number[], tags: readonly string[]): Promise<WpPage[]> {
+  const wanted = [...new Set(ids)];
+  const bad = wanted.find((id) => !isPostId(id));
+  if (bad !== undefined) {
+    throw new RangeError(`Not a post ID: ${String(bad)}`);
+  }
+  if (wanted.length > MAX_INCLUDE) {
+    throw new RangeError(`At most ${MAX_INCLUDE} IDs can be read at once, not ${wanted.length}`);
+  }
+  if (wanted.length === 0) {
+    return [];
+  }
+  const { data } = await cmsGetListOk({
+    path: "/wp/v2/pages",
+    query: `include=${wanted.join(",")}&orderby=include&per_page=${wanted.length}`,
+    tags,
+    itemSchema: wpPageSchema,
+  });
+  return data.items.filter((page) => wanted.includes(page.id));
 }

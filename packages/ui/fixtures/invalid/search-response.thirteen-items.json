@@ -1,0 +1,19 @@
+{
+	"items": [
+		{ "id": 1, "type": "resource" },
+		{ "id": 2, "type": "resource" },
+		{ "id": 3, "type": "resource" },
+		{ "id": 4, "type": "resource" },
+		{ "id": 5, "type": "resource" },
+		{ "id": 6, "type": "resource" },
+		{ "id": 7, "type": "resource" },
+		{ "id": 8, "type": "resource" },
+		{ "id": 9, "type": "resource" },
+		{ "id": 10, "type": "resource" },
+		{ "id": 11, "type": "resource" },
+		{ "id": 12, "type": "resource" },
+		{ "id": 13, "type": "resource" }
+	],
+	"total": 13,
+	"pages": 2
+}
