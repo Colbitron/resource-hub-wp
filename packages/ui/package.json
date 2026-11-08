@@ -18,6 +18,7 @@
 		"card.css",
 		"card-labels.css",
 		"brand.css",
+		"base.css",
 		"type-accents.json",
 		"README.md",
 		"DESIGN.md"
@@ -30,6 +31,7 @@
 		"./card.css": "./card.css",
 		"./card-labels.css": "./card-labels.css",
 		"./brand.css": "./brand.css",
+		"./base.css": "./base.css",
 		"./type-accents.json": "./type-accents.json"
 	},
 	"scripts": {

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import "@colbitron/resource-hub-ui/tokens.css";
 import "@colbitron/resource-hub-ui/fonts/figtree-fallback.css";
+import "@colbitron/resource-hub-ui/base.css";
 import "./shell.css";
 
 import { BrandLockup } from "./Brand";
@@ -15,9 +16,11 @@ import { ThemeToggle } from "./ThemeToggle";
  * (packages/ui/DESIGN.md): the shell's own styles build on the tokens, and
  * the root layout renders the shell around every page, so the tokens reach
  * every page. It imports the size-adjusted fallback faces beside them,
- * since `--rh-font-sans` in the tokens names those faces. Page content is
- * stacked under `main`, which carries `tabIndex={-1}` so the skip link
- * lands focus on it in every browser.
+ * since `--rh-font-sans` in the tokens names those faces, then the shared
+ * base styles (`base.css`: the document, the theme choice's colour scheme
+ * and the skip link) before its own landmark layout (`shell.css`). Page
+ * content is stacked under `main`, which carries `tabIndex={-1}` so the
+ * skip link lands focus on it in every browser.
  *
  * The header holds the lockup alone (`BrandLockup`: the publisher's mark
  * and the wordmark "Resource Hub", one link to the library), so it is one

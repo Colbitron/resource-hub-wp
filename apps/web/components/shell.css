@@ -1,87 +1,11 @@
 /*
- * The page shell: the base styles the front end owns, built on the shared
- * tokens (packages/ui/DESIGN.md). The shared package owns the tokens and
- * the component styles; this file owns only the document, the landmarks and
- * the skip link.
+ * The page shell: the landmarks' layout the front end owns, built on the
+ * shared tokens and on the shared base styles (`packages/ui/base.css`,
+ * which Shell.tsx imports first, holds the document, the theme choice's
+ * colour scheme and the skip link; packages/ui/DESIGN.md). This file owns
+ * only the flex shell, its gutter, the header, `main` and the footer.
+ * These classes are the front end's own, not part of the contract.
  */
-
-*,
-*::before,
-*::after {
-	box-sizing: border-box;
-}
-
-html {
-	-webkit-text-size-adjust: 100%;
-}
-
-/*
- * The reader's theme choice (lib/theme.ts): `data-theme` on <html>, set by
- * the head script before first paint and by the theme control after, pins
- * the colour scheme to one side, and every `light-dark()` token in
- * tokens.css follows. No attribute means System: `:root`'s
- * `color-scheme: light dark` and the system preference apply.
- */
-:root[data-theme="light"] {
-	color-scheme: light;
-}
-
-:root[data-theme="dark"] {
-	color-scheme: dark;
-}
-
-body {
-	margin: 0;
-	background: var(--rh-color-surface);
-	color: var(--rh-color-text);
-	font-family: var(--rh-font-sans);
-	font-size: var(--rh-text-base);
-	line-height: var(--rh-leading-body);
-}
-
-a {
-	color: var(--rh-color-accent);
-	text-underline-offset: 0.15em;
-}
-
-:focus-visible {
-	outline: var(--rh-focus-width) solid var(--rh-color-focus);
-	outline-offset: 2px;
-}
-
-h1,
-h2,
-h3 {
-	margin: 0 0 var(--rh-space-3);
-	font-family: var(--rh-font-sans);
-	font-weight: var(--rh-weight-heading);
-	letter-spacing: var(--rh-tracking-heading);
-	line-height: var(--rh-leading-tight);
-	overflow-wrap: anywhere;
-}
-
-h1 {
-	font-size: var(--rh-text-2xl);
-}
-
-h2 {
-	font-size: var(--rh-text-xl);
-}
-
-h3 {
-	font-size: var(--rh-text-lg);
-}
-
-p {
-	margin: 0 0 var(--rh-space-4);
-	max-width: var(--rh-measure);
-}
-
-img,
-video {
-	max-width: 100%;
-	height: auto;
-}
 
 .rh-shell {
 	display: flex;
@@ -97,23 +21,6 @@ video {
 	max-width: var(--rh-measure-wide);
 	margin: 0 auto;
 	padding: 0 var(--rh-space-4);
-}
-
-.rh-skip {
-	position: absolute;
-	top: var(--rh-space-2);
-	left: var(--rh-space-2);
-	z-index: 1;
-	padding: var(--rh-space-2) var(--rh-space-4);
-	background: var(--rh-color-accent);
-	color: var(--rh-color-accent-text);
-	border-radius: var(--rh-radius);
-	text-decoration: none;
-	transform: translateY(-200%);
-}
-
-.rh-skip:focus {
-	transform: none;
 }
 
 .rh-header {
