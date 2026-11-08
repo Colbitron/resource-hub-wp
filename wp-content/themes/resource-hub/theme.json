@@ -1,6 +1,200 @@
 {
 	"$schema": "https://schemas.wp.org/wp/6.9/theme.json",
 	"version": 3,
+	"settings": {
+		"appearanceTools": false,
+		"color": {
+			"custom": false,
+			"customDuotone": false,
+			"customGradient": false,
+			"defaultDuotone": false,
+			"defaultGradients": false,
+			"defaultPalette": false,
+			"duotone": [],
+			"gradients": [],
+			"palette": [
+				{
+					"slug": "text",
+					"name": "Text",
+					"color": "var(--rh-color-text)"
+				},
+				{
+					"slug": "text-muted",
+					"name": "Muted text",
+					"color": "var(--rh-color-text-muted)"
+				},
+				{
+					"slug": "surface",
+					"name": "Surface",
+					"color": "var(--rh-color-surface)"
+				},
+				{
+					"slug": "surface-raised",
+					"name": "Raised surface",
+					"color": "var(--rh-color-surface-raised)"
+				},
+				{
+					"slug": "border",
+					"name": "Border",
+					"color": "var(--rh-color-border)"
+				},
+				{
+					"slug": "border-strong",
+					"name": "Strong border",
+					"color": "var(--rh-color-border-strong)"
+				},
+				{
+					"slug": "accent",
+					"name": "Accent",
+					"color": "var(--rh-color-accent)"
+				},
+				{
+					"slug": "accent-text",
+					"name": "Text on accent",
+					"color": "var(--rh-color-accent-text)"
+				},
+				{
+					"slug": "focus",
+					"name": "Focus",
+					"color": "var(--rh-color-focus)"
+				}
+			]
+		},
+		"layout": {
+			"contentSize": "var(--rh-measure)",
+			"wideSize": "var(--rh-measure-wide)"
+		},
+		"spacing": {
+			"defaultSpacingSizes": false,
+			"spacingSizes": [
+				{
+					"slug": "1",
+					"name": "Step 1",
+					"size": "var(--rh-space-1)"
+				},
+				{
+					"slug": "2",
+					"name": "Step 2",
+					"size": "var(--rh-space-2)"
+				},
+				{
+					"slug": "3",
+					"name": "Step 3",
+					"size": "var(--rh-space-3)"
+				},
+				{
+					"slug": "4",
+					"name": "Step 4",
+					"size": "var(--rh-space-4)"
+				},
+				{
+					"slug": "5",
+					"name": "Step 5",
+					"size": "var(--rh-space-5)"
+				},
+				{
+					"slug": "6",
+					"name": "Step 6",
+					"size": "var(--rh-space-6)"
+				},
+				{
+					"slug": "7",
+					"name": "Step 7",
+					"size": "var(--rh-space-7)"
+				},
+				{
+					"slug": "8",
+					"name": "Step 8",
+					"size": "var(--rh-space-8)"
+				}
+			]
+		},
+		"typography": {
+			"customFontSize": false,
+			"defaultFontSizes": false,
+			"fluid": false,
+			"fontFamilies": [
+				{
+					"slug": "sans",
+					"name": "Figtree",
+					"fontFamily": "\"Figtree\", var(--rh-font-sans)",
+					"fontFace": [
+						{
+							"fontFamily": "Figtree",
+							"fontStyle": "normal",
+							"fontWeight": "300 900",
+							"fontDisplay": "swap",
+							"src": [
+								"file:./build/fonts/figtree-latin-wght-normal.woff2"
+							]
+						}
+					]
+				}
+			],
+			"fontSizes": [
+				{
+					"slug": "sm",
+					"name": "Small",
+					"size": "var(--rh-text-sm)"
+				},
+				{
+					"slug": "base",
+					"name": "Base",
+					"size": "var(--rh-text-base)"
+				},
+				{
+					"slug": "md",
+					"name": "Medium",
+					"size": "var(--rh-text-md)"
+				},
+				{
+					"slug": "lg",
+					"name": "Large",
+					"size": "var(--rh-text-lg)"
+				},
+				{
+					"slug": "xl",
+					"name": "Extra large",
+					"size": "var(--rh-text-xl)"
+				},
+				{
+					"slug": "2-xl",
+					"name": "Extra extra large",
+					"size": "var(--rh-text-2xl)"
+				}
+			]
+		}
+	},
+	"styles": {
+		"color": {
+			"background": "var:preset|color|surface",
+			"text": "var:preset|color|text"
+		},
+		"typography": {
+			"fontFamily": "var:preset|font-family|sans",
+			"fontSize": "var:preset|font-size|base",
+			"lineHeight": "var(--rh-leading-body)"
+		},
+		"elements": {
+			"link": {
+				"color": {
+					"text": "var:preset|color|accent"
+				}
+			},
+			"heading": {
+				"typography": {
+					"fontWeight": "var(--rh-weight-heading)",
+					"letterSpacing": "var(--rh-tracking-heading)",
+					"lineHeight": "var(--rh-leading-tight)"
+				}
+			},
+			"h1": {
+				"typography": {
+					"fontSize": "var:preset|font-size|2-xl"
+				}
+			}
+		}
+	},
 	"templateParts": [
 		{
 			"name": "header",

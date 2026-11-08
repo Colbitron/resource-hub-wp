@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import Link from "next/link";
 
-import "./brand.css";
+import "@colbitron/resource-hub-ui/brand.css";
 
 /**
  * Colbination's mark and the site's lockup (`packages/ui/DESIGN.md`,
@@ -33,7 +33,7 @@ export function BrandMark({ className, style }: { className?: string; style?: CS
 /**
  * The lockup as the header renders it: the mark and the wordmark "Resource
  * Hub", in Figtree at the heading weight, as one link to the library. The
- * mark is sized from the wordmark (`brand.css`), so the two scale together
+ * mark is sized from the wordmark (`packages/ui/brand.css`), so the two scale together
  * with the reader's text size.
  */
 export function BrandLockup() {

@@ -2,13 +2,15 @@
 	"name": "resource-hub-wp",
 	"version": "0.1.0",
 	"private": true,
-	"description": "The Resource Hub WordPress plugin: block and editor-panel build, JavaScript lint, and the Playwright smoke tests. PHP tooling runs through Composer in the wp-env containers from the workspace root.",
+	"description": "The Resource Hub WordPress plugin: block and editor-panel build, JavaScript lint (its own and the CMS theme's build script, so the workspace has one @wordpress/scripts), and the Playwright smoke tests. PHP tooling runs through Composer in the wp-env containers from the workspace root.",
 	"license": "GPL-2.0-or-later",
 	"scripts": {
 		"build": "wp-scripts build --webpack-src-dir=blocks",
 		"start": "wp-scripts start --webpack-src-dir=blocks",
-		"lint:js": "wp-scripts lint-js admin blocks editor tests/e2e playwright.config.js webpack.config.js",
-		"format": "wp-scripts format admin blocks editor tests/e2e playwright.config.js webpack.config.js",
+		"lint:js": "wp-scripts lint-js admin blocks editor tests/e2e playwright.config.js webpack.config.js && pnpm run lint:js:theme",
+		"lint:js:theme": "cd ../../.. && wp-scripts lint-js wp-content/themes/resource-hub/scripts",
+		"format": "wp-scripts format admin blocks editor tests/e2e playwright.config.js webpack.config.js && pnpm run format:theme",
+		"format:theme": "cd ../../.. && wp-scripts format wp-content/themes/resource-hub/scripts",
 		"test:e2e": "wp-scripts test-playwright",
 		"test:e2e:debug": "wp-scripts test-playwright --debug"
 	},

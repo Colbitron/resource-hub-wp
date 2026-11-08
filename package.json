@@ -22,7 +22,7 @@
 		"lint": "wp-env run cli --env-cwd=wp-content/plugins/resource-hub-wp composer lint",
 		"lint:fix": "wp-env run cli --env-cwd=wp-content/plugins/resource-hub-wp composer lint:fix",
 		"test:php": "wp-env run tests-cli --env-cwd=wp-content/plugins/resource-hub-wp composer test",
-		"build": "pnpm --filter resource-hub-wp build",
+		"build": "pnpm --filter resource-hub-wp --filter resource-hub-theme build",
 		"start": "pnpm --filter resource-hub-wp start",
 		"lint:js": "pnpm --filter resource-hub-wp lint:js",
 		"format": "pnpm --filter resource-hub-wp format",

@@ -1,8 +1,10 @@
 # One workspace for the three things that change together: the WordPress
 # plugin at the path WordPress loads it from, the Next.js front end, and the
-# contract package both consume (ADR 0033).
+# contract package both consume (ADR 0033); and the CMS block theme beside the
+# plugin, whose build copies that package's stylesheets and font.
 packages:
   - wp-content/plugins/*
+  - wp-content/themes/*
   - apps/*
   - packages/*
 

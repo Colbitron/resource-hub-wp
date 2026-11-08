@@ -91,7 +91,7 @@
 
 /*
  * The lockup inside its clear space: the mark is 1.25 em of the wordmark
- * (brand.css), so half its width is 0.625 em at the lockup's size, which the
+ * (packages/ui/brand.css), so half its width is 0.625 em at the lockup's size, which the
  * box's padding draws as a dashed line.
  */
 .rh-specimen__lockup {

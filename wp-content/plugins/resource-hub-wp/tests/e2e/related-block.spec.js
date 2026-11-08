@@ -108,8 +108,9 @@ test.describe( 'Related Resources block', () => {
 			block.locator( '[data-rh-block="related-resources"]' )
 		).toHaveCount( 0 );
 
-		// The block's stylesheet, the shared package's tokens and the row, is
-		// loaded in the canvas because the block is in it.
+		// The block's stylesheet, the shared package's row, is loaded in the
+		// canvas because the block is in it; its tokens come from the shared
+		// `resource-hub-tokens` handle (theme-assets.spec.js counts them).
 		await expect(
 			editor.canvas.locator(
 				'link[rel="stylesheet"][href*="build/related-resources/style-index"]'

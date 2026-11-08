@@ -1,7 +1,20 @@
 /*
- * The lockup: the mark beside the wordmark, as one link (Brand.tsx;
- * packages/ui/DESIGN.md, "Brand"). The front end's own classes, built on
- * the shared tokens; not part of the contract.
+ * The lockup: the brand mark beside the wordmark, as one link. Class names
+ * are part of the contract (ADR 0033; see `packages/ui/README.md`, and
+ * `DESIGN.md`, "Brand", for the design): the front end's <BrandLockup>
+ * (`apps/web/components/Brand.tsx`) and the CMS theme's header part
+ * (`wp-content/themes/resource-hub/parts/header.html`) render the same
+ * markup.
+ *
+ * Built only on the tokens in tokens.css, which the consumer loads first.
+ *
+ * Markup:
+ *   <a class="rh-brand" href="…">
+ *     <svg class="rh-brand__mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">…</svg>
+ *     <span class="rh-brand__name">Resource Hub</span>
+ *   </a>
+ *
+ * The SVG is a copy of brand/mark.svg, drawn inline so it costs no request.
  *
  * The wordmark is set like a heading (the heading weight and tracking, the
  * tight line height) at `--rh-text-lg`, the size the header has always used

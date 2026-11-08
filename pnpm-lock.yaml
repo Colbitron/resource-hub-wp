@@ -312,6 +312,12 @@ importers:
         specifier: ^5.0.0
         version: 5.0.0
 
+  wp-content/themes/resource-hub:
+    devDependencies:
+      '@colbitron/resource-hub-ui':
+        specifier: workspace:*
+        version: link:../../../packages/ui
+
 packages:
 
   '@ariakit/components@0.1.15':

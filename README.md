@@ -9,7 +9,7 @@ The plugin models a filterable resources library: a `resource` post type with `r
 ```
 /                                        pnpm workspace root: .wp-env.json, CLAUDE.md, this README
 ├─ wp-content/plugins/resource-hub-wp/   the WordPress plugin (its own README.md and CLAUDE.md)
-├─ wp-content/themes/resource-hub/       the CMS's block theme, a slice-5 skeleton so far (its own README.md)
+├─ wp-content/themes/resource-hub/       the CMS's block theme, slice 5: skeleton and assets so far (its own README.md)
 ├─ apps/web/                             the Next.js front end (its own README.md and CLAUDE.md)
 ├─ packages/ui/                          @colbitron/resource-hub-ui: the contract's JSON Schemas, shared styles and DESIGN.md
 ├─ docs/adr/                             the hard-to-reverse decisions, one sequence for the whole project
@@ -48,7 +48,8 @@ Everything marked done exists on `main` and is green in CI.
 | The `resource-hub/related-resources` block's render callback and its marker with card rows, the picks editor, and the front end's related section and its swap of the marker ([issue #50](https://github.com/Colbitron/resource-hub-wp/issues/50)) | done |
 | Follow-ups: real-browser lab measurement ([issue #85](https://github.com/Colbitron/resource-hub-wp/issues/85)), the related list's scale path ([issue #87](https://github.com/Colbitron/resource-hub-wp/issues/87)) | open |
 | CMS block theme skeleton: header, footer, `index` and `404` templates, active on both wp-env sites, its 404 listing no pages and printing no pingback link ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
-| CMS block theme: the `packages/ui` styles, the remaining templates and its deploy ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | slice 5 |
+| CMS block theme assets: the `packages/ui` tokens, Figtree and its fallback faces, and the lockup, built into the theme and loaded on its pages and in the editor canvas, one copy of the tokens beside the related-resources block ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
+| CMS block theme: the remaining templates, the System / Light / Dark control and its deploy ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | slice 5 |
 
 ## Architecture
 
@@ -61,7 +62,7 @@ flowchart LR
             rest["REST<br/>/wp/v2/resources, /wp/v2/pages<br/>/resource-hub/v1/resolve<br/>/resource-hub/v1/page<br/>/resource-hub/v1/related"]
             block["related-resources block<br/>server-rendered marker + card-row fallback"]
             hook["Revalidation hook<br/>wp_after_insert_post, before_delete_post,<br/>term and option hooks; sent from WP-Cron"]
-            theme["Block theme (slice 5, skeleton)<br/>logged-in users only;<br/>404 for anonymous visitors"]
+            theme["Block theme (slice 5: skeleton and assets)<br/>logged-in users only;<br/>404 for anonymous visitors"]
             editor --> cpt
             cpt --> rest
             cpt --> block
@@ -101,7 +102,7 @@ Requirements on the host: Docker, Node 24, pnpm. PHP, Composer and WP-CLI run in
 pnpm install            # one workspace: the plugin, the front end and packages/ui
 pnpm env:start          # WordPress at http://localhost:8888, tests site at :8889
 pnpm composer install   # inside the container; vendor/ lands in the plugin directory
-pnpm build              # compiles the block and editor scripts into the plugin's build/
+pnpm build              # compiles the block and editor scripts into the plugin's build/, and copies the theme's assets into its build/
 pnpm wp resource-hub seed   # optional: fictional sample resources to list and filter
 ```
 
@@ -117,7 +118,7 @@ Log in at `http://localhost:8888/wp-admin` with `admin` / `password`. The plugin
 | `pnpm composer <args>` | Composer in the dev container |
 | `pnpm lint` / `pnpm lint:fix` | PHPCS / PHPCBF |
 | `pnpm lint:js` / `pnpm format` | ESLint and Prettier with the WordPress presets |
-| `pnpm build` / `pnpm start` | Block build, once or watching |
+| `pnpm build` / `pnpm start` | Block build, once or watching; `pnpm build` also builds the theme's assets |
 | `pnpm test:php` | PHPUnit in the tests container |
 | `pnpm test:e2e` / `pnpm test:e2e:debug` | Playwright against the tests site |
 | `pnpm test:schemas` | The `packages/ui` tests: the contract schemas, and the stylesheets' contrast and design-doc checks |
