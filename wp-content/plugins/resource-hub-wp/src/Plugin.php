@@ -27,6 +27,7 @@ use ResourceHub\Cli\DecodeSlugsCommand;
 use ResourceHub\Cli\SearchIndexCommand;
 use ResourceHub\Cli\SeedCommand;
 use ResourceHub\Collections\CollectionQuery;
+use ResourceHub\Collections\PaginationNumbers;
 use ResourceHub\Collections\Routes;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\OneType;
@@ -113,6 +114,7 @@ final class Plugin {
 		( new Permalink() )->register();
 		( new Routes() )->register();
 		( new CollectionQuery() )->register();
+		( new PaginationNumbers() )->register();
 		( new UsedTypes() )->register();
 		add_action( 'enqueue_block_editor_assets', array( new SidebarAssets( $this->file ), 'enqueue' ) );
 		add_action( 'enqueue_block_editor_assets', array( new RequiredFieldsAssets( $this->file ), 'enqueue' ) );

@@ -164,6 +164,8 @@ const RESOURCE_HUB_THEME_ADMIN_BAR_SHELL = 'body.admin-bar .rh-shell { min-heigh
  * `.rh-pagination__link`, `[aria-current]`, `__gap` and `__step`, token for token, and is added inline
  * after `listing.css` (`wp_add_inline_style()`, as the admin-bar rule is), rather than copied into
  * `build/` and registered: the manifest lists copies of the package's files, and this is not one.
+ * Which numbers the block lists is the plugin's: its `PaginationNumbers` windows core's list as the
+ * front end's `pageWindow()` does, in core's markup, on the collections' main query.
  *
  * **Core block styles that fight the body's.** Core enqueues each block's stylesheet as the block
  * renders, before `wp_head`, and six draw over what `prose.css` or `resource.css` gives the same elements, which the

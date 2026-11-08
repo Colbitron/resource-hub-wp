@@ -15,11 +15,12 @@
  * than the package's: the front end never renders core's markup. Loaded inline
  * after listing.css on the collection templates (functions.php).
  *
- * The page-number list itself can differ too, from four pages on: core's
- * `paginate_links()` (`mid_size` 1, `end_size` 1) writes a gap where the front
- * end's `pageWindow()` lists every page up to seven. Previous, Next, the current
- * page and every link's target agree; only which numbers show between them can
- * part. That is accepted with the DOM, not re-rendered here.
+ * The page-number list itself is the front end's: the plugin's
+ * `PaginationNumbers` filters core's `paginate_links_output` on a collection's
+ * main query and keeps, of core's own links, the pages the front end's
+ * `pageWindow()` lists, with core's dots span at each gap, so the classes here
+ * are still core's and only which numbers show between Previous and Next
+ * changed (the plugin's `src/Collections/PaginationNumbers.php`).
  *
  * Specificity: core's flex layout for the block is written to generated
  * `.wp-container-core-query-pagination-is-layout-*` and `.is-layout-flex`
