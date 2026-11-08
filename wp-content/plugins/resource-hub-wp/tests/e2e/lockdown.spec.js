@@ -8,10 +8,11 @@
  *
  * PHPUnit's reinstall leaves the tests site with plain permalinks, under
  * which core has no rewrite rules, so `/feed/`, `/wp-sitemap.xml` and
- * `/robots.txt` would all be the home page, and with no theme, so nothing
- * would render at all. The suite puts the site in the host's shape first:
- * the bundled block theme, and the host's permalink structure through the
- * Permalinks screen, because the settings endpoint does not expose it.
+ * `/robots.txt` would all be the home page. The suite puts the site in the
+ * host's shape first: the host's permalink structure through the Permalinks
+ * screen, because the settings endpoint does not expose it. The theme is the
+ * project's own `resource-hub`, which the shared fixture activates; what its
+ * 404 must not show is in `theme-404.spec.js`.
  */
 const { request } = require( '@playwright/test' );
 const { test: base, expect } = require( './fixtures' );
@@ -66,7 +67,6 @@ test.describe( 'CMS lockdown', () => {
 	let resource;
 
 	test.beforeAll( async ( { requestUtils } ) => {
-		await requestUtils.activateTheme( 'twentytwentyfive' );
 		await usePrettyPermalinks( requestUtils );
 
 		const stamp = Date.now();
