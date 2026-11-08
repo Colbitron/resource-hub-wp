@@ -9,7 +9,7 @@
 # - GUARDED_PATHS lists both copies of this workflow, as GitHub's does.
 #
 # This copy runs beside GitHub's, .github/workflows/adr-approval.yml (ADR
-# 0053). A test on 2026-11-08 showed that Depot CI, like GitHub, runs main's
+# 0053). A test on 2026-11-07 showed that Depot CI, like GitHub, runs main's
 # copy of this file on `pull_request_target`, not the pull request's: a
 # throwaway pull request (#100) that put `echo "PR COPY"; exit 0` at the top
 # of the run script got main's copy, with no "PR COPY" in the log, and a

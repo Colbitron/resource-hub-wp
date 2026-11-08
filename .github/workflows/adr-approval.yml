@@ -20,10 +20,14 @@
 # .depot/workflows/adr-approval.yml on Depot CI, where the rest of CI runs
 # (ADR 0053). This one is the check of record only while GitHub Actions
 # runs jobs; if the Actions limit is reached again, the Depot copy may be
-# the only one running. A test on 2026-11-08 showed that Depot CI, too, runs
+# the only one running. A test on 2026-11-07 showed that Depot CI, too, runs
 # main's copy on `pull_request_target`, so the Depot copy can stand as the
 # check of record if this one stops running (the test and what it left
-# unconfirmed are in .claude/rules/adr.md).
+# unconfirmed are in .claude/rules/adr.md). Both copies keep running:
+# retiring this one is a separate decision for Colby, and what it would
+# weigh is what the test left unconfirmed on Depot (the unlabeled type,
+# the commit a re-run uses, and runs on a pull request with a merge
+# conflict).
 #
 # Why `pull_request_target`: it runs the workflow as it is on the default
 # branch, main, not as the pull request has it. A pull request therefore
