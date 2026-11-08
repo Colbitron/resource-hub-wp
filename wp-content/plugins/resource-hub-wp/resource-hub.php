@@ -4,7 +4,7 @@
  * Description:       A filterable resources library for a headless WordPress front end.
  * Version:           0.1.0
  * Requires at least: 6.9
- * Requires PHP:      8.2
+ * Requires PHP:      8.4
  * Author:            Colby Hill
  * License:           GPL-2.0-or-later
  * Text Domain:       resource-hub
