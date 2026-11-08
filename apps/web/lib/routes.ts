@@ -344,6 +344,17 @@ export const OWN_ROUTE_PATHS = ["/api/revalidate/", "/search/", "/favicon.ico", 
 export const SEARCH_PATH = "/search/";
 
 /**
+ * True when `pathname`, as `usePathname()` gives it, is the search page's:
+ * `/search/`, or `/search`, which is how the client router reports it under
+ * `trailingSlash`. The query string is not part of a pathname. The header's
+ * search control uses it to link to the page's own field there rather than
+ * open a second form (`components/HeaderSearch.tsx`).
+ */
+export function isSearchPagePath(pathname: string): boolean {
+  return pathname === SEARCH_PATH || pathname === SEARCH_PATH.slice(0, -1);
+}
+
+/**
  * The URL of page `page` of the results for `query`: `/search/?q={query}`,
  * with `&page={page}` from page 2. `query` is written as given, encoded by
  * `URLSearchParams` (a space as `+`), so the caller passes the normalised

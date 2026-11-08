@@ -1,9 +1,7 @@
 import { SEARCH_PATH } from "@/lib/routes";
+import { SEARCH_INPUT_ID } from "@/lib/search-field";
 
 import "./search.css";
-
-/** The field's ID, which its label names. */
-const INPUT_ID = "rh-search-q";
 
 /**
  * The search page's form (`SearchPage`): a plain GET form to `/search/` in a
@@ -18,17 +16,33 @@ const INPUT_ID = "rh-search-q";
  * the page says what is wrong in words, and `maxlength` counts UTF-16 units
  * where the route counts code points. Its CSS, `search.css`, also styles the
  * page's count line, `.rh-search__summary`.
+ *
+ * The header's search bar (`HeaderSearch`) renders the same form, empty,
+ * with its own `id` for the field, so the two never share an ID; the page's
+ * sentences about a query are the hints for a search started from either,
+ * since both submit to the page.
  */
-export function SearchForm({ input, describedBy, invalid = false }: { input: string; describedBy?: string; invalid?: boolean }) {
+export function SearchForm({
+  input,
+  describedBy,
+  invalid = false,
+  id = SEARCH_INPUT_ID,
+}: {
+  input: string;
+  describedBy?: string;
+  invalid?: boolean;
+  /** The field's ID; the search page's own by default. */
+  id?: string;
+}) {
   return (
     <form className="rh-search" role="search" action={SEARCH_PATH} method="get">
-      <label className="rh-search__label" htmlFor={INPUT_ID}>
+      <label className="rh-search__label" htmlFor={id}>
         Search resources and pages
       </label>
       <div className="rh-search__row">
         <input
           className="rh-search__input"
-          id={INPUT_ID}
+          id={id}
           type="search"
           name="q"
           defaultValue={input}

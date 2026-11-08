@@ -41,7 +41,9 @@ async function focusedStop(page: Page): Promise<Stop> {
           : element.closest("footer.rh-footer")
             ? "contentinfo"
             : null;
-    return { region, name: element.textContent?.trim() ?? "", theme: element.closest("fieldset.rh-theme") !== null };
+    // The header's search button is named by `aria-label`, around an icon with no text.
+    const name = element.getAttribute("aria-label") ?? element.textContent?.trim() ?? "";
+    return { region, name, theme: element.closest("fieldset.rh-theme") !== null };
   });
 }
 
@@ -216,16 +218,17 @@ test.describe("first paint", () => {
 });
 
 test.describe("keyboard", () => {
-  test("comes last: after the skip link, the site's name, the page's content and the footer's links", async ({ page }) => {
+  test("comes last: after the skip link, the site's name, the header's search, the page's content and the footer's links", async ({ page }) => {
     await page.goto("/");
     await expect(group(page)).toBeVisible();
     const stops = await tabToTheme(page);
     expect(stops[0]).toMatchObject({ region: "skip", name: "Skip to content" });
     expect(stops[1]).toMatchObject({ region: "banner", name: "Resource Hub" });
+    expect(stops[2]).toMatchObject({ region: "banner", name: "Search" });
     // Then every link in the welcome page's body, in order, and nothing else.
     const content = await page.getByRole("main").getByRole("link").allTextContents();
     expect(content.length).toBeGreaterThan(0);
-    const between = stops.slice(2, -1);
+    const between = stops.slice(3, -1);
     expect(between.slice(0, content.length)).toEqual(content.map((name) => ({ region: "main", name: name.trim(), theme: false })));
     // Then the footer's links, if it has any, in order.
     const footer = await page.getByRole("contentinfo").getByRole("link").allTextContents();

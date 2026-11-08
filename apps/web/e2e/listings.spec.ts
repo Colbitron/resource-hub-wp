@@ -763,11 +763,13 @@ test("the keyboard reaches the filters and the pagination in order", async ({ pa
       return element === null || element === document.body ? null : { text: element.textContent?.trim() ?? "", nav: element.closest("nav")?.getAttribute("aria-label") ?? null };
     });
 
-  // Skip link, the header's name, then straight into the filters.
+  // Skip link, the header's name and its search control, then straight into the filters.
   await page.keyboard.press("Tab");
   expect((await focused())?.text).toBe("Skip to content");
   await page.keyboard.press("Tab");
   expect((await focused())?.text).toBe("Resource Hub");
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("banner").getByRole("button", { name: "Search", exact: true })).toBeFocused();
   await page.keyboard.press("Tab");
   expect(await focused()).toEqual({ text: "All types", nav: "Filter resources" });
 
