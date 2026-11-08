@@ -113,10 +113,20 @@ describe("the control's stylesheets", () => {
     expect(bar).toMatch(/\[aria-expanded="true"\]/);
   });
 
-  it("never restyles the shell's header except to anchor the bar to a header that holds the control", () => {
-    for (const css of [eager, bar]) {
-      const shellSelectors = [...css.matchAll(/([^{}]*\.rh-header(?:__inner)?(?![\w-])[^{}]*)\{/g)].map((m) => m[1].trim());
-      expect(shellSelectors.filter((selector) => selector !== ".rh-header:has(.rh-header-search)")).toEqual([]);
-    }
+  it("never restyles the shell's header except to anchor the bar, and to wrap its row where :has() is missing", () => {
+    expect(eager).not.toMatch(/\.rh-header(?:__inner)?(?![\w-])/);
+    const [modern, fallback] = bar.split("@supports not selector(:has(*))");
+    expect(fallback).toBeDefined();
+    const selectors = (css: string) => [...css.matchAll(/([^{}]*\.rh-header(?:__inner)?(?![\w-])[^{}]*)\{/g)].map((m) => m[1].trim());
+    expect(selectors(modern)).toEqual([".rh-header:has(.rh-header-search)"]);
+    expect(selectors(fallback)).toEqual([".rh-header__inner"]);
+  });
+
+  // Without :has() the header is not the bar's containing block, so an
+  // absolute bar would be placed against the viewport, off the screen.
+  it("puts the bar in the header's flow where :has() is missing", () => {
+    const fallback = bar.split("@supports not selector(:has(*))")[1];
+    expect(fallback).toMatch(/\.rh-header-search__panel\s*\{[^}]*position:\s*static/);
+    expect(fallback).toMatch(/\.rh-header-search\s*\{[^}]*display:\s*contents/);
   });
 });

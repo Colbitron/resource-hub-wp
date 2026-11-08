@@ -68,7 +68,7 @@ export const SAMPLED_URLS: readonly SampledUrl[] = [
   // Its LCP image is the body's diagram, the lead image `renderContent`
   // preloads (`takeLead` in lib/content/render.tsx).
   { label: "CMS page", path: "/welcome/", status: 200, lighthouse: true, imageLed: true },
-  // Exempt from the whole-document check by the owner's decision of
+  // Exempt from the whole-document check by the owner's decision, approved
   // 2026-11-08 (issue #125): the header's search control (issue #115) is
   // wanted content on every page, and on this page alone it tips the HTML
   // over the first round trip, through a gzip-window edge the inlined CSS's

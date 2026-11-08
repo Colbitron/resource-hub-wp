@@ -20,6 +20,14 @@
  *   appears at once. Closing is instant.
  * - The form inside is the consumer's own; this file sets only its outer
  *   margin.
+ * - Without `:has()` (Firefox before 121, Safari before 15.4) the header
+ *   cannot be made the bar's containing block, and an absolute bar would be
+ *   placed against the viewport, off the screen with focus in it. There the
+ *   bar is in the flow instead: the header's row wraps, the wrapper steps
+ *   aside (`display: contents`) so the button and the bar are the row's
+ *   items, and the bar takes a line of its own under the lockup and the
+ *   button, pushing the page down while it is open. Usable and visible,
+ *   not the overlay.
  */
 
 .rh-header:has(.rh-header-search) {
@@ -58,4 +66,30 @@
 
 .rh-header-search__panel form {
 	margin: 0;
+}
+
+@supports not selector(:has(*)) {
+	.rh-header__inner {
+		flex-wrap: wrap;
+	}
+
+	.rh-header-search {
+		display: contents;
+	}
+
+	.rh-header-search__toggle {
+		margin-left: auto;
+	}
+
+	.rh-header-search__panel {
+		position: static;
+		flex: 0 0 100%;
+		margin-top: var(--rh-space-4);
+		padding: 0;
+		border: 0;
+	}
+
+	.rh-header-search__panel .rh-shell__inner {
+		padding: 0;
+	}
 }

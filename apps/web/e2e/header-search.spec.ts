@@ -12,10 +12,17 @@ import { mockCms } from "./mock-cms/client.mts";
  *   reaches the page, and on the search page a link to the page's field;
  * - with JavaScript, a disclosure button (`aria-expanded`, `aria-controls`)
  *   that opens and closes by mouse and by Enter and Space, moves focus to
- *   the bar's field on opening, closes on Escape from the field or the
- *   button with focus back on the button, closes when Tab or Shift-Tab
- *   leaves it, with focus where it went, and on a press outside, and is
- *   closed after a navigation;
+ *   the bar's field on opening, closes on Escape wherever focus is (the
+ *   page itself, after a click on the bar's blank space, included) with
+ *   focus back on the button, keeps focus on the button when a press on it
+ *   closes the bar, closes when Tab or Shift-Tab leaves it, with focus where
+ *   it went, and on a press outside, and is closed by a client navigation
+ *   and never reopened, even for a moment, on returning to the path it was
+ *   opened on;
+ * - the bar's module loaded on hover and on focus, before the press; a
+ *   second press while it loads cancelling the first, and a late load never
+ *   opening the bar once focus has moved on; and the button taking focus
+ *   from the server's link when the link had it before hydration;
  * - a query typed in the bar landing on `/search/?q=…`, with the page's own
  *   hint for a query too short;
  * - on the search page, no second form: the control focuses the page's
@@ -213,16 +220,147 @@ test.describe("with JavaScript", () => {
     await expectClosed(page);
   });
 
-  test("is closed after a client navigation, which keeps the header", async ({ page }) => {
+  test("is closed by a client navigation, and stays closed on returning to the path it was opened on", async ({ page }) => {
     await page.goto("/resources/");
-    await page.getByRole("navigation", { name: "Filter resources" }).getByRole("link", { name: "Webinar", exact: true }).click();
-    await expect(page).toHaveURL(/\/resources\/webinar\/$/);
     await toggle(page).click();
     await expectOpen(page);
-    // Back is a client navigation with no press on the page, so only the path can close the bar.
+    // Put focus on the page, out of the bar, with a press on the bar's blank
+    // space, which keeps it open. Focus leaving the bar, or a press outside
+    // it, would close it by itself; from here only the path can.
+    const panel = await bar(page).boundingBox();
+    await page.mouse.click(panel!.x + 4, panel!.y + 4);
+    await expect(toggle(page)).toHaveAttribute("aria-expanded", "true");
+    // A client navigation with no press on the page and no blur in the bar.
+    await page.getByRole("navigation", { name: "Filter resources" }).getByRole("link", { name: "Webinar", exact: true }).evaluate((link) => (link as HTMLAnchorElement).click());
+    await expect(page).toHaveURL(/\/resources\/webinar\/$/);
+    await expectClosed(page);
+    // From here, record every moment the bar opens or its field takes focus,
+    // however briefly: Next.js moves focus to the new page's heading after a
+    // navigation, and that blur would close a bar that had reopened, hiding
+    // the reopening from a check made after it.
+    await page.evaluate(() => {
+      const seen: string[] = [];
+      (window as unknown as { __reopened: string[] }).__reopened = seen;
+      const button = document.querySelector('[aria-controls="rh-header-search-panel"]')!;
+      new MutationObserver(() => {
+        if (button.getAttribute("aria-expanded") === "true") seen.push(`opened on ${location.pathname}`);
+      }).observe(button, { attributes: true, attributeFilter: ["aria-expanded"] });
+      document.addEventListener("focusin", (event) => {
+        if ((event.target as Element).id === "rh-header-search-q") seen.push(`field focused on ${location.pathname}`);
+      });
+    });
+    // Back to the path the bar was opened on, then Forward: only clearing the
+    // open state on every change of path keeps it closed on both, with focus
+    // left where the navigation put it rather than taken into the bar.
     await page.goBack();
     await expect(page).toHaveURL(/\/resources\/$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/Resources/);
+    await page.goForward();
+    await expect(page).toHaveURL(/\/resources\/webinar\/$/);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("Webinar");
+    await page.waitForTimeout(300);
     await expectClosed(page);
+    expect(await page.evaluate(() => (window as unknown as { __reopened: string[] }).__reopened)).toEqual([]);
+  });
+
+  test("closes on Escape after a click on the bar's blank space, which leaves focus on the page", async ({ page }) => {
+    await page.goto("/resources/");
+    await toggle(page).click();
+    await expectOpen(page);
+    const panel = await bar(page).boundingBox();
+    await page.mouse.click(panel!.x + 4, panel!.y + 4);
+    await expect(toggle(page)).toHaveAttribute("aria-expanded", "true");
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    await page.keyboard.press("Escape");
+    await expectClosed(page);
+    await expect(toggle(page)).toBeFocused();
+  });
+
+  test("keeps focus on the button when a press on it closes the bar", async ({ page }) => {
+    await page.goto("/resources/");
+    await toggle(page).click();
+    await expectOpen(page);
+    await toggle(page).click();
+    await expectClosed(page);
+    await expect(toggle(page)).toBeFocused();
+  });
+
+  test("loads the bar's module on hover and on focus, before the press", async ({ page, browser }) => {
+    const barStyles = (target: Page) =>
+      target.waitForResponse(async (response) => response.url().includes("/_next/static/") && (await response.text()).includes(".rh-header-search__panel"));
+    await page.goto("/resources/");
+    await expectClosed(page);
+    const onHover = barStyles(page);
+    await toggle(page).hover();
+    await onHover;
+    await expect(bar(page)).toBeHidden();
+
+    const second = await browser.newPage();
+    await second.goto("/resources/");
+    await expectClosed(second);
+    const onFocus = barStyles(second);
+    await toggle(second).focus();
+    await onFocus;
+    await expect(bar(second)).toBeHidden();
+    await second.close();
+  });
+
+  test("gives focus to the button when it replaces a link that had focus before hydration", async ({ page }) => {
+    let release!: () => void;
+    const hydration = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/_next/static/**/*.js", async (route) => {
+      await hydration;
+      await route.continue();
+    });
+    await page.goto("/resources/", { waitUntil: "domcontentloaded" });
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    const link = page.getByRole("banner").getByRole("link", { name: "Search", exact: true });
+    await expect(link).toBeFocused();
+    release();
+    await expect(toggle(page)).toBeFocused();
+    await expectClosed(page);
+  });
+
+  test("opens after a slow load only for the press still waiting, with focus where it was", async ({ page }) => {
+    await page.goto("/resources/");
+    await expectClosed(page);
+    let release!: () => void;
+    const loaded = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/_next/static/**", async (route) => {
+      await loaded;
+      await route.continue();
+    });
+    // A second press while the module loads cancels the first.
+    await toggle(page).click();
+    await toggle(page).click();
+    release();
+    await page.waitForTimeout(500);
+    await expectClosed(page);
+    // A press is honoured once it has loaded.
+    await toggle(page).click();
+    await expectOpen(page);
+  });
+
+  test("never takes focus back from where the reader went while the bar loaded", async ({ page }) => {
+    await page.goto("/resources/");
+    await expectClosed(page);
+    let release!: () => void;
+    const loaded = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/_next/static/**", async (route) => {
+      await loaded;
+      await route.continue();
+    });
+    await toggle(page).focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Tab");
+    const next = page.getByRole("link", { name: "All types", exact: true });
+    await expect(next).toBeFocused();
+    release();
+    await page.waitForTimeout(500);
+    await expectClosed(page);
+    await expect(next).toBeFocused();
   });
 
   test("submits a query to the search page, as the page's own form does", async ({ page }) => {

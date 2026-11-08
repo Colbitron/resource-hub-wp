@@ -52,7 +52,7 @@ import { SAMPLED_URLS } from "./sampled-urls.mts";
  * boundary over and well under the ceiling; its preloads ended 985 bytes in,
  * inside the discovery check's limit; and its simulated LCP had gone from
  * 2,170 to a median of 2,322 ms, inside the 2,500 ms budget. The second is
- * the library, by the owner's decision of 2026-11-08, for the header's search
+ * the library, by the owner's decision, approved 2026-11-08, for the header's search
  * control (issue #115), which is wanted content on every page and costs
  * about 360 bytes on the CMS page. On the library it costs about 1,200 to
  * 1,700, because the page sits on a gzip-window edge: every page's HTML
