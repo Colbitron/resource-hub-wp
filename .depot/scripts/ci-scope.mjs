@@ -1,30 +1,28 @@
 // Which of CI's jobs a change needs (.depot/workflows/ci.yml, the `scope`
 // job). Only a pull request is ever scoped: on every other event (a push to
 // main, a manual dispatch on main or a tag, Depot's own `api` runs) the
-// workflow does not run this job and every job runs, so nothing here can
-// skip a job that gates main or a deploy.
+// job runs but its outputs are not read, and every job runs, so nothing
+// here can skip a job that gates main or a deploy. Lighthouse is not a side:
+// its shards never run on a pull request, whatever paths changed, and
+// always run everywhere else (ADR 0053).
 //
 // Each changed path selects the sides it can affect:
 //
 //   plugin      the gate (schemas, JS lint, block build, PHPCS, PHPUnit,
 //               Playwright in wp-env)
 //   web         web-checks, web-e2e, web-screenshots
-//   lighthouse  the web-lighthouse shards and web-lighthouse-medians
 //
 // The rules, first match wins:
 //
 //   wp-content/**              plugin
-//   apps/**/*.md               web (documentation: no page or test reads
-//                              it, so Lighthouse cannot change)
-//   apps/**                    web, lighthouse
+//   apps/**                    web
 //   .wp-env.json               plugin, web (both sides' environment, by the
-//                              owner's rule, but no page the front end
-//                              serves depends on it)
+//                              owner's rule)
 //   docs/**, .claude/**,       nothing: no job reads them. .github/ holds
 //   .github/**, tools/**,      GitHub's own workflows, which Depot does not
 //   a *.md at the root         run; tools/ holds one-off image scripts no
 //                              job runs
-//   anything else              plugin, web, lighthouse
+//   anything else              plugin, web
 //
 // "Anything else" is everything both sides read (packages/**, the contract
 // package with the schemas, tokens, CSS and font; package.json,
@@ -45,23 +43,23 @@
 // jobs it can prove a change does not reach. The head check matters: main's
 // own HEAD is often a merge commit too, of the last pull request merged.
 //
-// Run as a script it writes plugin=, web= and lighthouse= ('true' or
-// 'false') to $GITHUB_OUTPUT and a short table to $GITHUB_STEP_SUMMARY:
+// Run as a script it writes plugin= and web= ('true' or 'false') to
+// $GITHUB_OUTPUT and a short table to $GITHUB_STEP_SUMMARY:
 //
 //   node ci-scope.mjs [--expect-head <sha>] [--paths-file <file>]
 //
 // --expect-head is the pull request's head SHA, which HEAD^2 must equal;
-// without it every job runs. --paths-file reads the changed paths from a file, one per line,
-// instead of from git; the tests and a trial run use it, the workflow does
-// not.
+// without it every job runs. --paths-file reads the changed paths from a
+// file, one per line, instead of from git; the tests and a trial run use
+// it, the workflow does not.
 
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-export const SIDES = [ 'plugin', 'web', 'lighthouse' ];
+export const SIDES = [ 'plugin', 'web' ];
 
-const ALL = Object.freeze( [ 'plugin', 'web', 'lighthouse' ] );
+const ALL = Object.freeze( [ 'plugin', 'web' ] );
 const NONE = Object.freeze( [] );
 
 const INERT_PREFIXES = [ 'docs/', '.claude/', '.github/', 'tools/' ];
@@ -77,10 +75,10 @@ export function sidesOf( path ) {
 		return [ 'plugin' ];
 	}
 	if ( path.startsWith( 'apps/' ) ) {
-		return path.endsWith( '.md' ) ? [ 'web' ] : [ 'web', 'lighthouse' ];
+		return [ 'web' ];
 	}
 	if ( path === '.wp-env.json' ) {
-		return [ 'plugin', 'web' ];
+		return ALL;
 	}
 	if ( INERT_PREFIXES.some( ( prefix ) => path.startsWith( prefix ) ) ) {
 		return NONE;
@@ -96,10 +94,10 @@ export function sidesOf( path ) {
  * `null` means the paths could not be read, and selects every side.
  *
  * @param {string[]|null} paths The changed paths, or null.
- * @return {{plugin: boolean, web: boolean, lighthouse: boolean}} The scope.
+ * @return {{plugin: boolean, web: boolean}} The scope.
  */
 export function scopeOf( paths ) {
-	const scope = { plugin: false, web: false, lighthouse: false };
+	const scope = { plugin: false, web: false };
 	for ( const side of paths === null ? ALL : paths.flatMap( sidesOf ) ) {
 		scope[ side ] = true;
 	}
@@ -156,7 +154,7 @@ function argument( argv, name ) {
  *
  * @param {string[]} argv The arguments after the script's path.
  * @param {NodeJS.ProcessEnv} env The environment.
- * @return {{plugin: boolean, web: boolean, lighthouse: boolean}} The scope written.
+ * @return {{plugin: boolean, web: boolean}} The scope written.
  */
 export function main( argv = process.argv.slice( 2 ), env = process.env ) {
 	const pathsFile = argument( argv, '--paths-file' );

@@ -16,14 +16,15 @@
 #   worked around a slow Ubuntu mirror on GitHub's runners, and on Depot CI
 #   the whole browser install, apt included, took about 7 s uncached
 # - a pull request runs only the jobs its changed paths can reach (the scope
-#   job below); every other event runs them all
+#   job below) and never runs Lighthouse; every other event runs them all
 #
 # The gate. Every push to main and every manual dispatch runs the full
 # chain: the plugin inside the same wp-env containers used locally, so a
 # green run here means the same thing as a green run on a laptop, and the
 # front end against its mock CMS, as e2e/README.md in apps/web runs it. A
-# pull request runs the part of it that its changes reach; see "Scoping a
-# pull request" below.
+# pull request runs the part of it that its changes reach, Lighthouse
+# aside, which runs only off pull requests; see "Scoping a pull request"
+# below.
 #
 # The jobs, and what each waits for (needs):
 #
@@ -37,7 +38,9 @@
 #   web-e2e                  the end-to-end suite, axe and document size included
 #   web-screenshots          the specimen's screenshots and the brand images
 #   web-lighthouse (x5)      Lighthouse CI, one shard of the URLs each
+#                            (never on a pull request)
 #   web-lighthouse-medians   needs web-lighthouse: one table of every median
+#                            (never on a pull request)
 #   deploy                   needs gate (main and dispatch only)
 #   deploy-web               needs deploy and every web job (main only)
 #
@@ -57,13 +60,17 @@
 # and the Playwright specs re-activate the plugin themselves.
 #
 # The front-end jobs need no secrets: they build against a placeholder CMS
-# URL or the mock, and make no CMS calls at build time. Every one of them
-# blocks a merge into main, and on main every one also blocks the front
-# end's deploy, except a Lighthouse budget miss: on a pull request into
-# main, a push to main or a manual dispatch on main a missed budget is a
-# warning, until issue #76 calibrates it (see the Lighthouse job). Any other
-# Lighthouse failure, such as a broken harness, still blocks. WCAG A and AA
-# accessibility stays gated by the axe scan, which blocks both.
+# URL or the mock, and make no CMS calls at build time. Every one that runs
+# on a pull request blocks its merge, and on main every one also blocks the
+# front end's deploy, except a Lighthouse budget miss: on a push to main or
+# a manual dispatch on main a missed budget is a warning, until issue #76
+# calibrates it (see the Lighthouse job). Any other Lighthouse failure, such
+# as a broken harness, still blocks the deploy. Lighthouse never runs on a
+# pull request, so it never decides a merge, and a broken harness first
+# shows up on main, where it holds deploy-web back until it is fixed; the
+# author's local run before pushing (apps/web/e2e/README.md, "Lighthouse
+# CI") is a smell test, not a gate. WCAG A and AA accessibility stays gated
+# by the axe scan, which blocks both.
 #
 # The deploy job runs after the gate, only on main and on manual dispatch, and
 # syncs the plugin, from wp-content/plugins/resource-hub-wp, to the Cloudways
@@ -80,12 +87,11 @@
 # skips the jobs its changes cannot reach. On a pull request the scope job
 # diffs the merge commit Depot checks out (refs/pull/N/merge) against its
 # first parent, the base; the rules are in .depot/scripts/ci-scope.mjs:
-# wp-content/ reaches the gate, apps/ the front-end jobs (and Lighthouse,
-# unless only Markdown changed), docs/, .claude/, .github/, tools/ and a
-# root *.md reach nothing, and everything else, packages/ui, the root
-# package files and lockfile, .wp-env.json and .depot/ included, reaches
-# both sides. Its outputs, 'true' or 'false', are plugin, web and
-# lighthouse; when the paths cannot be read for certain all three are
+# wp-content/ reaches the gate, apps/ the front-end jobs, docs/, .claude/,
+# .github/, tools/ and a root *.md reach nothing, and everything else,
+# packages/ui, the root package files and lockfile, .wp-env.json and
+# .depot/ included, reaches both sides. Its outputs, 'true' or 'false', are
+# plugin and web; when the paths cannot be read for certain both are
 # 'true'. The diff is trusted only when HEAD's second parent is the pull
 # request's head, github.event.pull_request.head.sha, since main's HEAD is
 # itself usually a merge commit. That Depot checks out refs/pull/N/merge is
@@ -95,6 +101,9 @@
 # Every scoped job's condition is the same shape:
 #
 #   github.event_name != 'pull_request' || needs.scope.outputs.<side> == 'true'
+#
+# The Lighthouse shards' is its first half alone: they run on every event
+# but pull_request, and are never scoped.
 #
 # On any event but pull_request it is true without reading the outputs,
 # so a push to main, a manual dispatch and a tag dispatch run every job,
@@ -121,8 +130,8 @@
 # output, was skipped in trial run h1bkmg53wt). Both also run
 # only on a push or a dispatch, where nothing is scoped.
 # web-lighthouse-medians keeps its !cancelled(), so it runs after a failed
-# shard, and therefore tests scope's result and the lighthouse side in its
-# condition itself: !cancelled() alone would run it after skipped shards.
+# shard, and therefore tests scope's result and the event in its condition
+# itself: !cancelled() alone would run it after skipped shards.
 name: CI
 
 # Pull requests run the workflow once. A plain `push:` trigger alongside
@@ -186,7 +195,6 @@ jobs:
     outputs:
       plugin: ${{ steps.scope.outputs.plugin }}
       web: ${{ steps.scope.outputs.web }}
-      lighthouse: ${{ steps.scope.outputs.lighthouse }}
 
     steps:
       - name: Not a pull request, so every job runs
@@ -573,21 +581,27 @@ jobs:
     # and web-lighthouse-medians merges them into one table; the reports are
     # an artifact per shard.
     #
-    # Until #76 lands, Lighthouse decides neither merges nor deploys. The
+    # Never on a pull request (ADR 0053): the shards are most of a run's
+    # sandbox-minutes, and until #76 a budget miss decides no merge anyway.
+    # The cost is that a broken harness first shows up on main, where it
+    # holds deploy-web back; the author runs Lighthouse locally before
+    # pushing a front-end change, as a smell test (apps/web/e2e/README.md),
+    # and main's run is the measurement of record.
+    #
+    # Until #76 lands, a budget miss does not decide the deploy. The
     # runners vary about 2-3x in CPU speed, and the fixed 4x slowdown
     # multiplies the runner's own task times, so TBT on identical code
     # ranges about 80 to 300 ms between runs: on 2026-11-07 main's run
     # 42362572282 failed it twice on slow runners after the same code had
     # passed on its pull request, which skipped the production deploy, and
     # PR #79 failed it at 201 and 209 ms against the 200 ms budget with no
-    # runtime change, which blocked its merge until a rerun. So on a pull
-    # request into main, a push to main or a manual dispatch on main,
+    # runtime change. So on a push to main or a manual dispatch on main,
     # continue-on-error lets the step's failure through to the next step:
     # its outcome is still failure, its conclusion success. That step
-    # passes the job, and with it the merge or deploy-web, only when the
-    # failure is a missed budget on record, and fails it on any other
-    # Lighthouse failure. The test names the events, not "always", so a
-    # dispatch on another branch still fails on a miss, and a trigger added
+    # passes the job, and with it deploy-web, only when the failure is a
+    # missed budget on record, and fails it on any other Lighthouse
+    # failure. The test names the events, not "always", so a dispatch on
+    # another branch or a tag still fails on a miss, and a trigger added
     # later blocks by default. Leaving the budgets out of the gate is safe
     # for WCAG A and AA accessibility, which stays gated by the axe scan
     # inside the end-to-end suite on every WCAG 2.0-2.2 A and AA rule in
@@ -597,8 +611,10 @@ jobs:
     # screenshots and every other job still block. The budgets are the
     # same on every event and in every shard.
     name: "Front end: Lighthouse (${{ matrix.shard }}/${{ matrix.of }})"
+    # It reads none of scope's outputs but still needs it, so that on main,
+    # as for every other job, a failed scope runs nothing.
     needs: [ scope ]
-    if: github.event_name != 'pull_request' || needs.scope.outputs.lighthouse == 'true'
+    if: github.event_name != 'pull_request'
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 15
     strategy:
@@ -639,27 +655,25 @@ jobs:
       # (apps/web/e2e/lighthouse.mts).
       - name: Run Lighthouse CI on the front end
         id: lighthouse
-        continue-on-error: ${{ (github.event_name == 'pull_request' && github.base_ref == 'main') || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) }}
+        continue-on-error: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
         run: pnpm web:test:lighthouse
 
       # Runs only when every earlier step passed and Lighthouse's failure was
       # let through by continue-on-error: success() reads conclusions, which
       # continue-on-error turns to success, so it is true only then, and the
       # outcome test leaves out a run where Lighthouse passed. So it never
-      # runs on a dispatch off main or a pull request into another branch,
-      # where the failed step fails the job, nor when an earlier step already
-      # failed the job, where the merge or the deploy is blocked anyway and
-      # saying otherwise would be false. It reads the failed assertions
+      # runs on a dispatch off main, where the failed step fails the job,
+      # nor when an earlier step already failed the job, where the deploy is
+      # blocked anyway and saying otherwise would be false. It reads the failed assertions
       # `lhci assert` saves (apps/web/.lighthouseci/, which e2e/lighthouse.mts
       # empties before each run, so nothing is stale).
       #
       # Only a missed budget is a warning. When the file names at least one
       # failed error-level assertion, the step writes a warning annotation
       # and a job-summary line naming each URL and metric that missed, and
-      # passes; its wording follows the event: on a pull request the miss
-      # does not block the merge, and on main it does not hold the deploy
-      # back (deploy-web still has its own needs and head check, so it says
-      # no more than that). When no failed assertion is on record (the file
+      # passes, saying the miss does not hold the deploy back (deploy-web
+      # still has its own needs and head check, so it says no more than
+      # that). When no failed assertion is on record (the file
       # is missing because a stage before the assertions failed, such as a
       # syntax error in lighthouserc.cjs or lighthouse.mts, a malformed
       # RH_LIGHTHOUSE_SHARD, Chromium failing to launch or a build-stamp
@@ -676,16 +690,8 @@ jobs:
         env:
           RESULTS: apps/web/.lighthouseci/assertion-results.json
           ISSUE_URL: ${{ github.server_url }}/${{ github.repository }}/issues/76
-          EVENT: ${{ github.event_name }}
           ARTIFACT: web-lighthouse-reports-${{ matrix.shard }}
         run: |
-          if [ "$EVENT" = pull_request ]; then
-            gated='merge'
-            effect='this miss does not block the merge'
-          else
-            gated='deploy'
-            effect='this miss does not hold the deploy back'
-          fi
           misses=''
           if [ -s "$RESULTS" ]; then
             misses=$(jq -r '
@@ -705,10 +711,10 @@ jobs:
             exit 1
           fi
           what="Missed budget: $misses."
-          advice="Lighthouse does not gate merges into main or the production deploy until #76 calibrates it, so $effect. This is a finding to look at: if the same URL and metric miss again on the next run, treat it as a regression."
-          echo "::warning title=Lighthouse failed but did not block the $gated::$what $advice ($ISSUE_URL)"
+          advice="Lighthouse does not gate the production deploy until #76 calibrates it, so this miss does not hold the deploy back. This is a finding to look at: if the same URL and metric miss again on the next run, treat it as a regression."
+          echo "::warning title=Lighthouse failed but did not block the deploy::$what $advice ($ISSUE_URL)"
           {
-            echo "### Lighthouse failed (not blocking the $gated)"
+            echo "### Lighthouse failed (not blocking the deploy)"
             echo
             echo "$what ${advice/\#76/[#76]($ISSUE_URL)} The reports are in the $ARTIFACT artifact."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -739,9 +745,9 @@ jobs:
     # drop a URL from the table unnoticed. It decides nothing about the
     # budgets, which each shard asserted on its own URLs. It runs after a
     # failed shard too, so the table shows what was measured, and is skipped
-    # with the shards on a pull request that does not reach Lighthouse.
+    # with the shards on every pull request.
     needs: [ scope, web-lighthouse ]
-    if: ${{ !cancelled() && needs.scope.result == 'success' && (github.event_name != 'pull_request' || needs.scope.outputs.lighthouse == 'true') }}
+    if: ${{ !cancelled() && needs.scope.result == 'success' && github.event_name != 'pull_request' }}
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 10
 
