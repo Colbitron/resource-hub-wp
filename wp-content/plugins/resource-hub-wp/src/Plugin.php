@@ -37,6 +37,7 @@ use ResourceHub\Lockdown\Lockdown;
 use ResourceHub\Rest\NoCacheHeader;
 use ResourceHub\Rest\PageRoute;
 use ResourceHub\Rest\RelatedCache;
+use ResourceHub\Rest\RelatedItems;
 use ResourceHub\Rest\RelatedRoute;
 use ResourceHub\Rest\ResolveRoute;
 use ResourceHub\Rest\SearchCache;
@@ -116,7 +117,8 @@ final class Plugin {
 		add_action( 'rest_api_init', array( new PageRoute(), 'register' ) );
 		$related_cache = new RelatedCache();
 		$related_cache->register();
-		add_action( 'rest_api_init', array( new RelatedRoute( $related_cache ), 'register' ) );
+		$related_items = new RelatedItems( $related_cache );
+		add_action( 'rest_api_init', array( new RelatedRoute( $related_items ), 'register' ) );
 		$search_cache = new SearchCache();
 		$search_cache->register();
 		add_action( 'rest_api_init', array( new SearchRoute( $search_cache ), 'register' ) );
