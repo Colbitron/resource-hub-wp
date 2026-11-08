@@ -24,7 +24,7 @@ import "@/components/unavailable.css";
  */
 export default function ResourceError({ retry }: { retry: () => void }) {
   return (
-    <div className="rh-resource__unavailable">
+    <div className="rh-unavailable">
       <h1>This resource can&rsquo;t be shown right now</h1>
       <p>Something went wrong while loading it. You can try again, or come back later.</p>
       <p>
