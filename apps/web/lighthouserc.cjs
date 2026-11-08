@@ -14,7 +14,7 @@
  *   because LHCI's presets are `desktop`, `perf` and `experimental`.
  * - The CPU slowdown is Lighthouse's fixed 4x. It multiplies the host's own
  *   task times, so TBT here measures the runner as well as the code: on
- *   GitHub's runners, faster than the reference phone, the gate is gentler
+ *   CI's runners, faster than the reference phone, the gate is gentler
  *   than a calibrated one, and on a laptop far gentler. Calibrating it is
  *   issue #76 (`e2e/README.md`, "Lighthouse CI").
  * - Five runs per URL; every assertion reads the median of the five, which

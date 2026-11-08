@@ -1,14 +1,14 @@
 # Deploying, rolling back and rotating secrets
 
-For the maintainer deploying the CMS or the front end, rolling either back, or rotating a secret. The decisions are [ADR 0005](../adr/0005-hosted-wordpress-on-cloudways.md) (the host) and [ADR 0051](../adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md) (the front-end deploy); the workflow is `.github/workflows/ci.yml`, whose comments explain each step.
+For the maintainer deploying the CMS or the front end, rolling either back, or rotating a secret. The decisions are [ADR 0005](../adr/0005-hosted-wordpress-on-cloudways.md) (the host), [ADR 0051](../adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md) (the front-end deploy) and [ADR 0053](../adr/0053-ci-runs-on-depot-ci.md) (CI on Depot CI); the workflow is `.depot/workflows/ci.yml`, run by Depot CI, whose comments explain each step. A run's state, logs, job summaries and artifacts are read with `depot ci status <run-id>`, `depot ci logs <attempt-id>`, `depot ci summary` and `depot ci artifacts list <run-id>`, or in Depot's dashboard.
 
 ## How a deploy happens
 
-Nothing is deployed by hand. A push to `main` runs the gate, then the `deploy` job syncs the plugin to the Cloudways host, then the `deploy-web` job starts the front end's Vercel production build. The CMS goes first and the front end second, so the front end never goes live ahead of the CMS it reads; additive contract changes make that order safe. The CMS deploy needs only the CMS gate, so a front-end failure never blocks a CMS deploy or a rollback. Pull requests and other branches never deploy; pull requests get Vercel preview deploys.
+Nothing is deployed by hand. A push to `main` runs the gate on Depot CI, then the `deploy` job syncs the plugin to the Cloudways host, then the `deploy-web` job starts the front end's Vercel production build. The CMS goes first and the front end second, so the front end never goes live ahead of the CMS it reads; additive contract changes make that order safe. The CMS deploy needs only the CMS gate, so a front-end failure never blocks a CMS deploy or a rollback. Pull requests and other branches never deploy; pull requests get Vercel preview deploys.
 
 ## Secrets
 
-Six repository secrets feed the two deploy jobs, and a seventh the preview Lighthouse workflow. None is in git.
+Six secrets feed the two deploy jobs, and a seventh the preview Lighthouse workflow. None is in git. All seven are Depot CI secrets scoped to this repository (`depot ci secrets list --repo Colbitron/resource-hub-wp` shows the names, never the values). The preview Lighthouse workflow runs on GitHub Actions (ADR 0053), so the secret it reads, `VERCEL_PROTECTION_BYPASS`, must also stay a GitHub repository secret (`gh secret list`); Depot's copy is read by nothing yet. The other six stay in GitHub's repository secrets too until the follow-up that removes the cutover switch, so a rollback to GitHub Actions needs no secret re-entered; delete them from GitHub after that, and set them there again only for a rollback.
 
 | Secret | Holds |
 |---|---|
@@ -16,17 +16,33 @@ Six repository secrets feed the two deploy jobs, and a seventh the preview Light
 | `DEPLOY_HOST` | SSH hostname or IP of the server |
 | `DEPLOY_USER` | SSH user |
 | `DEPLOY_PATH` | Absolute path of the plugin directory itself, ending in `wp-content/plugins/resource-hub-wp`; the job refuses anything else, because `rsync --delete` into the wrong directory would remove other plugins |
-| `DEPLOY_KNOWN_HOSTS` | The server's pinned host key line or lines, so the runner never trusts on first use |
+| `DEPLOY_KNOWN_HOSTS` | The server's pinned host key line or lines, so the sandbox never trusts on first use |
 | `VERCEL_DEPLOY_HOOK_URL` | The Vercel project's deploy hook for `main`; the URL is the credential |
 | `VERCEL_PROTECTION_BYPASS` | The Vercel project's deployment protection bypass secret (Vercel env var `VERC_DEP_PROT`), sent as `x-vercel-protection-bypass` by `.github/workflows/preview-lighthouse.yml` to reach a pull request's preview; nothing else reads it |
 
 The CMS's own configuration (`RESOURCE_HUB_FRONTEND_URL`, `RESOURCE_HUB_REVALIDATE_SECRET`, and the optional `RESOURCE_HUB_POSTHOG_KEY` and `RESOURCE_HUB_POSTHOG_HOST`) is `define()`d in the host's `wp-config.php`. The front end's (`WP_API_URL`, `REVALIDATE_SECRET`, `SITE_URL`, optionally `WP_MEDIA_ORIGIN`) lives in the Vercel project's environment variables; `apps/web/README.md` describes each.
 
-**The free-plan caveat.** The repository is private on a free plan, which offers neither environments nor branch rulesets, so a pull request that edited the workflow could reach the repository secrets. The only collaborator is the owner, so this is accepted. When the repository goes public, move the deploy secrets to a `production` environment limited to `main` and add a ruleset that requires the gate on `main`.
+**The secrets are in reach of a pull request.** Depot CI runs the workflow as the pull request has it, and the secrets are scoped to the repository, not to `main`, so a pull request that edited the workflow could read them, as it could when they were GitHub repository secrets on this free plan. The only collaborator is the owner, so this is accepted. Before the repository goes public or takes outside pull requests, scope the deploy secrets' variants to `main` (`depot ci secrets set <name> --repo Colbitron/resource-hub-wp --branch main`, then remove the unscoped variant), confirm a pull request's run sees them empty, and add a GitHub ruleset that requires the gate's checks on `main`.
+
+## The cutover switch, `DEPOT_DEPLOY_ENABLED`
+
+Both deploy jobs also require the Depot CI variable `DEPOT_DEPLOY_ENABLED` to be `true`. It kept Depot's trial runs from deploying while GitHub's copy of the workflow still did, and while it is unset nothing on Depot CI reaches the host or Vercel, whatever the event or ref: the two jobs report as skipped.
+
+- **At the cutover**, just before the pull request that deletes `.github/workflows/ci.yml` merges, set it: `depot ci vars add DEPOT_DEPLOY_ENABLED --repo Colbitron/resource-hub-wp --value true`. Check with `depot ci vars list --repo Colbitron/resource-hub-wp`. The merge's own push to `main` is then the first run that deploys from Depot CI; watch it with `depot ci status`.
+- **Afterwards**, a follow-up pull request drops the variable's line from both jobs' `if:` and then the variable (`depot ci vars remove DEPOT_DEPLOY_ENABLED`). Until it lands, unsetting the variable is the quickest way to stop Depot CI deploying.
+
+## Rolling CI back to GitHub Actions
+
+If Depot CI has to be left (ADR 0053, "Rollback"):
+
+1. Unset the switch, `depot ci vars remove DEPOT_DEPLOY_ENABLED`, so Depot CI deploys nothing while both run. This works only while the jobs still test it; after the follow-up, delete `.depot/workflows/ci.yml` in the same pull request as step 2 instead.
+2. In a pull request, restore `.github/workflows/ci.yml` from git, and `screenshot-baselines.yml` if it is wanted: `git log --diff-filter=D -- .github/workflows/ci.yml` names the commit that deleted it, and `git checkout <that commit>~1 -- .github/workflows/ci.yml` brings it back. Step 1 is what keeps the two from both deploying.
+3. Make sure the six deploy secrets, the five `DEPLOY_*` and `VERCEL_DEPLOY_HOOK_URL`, are GitHub repository secrets (`gh secret list`; `gh secret set <name>` for any that were deleted), and that the account has Actions minutes left.
+4. Merge; the push to `main` runs and deploys on GitHub Actions.
 
 ## The CMS deploy
 
-The `deploy` job runs only after the gate passes, only for a push to `main` or a manual `workflow_dispatch` on `main` or a tag. One deploy runs at a time and a running deploy is never cancelled; GitHub keeps one waiting run and replaces it with a newer one, which is safe because the newer commit includes the older.
+The `deploy` job runs only after the gate passes, only for a push to `main` or a manual `workflow_dispatch` on `main` or a tag. One deploy runs at a time and a running deploy is never cancelled; a waiting run is replaced by a newer one, which is safe because the newer commit includes the older.
 
 From a fresh checkout it builds the block, runs `composer install --no-dev` in the plugin directory, and rsyncs that directory over SSH into the plugin directory on the host with `--delete-delay --delay-updates`, so changed files swap in together at the end and stale ones are removed after. The rsync is an allowlist: the host receives `resource-hub.php`, `src/`, `build/` and `vendor/` and nothing else. **A new runtime file or directory has to be added to the allowlist in the workflow.** `packages/` never reaches the host.
 
@@ -36,11 +52,11 @@ If `/resources/` URLs 404 on the host after a change that the deploy did not flu
 
 ## The front-end deploy
 
-The `deploy-web` job needs both `deploy` and `web`, runs only on `main` (a push or a dispatch from `main`, never a tag), reads `main`'s head through the API and fires the hook only if it is still the commit the run tested; otherwise it leaves a notice and the newer run deploys. A failed run that a newer push supersedes deploys nothing, and if the newer run fails, production stays at the last commit whose run fired the hook until the next green run on `main`. The hook answers with a queued job, and the step logs its id and state and ends: it does not wait on the build. **A green CI run means the build was queued, not that it succeeded**; a failed Vercel build leaves the previous production deployment serving, and its result is on Vercel.
+The `deploy-web` job needs `deploy` and every front-end job (`web-checks`, `web-e2e`, `web-screenshots`, the five `web-lighthouse` shards and `web-lighthouse-medians`), runs only on `main` (a push or a dispatch from `main`, never a tag), reads `main`'s head through the API and fires the hook only if it is still the commit the run tested; otherwise it leaves a notice and the newer run deploys. A failed run that a newer push supersedes deploys nothing, and if the newer run fails, production stays at the last commit whose run fired the hook until the next green run on `main`. The hook answers with a queued job, and the step logs its id and state and ends: it does not wait on the build. **A green CI run means the build was queued, not that it succeeded**; a failed Vercel build leaves the previous production deployment serving, and its result is on Vercel.
 
-**What it waits for.** On the commit, `web` must have passed its lint, typecheck, unit tests, production build and fixture-route check, the end-to-end suite (the axe scan and the document-size check included), the screenshots and the brand-image check. A Lighthouse budget miss holds back neither the deploy nor, on a pull request into `main`, the merge, until issue #76 calibrates the gate: GitHub's runners vary about 2–3x in CPU speed, so TBT on unchanged code moved between about 80 and 300 ms; on 2026-11-07 main's run 42362572282 missed it twice on code that had passed on its pull request, which skipped the deploy until it was started by hand, and PR #79 missed it at 201 and 209 ms against the 200 ms budget with no runtime change, which blocked its merge until a rerun. On a manual dispatch from any branch but `main`, or a pull request into another branch, a miss still fails `web`. Only a missed budget is a warning: any other Lighthouse failure, where no failed assertion is on record (a broken harness, Chromium failing to launch, a build-stamp mismatch), fails `web` on every event and so blocks the deploy. WCAG A and AA accessibility stays gated by the axe scan in the end-to-end suite, which blocks the merge and the deploy on any WCAG A or AA violation. A pull request that GitHub retargets to `main` after its base branch merges keeps its last run, made against the old base, where a Lighthouse miss still blocks, and a re-run replays that payload; push to it, or close and reopen it, to get a run against `main`.
+**What it waits for.** On the commit, the front-end jobs must have passed the lint, typecheck, unit tests, production build and fixture-route check, the end-to-end suite (the axe scan and the document-size check included), the screenshots and the brand-image check, and every Lighthouse shard and the medians job. A Lighthouse budget miss holds back neither the deploy nor, on a pull request into `main`, the merge, until issue #76 calibrates the gate: GitHub's runners, where CI ran until 2026-11-07, varied about 2–3x in CPU speed, so TBT on unchanged code moved between about 80 and 300 ms; on 2026-11-07 main's run 42362572282 missed it twice on code that had passed on its pull request, which skipped the deploy until it was started by hand, and PR #79 missed it at 201 and 209 ms against the 200 ms budget with no runtime change, which blocked its merge until a rerun. On a manual dispatch from any branch but `main`, or a pull request into another branch, a miss still fails its shard's job. Only a missed budget is a warning: any other Lighthouse failure, where no failed assertion is on record (a broken harness, Chromium failing to launch, a build-stamp mismatch), fails its shard's job on every event and so blocks the deploy. WCAG A and AA accessibility stays gated by the axe scan in the end-to-end suite, which blocks the merge and the deploy on any WCAG A or AA violation. A pull request retargeted to `main` after its base branch merges may keep its last run, made against the old base, where a Lighthouse miss still blocks (on GitHub Actions a re-run replayed that payload); push to it to get a run against `main`.
 
-**A Lighthouse warning on a pull request or a `main` run is a finding to look at, not noise.** The run's annotations and the `web` job's summary name each URL and metric that missed and its median, and the reports are in the `web-lighthouse-reports` artifact. A single miss just over budget on TBT is most likely a slow runner; if the same URL and metric miss again on the next run, or a median is well past its budget, or the miss is on accessibility or CLS, which do not depend on the runner's speed, treat it as a regression and fix it, on the pull request before it merges or in a new one if it is already on `main`.
+**A Lighthouse warning on a pull request or a `main` run is a finding to look at, not noise.** The run's annotations and the shard's job summary name each URL and metric that missed and its median, the `web-lighthouse-medians` job's summary has every URL's medians in one table, and the reports are in the `web-lighthouse-reports-<shard>` artifacts. A single miss just over budget on TBT is most likely a slow runner; if the same URL and metric miss again on the next run, or a median is well past its budget, or the miss is on accessibility or CLS, which do not depend on the runner's speed, treat it as a regression and fix it, on the pull request before it merges or in a new one if it is already on `main`.
 
 **The build reads the CMS.** Since 2026-11-07 (ADR 0043, amended) `next build` prerenders the library, each type's first page, the root and the newest resources from `WP_API_URL`: about 40 requests on the seed, up to about 140 with five full types, from every preview and production build. A CMS that does not answer costs the build one warning per route (`prerender {route}: nothing prerendered at build …`) and no prerendered page, never a failure; the deployed app then renders each page on its first request as before. The build's first step empties `.next/cache/fetch-cache` (`scripts/clear-fetch-cache.mts`, run by the `build` script), because Vercel restores that directory from its build cache and a stale copy of a CMS answer served to the build with the CMS down fails the build; so Vercel must run the `build` script, which `buildCommand` in `apps/web/vercel.json` sets to `pnpm build`. Do not replace it with `next build`. A revalidation event fired while a build runs clears the live deployment only, so the new deployment's prerendered pages carry pre-event data until the next event or the hourly interval.
 
@@ -55,14 +71,14 @@ On the Vercel project:
 
 ## Rolling back
 
-**The CMS** is rolled back by redeploying an earlier commit from a tag. Tag the good commit, push the tag, then dispatch the workflow on it:
+**The CMS** is rolled back by redeploying an earlier commit from a tag. Tag the good commit, push the tag, then dispatch the workflow on it on Depot CI:
 
 ```sh
 git tag rollback-<date> <sha> && git push origin rollback-<date>
-gh workflow run ci.yml --ref rollback-<date>
+depot ci dispatch --repo Colbitron/resource-hub-wp --workflow ci.yml --ref rollback-<date>
 ```
 
-Pushing a tag does not start CI, because the push trigger covers only `main`, so a tag deploy always takes that manual dispatch. The run goes through the gate before deploying. The tagged commit must contain the deploy job. A tag dispatch redeploys only the CMS.
+Pushing a tag does not start CI, because the push trigger covers only `main`, so a tag deploy always takes that manual dispatch. The run goes through the gate before deploying. The tagged commit must contain the deploy job in `.depot/workflows/ci.yml`. A commit from before the move to Depot CI has none, so to roll back that far, branch from it, check out the current `.depot/` directory onto the branch, commit, and tag and dispatch that commit; this has not been exercised yet. A tag dispatch redeploys only the CMS.
 
 **The front end** is rolled back on Vercel, by promoting an earlier production deployment (Instant Rollback). A hook cannot deploy a tagged commit, because it always builds `main`. After an Instant Rollback, Vercel stops assigning the production domain to new deployments, so the deploys `deploy-web` starts afterwards still build but are not served until someone undoes the rollback or promotes a deployment on Vercel; a green CI run on `main` does not end it.
 
@@ -70,10 +86,14 @@ A CMS rollback and a front-end rollback are two separate actions. Because contra
 
 ## Rotating secrets
 
-- **The deploy hook.** Create a new hook for `main` in the Vercel project's Git settings, update `VERCEL_DEPLOY_HOOK_URL`, then delete the old hook.
-- **The protection bypass secret.** Regenerate it in the Vercel project's Deployment Protection settings, then update `VERCEL_PROTECTION_BYPASS` and the local `VERC_DEP_PROT`. Until both are updated the preview Lighthouse comment reports a refused header; nothing deploys through it.
+A Depot CI secret is updated in place with `depot ci secrets set <name> --repo Colbitron/resource-hub-wp`, which prompts for the value (or `--from-stdin`, piping it with `printf '%s'`, so it never lands in the shell's history or a file); the variant scoped to this repository is the one replaced. A GitHub repository secret is updated with `gh secret set <name>`, which prompts too.
+
+- **The deploy hook.** Create a new hook for `main` in the Vercel project's Git settings, update `VERCEL_DEPLOY_HOOK_URL` in Depot CI, then delete the old hook.
+- **The protection bypass secret.** Regenerate it in the Vercel project's Deployment Protection settings, then update `VERCEL_PROTECTION_BYPASS` as a GitHub repository secret, where the preview Lighthouse workflow reads it, and in Depot CI, and the local `VERC_DEP_PROT`. Until both are updated the preview Lighthouse comment reports a refused header; nothing deploys through it.
 - **The revalidation secret.** It is one value on both sides: `RESOURCE_HUB_REVALIDATE_SECRET` in the host's `wp-config.php` and `REVALIDATE_SECRET` in the Vercel project. It must meet [the secret's rule](../../packages/ui/README.md#configuration); the CMS treats one that breaks it as not configured. Change the front end first, redeploy, then the CMS, then press "Send test revalidation" on Settings > Resource Hub, which sends a real event and records the result.
-- **The deploy SSH key.** Generate a new key used only for deploys, add its public half on the host, update `DEPLOY_SSH_KEY`, then remove the old public key from the host.
+- **The deploy SSH key.** Generate a new key used only for deploys, add its public half on the host, update `DEPLOY_SSH_KEY` in Depot CI, then remove the old public key from the host.
+
+Until the follow-up that removes the cutover switch, update a rotated deploy secret in GitHub's repository secrets as well, so a rollback to GitHub Actions does not deploy with a revoked value.
 
 ## Verifying on a Vercel preview
 

@@ -68,7 +68,7 @@ Both run through `pnpm wp` (the dev site) or `pnpm wp:tests` (the tests site).
 
 ## Testing
 
-Three gates, all run by `.github/workflows/ci.yml` on every pull request and push to `main`, and all run locally from the root:
+Three gates, all run by CI on Depot CI (`.depot/workflows/ci.yml`, the `gate` job) on every pull request and push to `main`, and all run locally from the root:
 
 | Command | Runs |
 |---|---|

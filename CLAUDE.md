@@ -4,7 +4,7 @@ A headless WordPress demo in one repository (ADR 0033): a WordPress plugin, a Ne
 
 ## Standards to build to
 
-Headless WordPress with Next.js over REST (GraphQL as a stretch); React and TypeScript; custom Gutenberg blocks and modular plugins to WordPress Coding Standards and PSR-12; Composer; GitHub Actions; PHPUnit and Playwright; WordPress VIP habits (no direct DB assumptions, object cache, no filesystem writes); WCAG and Core Web Vitals. The reference shape is a headless WordPress site on Next.js and Vercel with ISR and on-demand revalidation from the CMS; this should look like a small, clean instance of that shape. Ambition here means depth, not feature count: a small system where every decision has a one-sentence reason, and a front end that is fast, accessible and tested.
+Headless WordPress with Next.js over REST (GraphQL as a stretch); React and TypeScript; custom Gutenberg blocks and modular plugins to WordPress Coding Standards and PSR-12; Composer; CI in GitHub Actions' workflow syntax, run on Depot CI; PHPUnit and Playwright; WordPress VIP habits (no direct DB assumptions, object cache, no filesystem writes); WCAG and Core Web Vitals. The reference shape is a headless WordPress site on Next.js and Vercel with ISR and on-demand revalidation from the CMS; this should look like a small, clean instance of that shape. Ambition here means depth, not feature count: a small system where every decision has a one-sentence reason, and a front end that is fast, accessible and tested.
 
 ## Hard constraints
 
@@ -37,7 +37,7 @@ A filterable resources library: WordPress models it and pushes changes, Next.js 
 | Deploying, rolling back, rotating a secret, host notes | `docs/runbooks/deploy.md` |
 | Running and testing the plugin, its WP-CLI commands, its directory map | `wp-content/plugins/resource-hub-wp/README.md` |
 | Running and testing the front end, its configuration, routes and images | `apps/web/README.md`, `apps/web/e2e/README.md` |
-| Why the system has its shape | `docs/adr/` (13 records) |
+| Why the system has its shape | `docs/adr/` (14 records) |
 | Why one class or module does what it does | Its docblock |
 | What is not built yet | Issue #89 (the CMS theme, slice 5) and the open follow-ups #85 (lab measurement), #86 (CMS pages' LCP image) and #87 (the related list's scale path) |
 
@@ -48,4 +48,4 @@ A filterable resources library: WordPress models it and pushes changes, Next.js 
 - Work on branches and open pull requests so the review has a diff to read. Small PRs, one concern each. Commit messages say what and why.
 - **Write an ADR only for a decision that is expensive to undo** (data model, contract, hosting, repository shape, caching model, deploy pipeline), **constrains later work across the system, and had real alternatives worth recording.** One decision per record, with the rejected options and the costs, under `docs/adr/` at the next free number. A timeout, a tag list or tag map, a header value, a required block attribute, a tool version or a CSS choice is not an ADR, even when it matters; it goes in a docblock, a README or a topic page. When in doubt, don't write one. Everything else goes beside what it describes: part-level standards in that part's `CLAUDE.md` or README; contract semantics in `packages/ui/README.md`; how a subsystem works in `docs/architecture/`; a procedure in `docs/runbooks/`; the reasoning for one piece of code in its docblock or test name; an unbuilt spec or an open question in an issue. **No agent creates, amends, supersedes or deletes an ADR without Colby's explicit approval in the conversation**; how records change, the `adr-approved` label and the guards on it are in `.claude/rules/adr.md`.
 - **wp-env is the one environment** (ADR 0033), locally and in CI, and its containers are the source of truth for test results. There is no PHP, Composer or WP-CLI on the host, so PHP tooling runs through the root's `pnpm` wrappers (`pnpm composer`, `pnpm lint`, `pnpm test:php`). Setup, ports and the other commands are in the root `README.md` and the plugin's `README.md`.
-- **Deploys run only from CI on `main`: the CMS first, then the front end** (ADRs 0005, 0051). The front end never goes live ahead of the CMS it reads, which is why contract changes stay additive. Secrets, rollback and rotation are in `docs/runbooks/deploy.md`.
+- **Deploys run only from CI on `main`, on Depot CI: the CMS first, then the front end** (ADRs 0005, 0051, 0053). The front end never goes live ahead of the CMS it reads, which is why contract changes stay additive. Secrets, rollback and rotation are in `docs/runbooks/deploy.md`.
