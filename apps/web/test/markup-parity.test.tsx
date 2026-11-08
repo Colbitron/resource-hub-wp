@@ -5,13 +5,15 @@ import { fileURLToPath } from "node:url";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CollectionHead, FeaturedSection, heading, offered } from "../components/ListingSections";
 import { RelatedList } from "../components/RelatedList";
 import { RELATED_HEADING, RELATED_HEADING_ID } from "../components/RelatedSection";
 import { ResourceArticle } from "../components/ResourceArticle";
 import { ResourceCard } from "../components/ResourceCard";
+import type { ListingFilter } from "../lib/routes";
 import { toCard } from "../lib/wp/cards";
 import { RELATED_COUNT, toRelatedCard } from "../lib/wp/related";
-import { wpResourceSchema, type WpResource } from "../lib/wp/schemas/rest";
+import { wpResourceSchema, wpTermSchema, type WpResource, type WpTerm } from "../lib/wp/schemas/rest";
 import nextConfig from "../next.config";
 
 /**
@@ -19,15 +21,21 @@ import nextConfig from "../next.config";
  * (`packages/ui/README.md`, "Markup fixtures"): each sample resource in
  * `packages/ui/fixtures/markup/{case}.json`, fed through the same mapping the
  * pages use, renders exactly the HTML in `{case}.card.html` (the listing's
- * row, `ResourceCard` at its default `h2`) and `{case}.meta.html` (the
- * resource page's meta line, from `ResourceArticle`'s header); and the first
- * `RELATED_COUNT` samples in name order, as the rows of the resource page's
- * related section (`RelatedList` with the section's heading and id, as
- * `RelatedSection` renders it), render exactly the HTML in `related.html`.
- * The plugin's `MarkupParityTest` renders its `resource-card`, `resource-meta`,
- * `resource-summary` and `related` blocks from the same samples and compares them with the same
- * files, so a change to either side's markup fails one of the two until the
- * fixtures, and the other side, follow.
+ * row, `ResourceCard` at its default `h2`), `{case}.meta.html` (the
+ * resource page's meta line, from `ResourceArticle`'s header),
+ * `{case}.summary.html` (its summary) and `{case}.lead.html` (the library's
+ * lead section, `FeaturedSection`); the first `RELATED_COUNT` samples in name
+ * order, as the rows of the resource page's related section (`RelatedList`
+ * with the section's heading and id, as `RelatedSection` renders it), render
+ * exactly the HTML in `related.html`; and each scene in
+ * `collection/{case}.json` (terms, resources and a request) renders, through
+ * the listing's own `heading()` and `offered()`, exactly the head in
+ * `collection/{case}.head.html` (`CollectionHead`: the heading, the count and
+ * the filter bar). The plugin's `MarkupParityTest` renders its
+ * `resource-card`, `resource-meta`, `resource-summary`, `related`,
+ * `featured-lead` and `collection-head` blocks from the same samples and
+ * compares them with the same files, so a change to either side's markup
+ * fails one of the two until the fixtures, and the other side, follow.
  *
  * The comparison normalises three things the HTML parser ignores, and nothing
  * else: whitespace that holds a line break between two tags, the fixtures'
@@ -44,6 +52,7 @@ import nextConfig from "../next.config";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const markup = path.resolve(here, "../../../packages/ui/fixtures/markup");
+const collection = path.join(markup, "collection");
 const wpFixtures = path.join(here, "fixtures/wp");
 
 interface SampleTerm {
@@ -62,7 +71,20 @@ interface Sample {
   readonly topics: readonly SampleTerm[];
 }
 
+/** A collection scene: the terms as the REST API lists them, the published resources, and the request's filter. */
+interface Scene {
+  readonly request: ListingFilter;
+  readonly types: readonly SampleTerm[];
+  readonly topics: readonly SampleTerm[];
+  readonly resources: readonly { readonly type: string; readonly topics: readonly string[] }[];
+}
+
 const CASES = readdirSync(markup)
+  .filter((name) => name.endsWith(".json"))
+  .map((name) => name.slice(0, -".json".length))
+  .sort();
+
+const COLLECTION_CASES = readdirSync(collection)
   .filter((name) => name.endsWith(".json"))
   .map((name) => name.slice(0, -".json".length))
   .sort();
@@ -87,6 +109,34 @@ function normalise(html: string): string {
 
 function fixture(name: string): string {
   return normalise(readFileSync(path.join(markup, name), "utf8"));
+}
+
+function scene(name: string): Scene {
+  return JSON.parse(readFileSync(path.join(collection, `${name}.json`), "utf8")) as Scene;
+}
+
+/**
+ * A scene's terms as the REST API lists them for the filter bar, each with
+ * its `count` of the scene's resources carrying it, parsed by the reader schema.
+ */
+function sceneTerms(data: Scene, taxonomy: "resource_type" | "resource_topic"): WpTerm[] {
+  const terms = taxonomy === "resource_type" ? data.types : data.topics;
+  return terms.map((value) =>
+    wpTermSchema.parse({
+      ...term(taxonomy, value),
+      count: data.resources.filter((resource) =>
+        taxonomy === "resource_type" ? resource.type === value.slug : resource.topics.includes(value.slug),
+      ).length,
+    }),
+  );
+}
+
+/** The scene's resources that match its request: what the CMS counts for the page. */
+function sceneTotal(data: Scene): number {
+  const { type, topic } = data.request;
+  return data.resources.filter(
+    (resource) => (type === undefined || resource.type === type) && (topic === undefined || resource.topics.includes(topic)),
+  ).length;
 }
 
 function sample(name: string): Sample {
@@ -142,14 +192,18 @@ afterEach(() => {
 });
 
 describe("markup parity with the CMS blocks", () => {
-  it("finds the samples, each with its two fixtures, and the related section's", () => {
+  it("finds the samples, each with its fixtures, the related section's and the collection scenes'", () => {
     expect(CASES).toEqual(expect.arrayContaining(["bare", "full", "unmapped"]));
     for (const name of CASES) {
       expect(readdirSync(markup)).toEqual(
-        expect.arrayContaining([`${name}.card.html`, `${name}.meta.html`, `${name}.summary.html`]),
+        expect.arrayContaining([`${name}.card.html`, `${name}.meta.html`, `${name}.summary.html`, `${name}.lead.html`]),
       );
     }
     expect(readdirSync(markup)).toContain("related.html");
+    expect(COLLECTION_CASES).toEqual(expect.arrayContaining(["library", "type", "topic", "type-topic", "empty-type"]));
+    for (const name of COLLECTION_CASES) {
+      expect(readdirSync(collection)).toContain(`${name}.head.html`);
+    }
   });
 
   it(`renders the resource page's related section, with the first ${RELATED_COUNT} samples as rows, as related.html`, () => {
@@ -185,6 +239,36 @@ describe("markup parity with the CMS blocks", () => {
         <ResourceArticle rendered={{ kind: "render", resource: sampleResource(data), type: data.type.slug, slug: data.slug }} />,
       );
       expect(normalise(summaryParagraph(html))).toBe(fixture(`${name}.summary.html`));
+    });
+
+    it(`renders the library's lead section as ${name}.lead.html`, () => {
+      const card = toCard(sampleResource(sample(name)));
+      expect(card).not.toBeNull();
+      expect(normalise(renderToStaticMarkup(<FeaturedSection lead={card!} />))).toBe(fixture(`${name}.lead.html`));
+    });
+  });
+
+  describe.each(COLLECTION_CASES)("collection %s", (name) => {
+    it(`renders the collection's head as collection/${name}.head.html`, () => {
+      const data = scene(name);
+      const types = sceneTerms(data, "resource_type");
+      const topics = sceneTerms(data, "resource_topic");
+      const current = {
+        type: types.find((candidate) => candidate.slug === data.request.type),
+        topic: topics.find((candidate) => candidate.slug === data.request.topic),
+      };
+      expect(current.type === undefined).toBe(data.request.type === undefined);
+      expect(current.topic === undefined).toBe(data.request.topic === undefined);
+      const html = renderToStaticMarkup(
+        <CollectionHead
+          name={heading(current)}
+          total={sceneTotal(data)}
+          types={offered(types, data.request.type)}
+          topics={offered(topics, data.request.topic)}
+          current={data.request}
+        />,
+      );
+      expect(normalise(html)).toBe(fixture(`collection/${name}.head.html`));
     });
   });
 });

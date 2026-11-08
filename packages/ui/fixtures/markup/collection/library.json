@@ -1,0 +1,59 @@
+{
+	"$comment": "The unfiltered library: every type and topic with a resource is offered, the type with none is not, and both \"All\" links are current. The scene both sides render from: the terms in name order as the REST API lists them (names as core stores them, & as &amp;), the published resources with their type and topics, and the request's filter. Each side derives the counts and the total from the resources. README.md, \"Markup fixtures\".",
+	"request": {},
+	"types": [
+		{
+			"id": 3,
+			"slug": "article",
+			"name": "Article"
+		},
+		{
+			"id": 7,
+			"slug": "ebook",
+			"name": "Ebook"
+		},
+		{
+			"id": 5,
+			"slug": "webinar",
+			"name": "Webinar"
+		}
+	],
+	"topics": [
+		{
+			"id": 21,
+			"slug": "accessibility",
+			"name": "Accessibility"
+		},
+		{
+			"id": 13,
+			"slug": "caching-and-cdns",
+			"name": "Caching &amp; CDNs"
+		},
+		{
+			"id": 9,
+			"slug": "headless-delivery",
+			"name": "Headless delivery"
+		}
+	],
+	"resources": [
+		{
+			"type": "article",
+			"topics": [
+				"accessibility",
+				"caching-and-cdns"
+			]
+		},
+		{
+			"type": "webinar",
+			"topics": [
+				"accessibility"
+			]
+		},
+		{
+			"type": "article",
+			"topics": [
+				"headless-delivery"
+			]
+		}
+	]
+}

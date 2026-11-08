@@ -2,16 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { DataNotFound, NOT_FOUND_METADATA } from "@/components/DataNotFound";
-import { FeaturedLead } from "@/components/FeaturedLead";
-import { FilterNav, type FilterTerm } from "@/components/FilterNav";
 import { ListingFocus } from "@/components/ListingFocus";
+import { CollectionHead, FeaturedSection, HEADING_ID, heading, offered } from "@/components/ListingSections";
 import { Pagination } from "@/components/Pagination";
 import { ResourceCard } from "@/components/ResourceCard";
 import { loadListing } from "@/lib/listing-data";
 import { listingPath, validListing, type ListingRequest } from "@/lib/routes";
-import { plainText, toCard } from "@/lib/wp/cards";
+import { toCard } from "@/lib/wp/cards";
 import type { ResourceListing } from "@/lib/wp/resources";
-import type { WpTerm } from "@/lib/wp/schemas/rest";
 
 import "@colbitron/resource-hub-ui/listing.css";
 
@@ -105,37 +103,16 @@ import "@colbitron/resource-hub-ui/listing.css";
  *
  * Term names are shown as plain text through `plainText`, since WordPress
  * stores `&` as `&amp;` in a term name.
+ *
+ * The head (the heading, the count and the filter bar) and the lead's section
+ * are `components/ListingSections.tsx`, with the text rules they use, so the
+ * contract's markup fixtures can render each from a sample: the CMS theme
+ * renders both through the plugin's `collection-head` and `featured-lead`
+ * blocks (`packages/ui/README.md`, "Markup fixtures").
  */
 
 /** The segments of a listing route, as Next.js hands them to the page: `ListingRequest` in `lib/routes.ts`. */
 export type { ListingRequest };
-
-/**
- * The listing's name, from the terms it is filtered by: "Resources", "Webinar
- * resources", "Resources on Accessibility", "Webinar resources on
- * Accessibility". Term names are used as the editor wrote them, never
- * pluralised.
- */
-function heading(terms: { type?: WpTerm; topic?: WpTerm }): string {
-  const head = terms.type === undefined ? "Resources" : `${plainText(terms.type.name)} resources`;
-  return terms.topic === undefined ? head : `${head} on ${plainText(terms.topic.name)}`;
-}
-
-function countLine(total: number): string {
-  return total === 1 ? "1 resource" : `${total} resources`;
-}
-
-/**
- * The terms the filter bar offers: every term with a published resource, in
- * name order, plus the current term even when its count is zero, so the bar
- * always shows what the page is filtered by. A term that can only lead to an
- * empty page is not offered.
- */
-function offered(terms: WpTerm[], current: string | undefined): FilterTerm[] {
-  return terms
-    .filter((term) => term.count > 0 || term.slug === current)
-    .map((term) => ({ slug: term.slug, name: plainText(term.name) }));
-}
 
 /**
  * True when the CMS counts resources on this page and none of them can be
@@ -176,9 +153,6 @@ export async function listingMetadata(request: ListingRequest): Promise<Metadata
   };
 }
 
-/** The `<h1>`'s ID, which `ListingFocus` moves focus to after a client navigation. */
-const HEADING_ID = "rh-listing-heading";
-
 export async function ListingPage({ request }: { request: ListingRequest }) {
   const valid = validListing(request);
   if (valid === null) {
@@ -199,19 +173,8 @@ export async function ListingPage({ request }: { request: ListingRequest }) {
   return (
     <>
       <ListingFocus targetId={HEADING_ID} />
-      <header className="rh-listing__header">
-        <h1 id={HEADING_ID} tabIndex={-1}>
-          {name}
-        </h1>
-        {listing.total > 0 && <p className="rh-listing__count">{countLine(listing.total)}</p>}
-      </header>
-      <FilterNav types={offered(types, filter.type)} topics={offered(topics, filter.topic)} current={filter} />
-      {lead !== null && (
-        <div className="rh-listing__lead">
-          <h2 className="rh-listing__section">Featured</h2>
-          <FeaturedLead {...lead} headingLevel="h3" />
-        </div>
-      )}
+      <CollectionHead name={name} total={listing.total} types={offered(types, filter.type)} topics={offered(topics, filter.topic)} current={filter} />
+      {lead !== null && <FeaturedSection lead={lead} />}
       {lead === null && cards.length === 0 ? (
         <div className="rh-listing__empty">
           <p>
