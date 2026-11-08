@@ -25,6 +25,8 @@ use WP_UnitTestCase;
  * so the suite needs `pnpm build` first, as CI runs it.
  */
 final class RelatedResourcesBlockTest extends WP_UnitTestCase {
+	use SetsTypeAccentsTable;
+
 	/**
 	 * A type term's ID; every resource gets it, so the one-type rule holds.
 	 *
@@ -72,12 +74,23 @@ final class RelatedResourcesBlockTest extends WP_UnitTestCase {
 				'slug'     => 'testing',
 			)
 		);
+
+		// The tests database's term IDs are not the CMS's, so the type created here is given the webinar's row.
+		self::use_type_accents(
+			array(
+				$this->type => array(
+					'slug'   => 'webinar',
+					'accent' => 'coral',
+				),
+			)
+		);
 	}
 
 	/**
-	 * Back to plain permalinks, as the other suites expect.
+	 * Back to plain permalinks, as the other suites expect, and to the build's type-accent table.
 	 */
 	public function tear_down(): void {
+		self::reset_type_accents();
 		$this->set_permalink_structure( '' );
 		parent::tear_down();
 	}
@@ -395,7 +408,7 @@ final class RelatedResourcesBlockTest extends WP_UnitTestCase {
 
 	/**
 	 * Each row is `card.css`'s markup, as the front end's `ResourceCard` renders it at `h3`: the meta line with
-	 * the type (no `data-accent`, so the neutral mark) and the date, then the body with the linked title, the
+	 * the type (its `data-accent` from the type-accent table) and the date, then the body with the linked title, the
 	 * summary when there is one and the topics when there are any.
 	 */
 	public function test_rows_are_card_markup(): void {
@@ -419,7 +432,7 @@ final class RelatedResourcesBlockTest extends WP_UnitTestCase {
 
 		$this->assertStringContainsString(
 			'<h2>More on Testing</h2><ul class="rh-card-grid" role="list"><li><article class="rh-card">'
-				. '<p class="rh-card__meta"><span class="rh-card__type">Webinar</span><time datetime="2026-09-05T10:30:00Z">Sep 5, 2026</time></p>'
+				. '<p class="rh-card__meta"><span class="rh-card__type" data-accent="coral">Webinar</span><time datetime="2026-09-05T10:30:00Z">Sep 5, 2026</time></p>'
 				. '<div class="rh-card__body">'
 				. '<h3 class="rh-card__title"><a class="rh-card__link" href="' . esc_url( get_permalink( $full ) ) . '">Resource full</a></h3>'
 				. '<p class="rh-card__summary">A short summary.</p>'
@@ -430,15 +443,61 @@ final class RelatedResourcesBlockTest extends WP_UnitTestCase {
 		);
 		$this->assertStringEndsWith(
 			'<li><article class="rh-card">'
-				. '<p class="rh-card__meta"><span class="rh-card__type">Webinar</span><time datetime="2026-01-01T08:00:00Z">Jan 1, 2026</time></p>'
+				. '<p class="rh-card__meta"><span class="rh-card__type" data-accent="coral">Webinar</span><time datetime="2026-01-01T08:00:00Z">Jan 1, 2026</time></p>'
 				. '<div class="rh-card__body">'
 				. '<h3 class="rh-card__title"><a class="rh-card__link" href="' . esc_url( get_permalink( $bare ) ) . '">Resource bare</a></h3>'
 				. '</div></article></li></ul></div>',
 			$html,
 			'The row with no summary and no topics has neither element.'
 		);
-		$this->assertStringNotContainsString( 'data-accent', $html );
 		$this->assertSame( 2, substr_count( $html, '<article class="rh-card">' ) );
+	}
+
+	/**
+	 * A type the table does not know, or one whose slug is not the row's, is marked `neutral`, as the front end
+	 * marks it; the attribute is escaped like every other.
+	 */
+	public function test_type_without_a_row_is_neutral(): void {
+		$guide = self::factory()->term->create(
+			array(
+				'taxonomy' => Taxonomies::TYPE,
+				'name'     => 'Guide',
+				'slug'     => 'guide',
+			)
+		);
+		$this->resource( 'known', array( 'post_date' => '2026-03-01 10:00:00' ) );
+		$other = $this->resource( 'other', array( 'post_date' => '2026-02-01 10:00:00' ) );
+		wp_set_object_terms( $other, array( $guide ), Taxonomies::TYPE );
+		$host = $this->host();
+
+		$this->assertSame(
+			array( 'coral', 'neutral' ),
+			$this->accents( $this->render( array( 'topic' => $this->topic ), $host ) )
+		);
+
+		wp_update_term( $this->type, Taxonomies::TYPE, array( 'slug' => 'talk' ) );
+		$this->assertSame(
+			array( 'neutral', 'neutral' ),
+			$this->accents( $this->render( array( 'topic' => $this->topic ), $host ) ),
+			'A renamed type no longer matches its row.'
+		);
+	}
+
+	/**
+	 * Each row's `data-accent`, in order.
+	 *
+	 * @param string $html A render.
+	 * @return string[]
+	 */
+	private function accents( string $html ): array {
+		$tags    = new WP_HTML_Tag_Processor( $html );
+		$accents = array();
+
+		while ( $tags->next_tag( array( 'class_name' => 'rh-card__type' ) ) ) {
+			$accents[] = (string) $tags->get_attribute( 'data-accent' );
+		}
+
+		return $accents;
 	}
 
 	/**
@@ -465,7 +524,7 @@ final class RelatedResourcesBlockTest extends WP_UnitTestCase {
 		$this->assertSame( 1, substr_count( $html, '<article class="rh-card">' ) );
 		$this->assertStringNotContainsString( 'Resource untyped', $html );
 		$this->assertStringNotContainsString( 'Resource two-types', $html );
-		$this->assertStringContainsString( '<span class="rh-card__type">Webinar</span>', $html, 'The row left has its type.' );
+		$this->assertStringContainsString( '<span class="rh-card__type" data-accent="coral">Webinar</span>', $html, 'The row left has its type.' );
 	}
 
 	/**
@@ -1036,7 +1095,7 @@ final class RelatedResourcesBlockTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * The inner HTML of every element with this tag and exactly this class, in order.
+	 * The inner HTML of every element with this tag and exactly this class (other attributes may follow it), in order.
 	 *
 	 * @param string $tag       The tag name.
 	 * @param string $class_att The class attribute.
@@ -1044,7 +1103,7 @@ final class RelatedResourcesBlockTest extends WP_UnitTestCase {
 	 * @return string[]
 	 */
 	private function texts( string $tag, string $class_att, string $html ): array {
-		preg_match_all( '#<' . $tag . ' class="' . preg_quote( $class_att, '#' ) . '">(.*?)</' . $tag . '>#s', $html, $matches );
+		preg_match_all( '#<' . $tag . ' class="' . preg_quote( $class_att, '#' ) . '"(?: [^>]*)?>(.*?)</' . $tag . '>#s', $html, $matches );
 
 		return $matches[1];
 	}

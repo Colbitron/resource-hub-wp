@@ -6,18 +6,26 @@
  * it and sits outside the link's text and underline, so the cobalt dot is
  * never read as part of a cobalt link.
  *
- * The table is keyed by the `resource_type` term's ID, which is the same on
- * the hosted CMS, the local wp-env and the mock CMS's seed
- * (`e2e/mock-cms/seed.mts`; `test/type-accents.test.ts` checks every row
- * against it), with the slug the ID is expected to carry. A type the table
- * does not know, or whose slug no longer matches, gets the neutral mark:
- * adding a type is a development change that ships its row here, in the
- * same change and deploy as the term, so a new type is never coloured by
- * accident.
+ * The table is the shared package's `type-accents.json`, which the plugin's
+ * related-resources block reads too (`packages/ui/README.md`, "Type
+ * accents"), so the CMS's rows and these mark a type alike. It is keyed by
+ * the `resource_type` term's ID, which is the same on the hosted CMS, the
+ * local wp-env and the mock CMS's seed (`e2e/mock-cms/seed.mts`;
+ * `test/type-accents.test.ts` checks every row against it), with the slug
+ * the ID is expected to carry. A type the table does not know, or whose slug
+ * no longer matches, gets the neutral mark: adding a type is a development
+ * change that ships its row in the package, in the same change and deploy as
+ * the term, so a new type is never coloured by accident.
+ *
+ * The file is parsed with the schema's mirror (`lib/wp/schemas/type-accents.ts`)
+ * when this module loads, which narrows its accents from `string` and fails
+ * the build rather than render a value `card-labels.css` has no rule for.
  */
+import table from "@colbitron/resource-hub-ui/type-accents.json";
 
-/** The five brand accents, each a `--rh-mark-*` token in `tokens.css`. */
-export type BrandAccent = "coral" | "cobalt" | "lemon" | "mint" | "grape";
+import { type BrandAccent, typeAccentTableSchema } from "./wp/schemas/type-accents";
+
+export type { BrandAccent };
 
 /** A mark's colour: a brand accent, or the neutral ink for a type the table does not know. */
 export type MarkAccent = BrandAccent | "neutral";
@@ -30,13 +38,7 @@ export interface TypeAccentRow {
   readonly accent: BrandAccent;
 }
 
-export const TYPE_ACCENTS: readonly TypeAccentRow[] = [
-  { id: 3, slug: "article", accent: "mint" },
-  { id: 4, slug: "ebook", accent: "grape" },
-  { id: 5, slug: "webinar", accent: "coral" },
-  { id: 6, slug: "podcast", accent: "lemon" },
-  { id: 7, slug: "case-study", accent: "cobalt" },
-];
+export const TYPE_ACCENTS: readonly TypeAccentRow[] = typeAccentTableSchema.parse(table).types;
 
 const BY_ID: ReadonlyMap<number, TypeAccentRow> = new Map(TYPE_ACCENTS.map((row) => [row.id, row]));
 

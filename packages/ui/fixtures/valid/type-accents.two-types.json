@@ -1,0 +1,14 @@
+{
+	"types": [
+		{
+			"id": 12,
+			"slug": "guide",
+			"accent": "mint"
+		},
+		{
+			"id": 13,
+			"slug": "explainer",
+			"accent": "coral"
+		}
+	]
+}

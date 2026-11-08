@@ -73,7 +73,7 @@ function marker({ topic, count = 3, heading = `More on ${topic}`, shape = "cards
   const href = `${origin}/resources/case-study/one-content-model-five-channels/`;
   const rows =
     shape === "cards"
-      ? '<ul class="rh-card-grid" role="list"><li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">Case study</span><time datetime="2026-10-28T09:00:00Z">Oct 28, 2026</time></p>' +
+      ? '<ul class="rh-card-grid" role="list"><li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type" data-accent="cobalt">Case study</span><time datetime="2026-10-28T09:00:00Z">Oct 28, 2026</time></p>' +
         `<div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="${href}">One content model, five channels</a></h3>` +
         '<p class="rh-card__summary">A publisher\'s move to a model that feeds every channel.</p><ul class="rh-card__topics" aria-label="Topics" role="list"><li class="rh-card__topic">Content modelling</li></ul></div></article></li></ul>'
       : `<ul><li><a href="${href}">One content model, five channels</a></li></ul>`;
@@ -265,7 +265,7 @@ test.describe("the swap on a CMS page, and the fallback when the block's read fa
       resourcePath("case-study", seeded(24).slug),
     );
     await expect(rows.locator(".rh-card").getByRole("list", { name: "Topics" })).toHaveText("Content modelling");
-    // The fallback's row has no accent, so its mark is the neutral ink.
+    // The CMS's row carries its type's accent, but the pass drops `data-accent` from the fallback, so its mark is the neutral ink.
     await expect(rows.locator(".rh-card__type")).not.toHaveAttribute("data-accent", /./);
 
     // The page without its swap is a stored 200; the page's next event clears it, and with the fault gone the swap renders.

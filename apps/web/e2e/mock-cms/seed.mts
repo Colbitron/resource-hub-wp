@@ -187,6 +187,8 @@ export const SEED_DATE = "2026-11-01T09:00:00";
 /** One row of a block marker's fallback, as the CMS block (`RelatedResourcesBlock` in the plugin) writes it. */
 interface MarkerRow {
   type: string;
+  /** The type's `data-accent`, from the shared type-accent table (`packages/ui/type-accents.json`), as the block writes it. */
+  accent: string;
   /** The `<time>`'s `datetime` (UTC with a `Z`, as the block's `gmdate('Y-m-d\TH:i:s\Z')`) and its text, the publication date. */
   datetime: string;
   dateText: string;
@@ -203,12 +205,13 @@ interface MarkerRow {
  * marker") writes it: the wrapper with its `data-*` attributes, the
  * block's `<h2>`, and under it the row markup of `packages/ui/card.css`
  * (its header comment) for the resources the CMS found, with `role="list"`
- * on the two lists and no `data-accent`, which is the front end's. The front end swaps the whole wrapper for its
+ * on the two lists and each type's `data-accent` from the shared table, which the
+ * front end's pass drops from the fallback. The front end swaps the whole wrapper for its
  * own list and renders this only when that read fails.
  */
 function relatedMarker(topicId: number, exclude: number, heading: string, rows: MarkerRow[]): string {
   const row = (r: MarkerRow) =>
-    `<li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">${r.type}</span><time datetime="${r.datetime}">${r.dateText}</time></p>` +
+    `<li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type" data-accent="${r.accent}">${r.type}</span><time datetime="${r.datetime}">${r.dateText}</time></p>` +
     `<div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="{{origin}}${r.path}">${r.title}</a></h3>` +
     `<p class="rh-card__summary">${r.summary}</p>` +
     `<ul class="rh-card__topics" aria-label="Topics" role="list">${r.topics.map((topic) => `<li class="rh-card__topic">${topic}</li>`).join("")}</ul></div></article></li>`;
@@ -230,6 +233,7 @@ const RICH_CONTENT = `
 ${relatedMarker(10, 33, "Related resources", [
   {
     type: "Article",
+    accent: "mint",
     datetime: "2026-10-31T09:00:00Z",
     dateText: "Oct 31, 2026",
     path: "/resources/article/alt-text-at-scale/",
@@ -239,6 +243,7 @@ ${relatedMarker(10, 33, "Related resources", [
   },
   {
     type: "Podcast",
+    accent: "lemon",
     datetime: "2026-10-27T09:00:00Z",
     dateText: "Oct 27, 2026",
     path: "/resources/podcast/editorial-review-without-the-bottleneck/",
@@ -334,6 +339,7 @@ const LONG_CONTENT = `
 ${relatedMarker(8, 30, "More on content modelling", [
   {
     type: "Case study",
+    accent: "cobalt",
     datetime: "2026-10-28T09:00:00Z",
     dateText: "Oct 28, 2026",
     path: "/resources/case-study/one-content-model-five-channels/",
@@ -343,6 +349,7 @@ ${relatedMarker(8, 30, "More on content modelling", [
   },
   {
     type: "Webinar",
+    accent: "coral",
     datetime: "2026-10-24T09:00:00Z",
     dateText: "Oct 24, 2026",
     path: "/resources/webinar/the-anatomy-of-a-resource/",

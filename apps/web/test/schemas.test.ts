@@ -24,6 +24,7 @@ import {
   revalidateResponseErrorSchema,
   revalidateResponseOkSchema,
 } from "../lib/wp/schemas/revalidate";
+import { typeAccentTableSchema } from "../lib/wp/schemas/type-accents";
 import { wpErrorSchema } from "../lib/wp/schemas/wp-error";
 
 /**
@@ -49,6 +50,7 @@ const contractSchemas: Record<string, z.ZodType> = {
   "page-response": pageResponseSchemaStrict,
   "related-response": relatedResponseSchemaStrict,
   "wp-error": wpErrorSchema,
+  "type-accents": typeAccentTableSchema,
 };
 
 /**
@@ -84,6 +86,13 @@ const expectedIssuePaths: Record<string, (string | number)[][]> = {
   "revalidate-request.wrong-version.json": [["version"]],
   "revalidate-response-ok.protocol-relative-path.json": [["revalidated", 0]],
   "wp-error.string-status.json": [["data", "status"]],
+  "type-accents.unknown-accent.json": [["types", 0, "accent"]],
+  "type-accents.neutral-accent.json": [["types", 0, "accent"]],
+  "type-accents.reserved-type-slug.json": [["types", 0, "slug"]],
+  "type-accents.string-id.json": [["types", 0, "id"]],
+  "type-accents.missing-slug.json": [["types", 0, "slug"]],
+  "type-accents.extra-row-property.json": [["types", 0]],
+  "type-accents.good-row-beside-bad-row.json": [["types", 1, "accent"]],
 };
 
 /** The path of every issue in a failed parse, or `[]` when it succeeded. */

@@ -38,7 +38,7 @@ use WP_Term;
  *          data-topic-id="{id}" data-exclude="{post id}">
  *       <h2>{heading}</h2>
  *       <ul class="rh-card-grid" role="list"><li><article class="rh-card">
- *         <p class="rh-card__meta"><span class="rh-card__type">{type}</span><time datetime="{ISO}">{Nov 1, 2026}</time></p>
+ *         <p class="rh-card__meta"><span class="rh-card__type" data-accent="{accent}">{type}</span><time datetime="{ISO}">{Nov 1, 2026}</time></p>
  *         <div class="rh-card__body">
  *           <h3 class="rh-card__title"><a class="rh-card__link" href="{permalink}">{title}</a></h3>
  *           <p class="rh-card__summary">{summary}</p>                                   (when it has one)
@@ -50,9 +50,10 @@ use WP_Term;
  * The rows are the card's markup because the CMS's own pages and the editor preview then show the
  * same rows the front end shows, styled by the stylesheet the block already loads; the front end swaps
  * the whole wrapper for its own component and reads only the `data-*` attributes and the `<h2>`'s
- * text, so what is inside the wrapper costs it nothing. The type's span has no `data-accent`, so its
- * mark is the neutral ink: the accent table lives only on the front end (`lib/type-accents.ts`), and a
- * copy here would drift. The date is `date_gmt` in UTC, as an ISO instant in `datetime` and as
+ * text, so what is inside the wrapper costs it nothing. The type's span carries `data-accent` from the
+ * shared type-accent table (`TypeAccents`), the type's accent or `neutral`, as the front end's
+ * `ResourceCard` writes it, so the CMS's own pages mark each type as the site does; the front end drops
+ * the attribute from the rows it keeps as its fallback. The date is `date_gmt` in UTC, as an ISO instant in `datetime` and as
  * "Nov 1, 2026" in the text, the front end's format (`apps/web/lib/dates.ts`). Every text in a row is
  * the text the front end's card prints, escaped with `htmlspecialchars()`, which encodes every `&` as
  * React escapes text, where `esc_html()` would leave an `&amp;` already in the text alone (so a title
@@ -234,7 +235,7 @@ final class RelatedResourcesBlock {
 
 		$html  = '<article class="rh-card">';
 		$html .= '<p class="rh-card__meta">';
-		$html .= '<span class="rh-card__type">' . self::text_html( self::plain_text( $type->name ) ) . '</span>';
+		$html .= '<span class="rh-card__type" data-accent="' . esc_attr( TypeAccents::accent( $type ) ) . '">' . self::text_html( self::plain_text( $type->name ) ) . '</span>';
 		$html .= '<time datetime="' . esc_attr( gmdate( 'Y-m-d\TH:i:s\Z', $timestamp ) ) . '">' . esc_html( gmdate( 'M j, Y', $timestamp ) ) . '</time>';
 		$html .= '</p>';
 		$html .= '<div class="rh-card__body">';

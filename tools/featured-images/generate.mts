@@ -68,8 +68,11 @@ const WARM_LINE = "rgb(120 100 60 / 0.22)";
 const SHADOW = "0 10px 30px -18px rgb(30 28 34 / 0.3)";
 
 /**
- * Which accent marks each resource type: the same mapping as the front end's
- * `apps/web/lib/type-accents.ts`. A seeder type missing here fails the run.
+ * Which accent marks each resource type, keyed by slug: the mapping in the
+ * shared table, `packages/ui/type-accents.json`, which is keyed by term ID.
+ * This map is a known third copy of that table, beside the front end's and
+ * the plugin's readers, and is to be derived from it; until then a change
+ * there must be made here by hand. A seeder type missing here fails the run.
  */
 const TYPE_ACCENTS: Readonly<Record<string, Accent>> = {
   article: "mint",

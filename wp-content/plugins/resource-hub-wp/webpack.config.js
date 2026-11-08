@@ -8,7 +8,15 @@
  * here: `editor/resource-details`, `editor/required-fields`,
  * `editor/revalidation-feedback` and `admin/status-page`, each landing under
  * `build/` with its `.asset.php` beside it.
+ *
+ * The build also emits the shared package's type-accent table, unchanged, as
+ * `build/type-accents.json`, which `ResourceHub\Blocks\TypeAccents` reads
+ * for the related-resources block's rows. The host gets only `build/`, `src/`
+ * and `vendor/` from the deploy, never the workspace, so the table travels in
+ * `build/` as the block's stylesheet does; a PHPUnit test fails when the copy
+ * differs from the package's (`packages/ui/README.md`, "Type accents").
  */
+const { readFileSync } = require( 'fs' );
 const { resolve } = require( 'path' );
 const defaultConfig = require( '@wordpress/scripts/config/webpack.config' );
 
@@ -17,8 +25,36 @@ const [ scriptConfig, ...otherConfigs ] = Array.isArray( defaultConfig )
 	? defaultConfig
 	: [ defaultConfig ];
 
+const TYPE_ACCENTS =
+	require.resolve( '@colbitron/resource-hub-ui/type-accents.json' );
+
+/**
+ * Emits the package's `type-accents.json` as `build/type-accents.json`, byte
+ * for byte, and watches it, so `pnpm start` picks up a changed row too.
+ */
+class TypeAccentsPlugin {
+	apply( compiler ) {
+		const { Compilation, sources } = compiler.webpack;
+		const name = 'TypeAccentsPlugin';
+
+		compiler.hooks.thisCompilation.tap( name, ( compilation ) => {
+			compilation.fileDependencies.add( TYPE_ACCENTS );
+			compilation.hooks.processAssets.tap(
+				{ name, stage: Compilation.PROCESS_ASSETS_STAGE_ADDITIONAL },
+				() => {
+					compilation.emitAsset(
+						'type-accents.json',
+						new sources.RawSource( readFileSync( TYPE_ACCENTS ) )
+					);
+				}
+			);
+		} );
+	}
+}
+
 const config = {
 	...scriptConfig,
+	plugins: [ ...scriptConfig.plugins, new TypeAccentsPlugin() ],
 	entry: () => ( {
 		...scriptConfig.entry(),
 		'editor/resource-details': resolve(
