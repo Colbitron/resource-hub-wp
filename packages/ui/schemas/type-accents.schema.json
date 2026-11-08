@@ -1,0 +1,43 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://raw.githubusercontent.com/Colbitron/resource-hub-wp/main/packages/ui/schemas/type-accents.schema.json",
+	"title": "Type-accent table",
+	"description": "The shape of the package's type-accent table, type-accents.json: which brand accent marks each resource_type term, keyed by the term's ID, with the slug that ID is expected to carry. It is data both sides read at build time, not a payload either sends: the front end imports it, and the plugin's build copies it into build/, where the related-resources block reads it. A type the table does not know, or whose ID now carries a different slug, gets the neutral mark on both sides. That no two rows share an ID, a slug or an accent is checked by the package's test, since a schema cannot say it.",
+	"type": "object",
+	"properties": {
+		"types": {
+			"description": "One row per resource type that has an accent, in any order. A type with no row gets the neutral mark.",
+			"type": "array",
+			"items": { "$ref": "#/$defs/row" }
+		}
+	},
+	"required": [ "types" ],
+	"additionalProperties": false,
+	"$defs": {
+		"accent": {
+			"description": "One of the five brand accents, each a --rh-mark-* token in tokens.css and a value of the data-accent attribute card-labels.css paints the type mark from. The neutral mark is never written here: it is what a type without a row gets.",
+			"type": "string",
+			"enum": [ "coral", "cobalt", "lemon", "mint", "grape" ]
+		},
+		"row": {
+			"description": "One resource type's accent.",
+			"type": "object",
+			"properties": {
+				"id": {
+					"description": "The resource_type term's ID, the same on the hosted CMS, the local wp-env and the mock CMS's seed.",
+					"$ref": "common.schema.json#/$defs/id"
+				},
+				"slug": {
+					"description": "The slug the term with that ID is expected to carry, in WordPress's stored form. A term whose slug differs gets the neutral mark, so a stale row never colours the wrong type.",
+					"$ref": "common.schema.json#/$defs/typeSlug"
+				},
+				"accent": {
+					"description": "The accent that marks the type.",
+					"$ref": "#/$defs/accent"
+				}
+			},
+			"required": [ "id", "slug", "accent" ],
+			"additionalProperties": false
+		}
+	}
+}

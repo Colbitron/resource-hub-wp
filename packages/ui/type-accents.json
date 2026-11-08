@@ -1,0 +1,9 @@
+{
+	"types": [
+		{ "id": 3, "slug": "article", "accent": "mint" },
+		{ "id": 4, "slug": "ebook", "accent": "grape" },
+		{ "id": 5, "slug": "webinar", "accent": "coral" },
+		{ "id": 6, "slug": "podcast", "accent": "lemon" },
+		{ "id": 7, "slug": "case-study", "accent": "cobalt" }
+	]
+}
