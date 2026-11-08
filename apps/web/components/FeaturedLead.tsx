@@ -4,7 +4,7 @@ import Link from "next/link";
 import { CardMeta, CardTopics, type ResourceCardProps } from "@/components/ResourceCard";
 import type { FeaturedImage } from "@/lib/wp/images";
 
-import "./lead.css";
+import "@colbitron/resource-hub-ui/lead.css";
 
 export interface FeaturedLeadProps extends Omit<ResourceCardProps, "headingLevel"> {
   /** The resource's featured image, already a same-origin `/media/…` path with both dimensions (`featuredImage`). */
@@ -29,9 +29,9 @@ const IMAGE_SIZES = "(min-width: 72rem) 39rem, (min-width: 44rem) 58vw, 100vw";
 /**
  * The lead: the featured resource at the top of the library, large, with its
  * image beside the meta line, the title, the summary and the topics
- * (`packages/ui/DESIGN.md`, "Components"). The front end's own composition
- * (`rh-lead`, not contract); the meta line and the topics are the row's
- * parts, so the type is said the same way in both.
+ * (`packages/ui/DESIGN.md`, "Components"), in the shared `rh-lead` classes
+ * the CMS theme's library will render too; the meta line and the topics
+ * are the row's parts, so the type is said the same way in both.
  *
  * The image is the library's one LCP candidate, above the fold at every
  * width, so it is loaded like the resource page's featured image

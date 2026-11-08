@@ -1,6 +1,6 @@
 "use client";
 
-import "@/components/resource.css";
+import "@/components/unavailable.css";
 
 /**
  * The page route's error boundary: what a reader sees when the data layer
@@ -18,7 +18,7 @@ import "@/components/resource.css";
  */
 export default function PageError({ retry }: { retry: () => void }) {
   return (
-    <div className="rh-resource__unavailable">
+    <div className="rh-unavailable">
       <h1>This page can&rsquo;t be shown right now</h1>
       <p>Something went wrong while loading it. You can try again, or come back later.</p>
       <p>

@@ -19,8 +19,8 @@ import { featuredImage, openGraphImage, type FeaturedImage } from "@/lib/wp/imag
 
 // The row's labels alone, the type mark and the topics the meta line borrows, not the row's layout.
 import "@colbitron/resource-hub-ui/card-labels.css";
-import "./prose.css";
-import "./resource.css";
+import "@colbitron/resource-hub-ui/prose.css";
+import "@colbitron/resource-hub-ui/resource.css";
 
 /**
  * The single resource page's content: one `<article>` with the title, a meta

@@ -2,7 +2,7 @@ import { useId, type ReactNode } from "react";
 
 import { THEME_CHOICES, type ThemeChoice } from "@/lib/theme";
 
-import "./theme-toggle.css";
+import "@colbitron/resource-hub-ui/theme-toggle.css";
 
 /**
  * The theme control's markup: a native `<fieldset>` with a `<legend>` and

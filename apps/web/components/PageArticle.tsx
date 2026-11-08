@@ -9,8 +9,8 @@ import { shareMetadata } from "@/lib/share-metadata";
 import { plainText } from "@/lib/wp/cards";
 import type { WpPage } from "@/lib/wp/schemas/rest";
 
-import "./page.css";
-import "./prose.css";
+import "@colbitron/resource-hub-ui/page.css";
+import "@colbitron/resource-hub-ui/prose.css";
 
 /**
  * A WordPress page as the front end shows it (ADR 0052): one `<article>` with

@@ -1601,7 +1601,7 @@ function tableLabel(table: Element, context: Context): string {
 
 /**
  * A rendered `<table>` inside a focusable, labelled region that scrolls
- * sideways (`.rh-table-scroll` in `components/resource.css`), so a table too
+ * sideways (`.rh-table-scroll` in `packages/ui/prose.css`), so a table too
  * wide for a phone scrolls inside the column instead of widening the page or
  * squeezing its cells. `tabIndex={0}` lets a keyboard reach and scroll it
  * (axe's `scrollable-region-focusable`), and `role="region"` with an

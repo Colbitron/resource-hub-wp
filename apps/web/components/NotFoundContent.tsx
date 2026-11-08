@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import "./not-found.css";
+import "@colbitron/resource-hub-ui/not-found.css";
 
 /**
  * The 404 page's content: a heading, a sentence and a link. `app/not-found.tsx`

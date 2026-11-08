@@ -1,0 +1,113 @@
+/*
+ * The document's base styles: the box model, the theme choice's colour
+ * scheme, the body, links, the focus ring, headings, paragraphs, media and
+ * the skip link, the ground every component stylesheet stands on. Class
+ * names are part of the contract (ADR 0033; see `packages/ui/README.md`,
+ * and `DESIGN.md` for the design): the front end's shell
+ * (`apps/web/components/Shell.tsx`) and the CMS block theme's pages load the
+ * same rules, so an editor's preview reads like the site.
+ *
+ * Built only on the tokens in tokens.css, which the consumer loads first;
+ * load this file before any component stylesheet. The landmarks' layout
+ * (the header, `main` and the footer) is each consumer's own.
+ *
+ * Markup: `data-theme="light"` or `"dark"` on `<html>`, or no attribute for
+ * System, and the skip link first in `<body>`:
+ *   <a class="rh-skip" href="#main">Skip to content</a>
+ */
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	-webkit-text-size-adjust: 100%;
+}
+
+/*
+ * The reader's theme choice (the front end's `apps/web/lib/theme.ts`; the
+ * CMS theme's control is planned, issue #89): `data-theme` on <html>, set by
+ * the head script before first paint and by the theme control after, pins
+ * the colour scheme to one side, and every `light-dark()` token in
+ * tokens.css follows. No attribute means System: `:root`'s
+ * `color-scheme: light dark` and the system preference apply.
+ */
+:root[data-theme="light"] {
+	color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+	color-scheme: dark;
+}
+
+body {
+	margin: 0;
+	background: var(--rh-color-surface);
+	color: var(--rh-color-text);
+	font-family: var(--rh-font-sans);
+	font-size: var(--rh-text-base);
+	line-height: var(--rh-leading-body);
+}
+
+a {
+	color: var(--rh-color-accent);
+	text-underline-offset: 0.15em;
+}
+
+:focus-visible {
+	outline: var(--rh-focus-width) solid var(--rh-color-focus);
+	outline-offset: 2px;
+}
+
+h1,
+h2,
+h3 {
+	margin: 0 0 var(--rh-space-3);
+	font-family: var(--rh-font-sans);
+	font-weight: var(--rh-weight-heading);
+	letter-spacing: var(--rh-tracking-heading);
+	line-height: var(--rh-leading-tight);
+	overflow-wrap: anywhere;
+}
+
+h1 {
+	font-size: var(--rh-text-2xl);
+}
+
+h2 {
+	font-size: var(--rh-text-xl);
+}
+
+h3 {
+	font-size: var(--rh-text-lg);
+}
+
+p {
+	margin: 0 0 var(--rh-space-4);
+	max-width: var(--rh-measure);
+}
+
+img,
+video {
+	max-width: 100%;
+	height: auto;
+}
+
+.rh-skip {
+	position: absolute;
+	top: var(--rh-space-2);
+	left: var(--rh-space-2);
+	z-index: 1;
+	padding: var(--rh-space-2) var(--rh-space-4);
+	background: var(--rh-color-accent);
+	color: var(--rh-color-accent-text);
+	border-radius: var(--rh-radius);
+	text-decoration: none;
+	transform: translateY(-200%);
+}
+
+.rh-skip:focus {
+	transform: none;
+}

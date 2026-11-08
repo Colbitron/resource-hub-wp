@@ -8,7 +8,7 @@
  *   absent. Pages are static and ISR-cached, so no cookie and no server
  *   read: the server renders no option as checked and the client reads the
  *   value during hydration.
- * - It is applied as `data-theme` on `<html>`, which `components/shell.css`
+ * - It is applied as `data-theme` on `<html>`, which `packages/ui/base.css`
  *   maps to `color-scheme: light` or `dark`; every `light-dark()` token
  *   follows at once. System removes the attribute, so `:root`'s
  *   `color-scheme: light dark` and the system preference apply again.

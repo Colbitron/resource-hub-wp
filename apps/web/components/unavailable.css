@@ -1,0 +1,33 @@
+/*
+ * The routes' error boundaries (the error.tsx beside the resource and the
+ * page routes): a sentence and a way to try again, in the same centred
+ * column as the article they stand in for. The button is the one filled
+ * control on the site, inverted ink, so it reads as a control and not a
+ * link. Built on the shared tokens (packages/ui/DESIGN.md). These classes
+ * are the front end's own, not part of the contract: the CMS renders no
+ * error boundary.
+ */
+
+.rh-unavailable {
+	max-width: var(--rh-measure);
+	margin-inline: auto;
+}
+
+.rh-unavailable p {
+	font-size: var(--rh-text-md);
+}
+
+.rh-unavailable button {
+	padding: var(--rh-space-2) var(--rh-space-4);
+	border: var(--rh-border-width) solid var(--rh-color-text);
+	border-radius: var(--rh-radius-sm);
+	background: var(--rh-color-text);
+	color: var(--rh-color-surface);
+	font: inherit;
+	cursor: pointer;
+}
+
+.rh-unavailable button:hover {
+	background: var(--rh-color-surface);
+	color: var(--rh-color-text);
+}

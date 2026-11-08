@@ -1,16 +1,31 @@
 /*
- * The lead: the featured resource at the top of the library, built on the
- * shared tokens (packages/ui/DESIGN.md, "Components"). The front end's own
- * classes, not part of the contract; the meta line and the topics inside it
- * are the row's parts from the shared card.css, which FeaturedLead renders
- * through ResourceCard's CardMeta and CardTopics.
+ * The lead: the featured resource at the top of the library (DESIGN.md,
+ * "Components"). Class names are part of the contract (ADR 0033; see
+ * `packages/ui/README.md`): the front end's <FeaturedLead>
+ * (`apps/web/components/FeaturedLead.tsx`) renders the markup, and the CMS
+ * block theme's library template will render the same lead. The meta line
+ * and the topics inside it are the row's parts from card.css, which the
+ * consumer loads beside this file.
+ *
+ * Built only on the tokens in tokens.css, which the consumer loads first.
+ *
+ * Markup:
+ *   <article class="rh-lead">
+ *     <div class="rh-lead__media"><img …></div>                (optional)
+ *     <div class="rh-lead__body">
+ *       <p class="rh-card__meta">…</p>
+ *       <h3 class="rh-lead__title"><a class="rh-lead__link" href="…">…</a></h3>
+ *       <p class="rh-lead__summary">…</p>                      (optional)
+ *       <ul class="rh-card__topics" role="list">…</ul>          (optional)
+ *     </div>
+ *   </article>
  *
  * Layout: the lead wraps rather than breaking at a width, like the row. The
  * media asks for 22rem and the body for 18rem; where both fit on one line
  * (a container of about 42rem) they sit side by side and share what is left
  * seven to five, image first; below that the body wraps under the image and
- * each takes the whole width. FeaturedLead's `sizes` is derived from these
- * numbers.
+ * each takes the whole width. The front end's FeaturedLead derives its
+ * image's `sizes` from these numbers, so change the two together.
  */
 
 .rh-lead {

@@ -1,12 +1,31 @@
 /*
- * A body of editor-written HTML after the sanitiser in lib/content/render.tsx,
- * styled by element: a resource's body (ResourceArticle) and a page's
- * (PageArticle) share it, so the two read the same. WordPress's block classes
- * are kept on the markup but nothing here depends on them. A body never renders
- * an `h1`: when it has one, the pass shows every heading one level down, so the
- * levels here start at `h2`. Built on the shared tokens (packages/ui/DESIGN.md,
- * "Components", "The article"); the class is the front end's own, not part of
- * the contract.
+ * A body of editor-written HTML, styled by element: a resource's body and a
+ * page's share it, so the two read the same (DESIGN.md, "Components", "The
+ * article"). Class names are part of the contract (ADR 0033; see
+ * `packages/ui/README.md`): the front end's <ResourceArticle> and
+ * <PageArticle> (`apps/web/components/`) wrap the body the sanitiser in
+ * `apps/web/lib/content/render.tsx` renders, and the CMS block theme's
+ * templates will wrap the post content the same way. WordPress's block
+ * classes are kept on the markup but nothing here depends on them. On the
+ * front end a body never renders an `h1`: when it has one, the pass shows
+ * every heading one level down, so the levels here start at `h2`.
+ *
+ * Built only on the tokens in tokens.css, which the consumer loads first,
+ * after base.css. The related-resources rules below style the rows of
+ * card.css and the heading of related.css, which load beside this file
+ * where a body can hold the block.
+ *
+ * Markup:
+ *   <div class="rh-prose">…the body's HTML…</div>
+ *
+ * Every table must sit in a scroll region for the body to match the front
+ * end, which wraps each one (`tableRegion` in the sanitiser):
+ *   <div class="rh-table-scroll" role="region" tabindex="0" aria-label="…"><table>…</table></div>
+ * The region is the table's hairline box, drops the last row's rule where
+ * the box's edge closes it, and scrolls a wide table sideways inside the
+ * column. A table without it has no box, keeps every row's rule, and one
+ * whose words are wider than the column overflows it. The CMS block theme
+ * does not add the wrapper yet; it needs to (issue #89).
  *
  * The page is flat; inside the body three things are insets, boxed on the
  * raised surface with a hairline and the small radius, so a reader can tell a
