@@ -8,7 +8,7 @@ Two scripts for issue #6: one renders an abstract featured image per resource in
 pnpm images:generate            # writes artifacts/featured-images/<slug>.png and contact-sheet.png
 ```
 
-`generate.mts` reads the slugs and types from `wp-content/plugins/resource-hub-wp/src/Seed/Seeder.php` and fails if a type has no accent in its table (or the table names a type the seeder no longer has), so the two cannot drift apart silently. It renders an HTML template with the headless Chromium that `apps/web`'s Playwright already installs (`pnpm exec playwright install chromium` in `apps/web` if it is missing), resolved from there so this tool adds no dependency. `contact-sheet.png` shows every image at its full frame, in the 16:9 card crop and in the centre-square crop, for approval.
+`generate.mts` reads the slugs and types from `wp-content/plugins/resource-hub-wp/src/Seed/Seeder.php` and each type's accent from `packages/ui/type-accents.json`, the table the front end and the plugin read, and fails if a seeder type has no row there (or the table has a row for a type the seeder no longer has), so the images cannot drift from either silently. It renders an HTML template with the headless Chromium that `apps/web`'s Playwright already installs (`pnpm exec playwright install chromium` in `apps/web` if it is missing), resolved from there so this tool adds no dependency. `contact-sheet.png` shows every image at its full frame, in the 16:9 card crop and in the centre-square crop, for approval.
 
 ## Import
 
