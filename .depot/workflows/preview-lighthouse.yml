@@ -36,7 +36,7 @@
 # the same commit, and the first job logs that commit beside the deployed
 # one. Until a real event has run here, this trigger is unexercised:
 # `depot ci run` reports event `api`, and the trial (docs/runbooks/deploy.md,
-# "Preview Lighthouse") injected the event's two values instead.
+# "Preview Lighthouse", run f4q02z8k5s) injected the event's values instead.
 #
 # Only front-end pull requests are measured. The event names a deployment,
 # not a pull request, so the first job finds the open pull request whose
