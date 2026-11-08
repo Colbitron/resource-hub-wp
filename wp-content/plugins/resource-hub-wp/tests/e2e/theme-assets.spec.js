@@ -139,11 +139,35 @@ test.describe( "The theme's stylesheets", () => {
 		);
 		expect( await page.evaluate( tokenDeclarations ) ).toBe( 1 );
 
-		// Figtree from theme.json's fontFace, first in the body's stack.
-		await page.evaluate( () => document.fonts.ready );
+		// Figtree from theme.json's fontFace, first in the body's stack: a
+		// FontFace named Figtree has loaded, from the theme's copy of the file.
+		// `document.fonts.check()` would not prove it: Chromium answers true for
+		// a family no face declares. The body's text starts the load, and
+		// `document.fonts.ready` waits for it.
+		await expect
+			.poll( () =>
+				page.evaluate( async () => {
+					await document.fonts.ready;
+					return [ ...document.fonts ].some(
+						( face ) =>
+							face.family.replace( /"/g, '' ) === 'Figtree' &&
+							face.status === 'loaded'
+					);
+				} )
+			)
+			.toBe( true );
 		expect(
-			await page.evaluate( () => document.fonts.check( '16px Figtree' ) )
-		).toBe( true );
+			await page.evaluate( () =>
+				performance
+					.getEntriesByType( 'resource' )
+					.map( ( entry ) => entry.name )
+					.filter( ( name ) => name.endsWith( '.woff2' ) )
+			)
+		).toEqual( [
+			expect.stringMatching(
+				/\/themes\/resource-hub\/build\/fonts\/figtree-latin-wght-normal\.woff2$/
+			),
+		] );
 		expect(
 			await page.evaluate(
 				() => window.getComputedStyle( document.body ).fontFamily
