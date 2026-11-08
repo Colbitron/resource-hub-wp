@@ -18,9 +18,14 @@
  * Markup:
  *   <div class="rh-prose">…the body's HTML…</div>
  *
- * `.rh-table-scroll` is the front end's scroll region around every table
- * (`tableRegion` in the sanitiser); a consumer that renders no region
- * leaves those rules unused.
+ * Every table must sit in a scroll region for the body to match the front
+ * end, which wraps each one (`tableRegion` in the sanitiser):
+ *   <div class="rh-table-scroll" role="region" tabindex="0" aria-label="…"><table>…</table></div>
+ * The region is the table's hairline box, drops the last row's rule where
+ * the box's edge closes it, and scrolls a wide table sideways inside the
+ * column. A table without it has no box, keeps every row's rule, and one
+ * whose words are wider than the column overflows it. The CMS block theme
+ * does not add the wrapper yet; it needs to (issue #89).
  *
  * The page is flat; inside the body three things are insets, boxed on the
  * raised surface with a hairline and the small radius, so a reader can tell a
