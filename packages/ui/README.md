@@ -166,7 +166,7 @@ import '@colbitron/resource-hub-ui/base.css';
 import '@colbitron/resource-hub-ui/card.css';
 ```
 
-The package's tests (`pnpm --filter @colbitron/resource-hub-ui test`, or `pnpm test:schemas` from the root) also check the stylesheets: `test/contrast.test.js` resolves every colour token in both schemes and asserts WCAG AA for every text pair and 3:1 for the focus ring, `test/design-doc.test.js` fails when a token in `tokens.css` has no sentence in `DESIGN.md`, or the other way round, and `test/figtree-fallback.test.js` fails when `fonts/figtree-fallback.css` differs from what the script derives from Figtree's file, or `--rh-font-sans` lists its faces in another order.
+The package's tests (`pnpm --filter @colbitron/resource-hub-ui test`, or `pnpm test:schemas` from the root) also check the stylesheets: `test/contrast.test.js` resolves every colour token in both schemes and asserts WCAG AA for every text pair and 3:1 for the focus ring, `test/design-doc.test.js` fails when a token in `tokens.css` has no sentence in `DESIGN.md`, or the other way round, and `test/figtree-fallback.test.js` fails when `fonts/figtree-fallback.css` differs from what the script derives from Figtree's file, or `--rh-font-sans` lists its faces in another order. `test/package-files.test.js` fails when a stylesheet at the package's top level is missing from `files` or `exports` in `package.json`, so a new one cannot ship unimportable.
 
 ## Fixtures and test
 
