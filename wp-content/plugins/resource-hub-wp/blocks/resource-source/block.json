@@ -1,0 +1,20 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "resource-hub/resource-source",
+	"version": "0.1.0",
+	"title": "Resource Source",
+	"category": "theme",
+	"icon": "external",
+	"description": "The resource's source line, \"Source:\" and a link shown by its host or file name, as the front end's resource page prints it under the body, or nothing when it has no source. Rendered on the server.",
+	"keywords": [ "resource", "source", "link" ],
+	"textdomain": "resource-hub",
+	"usesContext": [ "postId", "postType" ],
+	"supports": {
+		"html": false,
+		"className": false,
+		"customClassName": false,
+		"reusable": false
+	},
+	"editorScript": "file:./index.js"
+}

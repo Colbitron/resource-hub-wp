@@ -24,8 +24,8 @@ import nextConfig from "../next.config";
  * `RELATED_COUNT` samples in name order, as the rows of the resource page's
  * related section (`RelatedList` with the section's heading and id, as
  * `RelatedSection` renders it), render exactly the HTML in `related.html`.
- * The plugin's `MarkupParityTest` renders its `resource-card`, `resource-meta`
- * and `related` blocks from the same samples and compares them with the same
+ * The plugin's `MarkupParityTest` renders its `resource-card`, `resource-meta`,
+ * `resource-summary` and `related` blocks from the same samples and compares them with the same
  * files, so a change to either side's markup fails one of the two until the
  * fixtures, and the other side, follow.
  *
@@ -118,6 +118,12 @@ function sampleResource(data: Sample): WpResource {
   });
 }
 
+/** The summary paragraph out of the article, or `""` when it has none: its `<p>` holds no other `<p>`. */
+function summaryParagraph(article: string): string {
+  const start = article.indexOf('<p class="rh-resource__summary">');
+  return start === -1 ? "" : article.slice(start, article.indexOf("</p>", start) + "</p>".length);
+}
+
 /** The meta line out of the article: its `<div>` holds no other `<div>`, so the first close after it ends it. */
 function metaLine(article: string): string {
   const start = article.indexOf('<div class="rh-resource__meta">');
@@ -139,7 +145,9 @@ describe("markup parity with the CMS blocks", () => {
   it("finds the samples, each with its two fixtures, and the related section's", () => {
     expect(CASES).toEqual(expect.arrayContaining(["bare", "full", "unmapped"]));
     for (const name of CASES) {
-      expect(readdirSync(markup)).toEqual(expect.arrayContaining([`${name}.card.html`, `${name}.meta.html`]));
+      expect(readdirSync(markup)).toEqual(
+        expect.arrayContaining([`${name}.card.html`, `${name}.meta.html`, `${name}.summary.html`]),
+      );
     }
     expect(readdirSync(markup)).toContain("related.html");
   });
@@ -169,6 +177,14 @@ describe("markup parity with the CMS blocks", () => {
         <ResourceArticle rendered={{ kind: "render", resource, type: data.type.slug, slug: data.slug }} />,
       );
       expect(normalise(metaLine(html))).toBe(fixture(`${name}.meta.html`));
+    });
+
+    it(`renders the resource page's summary as ${name}.summary.html`, () => {
+      const data = sample(name);
+      const html = renderToStaticMarkup(
+        <ResourceArticle rendered={{ kind: "render", resource: sampleResource(data), type: data.type.slug, slug: data.slug }} />,
+      );
+      expect(normalise(summaryParagraph(html))).toBe(fixture(`${name}.summary.html`));
     });
   });
 });

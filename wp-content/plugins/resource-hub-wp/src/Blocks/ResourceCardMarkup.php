@@ -1,6 +1,6 @@
 <?php
 /**
- * The front end's card markup in PHP: the row, the resource page's meta line, and the text rules they share.
+ * The front end's card and article markup in PHP: the row, the resource page's meta line, summary and source line, and the text rules they share.
  *
  * @package ResourceHub
  */
@@ -17,11 +17,13 @@ use WP_Term;
 /**
  * One renderer for every block that writes a resource the way the front end does.
  *
- * Three blocks use it: `resource-hub/related-resources` (its rows, at `h3`), `resource-hub/resource-card`
- * (one row in a post template) and `resource-hub/resource-meta` (the single resource page's meta line).
- * The markup is the front end's, element for element, class for class and attribute for attribute, in
- * the front end's order: `row()` is `ResourceCard` (`apps/web/components/ResourceCard.tsx`) and `meta()`
- * is the meta line `ResourceArticle` writes in its header (`apps/web/components/ResourceArticle.tsx`).
+ * Five blocks use it: `resource-hub/related-resources` and `resource-hub/related` (their rows, at `h3`),
+ * `resource-hub/resource-card` (one row in a post template), `resource-hub/resource-meta` (the single
+ * resource page's meta line), `resource-hub/resource-summary` (its lead paragraph) and
+ * `resource-hub/resource-source` (its source line). The markup is the front end's, element for element,
+ * class for class and attribute for attribute, in the front end's order: `row()` is `ResourceCard`
+ * (`apps/web/components/ResourceCard.tsx`), and `meta()`, `summary()` and `source()` are the meta line,
+ * the summary and the source line `ResourceArticle` writes (`apps/web/components/ResourceArticle.tsx`).
  * The contract's markup fixtures (`packages/ui/fixtures/markup/`, `packages/ui/README.md`, "Markup
  * fixtures") hold both sides to the same HTML for a few sample resources (every part, no summary and no
  * topics, an unmapped type with apostrophes): the front end's vitest renders the components and this
@@ -43,6 +45,11 @@ use WP_Term;
  *                 <li class="rh-card__topic"><a class="rh-resource__topic" href="{topic listing}">{topic}</a></li>…
  *               </ul>
  *             </div>
+ *
+ *     summary(): <p class="rh-resource__summary">{summary}</p>                                 (nothing when it is empty)
+ *
+ *     source():  <footer class="rh-resource__source"><p>Source: <a href="{href}" rel="noopener noreferrer">{label}</a></p></footer>
+ *                                                                (nothing without a source; `rel` on an external link only)
  *
  * The rules, each the front end's:
  *
@@ -70,11 +77,25 @@ use WP_Term;
  *   lists each once as plain text: the front end's `toCard()` dedupes after `plainText()`, so `A&nbsp;B`
  *   and `A B` are one topic. The meta line lists each term once, as the front end's `resourceTopics()`
  *   dedupes by slug, which no two terms share, so two topics with the same plain name are both linked.
- * - **The summary** is the stored `summary` meta as it is, the front end's `meta.summary`, which it renders
- *   as React text with nothing stripped, decoded or collapsed: `MetaRules::sanitize_summary()` already
- *   stores plain text, so an entity left in it (`Caf&eacute;`) is literal text on both sites. Its `<p>` is
- *   left out only when it is the empty string, the front end's `summary &&` test, so a summary of `0`
- *   still gets one. Only the row shows it; the resource page's summary is not part of the meta line.
+ * - **The summary** in the row is the stored `summary` meta as it is, the front end's `meta.summary`, which
+ *   it renders as React text with nothing stripped, decoded or collapsed: `MetaRules::sanitize_summary()`
+ *   already stores plain text, so an entity left in it (`Caf&eacute;`) is literal text on both sites. Its
+ *   `<p>` is left out only when it is the empty string, the front end's `summary &&` test, so a summary of
+ *   `0` still gets one. The resource page's lead paragraph (`summary()`) is the same text with every run of
+ *   JavaScript's whitespace collapsed to one space and the ends trimmed, the front end's `description`
+ *   (`ResourceArticle`'s `resourceView()`), and is left out when nothing is left, so a summary of spaces
+ *   gets no paragraph there while its row still shows one. It is not part of the meta line.
+ * - **The source line** (`source()`) is the front end's `sourceLink()` (`apps/web/lib/source-link.ts`) on
+ *   the stored `source_url`: nothing unless it is an absolute http(s) URL with a host and no user name or
+ *   password (`MetaRules::sanitize_source_url()` stores nothing else, but a row may predate it). A URL
+ *   under the CMS's uploads directory links the file and shows its name, the last path segment decoded,
+ *   where the front end links `/media/…` to the same file; a URL on the CMS's own host is kept only when
+ *   its path, under the install's path, is `/resources` or below it, linked on the CMS's origin with the
+ *   trailing slash every public URL has and shown as that path with its query and fragment, as the front
+ *   end shows the root-relative path, and any other CMS URL (`/wp-admin/`, a page) gives no line; any
+ *   other URL is external, shown as its host with a port that is not the scheme's default, and carries
+ *   `rel="noopener noreferrer"`. Hosts compare lower-cased with trailing dots removed; the front end also
+ *   writes an internationalised host in punycode, which this does not attempt.
  * - **Links.** The row's title links `get_permalink()`, which is absolute: public paths are the same on
  *   both sites and the front end strips the CMS's origin from every link it renders (`packages/ui/README.md`,
  *   "Public URL shape"), so the path is the front end's `/resources/{type}/{slug}/`. The meta line's links
@@ -165,6 +186,33 @@ final class ResourceCardMarkup {
 		}
 
 		return $html . '</div>';
+	}
+
+	/**
+	 * A resource's summary as the lead paragraph of the front end's resource page, or nothing (see the class docblock).
+	 *
+	 * @param WP_Post $post A published resource.
+	 */
+	public static function summary( WP_Post $post ): string {
+		$text = self::collapse_whitespace( (string) get_post_meta( $post->ID, Meta::SUMMARY, true ) );
+
+		return '' === $text ? '' : '<p class="rh-resource__summary">' . self::text_html( $text ) . '</p>';
+	}
+
+	/**
+	 * A resource's source line as the front end's resource page prints it under the body, or nothing (see the class docblock).
+	 *
+	 * @param WP_Post $post A published resource.
+	 */
+	public static function source( WP_Post $post ): string {
+		$link = self::source_link( (string) get_post_meta( $post->ID, Meta::SOURCE_URL, true ) );
+
+		if ( null === $link ) {
+			return '';
+		}
+
+		return '<footer class="rh-resource__source"><p>Source: <a href="' . esc_url( $link['href'] ) . '"'
+			. ( $link['external'] ? ' rel="noopener noreferrer"' : '' ) . '>' . self::text_html( $link['label'] ) . '</a></p></footer>';
 	}
 
 	/**
@@ -278,14 +326,98 @@ final class ResourceCardMarkup {
 	 * HTML as the plain text the front end's `plainText()` gives (`apps/web/lib/wp/cards.ts`).
 	 *
 	 * Tags stripped, entities decoded, every run of JavaScript's `\s` collapsed to one space and trimmed.
-	 * JavaScript's `\s` is spelled out as U+0009–U+000D, `\p{Z}` and U+FEFF, not PCRE's `\s`, which under
-	 * `/u` also matches U+0085 (NEL), as JavaScript's does not.
 	 *
 	 * @param string $html A rendered title or a stored term name.
 	 */
 	private static function plain_text( string $html ): string {
-		$text = html_entity_decode( wp_strip_all_tags( $html ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		return self::collapse_whitespace( html_entity_decode( wp_strip_all_tags( $html ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+	}
 
+	/**
+	 * Text with every run of JavaScript's `\s` collapsed to one space and the ends trimmed, the
+	 * `replace(/\s+/g, " ").trim()` the front end applies to a plain-text title or name and to the page's summary.
+	 *
+	 * JavaScript's `\s` is spelled out as U+0009–U+000D, `\p{Z}` and U+FEFF, not PCRE's `\s`, which under
+	 * `/u` also matches U+0085 (NEL), as JavaScript's does not.
+	 *
+	 * @param string $text Plain text.
+	 */
+	private static function collapse_whitespace( string $text ): string {
 		return trim( (string) preg_replace( '/[\x{9}-\x{D}\p{Z}\x{FEFF}]+/u', ' ', $text ), ' ' );
+	}
+
+	/**
+	 * The link the source line shows for a stored `source_url`, by the front end's `sourceLink()` rules (see
+	 * the class docblock), or null for none.
+	 *
+	 * @param string $url The stored `source_url`.
+	 * @return array{href: string, label: string, external: bool}|null
+	 */
+	private static function source_link( string $url ): ?array {
+		$url   = trim( $url );
+		$parts = '' === $url ? false : wp_parse_url( $url );
+
+		if ( ! is_array( $parts ) || ! isset( $parts['scheme'], $parts['host'] ) || isset( $parts['user'] ) || isset( $parts['pass'] ) ) {
+			return null;
+		}
+
+		if ( ! in_array( strtolower( $parts['scheme'] ), array( 'http', 'https' ), true ) ) {
+			return null;
+		}
+
+		$host = self::host_key( $parts );
+		$path = $parts['path'] ?? '/';
+
+		// An upload: the file itself, shown by its name, as the front end links it under `/media/`.
+		$uploads = wp_parse_url( wp_get_upload_dir()['baseurl'] );
+
+		if ( is_array( $uploads ) && isset( $uploads['host'] ) && self::host_key( $uploads ) === $host && str_starts_with( $path, rtrim( $uploads['path'] ?? '', '/' ) . '/' ) ) {
+			$file = rawurldecode( substr( $path, strrpos( $path, '/' ) + 1 ) );
+
+			return array(
+				'href'     => $url,
+				'label'    => '' === $file ? $path : $file,
+				'external' => false,
+			);
+		}
+
+		// The CMS's own host: a front-end path under `/resources`, with its trailing slash, or nothing.
+		$home = wp_parse_url( home_url( '/' ) );
+
+		if ( is_array( $home ) && isset( $home['host'] ) && self::host_key( $home ) === $host ) {
+			$prefix = rtrim( $home['path'] ?? '/', '/' );
+			$rest   = '' === $prefix ? $path : ( $path === $prefix ? '/' : ( str_starts_with( $path, $prefix . '/' ) ? substr( $path, strlen( $prefix ) ) : null ) );
+
+			if ( null === $rest || ( '/resources' !== $rest && ! str_starts_with( $rest, '/resources/' ) ) ) {
+				return null;
+			}
+
+			$rest = trailingslashit( $rest ) . ( isset( $parts['query'] ) ? '?' . $parts['query'] : '' ) . ( isset( $parts['fragment'] ) ? '#' . $parts['fragment'] : '' );
+
+			return array(
+				'href'     => home_url( $rest ),
+				'label'    => $rest,
+				'external' => false,
+			);
+		}
+
+		return array(
+			'href'     => $url,
+			'label'    => $host,
+			'external' => true,
+		);
+	}
+
+	/**
+	 * A parsed URL's host as the front end's `hostKey()` compares it: lower-cased, every trailing dot
+	 * removed, with its port when that is not the scheme's default.
+	 *
+	 * @param array<string, string|int> $parts `wp_parse_url()`'s parts, with a host.
+	 */
+	private static function host_key( array $parts ): string {
+		$host    = rtrim( strtolower( (string) $parts['host'] ), '.' );
+		$default = 'http' === strtolower( (string) ( $parts['scheme'] ?? 'https' ) ) ? 80 : 443;
+
+		return isset( $parts['port'] ) && (int) $parts['port'] !== $default ? $host . ':' . (int) $parts['port'] : $host;
 	}
 }

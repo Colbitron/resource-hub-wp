@@ -16,6 +16,8 @@ use ResourceHub\Blocks\RelatedBlock;
 use ResourceHub\Blocks\RelatedResourcesBlock;
 use ResourceHub\Blocks\ResourceCardBlock;
 use ResourceHub\Blocks\ResourceMetaBlock;
+use ResourceHub\Blocks\ResourceSourceBlock;
+use ResourceHub\Blocks\ResourceSummaryBlock;
 use ResourceHub\Blocks\SharedCard;
 use ResourceHub\Blocks\SharedTokens;
 use ResourceHub\Cli\DecodeSlugsCommand;
@@ -115,6 +117,8 @@ final class Plugin {
 		( new RelatedResourcesBlock() )->register();
 		( new ResourceCardBlock() )->register();
 		( new ResourceMetaBlock() )->register();
+		( new ResourceSummaryBlock() )->register();
+		( new ResourceSourceBlock() )->register();
 		( new RelatedBlock( $related_items ) )->register();
 		( new SharedTokens( $this->file ) )->register();
 		( new SharedCard( $this->file ) )->register();

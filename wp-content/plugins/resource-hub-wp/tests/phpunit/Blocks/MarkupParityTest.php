@@ -12,6 +12,7 @@ namespace ResourceHub\Tests\Blocks;
 use ResourceHub\Blocks\RelatedBlock;
 use ResourceHub\Blocks\ResourceCardBlock;
 use ResourceHub\Blocks\ResourceMetaBlock;
+use ResourceHub\Blocks\ResourceSummaryBlock;
 use ResourceHub\Blocks\TypeAccents;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\MetaRules;
@@ -25,9 +26,10 @@ use WP_UnitTestCase;
 
 /**
  * Each sample resource in `packages/ui/fixtures/markup/{case}.json`, stored with core's functions, renders
- * through the `resource-card` and `resource-meta` blocks exactly as `{case}.card.html` and
- * `{case}.meta.html` say, which is what the front end's `ResourceCard` and `ResourceArticle` render from
- * the same samples (`apps/web/test/markup-parity.test.tsx`). The `related` block renders the first three
+ * through the `resource-card`, `resource-meta` and `resource-summary` blocks exactly as `{case}.card.html`,
+ * `{case}.meta.html` and `{case}.summary.html` say (an empty file where nothing renders), which is what the
+ * front end's `ResourceCard` and `ResourceArticle` render from the same samples
+ * (`apps/web/test/markup-parity.test.tsx`). The `related` block renders the first three
  * samples, in name order, as the picks of a host resource exactly as `related.html` says, which is what
  * the front end's `RelatedList` renders from the same samples as the resource page's related section. So
  * a change to either side's markup fails one of the two tests until the fixtures, and the other side,
@@ -109,6 +111,7 @@ final class MarkupParityTest extends WP_UnitTestCase {
 		foreach ( array_keys( self::cases() ) as $name ) {
 			$this->assertFileIsReadable( self::markup_dir() . '/' . $name . '.card.html' );
 			$this->assertFileIsReadable( self::markup_dir() . '/' . $name . '.meta.html' );
+			$this->assertFileIsReadable( self::markup_dir() . '/' . $name . '.summary.html' );
 		}
 
 		$this->assertFileIsReadable( self::markup_dir() . '/related.html' );
@@ -164,6 +167,20 @@ final class MarkupParityTest extends WP_UnitTestCase {
 		$post = $this->store( self::sample( $name ) );
 
 		$this->assertSame( self::fixture( $name . '.meta.html' ), self::normalise( $this->render( ResourceMetaBlock::NAME, $post ) ) );
+	}
+
+	/**
+	 * The summary block renders `{case}.summary.html`, the front end's resource page's lead paragraph, or nothing
+	 * for an empty fixture.
+	 *
+	 * @dataProvider cases
+	 *
+	 * @param string $name The case.
+	 */
+	public function test_resource_summary_matches_the_fixture( string $name ): void {
+		$post = $this->store( self::sample( $name ) );
+
+		$this->assertSame( self::fixture( $name . '.summary.html' ), self::normalise( $this->render( ResourceSummaryBlock::NAME, $post ) ) );
 	}
 
 	/**
