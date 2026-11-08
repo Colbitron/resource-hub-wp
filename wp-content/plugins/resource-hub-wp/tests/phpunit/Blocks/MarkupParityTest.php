@@ -9,13 +9,16 @@ declare(strict_types=1);
 
 namespace ResourceHub\Tests\Blocks;
 
+use ResourceHub\Blocks\RelatedBlock;
 use ResourceHub\Blocks\ResourceCardBlock;
 use ResourceHub\Blocks\ResourceMetaBlock;
+use ResourceHub\Blocks\ResourceSummaryBlock;
 use ResourceHub\Blocks\TypeAccents;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\MetaRules;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\Taxonomies;
+use ResourceHub\Rest\RelatedItems;
 use ResourceHub\Tests\Revalidation\SchemaValidator;
 use WP_Block;
 use WP_Term;
@@ -23,10 +26,14 @@ use WP_UnitTestCase;
 
 /**
  * Each sample resource in `packages/ui/fixtures/markup/{case}.json`, stored with core's functions, renders
- * through the `resource-card` and `resource-meta` blocks exactly as `{case}.card.html` and
- * `{case}.meta.html` say, which is what the front end's `ResourceCard` and `ResourceArticle` render from
- * the same samples (`apps/web/test/markup-parity.test.tsx`). So a change to either side's markup fails one
- * of the two tests until the fixtures, and the other side, follow.
+ * through the `resource-card`, `resource-meta` and `resource-summary` blocks exactly as `{case}.card.html`,
+ * `{case}.meta.html` and `{case}.summary.html` say (an empty file where nothing renders), which is what the
+ * front end's `ResourceCard` and `ResourceArticle` render from the same samples
+ * (`apps/web/test/markup-parity.test.tsx`). The `related` block renders the first three
+ * samples, in name order, as the picks of a host resource exactly as `related.html` says, which is what
+ * the front end's `RelatedList` renders from the same samples as the resource page's related section. So
+ * a change to either side's markup fails one of the two tests until the fixtures, and the other side,
+ * follow.
  *
  * The samples are in the REST API's forms, so this test first proves that storing each gives those forms
  * back (the rendered title, the stored term names, the stored summary), or the comparison would test a
@@ -44,6 +51,13 @@ use WP_UnitTestCase;
  */
 final class MarkupParityTest extends WP_UnitTestCase {
 	use SetsTypeAccentsTable;
+
+	/**
+	 * The type-accent rows the stored samples' types have been given so far, by term ID (`store()`).
+	 *
+	 * @var array<int, array{slug: string, accent: string}>
+	 */
+	private array $accents = array();
 
 	/**
 	 * Pretty permalinks (see `RelatedResourcesBlockTest::set_up()`), and an administrator, who has
@@ -97,7 +111,10 @@ final class MarkupParityTest extends WP_UnitTestCase {
 		foreach ( array_keys( self::cases() ) as $name ) {
 			$this->assertFileIsReadable( self::markup_dir() . '/' . $name . '.card.html' );
 			$this->assertFileIsReadable( self::markup_dir() . '/' . $name . '.meta.html' );
+			$this->assertFileIsReadable( self::markup_dir() . '/' . $name . '.summary.html' );
 		}
+
+		$this->assertFileIsReadable( self::markup_dir() . '/related.html' );
 	}
 
 	/**
@@ -153,6 +170,48 @@ final class MarkupParityTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The summary block renders `{case}.summary.html`, the front end's resource page's lead paragraph, or nothing
+	 * for an empty fixture.
+	 *
+	 * @dataProvider cases
+	 *
+	 * @param string $name The case.
+	 */
+	public function test_resource_summary_matches_the_fixture( string $name ): void {
+		$post = $this->store( self::sample( $name ) );
+
+		$this->assertSame( self::fixture( $name . '.summary.html' ), self::normalise( $this->render( ResourceSummaryBlock::NAME, $post ) ) );
+	}
+
+	/**
+	 * The related block renders `related.html` for a host whose picks are the first `RelatedItems::DEFAULT_COUNT`
+	 * samples in name order: the front end's related section, `RelatedList` with the samples' rows at `h3`.
+	 *
+	 * Picks, so the order is the editor's and not the samples' dates; the count is the section's, so a fourth
+	 * sample would not be a row. The host is a factory resource with a type of its own, since the block
+	 * renders nothing for a host without exactly one, and no topics or picks beyond the samples; the block
+	 * renders nothing of the host itself.
+	 */
+	public function test_related_section_matches_the_fixture(): void {
+		$picks = array();
+
+		foreach ( array_slice( array_keys( self::cases() ), 0, RelatedItems::DEFAULT_COUNT ) as $name ) {
+			$picks[] = $this->store( self::sample( $name ) );
+		}
+
+		$host = self::factory()->post->create(
+			array(
+				'post_type'   => PostType::NAME,
+				'post_status' => 'publish',
+			)
+		);
+		wp_set_object_terms( $host, array( self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) ) ), Taxonomies::TYPE );
+		update_post_meta( $host, Meta::RELATED_PICKS, $picks );
+
+		$this->assertSame( self::fixture( 'related.html' ), self::normalise( $this->render( RelatedBlock::NAME, $host ) ) );
+	}
+
+	/**
 	 * Stores a sample as a published resource, with its type's accent row mapped onto the type's term; its ID.
 	 *
 	 * @param array<string, mixed> $sample The decoded sample.
@@ -174,9 +233,13 @@ final class MarkupParityTest extends WP_UnitTestCase {
 		wp_set_object_terms( $post, $topics, Taxonomies::TOPIC );
 		update_post_meta( $post, Meta::SUMMARY, wp_slash( MetaRules::sanitize_summary( $sample['summary'] ) ) );
 
+		// The build's row for the sample's type ID, if any, mapped onto the term made here; earlier samples' rows kept.
 		self::reset_type_accents();
 		$row = TypeAccents::table()[ $sample['type']['id'] ] ?? null;
-		self::use_type_accents( null === $row ? array() : array( $type => $row ) );
+		if ( null !== $row ) {
+			$this->accents[ $type ] = $row;
+		}
+		self::use_type_accents( $this->accents );
 
 		return $post;
 	}

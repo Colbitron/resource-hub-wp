@@ -117,8 +117,8 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * A single post, or a resource until its own template lands, is `singular.html`, the page's
-	 * article, so it has the page's one `h1` rather than a list's `h2`.
+	 * A single post is `singular.html`, the page's article, so it has the page's one `h1` rather than a
+	 * list's `h2`.
 	 */
 	public function test_post_is_singular(): void {
 		$post = self::factory()->post->create();
@@ -128,11 +128,13 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * A resource is `singular.html` too, until the single-resource template lands. Factory-made, so
-	 * it needs no type, topic or summary (`OneType` and `RequiredFields` guard the save paths, not
-	 * the factory); its permalink is the plain `?resource=` form the tests site's permalinks give.
+	 * A resource is `single-resource.html`, the front end's resource article, with its title the page's
+	 * one `h1`. Factory-made, so it needs no type, topic or summary (`OneType` and `RequiredFields`
+	 * guard the save paths, not the factory); its permalink is the plain `?resource=` form the tests
+	 * site's permalinks give. Without a type the plugin's blocks for the meta line, the summary, the
+	 * source and the related section render nothing, so the article is the title and the body.
 	 */
-	public function test_resource_is_singular(): void {
+	public function test_resource_is_the_single_resource(): void {
 		$resource = self::factory()->post->create(
 			array(
 				'post_type'  => 'resource',
@@ -140,9 +142,65 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 			)
 		);
 
-		$this->assertSame( 'resource-hub//singular', $this->template_for( get_permalink( $resource ) ) );
+		$this->assertSame( 'resource-hub//single-resource', $this->template_for( get_permalink( $resource ) ) );
 		$this->assertTrue( is_singular( 'resource' ) );
 		$this->assertOneHeading( 'A sample resource' );
+		$this->assertMatchesRegularExpression( '/<article class="wp-block-group rh-resource[^"]*">/', $this->html );
+		$this->assertStringContainsString( '<h1 class="rh-resource__title wp-block-post-title">', $this->html );
+		$this->assertStringContainsString( 'rh-resource__body rh-prose', $this->html );
+		$this->assertStringNotContainsString( 'rh-page', $this->html );
+	}
+
+	/**
+	 * A resource with a type and a summary renders the plugin's blocks in the article's order: the
+	 * meta line in the header under the title, the summary before the body, and the related section
+	 * after it, each the front end's markup.
+	 */
+	public function test_single_resource_renders_the_article_blocks_in_order(): void {
+		$type  = self::factory()->term->create( array( 'taxonomy' => 'resource_type' ) );
+		$topic = self::factory()->term->create( array( 'taxonomy' => 'resource_topic' ) );
+		$other = self::factory()->post->create(
+			array(
+				'post_type'  => 'resource',
+				'post_title' => 'Another resource',
+			)
+		);
+		wp_set_object_terms( $other, array( $type ), 'resource_type' );
+		wp_set_object_terms( $other, array( $topic ), 'resource_topic' );
+		$resource = self::factory()->post->create(
+			array(
+				'post_type'    => 'resource',
+				'post_title'   => 'A typed resource',
+				'post_content' => '<!-- wp:paragraph --><p>The body.</p><!-- /wp:paragraph -->',
+			)
+		);
+		wp_set_object_terms( $resource, array( $type ), 'resource_type' );
+		wp_set_object_terms( $resource, array( $topic ), 'resource_topic' );
+		update_post_meta( $resource, 'summary', 'The summary.' );
+		update_post_meta( $resource, 'source_url', 'https://example.com/guide' );
+
+		$this->assertSame( 'resource-hub//single-resource', $this->template_for( get_permalink( $resource ) ) );
+		$this->assertOneHeading( 'A typed resource' );
+
+		$order    = array(
+			'<h1 class="rh-resource__title wp-block-post-title">',
+			'<div class="rh-resource__meta">',
+			'</header>',
+			'<p class="rh-resource__summary">The summary.</p>',
+			'rh-resource__body rh-prose',
+			'>The body.</p>',
+			'<footer class="rh-resource__source"><p>Source: <a href="https://example.com/guide" rel="noopener noreferrer">example.com</a></p></footer>',
+			'<section class="rh-related" aria-labelledby="rh-related-heading">',
+			'Another resource',
+			'</article>',
+		);
+		$position = -1;
+
+		foreach ( $order as $needle ) {
+			$found = strpos( $this->html, $needle, $position + 1 );
+			$this->assertNotFalse( $found, "{$needle} is not in the page after position {$position}." );
+			$position = $found;
+		}
 	}
 
 	/**

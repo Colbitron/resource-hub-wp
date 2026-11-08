@@ -1,0 +1,17 @@
+/**
+ * Registers the Resource Source block on the editor side. Rendering happens
+ * in PHP (`src/Blocks/ResourceSourceBlock.php`); this file wires the
+ * metadata and the editor component. The block has no stylesheet: the
+ * source line's rule is the article's (`resource.css`), which the template
+ * that renders the article loads.
+ */
+import { registerBlockType } from '@wordpress/blocks';
+
+import metadata from './block.json';
+import Edit from './edit';
+
+registerBlockType( metadata.name, {
+	edit: Edit,
+	// Dynamic block: the saved content is empty and PHP renders on request.
+	save: () => null,
+} );

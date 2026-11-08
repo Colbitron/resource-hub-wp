@@ -1,7 +1,7 @@
 /**
- * Pixel baselines of the CMS theme: a page as a logged-in editor previews
- * it, and the 404 every anonymous visitor gets, at 1280 and 360 px, in the
- * light and the dark scheme.
+ * Pixel baselines of the CMS theme: a page and a resource as a logged-in
+ * editor previews them, and the 404 every anonymous visitor gets, at 1280
+ * and 360 px, in the light and the dark scheme.
  *
  * The second of the two parity checks the owner chose (issue #89), beside
  * the computed styles in `theme-parity.spec.js`: a template, a part, a
@@ -22,10 +22,13 @@
  * emulation on Apple silicon, or pulling the image on a cold machine, takes
  * a while, hence the long timeouts.
  *
- * The page is shot logged in, with the admin bar hidden and its margin on
- * `<html>` taken off by a style added to the page (`theme-screenshots.css`),
- * since the front end has no admin bar; the 404 is shot anonymously, as visitors get
- * it. Baselines are in `__snapshots__/` beside this file. A missing one
+ * The page and the resource are shot logged in, with the admin bar hidden and
+ * its margin on `<html>` taken off by a style added to the page
+ * (`theme-screenshots.css`), since the front end has no admin bar; the 404 is
+ * shot anonymously, as visitors get it. The resource is the one
+ * `resource-page-seed.js` makes, with fixed titles, dates, a drawn image and
+ * a pick and a topic match in its related section, so its baseline moves
+ * only when the design does. Baselines are in `__snapshots__/` beside this file. A missing one
  * fails in CI and is written locally; to change one on purpose, run
  * `pnpm test:e2e -- --update-snapshots` with the same `WP_BASE_URL`, look at
  * the images and commit them with the change. No retry: a difference that
@@ -50,6 +53,10 @@
 const path = require( 'node:path' );
 const { chromium } = require( '@playwright/test' );
 const { test, expect } = require( './fixtures' );
+const {
+	seedResourcePage,
+	deleteResourcePage,
+} = require( './resource-page-seed' );
 
 const WIDTHS = [ 1280, 360 ];
 const SCHEMES = [ 'light', 'dark' ];
@@ -91,6 +98,7 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 	let container;
 	let browser;
 	let cmsPage;
+	let seed;
 	/** The process listeners that stop the container, removed in `afterAll`. */
 	const listeners = [];
 
@@ -148,6 +156,7 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 			content: CONTENT,
 			status: 'publish',
 		} );
+		seed = await seedResourcePage( requestUtils );
 	} );
 
 	test.afterAll( async ( { requestUtils } ) => {
@@ -160,6 +169,9 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 					path: `/wp/v2/pages/${ cmsPage.id }`,
 					params: { force: true },
 				} );
+			}
+			if ( seed ) {
+				await deleteResourcePage( requestUtils, seed );
 			}
 		} finally {
 			await browser?.close().catch( () => undefined );
@@ -231,6 +243,33 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 				).toHaveText( cmsPage.title.raw );
 				await expect( page, BASELINE_HINT ).toHaveScreenshot(
 					`page-${ width }-${ colorScheme }.png`,
+					SCREENSHOT
+				);
+				await page.context().close();
+			} );
+
+			test( `a resource at ${ width }px, ${ colorScheme }`, async ( {
+				requestUtils,
+			} ) => {
+				const page = await open( {
+					baseURL: requestUtils.baseURL,
+					width,
+					colorScheme,
+					loggedIn: true,
+				} );
+				await load( page, seed.host.link );
+				await expect( page.locator( '#wpadminbar' ) ).toHaveCount( 1 );
+				await page.addStyleTag( { path: HIDE_ADMIN_BAR } );
+				await expect( page.locator( '#wpadminbar' ) ).toBeHidden();
+				await expect(
+					page.getByRole( 'heading', { level: 1 } )
+				).toHaveText( seed.host.title.raw );
+				// The related rows are in the shot, so the selection is too.
+				await expect(
+					page.locator( 'section.rh-related article.rh-card' )
+				).toHaveCount( 2 );
+				await expect( page, BASELINE_HINT ).toHaveScreenshot(
+					`resource-${ width }-${ colorScheme }.png`,
 					SCREENSHOT
 				);
 				await page.context().close();

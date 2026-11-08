@@ -151,19 +151,23 @@ final class ResourceMetaBlockTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Anything but a published resource with exactly one type renders nothing.
+	 * Anything but a resource with exactly one type that is published or the user may read renders nothing:
+	 * a resource that is not published gives a visitor and a subscriber nothing.
 	 */
-	public function test_renders_nothing_without_a_published_resource(): void {
+	public function test_renders_nothing_without_a_typed_resource_the_user_may_read(): void {
 		$this->assertSame( '', $this->render( null ), 'No context.' );
 		$this->assertSame( '', $this->render( self::factory()->post->create() ), 'A post.' );
 
-		foreach ( array( 'draft', 'pending', 'private', 'future' ) as $status ) {
-			// A future date, or core publishes a `future` post at once.
-			$args = array(
-				'post_status'   => $status,
-				'post_date_gmt' => '2099-01-01 00:00:00',
-			);
-			$this->assertSame( '', $this->render( $this->resource( array(), $args ) ), $status );
+		$unpublished = $this->unpublished();
+
+		foreach ( $unpublished as $status => $id ) {
+			$this->assertSame( '', $this->render( $id ), $status . ', logged out.' );
+		}
+
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'subscriber' ) ) );
+
+		foreach ( $unpublished as $status => $id ) {
+			$this->assertSame( '', $this->render( $id ), $status . ', a subscriber.' );
 		}
 
 		$untyped = $this->resource( array() );
@@ -171,6 +175,45 @@ final class ResourceMetaBlockTest extends WP_UnitTestCase {
 		$this->assertSame( '', $this->render( $untyped ), 'No type.' );
 
 		$this->assertSame( '', $this->render( $this->resource( array() ), 'post' ), 'A postType context that is not resource.' );
+	}
+
+	/**
+	 * A logged-in preview of a resource that is not published shows its meta line to a user core lets read
+	 * it, here an editor, who did not write it.
+	 */
+	public function test_renders_an_unpublished_resource_for_a_user_who_may_read_it(): void {
+		$unpublished = $this->unpublished();
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		foreach ( $unpublished as $status => $id ) {
+			$this->assertStringStartsWith( '<div class="rh-resource__meta">', $this->render( $id ), $status );
+		}
+
+		$untyped = $unpublished['draft'];
+		wp_set_object_terms( $untyped, array(), Taxonomies::TYPE );
+		$this->assertSame( '', $this->render( $untyped ), 'A draft without a type still renders nothing.' );
+	}
+
+	/**
+	 * One typed resource in each status that is not published, by no user.
+	 *
+	 * @return array<string, int> Post IDs by status.
+	 */
+	private function unpublished(): array {
+		$ids = array();
+
+		foreach ( array( 'draft', 'pending', 'private', 'future' ) as $status ) {
+			// A future date, or core publishes a `future` post at once.
+			$ids[ $status ] = $this->resource(
+				array(),
+				array(
+					'post_status'   => $status,
+					'post_date_gmt' => '2099-01-01 00:00:00',
+				)
+			);
+		}
+
+		return $ids;
 	}
 
 	/**
@@ -206,6 +249,26 @@ final class ResourceMetaBlockTest extends WP_UnitTestCase {
 			array(
 				'context' => 'edit',
 				'post_id' => $this->resource( array() ),
+			)
+		);
+		$response = rest_do_request( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertStringStartsWith( '<div class="rh-resource__meta">', $response->get_data()['rendered'] );
+	}
+
+	/**
+	 * The editor's preview of a draft is its meta line too: the endpoint sends the draft as `post_id`.
+	 */
+	public function test_editor_preview_renders_a_draft(): void {
+		$draft = $this->resource( array(), array( 'post_status' => 'draft' ) );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		$request = new WP_REST_Request( 'GET', '/wp/v2/block-renderer/' . ResourceMetaBlock::NAME );
+		$request->set_query_params(
+			array(
+				'context' => 'edit',
+				'post_id' => $draft,
 			)
 		);
 		$response = rest_do_request( $request );

@@ -21,9 +21,10 @@ use WP_Block;
  * its listing, as on the site, on the CMS's origin.
  *
  * - **Which post.** The `postId` and `postType` context, which `render_block()` sets from the global post
- *   in a single template and the editor's preview sends as the post being edited (`ContextResource`).
- *   Anything but a published resource renders nothing, and so does a resource without exactly one type,
- *   which the front end does not render at all.
+ *   in a single template and the editor's preview sends as the post being edited
+ *   (`ContextResource::readable()`): a published resource, or one the current user may read, so a
+ *   logged-in preview of a draft or scheduled resource shows its line. Anything else renders nothing, and
+ *   so does a resource without exactly one type, which the front end does not render at all.
  * - **No wrapper.** The output is the `<div class="rh-resource__meta">` alone, with no block wrapper
  *   attributes, so it is the front end's markup exactly.
  * - **Styles.** `block.json` lists the shared `resource-hub-tokens` handle and then the block's
@@ -68,7 +69,7 @@ final class ResourceMetaBlock {
 	 * @param WP_Block             $block      The block being rendered, for its context.
 	 */
 	public function render( array $attributes, string $content, WP_Block $block ): string {
-		$post = ContextResource::from( $block );
+		$post = ContextResource::readable( $block );
 		$type = null === $post ? null : ResourceCardMarkup::type( $post );
 
 		return null === $post || null === $type ? '' : ResourceCardMarkup::meta( $post, $type );

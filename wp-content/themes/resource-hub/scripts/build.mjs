@@ -85,6 +85,19 @@ const ASSETS = [
 		handle: 'resource-hub-page',
 		deps: [ 'resource-hub-base' ],
 	},
+	// The article `single-resource.html` renders, beside `prose.css`, and its
+	// related section; the meta line's labels and the rows come with the
+	// plugin's blocks.
+	{
+		file: 'resource.css',
+		handle: 'resource-hub-resource',
+		deps: [ 'resource-hub-base' ],
+	},
+	{
+		file: 'related.css',
+		handle: 'resource-hub-related',
+		deps: [ 'resource-hub-tokens' ],
+	},
 	// The welcome `home.html` renders, beside `page.css`.
 	{
 		file: 'welcome.css',

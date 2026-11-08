@@ -83,6 +83,27 @@ async function cmsError(run: () => Promise<unknown>): Promise<CmsError> {
   throw new Error("expected a CmsError");
 }
 
+/**
+ * The CMS theme's `resource-hub/related` block renders the resource page's
+ * related section at `RelatedItems::DEFAULT_COUNT`, so the CMS's preview and
+ * the site recommend the same resources from one cache entry only while that
+ * constant is `RELATED_COUNT`. The plugin's PHPUnit runs in wp-env, which does
+ * not mount `apps/`, so the check lives here, reading the PHP source. A pull
+ * request that changes only the plugin does not run this job, but `main` runs
+ * every job, so a drift fails there at the latest.
+ */
+describe("RELATED_COUNT", () => {
+  it("is the plugin's RelatedItems::DEFAULT_COUNT, the count the CMS's related block renders", () => {
+    const source = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../wp-content/plugins/resource-hub-wp/src/Rest/RelatedItems.php"),
+      "utf8",
+    );
+    const match = /public const DEFAULT_COUNT = (\d+);/.exec(source);
+    expect(match, "RelatedItems.php declares DEFAULT_COUNT as an integer literal").not.toBeNull();
+    expect(Number(match?.[1])).toBe(RELATED_COUNT);
+  });
+});
+
 describe("getRelated", () => {
   it("asks the plugin's related route for the ID with the route's default count, tagged for the host, and returns the items in order", async () => {
     handler = () => json(THREE);
