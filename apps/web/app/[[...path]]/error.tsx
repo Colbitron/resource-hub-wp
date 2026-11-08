@@ -1,6 +1,6 @@
 "use client";
 
-import "@/components/resource.css";
+import "@/components/unavailable.css";
 
 /**
  * The page route's error boundary: what a reader sees when the data layer

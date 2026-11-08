@@ -1,10 +1,34 @@
 /*
  * The single resource page: the header, the meta line, the featured image,
- * the summary, the body and the source line, built on the shared tokens
- * (packages/ui/DESIGN.md, "Components", "The article"). These classes are
- * the front end's own, not part of the contract; the meta line's mark and
- * topic labels are the row's labels from the shared card-labels.css, which
- * ResourceArticle imports without the rest of the row's card.css.
+ * the summary, the body and the source line (DESIGN.md, "Components", "The
+ * article"). Class names are part of the contract (ADR 0033; see
+ * `packages/ui/README.md`): the front end's <ResourceArticle>
+ * (`apps/web/components/ResourceArticle.tsx`) renders the markup, and the
+ * CMS block theme's resource template will render the same. The meta
+ * line's mark and topic labels are the row's labels from card-labels.css,
+ * which the consumer loads beside this file without the rest of the row's
+ * card.css, and the body is `.rh-prose` in prose.css.
+ *
+ * Built only on the tokens in tokens.css and the base styles in base.css,
+ * which the consumer loads first.
+ *
+ * Markup:
+ *   <article class="rh-resource">
+ *     <header class="rh-resource__header">
+ *       <h1 class="rh-resource__title">…</h1>
+ *       <div class="rh-resource__meta">
+ *         <span class="rh-card__type" data-accent="mint"><a class="rh-resource__type" href="…">…</a></span>
+ *         <time datetime="…">…</time>
+ *         <ul class="rh-card__topics" aria-label="Topics" role="list">        (optional)
+ *           <li class="rh-card__topic"><a class="rh-resource__topic" href="…">…</a></li>
+ *         </ul>
+ *       </div>
+ *     </header>
+ *     <div class="rh-resource__media"><img …></div>                          (optional)
+ *     <p class="rh-resource__summary">…</p>                                 (optional)
+ *     <div class="rh-resource__body rh-prose">…</div>
+ *     <footer class="rh-resource__source"><p>Source: <a href="…">…</a></p></footer>   (optional)
+ *   </article>
  *
  * The article is one column of `--rh-measure`, the prose line length,
  * centred in the shell's width as a reading column, so the image is never
@@ -118,35 +142,4 @@
 
 .rh-resource__source p {
 	margin: 0;
-}
-
-/*
- * The routes' error boundaries (error.tsx): a sentence and a way to try
- * again, in the same centred column as the article they stand in for. The
- * button is the one filled control on the site, inverted ink, so it reads
- * as a control and not a link.
- */
-
-.rh-resource__unavailable {
-	max-width: var(--rh-measure);
-	margin-inline: auto;
-}
-
-.rh-resource__unavailable p {
-	font-size: var(--rh-text-md);
-}
-
-.rh-resource__unavailable button {
-	padding: var(--rh-space-2) var(--rh-space-4);
-	border: var(--rh-border-width) solid var(--rh-color-text);
-	border-radius: var(--rh-radius-sm);
-	background: var(--rh-color-text);
-	color: var(--rh-color-surface);
-	font: inherit;
-	cursor: pointer;
-}
-
-.rh-resource__unavailable button:hover {
-	background: var(--rh-color-surface);
-	color: var(--rh-color-text);
 }
