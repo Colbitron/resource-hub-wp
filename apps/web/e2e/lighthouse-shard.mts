@@ -83,8 +83,9 @@ export function onlyPaths<T extends { readonly path: string }>(items: readonly T
 /**
  * Refuses the local overrides in CI, so CI always measures every URL five
  * times and the medians job's coverage check (`lighthouse-merge.mts`, which
- * reads `numberOfRuns` from the config) always expects five. GitHub Actions
- * and Depot CI both set `CI`. The shard is CI's own setting and is allowed.
+ * reads `numberOfRuns` from the config) always expects five. CI's workflow
+ * sets `CI` on each Lighthouse job itself, rather than relying on the
+ * host to. The shard is CI's own setting and is allowed.
  */
 export function assertNoLocalOverrides(env: Readonly<Record<string, string | undefined>>): void {
   if (!env.CI) return;

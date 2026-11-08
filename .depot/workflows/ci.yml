@@ -44,12 +44,13 @@
 #   deploy                   needs gate (main and dispatch only)
 #   deploy-web               needs deploy and every web job (main only)
 #
-# Every job but scope needs it, and every front-end job needs it too (not
-# listed below each). Everything but scope, the two deploys and the medians
+# Every job but the two deploys needs scope, though the list names it only
+# for the gate. Everything but scope, the two deploys and the medians
 # starts once scope has answered, about 6 to 8 s later than without it
 # (trial runs 2nw1m59b8d, fxprsxt9wx), so a run waits for scope and then
-# the slowest of the rest, not their sum. Each front-end job that serves the app builds its own copy of the end-to-end harness's
-# build (RH_FIXTURES=1, the mock CMS), the same command at the same commit,
+# the slowest of the rest, not their sum. Each front-end job that serves
+# the app builds its own copy of the end-to-end harness's build
+# (RH_FIXTURES=1, the mock CMS), the same command at the same commit,
 # rather than one job building it for the rest: the build takes about 10 s,
 # less than a job's own start, so a shared build would only put a job in
 # front of every consumer. Each job's build is stamped and checked as on a
@@ -69,8 +70,9 @@
 # pull request, so it never decides a merge, and a broken harness first
 # shows up on main, where it holds deploy-web back until it is fixed; the
 # author's `pnpm web:test:lighthouse:quick` before pushing
-# (apps/web/e2e/README.md, "Lighthouse CI") is a smell test, not a gate. WCAG A and AA accessibility stays gated
-# by the axe scan, which blocks both.
+# (apps/web/e2e/README.md, "Lighthouse CI") is a smell test, not a gate.
+# WCAG A and AA accessibility stays gated by the axe scan, which blocks
+# both.
 #
 # The deploy job runs after the gate, only on main and on manual dispatch, and
 # syncs the plugin, from wp-content/plugins/resource-hub-wp, to the Cloudways
@@ -82,8 +84,9 @@
 # non-blocking workflow, .github/workflows/preview-lighthouse.yml, which
 # stays on GitHub Actions for now; moving it is a follow-up (ADR 0053).
 #
-# Scoping a pull request. Depot CI bills each job's sandbox time, about 17
-# sandbox-minutes for the whole run (ADR 0053, "Cost"), so a pull request
+# Scoping a pull request. Depot CI bills each job's sandbox time, about
+# 17.8 sandbox-minutes for the whole run (docs/runbooks/deploy.md, "CI
+# cost"), so a pull request
 # skips the jobs its changes cannot reach. On a pull request the scope job
 # diffs the merge commit Depot checks out (refs/pull/N/merge) against its
 # first parent, the base; the rules are in .depot/scripts/ci-scope.mjs:
@@ -94,9 +97,13 @@
 # plugin and web; when the paths cannot be read for certain both are
 # 'true'. The diff is trusted only when HEAD's second parent is the pull
 # request's head, github.event.pull_request.head.sha, since main's HEAD is
-# itself usually a merge commit. That Depot checks out refs/pull/N/merge is
-# seen in PR #98's run 8bt9mr07zz; that it fills the head SHA is assumed,
-# and without it every job runs and scope's summary says why.
+# itself usually a merge commit. That Depot checks out refs/pull/N/merge
+# on a pull request is seen in run 8bt9mr07zz, Depot's pull_request run of
+# PR #98 before this scoping existed (`depot ci workflow show 2z7chvtrxv`:
+# trigger pull_request, ref refs/pull/98/merge). That it fills the head SHA
+# is first confirmed by the first pull_request run of this workflow; it
+# fails safe, since without the SHA every job runs and scope's summary
+# says why.
 #
 # Every scoped job's condition is the same shape:
 #
@@ -444,6 +451,12 @@ jobs:
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 20
 
+    # playwright.config.ts reads CI for forbidOnly, the retry, the reporter
+    # and updateSnapshots: "none", so it is set here rather than left to
+    # the host.
+    env:
+      CI: 'true'
+
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -483,6 +496,11 @@ jobs:
     if: github.event_name != 'pull_request' || needs.scope.outputs.web == 'true'
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 20
+
+    # As in web-e2e: Playwright's updateSnapshots: "none", so CI never
+    # writes a baseline, depends on CI, so it is set here.
+    env:
+      CI: 'true'
 
     steps:
       - name: Check out
@@ -587,8 +605,9 @@ jobs:
     # holds deploy-web back; the author runs `pnpm web:test:lighthouse:quick`
     # before pushing a front-end change, as a smell test
     # (apps/web/e2e/README.md), and main's run is the measurement of record.
-    # The config refuses the quick settings when CI is set, so every shard
-    # runs five times per URL and the medians job expects five.
+    # The config refuses the quick settings when CI is set, which this job
+    # sets itself rather than trusting the host to, so every shard runs five
+    # times per URL and the medians job expects five.
     #
     # Until #76 lands, a budget miss does not decide the deploy. The
     # runners vary about 2-3x in CPU speed, and the fixed 4x slowdown
@@ -634,7 +653,10 @@ jobs:
         shard: [ 1, 2, 3, 4, 5 ]
         of: [ 5 ]
 
+    # CI is set here, not left to the host: lighthouserc.cjs refuses the
+    # local smell-test settings only when it is.
     env:
+      CI: 'true'
       RH_LIGHTHOUSE_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
 
     steps:
@@ -666,9 +688,10 @@ jobs:
       # outcome test leaves out a run where Lighthouse passed. So it never
       # runs on a dispatch off main, where the failed step fails the job,
       # nor when an earlier step already failed the job, where the deploy is
-      # blocked anyway and saying otherwise would be false. It reads the failed assertions
-      # `lhci assert` saves (apps/web/.lighthouseci/, which e2e/lighthouse.mts
-      # empties before each run, so nothing is stale).
+      # blocked anyway and saying otherwise would be false. It reads the
+      # failed assertions `lhci assert` saves (apps/web/.lighthouseci/,
+      # which e2e/lighthouse.mts empties before each run, so nothing is
+      # stale).
       #
       # Only a missed budget is a warning. When the file names at least one
       # failed error-level assertion, the step writes a warning annotation
@@ -752,6 +775,11 @@ jobs:
     if: ${{ !cancelled() && needs.scope.result == 'success' && github.event_name != 'pull_request' }}
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 10
+
+    # The merge loads lighthouserc.cjs, which reads CI; set here, as in the
+    # shards, rather than left to the host.
+    env:
+      CI: 'true'
 
     steps:
       - name: Check out

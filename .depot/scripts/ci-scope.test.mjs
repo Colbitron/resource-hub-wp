@@ -4,10 +4,11 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { changedPaths, main, scopeOf, sidesOf } from './ci-scope.mjs';
 
@@ -184,5 +185,98 @@ test( 'main writes the outputs and the summary', () => {
 		assert.match( readFileSync( summary, 'utf8' ), /\| plugin \| skipped \|/ );
 	} finally {
 		rmSync( dir, { recursive: true, force: true } );
+	}
+} );
+
+const SCRIPT = fileURLToPath( new URL( './ci-scope.mjs', import.meta.url ) );
+const WORKFLOW = fileURLToPath( new URL( '../workflows/ci.yml', import.meta.url ) );
+
+test( 'changedPaths reads a --depth 2 clone of the merge commit, as the scope job checks it out', () => {
+	const repo = repoWith( { 'apps/web/page.tsx': 'changed\n' } );
+	const clone = mkdtempSync( join( tmpdir(), 'ci-scope-clone-' ) );
+	try {
+		// file:// so git honours --depth; HEAD of main is the merge commit.
+		execFileSync( 'git', [ 'clone', '-q', '--depth', '2', '--branch', 'main', `file://${ repo.dir }`, clone ], { stdio: 'ignore' } );
+		assert.equal( execFileSync( 'git', [ 'rev-parse', '--is-shallow-repository' ], { cwd: clone, encoding: 'utf8' } ).trim(), 'true' );
+		const { paths } = changedPaths( { cwd: clone, expectHead: repo.head } );
+		assert.deepEqual( paths, [ 'apps/web/page.tsx' ] );
+		assert.deepEqual( scopeOf( paths ), { plugin: false, web: true } );
+	} finally {
+		repo.cleanup();
+		rmSync( clone, { recursive: true, force: true } );
+	}
+} );
+
+test( 'a missing parent, or a base git cannot diff, runs everything', () => {
+	const repo = repoWith( { 'wp-content/plugins/p/a.php': 'changed\n' } );
+	const clone = mkdtempSync( join( tmpdir(), 'ci-scope-clone-' ) );
+	try {
+		// A --depth 1 clone has the merge commit without its parents.
+		execFileSync( 'git', [ 'clone', '-q', '--depth', '1', '--branch', 'main', `file://${ repo.dir }`, clone ], { stdio: 'ignore' } );
+		const shallow = changedPaths( { cwd: clone, expectHead: repo.head } );
+		assert.equal( shallow.paths, null );
+		assert.match( shallow.reason, /0 parent/ );
+
+		// The base commit is there, so the head check passes, but its tree is
+		// gone (only the base's tree holds main-moved.css), so the diff fails.
+		const tree = repo.run( 'rev-parse', 'HEAD^1^{tree}' );
+		unlinkSync( join( repo.dir, '.git', 'objects', tree.slice( 0, 2 ), tree.slice( 2 ) ) );
+		const result = changedPaths( { cwd: repo.dir, expectHead: repo.head } );
+		assert.equal( result.paths, null );
+		assert.match( result.reason, /git diff failed/ );
+		assert.deepEqual( scopeOf( result.paths ), EVERYTHING );
+	} finally {
+		repo.cleanup();
+		rmSync( clone, { recursive: true, force: true } );
+	}
+} );
+
+test( 'the script reads --expect-head from its arguments', () => {
+	const repo = repoWith( { 'wp-content/plugins/p/a.php': 'changed\n' } );
+	try {
+		const output = join( repo.dir, '.git', 'output' );
+		const run = ( ...args ) => {
+			writeFileSync( output, '' );
+			execFileSync( process.execPath, [ SCRIPT, ...args ], { cwd: repo.dir, env: { PATH: process.env.PATH, GITHUB_OUTPUT: output }, stdio: 'ignore' } );
+			return readFileSync( output, 'utf8' );
+		};
+		assert.equal( run( '--expect-head', repo.head ), 'plugin=true\nweb=false\n' );
+		// No value after the flag, or no flag: no head to check, so everything runs.
+		assert.equal( run( '--expect-head' ), 'plugin=true\nweb=true\n' );
+		assert.equal( run(), 'plugin=true\nweb=true\n' );
+	} finally {
+		repo.cleanup();
+	}
+} );
+
+// ci.yml's conditions, read as text: every job a pull request can skip is
+// skipped only on a pull request, and neither deploy reads scope's outputs,
+// so nothing here can skip a job on main.
+test( 'ci.yml scopes jobs only on a pull request, and never the deploys', () => {
+	const jobs = {};
+	let name = null;
+	for ( const line of readFileSync( WORKFLOW, 'utf8' ).split( '\n' ) ) {
+		const job = line.match( /^ {2}([a-z][a-z0-9-]*):\s*$/ );
+		if ( job ) {
+			name = job[ 1 ];
+			jobs[ name ] = '';
+		} else if ( name && ! /^\s*#/.test( line ) ) {
+			jobs[ name ] += line + '\n';
+		}
+	}
+	const ifOf = ( job ) => ( jobs[ job ].match( /^ {4}if: (.*)$/m ) ?? [] )[ 1 ] ?? '';
+	for ( const job of [ 'gate', 'web-checks', 'web-e2e', 'web-screenshots' ] ) {
+		assert.match( ifOf( job ), /^github\.event_name != 'pull_request' \|\| needs\.scope\.outputs\.(plugin|web) == 'true'$/, job );
+	}
+	assert.equal( ifOf( 'web-lighthouse' ), "github.event_name != 'pull_request'" );
+	assert.match( ifOf( 'web-lighthouse-medians' ), /needs\.scope\.result == 'success' && github\.event_name != 'pull_request'/ );
+	for ( const job of [ 'deploy', 'deploy-web' ] ) {
+		assert.ok( jobs[ job ], job );
+		assert.doesNotMatch( jobs[ job ], /needs\.scope\.outputs/, job );
+	}
+	for ( const [ job, body ] of Object.entries( jobs ) ) {
+		if ( ! [ 'scope', 'deploy', 'deploy-web', 'web-lighthouse-medians' ].includes( job ) && /needs\.scope\.outputs/.test( body ) ) {
+			assert.match( ifOf( job ), /^github\.event_name != 'pull_request' \|\|/, job );
+		}
 	}
 } );
