@@ -106,11 +106,13 @@ final class PingsTest extends WP_UnitTestCase {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
 
 		$headers = array();
+		$ran     = false;
 
 		add_filter(
 			'wp_headers',
-			static function ( $sent ) use ( &$headers ) {
+			static function ( $sent ) use ( &$headers, &$ran ) {
 				$headers = $sent;
+				$ran     = true;
 				return $sent;
 			},
 			9
@@ -119,6 +121,7 @@ final class PingsTest extends WP_UnitTestCase {
 		$this->go_to( get_permalink( $post ) );
 
 		$this->assertTrue( is_singular(), 'The request should reach the single post, or this test checks nothing.' );
+		$this->assertTrue( $ran, 'Core should have built the headers, or this test checks nothing.' );
 		$this->assertArrayNotHasKey( 'X-Pingback', $headers );
 	}
 

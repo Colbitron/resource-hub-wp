@@ -1,6 +1,6 @@
 <?php
 /**
- * Trackbacks and pingbacks are off on the headless CMS.
+ * Incoming trackbacks and pingbacks are off on the headless CMS.
  *
  * @package ResourceHub
  */
@@ -19,11 +19,14 @@ namespace ResourceHub\Security;
  * an import or a PHP caller stored with `ping_status` open. The CMS is headless and has no
  * use for pings: a ping is spam stored in the comments table, behind an open write endpoint.
  *
- * The switch is the `pings_open` filter, returning false last (`PHP_INT_MAX`) so a filter
- * another plugin adds cannot reopen a post. It answers at runtime, for every post type registered
- * now or later, so it does not depend on the host's `default_ping_status` option and needs no
- * data migration: a post stored with `ping_status` open before this switch is closed by it, and
- * so is one an editor opens later from the Discussion panel. Core asks `pings_open()` before it
+ * The switch is the `pings_open` filter, returning false at `PHP_INT_MAX`, the priority
+ * {@see XmlRpc} gives its method filter, so a filter another plugin adds at any lower priority
+ * cannot reopen a post. A callback added later at `PHP_INT_MAX` itself would still run after this
+ * one and win, because core runs callbacks of one priority in the order they were added; no
+ * priority can rule that out. It answers at runtime, for every post type registered now or later,
+ * so it does not depend on the host's `default_ping_status` option and needs no data migration: a
+ * post stored with `ping_status` open before this switch is closed by it, and so is one an editor
+ * opens later from the Discussion panel. Core asks `pings_open()` before it
  * stores a trackback (`wp-trackback.php`), before it accepts an XML-RPC pingback (which
  * {@see XmlRpc} has already removed) and before it sends the `X-Pingback` header on a single
  * post, so this one filter covers all three.
