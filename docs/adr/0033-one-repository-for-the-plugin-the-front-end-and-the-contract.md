@@ -7,6 +7,7 @@ amended:
   - 2026-11-07
   - 2026-11-07
   - 2026-11-08
+  - 2026-11-08
 ---
 
 # One repository holds the plugin, the front end and the contract package, in one pnpm workspace, with wp-env as the only local environment
@@ -70,3 +71,20 @@ The demo began as two repositories, one per side, with the plugin at this one's 
 - **A manual install on the host.** Rejected: an untracked version that wp-env, CI and the tests could not reproduce, and a step outside the repository.
 
 **What did not.** The decision is unchanged: one repository and one pnpm workspace hold the plugin, the front end and the contract package, with wp-env as the only environment. The plugin's own rsync keeps its allowlist, and `site-plugins/` itself, with its `vendor/`, never reaches the host, nor does `packages/`.
+
+### 2026-11-08: the deploy also ships and activates the CMS theme
+
+**What changed.** The CMS deploy now syncs the block theme at `wp-content/themes/resource-hub/` into the same path on the host and activates it on every deploy, as it does the plugin. Three statements above no longer hold as written:
+
+- Under Consequences, "the deploy's rsync runs from the plugin directory with an allowlist, so nothing else in the workspace reaches the host": the theme's directory reaches the host too, through its own allowlist rsync from that directory (`style.css`, `theme.json`, `functions.php`, `inc/`, `templates/`, `parts/`, `assets/`, `js/` and the built `build/`) to a fixed target, so its `--delete` can reach no other theme.
+- In the 2026-11-07 amendment "the CMS theme's skeleton exists", "The deploy that ships the theme to the host is a later pull request too": that deploy is now built.
+- In the 2026-11-08 amendment "the deploy also syncs Relevanssi", "this one exception": there are now two, Relevanssi's installed directory and the theme's.
+
+**Why.** The theme's 404 is the one theme page anonymous visitors get (ADR 0031), and the host's previous theme, Twenty Twenty-Five, listed the site's published pages on it. Activating the theme on every deploy, not once, keeps the host on it even after a theme switch in the admin, and keeps logged-in previews drawn with the front end's styles.
+
+**Options weighed.**
+
+- **A one-time manual upload and activation.** Rejected: an untracked copy that CI could not reproduce, and a step outside the repository.
+- **Activating only on the first deploy.** Rejected: a later switch in the admin would quietly bring back a 404 that lists pages.
+
+**What did not.** The decision is unchanged: one repository and one pnpm workspace hold the plugin, the front end and the contract package, with wp-env as the only environment. `packages/` never reaches the host: the theme takes the package's files only as the copies its build writes into `build/`, and its `package.json`, `scripts/` and `node_modules/` stay behind, as `site-plugins/` does.
