@@ -9,6 +9,8 @@
 	<file>resource-hub.php</file>
 	<file>src</file>
 	<file>tests</file>
+	<!-- The CMS block theme's PHP, beside the plugin in wp-content/ and held to the same standard. -->
+	<file>../../themes/resource-hub</file>
 
 	<exclude-pattern>*/vendor/*</exclude-pattern>
 	<exclude-pattern>*/node_modules/*</exclude-pattern>
