@@ -92,8 +92,12 @@ final class XmlRpcTest extends WP_UnitTestCase {
 	 *
 	 * The request is made logged in: an anonymous request for a single post is a 404 under the
 	 * lockdown (ADR 0031), and core adds no `X-Pingback` to a 404, so the setup check would fail.
+	 * The pings switch ({@see \ResourceHub\Security\Pings}) is taken away first: with every post
+	 * closed to pings core adds no header, and the setup check would fail for that reason too.
 	 */
 	public function test_pingback_header_is_removed(): void {
+		remove_filter( 'pings_open', '__return_false', PHP_INT_MAX );
+
 		$post = self::factory()->post->create(
 			array(
 				'post_status' => 'publish',
