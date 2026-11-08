@@ -64,8 +64,7 @@
 #
 # Lighthouse against each pull request's Vercel preview is a separate,
 # non-blocking workflow, .github/workflows/preview-lighthouse.yml, which
-# stays on GitHub Actions because Depot CI has no deployment_status trigger
-# (ADR 0053).
+# stays on GitHub Actions for now; moving it is a follow-up (ADR 0053).
 name: CI
 
 # Pull requests run the gate once. A plain `push:` trigger alongside
@@ -111,8 +110,11 @@ permissions:
 # not, since only that tag could read what it saved.
 #
 # On Depot CI the cache is Depot Cache, which does not isolate entries by
-# branch, but the rule still keeps one store per lockfile, saved from a
-# whole-workspace install (the gate's; see .depot/actions/setup-js).
+# branch (per Depot's docs for its GitHub Actions runners; assumed for Depot
+# CI, whose docs do not say), so a pull request whose workflow saved a key
+# would write an entry main reads (docs/runbooks/deploy.md, "Secrets"). The
+# rule still keeps one store per lockfile, saved from a whole-workspace
+# install (the gate's; see .depot/actions/setup-js).
 env:
   SAVE_CACHES: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
 
@@ -667,9 +669,11 @@ jobs:
     # DEPOT_DEPLOY_ENABLED is 'true'. While it is unset, nothing here can
     # reach the host, whatever the event or ref. It kept the trial runs from
     # deploying while GitHub's copy of this workflow still did; that copy is
-    # retired in the pull request that makes this the CI (ADR 0053), the
-    # variable is set just before it merges, and a follow-up drops the
-    # first line of the condition. Unsetting it is half of a rollback to
+    # retired in the pull request that makes this the CI (ADR 0053), which
+    # merges with the variable unset; it is set once main's first Depot run
+    # is green, the first deploy is a watched dispatch, and a follow-up
+    # drops the first line of the condition (docs/runbooks/deploy.md, "The
+    # cutover switch"). Unsetting it is half of a rollback to
     # GitHub Actions (docs/runbooks/deploy.md). deploy-web carries the same
     # guard.
     if: >-
@@ -747,48 +751,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Set up Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-
-      # The same store, key and rule as the gate's; see the comments there.
-      # On main this job runs after the gate, which has usually saved this key
+      # The whole workspace, as the gate installs it, since the block build
+      # needs the plugin's tooling. The same store, key and rule as the
+      # gate's (see .depot/actions/setup-js and the comment above `jobs`): on
+      # main this job runs after the gate, which has usually saved the key
       # already, so it hits and saves nothing; on a tag nothing is saved.
-      - name: Locate the pnpm store
-        id: pnpm-store
-        run: |
-          store=$(pnpm store path --silent)
-          arch=$(node -p process.arch)
-          if [[ "$store" != /* ]] || [ -z "$arch" ]; then
-            echo "::error::Could not read the pnpm store path (got: $store) or Node's architecture (got: $arch)."
-            exit 1
-          fi
-          {
-            echo "path=$store"
-            echo "key-prefix=node-cache-$RUNNER_OS-$arch-pnpm-"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Restore the pnpm store
-        id: pnpm-cache
-        uses: actions/cache/restore@v6
+      - name: Set up Node, pnpm and the JavaScript dependencies
+        uses: ./.depot/actions/setup-js
         with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: ${{ steps.pnpm-store.outputs.key-prefix }}${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: ${{ env.SAVE_CACHES != 'true' && steps.pnpm-store.outputs.key-prefix || '' }}
-
-      - name: Install JavaScript dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Save the pnpm store
-        if: env.SAVE_CACHES == 'true' && steps.pnpm-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
-        with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
+          save-store: 'true'
 
       - name: Build the block
         run: pnpm build
@@ -809,7 +780,8 @@ jobs:
         run: composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
 
       # The host key comes from a secret, so the first connection never trusts
-      # an unknown key. The runner is discarded after the job, key included.
+      # an unknown key. The sandbox is discarded after the job, and the
+      # job's last step removes the key and config before that anyway.
       - name: Configure SSH
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
@@ -917,6 +889,13 @@ jobs:
           curl -fsS --max-time 20 --retry 3 --retry-delay 5 "${home%/}/wp-json/" \
             | jq -e '.namespaces | index("wp/v2")' > /dev/null
           echo "REST root answered at ${home%/}/wp-json/"
+
+      # Whether or not an earlier step failed, the key, the SSH config and
+      # the pinned host key are removed, rather than trusting the sandbox's
+      # disposal alone to take them.
+      - name: Remove the SSH key and config
+        if: always()
+        run: rm -f ~/.ssh/deploy_key ~/.ssh/config ~/.ssh/known_hosts_deploy
 
   deploy-web:
     name: Deploy the front end to Vercel
