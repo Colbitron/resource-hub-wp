@@ -216,16 +216,37 @@ final class RoutesTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Anonymous visitors get the lockdown's 404 from every collection path (ADR 0031).
+	 * Anonymous visitors get the lockdown's 404 from every collection path, its later pages and a missing term's (ADR 0031).
+	 *
+	 * `is_404()` alone would pass for a page past the last or a missing term, which core or `CollectionQuery`
+	 * answers with a 404 for anyone, so each path is held to the lockdown's own mark: the request marked
+	 * `error` 404 on the `WP` object, as `Gate::lock()` does and as `parse_request()` does only for a path no
+	 * rule matches, which none of these is. A logged-in reader's 404 for the missing term has no such mark,
+	 * and their later pages are not 404s, so the mark is the lockdown's and the paths are real pages.
 	 */
 	public function test_anonymous_visitors_get_the_404(): void {
-		$this->resource( 'A', 'ebook', array( 'caching' ) );
+		for ( $i = 1; $i <= 13; $i++ ) {
+			$this->resource( "Resource {$i}", 'ebook', array( 'caching' ), sprintf( '2026-10-%02d 09:00:00', $i ) );
+		}
+		$pages   = array( '/resources/', '/resources/ebook/', '/resources/topic/caching/', '/resources/ebook/topic/caching/', '/resources/page/2/', '/resources/ebook/page/2/', '/resources/topic/caching/page/2/', '/resources/ebook/topic/caching/page/2/' );
+		$missing = '/resources/topic/no-such-topic/';
+
+		foreach ( $pages as $path ) {
+			$this->go_to( home_url( $path ) );
+			$this->assertFalse( is_404(), "{$path} is a page for a logged-in reader." );
+		}
+		$this->go_to( home_url( $missing ) );
+		$this->assertTrue( is_404() );
+		$this->assertArrayNotHasKey( 'error', $GLOBALS['wp']->query_vars, "A logged-in reader's 404 is core's, not the lockdown's." );
+
 		wp_set_current_user( 0 );
 
-		foreach ( array( '/resources/', '/resources/ebook/', '/resources/topic/caching/', '/resources/ebook/topic/caching/' ) as $path ) {
+		foreach ( array_merge( $pages, array( $missing ) ) as $path ) {
 			$this->go_to( home_url( $path ) );
 			$this->assertTrue( is_404(), $path );
+			$this->assertSame( '404', $GLOBALS['wp']->query_vars['error'] ?? null, "{$path} is the lockdown's 404." );
 			$this->assertSame( 0, $GLOBALS['wp_query']->found_posts, $path );
+			$this->assertSame( array(), $GLOBALS['wp_query']->posts, $path );
 		}
 	}
 }
