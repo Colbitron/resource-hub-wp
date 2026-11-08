@@ -330,21 +330,26 @@ test( 'the script reads --pr-files and --changed-files, and fails safe', () => {
 } );
 
 // ci.yml's jobs, read as text with no YAML parser, so the scope job
-// installs nothing: each job id under `jobs:` (two spaces in, a bare key)
-// and its lines, comments left out.
-function workflowJobs() {
+// installs nothing: each job id under `jobs:` and its lines, comments left
+// out. Every line two spaces in under `jobs:` is a job's key, so none can
+// slip past the tests that read them: a key it cannot read (not a job id,
+// GitHub's [A-Za-z_][A-Za-z0-9_-]*, bare or quoted) throws.
+function workflowJobs( text = readFileSync( WORKFLOW, 'utf8' ) ) {
 	const jobs = {};
 	let name = null;
 	let inJobs = false;
-	for ( const line of readFileSync( WORKFLOW, 'utf8' ).split( '\n' ) ) {
+	for ( const line of text.split( '\n' ) ) {
 		if ( /^\S/.test( line ) && ! /^#/.test( line ) ) {
-			inJobs = /^jobs:\s*$/.test( line );
+			inJobs = /^jobs:\s*(#.*)?$/.test( line );
 			name = null;
 			continue;
 		}
-		const job = inJobs && line.match( /^ {2}([a-z][a-z0-9-]*):\s*$/ );
-		if ( job ) {
-			name = job[ 1 ];
+		if ( inJobs && /^ {2}[^\s#]/.test( line ) ) {
+			const job = line.match( /^ {2}(["']?)([A-Za-z_][A-Za-z0-9_-]*)\1:\s*(#.*)?$/ );
+			if ( ! job ) {
+				throw new Error( `cannot read a job id in ${ JSON.stringify( line ) }` );
+			}
+			name = job[ 2 ];
 			jobs[ name ] = '';
 		} else if ( name && ! /^\s*#/.test( line ) ) {
 			jobs[ name ] += line + '\n';
@@ -352,6 +357,31 @@ function workflowJobs() {
 	}
 	return jobs;
 }
+
+test( 'workflowJobs reads every job id GitHub allows, and only the jobs', () => {
+	const text = [
+		'on:',
+		'  pull_request:',
+		'jobs: # the jobs',
+		'  # a comment, not a job',
+		'  scope:',
+		'    runs-on: x',
+		'  lint_docs:',
+		'    runs-on: x',
+		'  Build-Web:',
+		'    runs-on: x',
+		'  _private:',
+		'  "quoted_job": # a comment',
+		'    runs-on: x',
+		'env:',
+		'  NOT_A_JOB: x',
+	].join( '\n' );
+	assert.deepEqual( Object.keys( workflowJobs( text ) ), [ 'scope', 'lint_docs', 'Build-Web', '_private', 'quoted_job' ] );
+	assert.equal( workflowJobs( text ).lint_docs, '    runs-on: x\n' );
+	for ( const bad of [ '  9lives:', '  has space:', '  lint.docs:', '  build: { runs-on: x }' ] ) {
+		assert.throws( () => workflowJobs( `jobs:\n${ bad }\n` ), /cannot read a job id/, bad );
+	}
+} );
 
 // ci.yml's conditions, read as text: every job a pull request can skip is
 // skipped only on a pull request, and neither deploy reads scope's outputs,
@@ -389,17 +419,21 @@ test( 'ci-result reads every job but the exempt ones', () => {
 	const ids = Object.keys( jobs );
 	assert.ok( ids.length >= 10 && ids.includes( 'scope' ) && ids.includes( 'ci-result' ), `parsed jobs: ${ ids.join( ', ' ) }` );
 	const body = jobs[ 'ci-result' ];
-	const needs = ( body.match( /^ {4}needs: \[ ([a-z0-9, -]+) \]$/m ) ?? [] )[ 1 ]?.split( ',' ).map( ( need ) => need.trim() );
+	const needs = ( body.match( /^ {4}needs: \[ ([A-Za-z0-9_, -]+) \]$/m ) ?? [] )[ 1 ]?.split( ',' ).map( ( need ) => need.trim() );
 	assert.ok( needs, "ci-result's needs is one flow list, `needs: [ a, b ]`" );
 	assert.match( body, /^ {4}if: \$\{\{ always\(\) \}\}$/m );
-	// Every step too: on GitHub Actions, once a run is cancelled a step's
-	// implicit success() skips it, and a job whose every step was skipped
-	// concludes success. Depot ends the job outright instead (see ci.yml).
+	// Every step too, for a rollback to GitHub Actions: GitHub documents
+	// that always() steps run after a cancel and implicit success() ones do
+	// not, and a job whose every step was skipped is reported to conclude
+	// success; neither is tested here. Depot ended the job outright in the
+	// trials instead (see ci.yml).
 	const steps = body.split( /^ {6}- /m ).slice( 1 );
 	assert.ok( steps.length >= 2, 'ci-result has its steps' );
 	for ( const step of steps ) {
 		assert.match( step, /^ {8}if: \$\{\{ always\(\) \}\}$/m, `ci-result's step ${ step.split( '\n' )[ 0 ] } runs always()` );
 	}
+	// continue-on-error, on the job or a step, would turn a red verdict green.
+	assert.doesNotMatch( body, /continue-on-error/, 'ci-result and its steps carry no continue-on-error' );
 	for ( const id of ids ) {
 		assert.ok( needs.includes( id ) !== NOT_READ_BY_CI_RESULT.includes( id ), `${ id } must be in ci-result's needs or exempt, not both or neither` );
 	}

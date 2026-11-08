@@ -843,17 +843,19 @@ jobs:
     # it, and those skips would otherwise pass. always() rather than
     # !cancelled(), so a cancelled need reports red here instead of a skip,
     # which would pass: cancelling a single job leaves this one to run and go
-    # red (trial run t5sl0hv9hx). On Depot a whole-run cancel ends this job
-    # outright, always() or not, with a cancelled check, which a ruleset treats
-    # as failing (trial runs 2m7n9w5r68, 6tkfb69smt, psb4w3z0tr). Each step has
-    # always() too, for hosts that run always() steps after a cancel, as GitHub
-    # Actions does, where a step's implicit success() would skip it and a job
-    # whose every step was skipped concludes success; so a rollback to GitHub
-    # Actions cannot turn a cancelled run green. Lighthouse and its medians
-    # never run on a pull request and the deploys only after a merge, so none
-    # of them is read. A new job goes either in needs (and in ci-result.mjs's
-    # JOBS) or in the exempt list of ci-scope.test.mjs's needs test, which
-    # fails the scope job, and so this one, until it does.
+    # red (trial run t5sl0hv9hx). On Depot a whole-run cancel ended this job
+    # outright, always() or not, whether it was queued or mid-step (trial runs
+    # 2m7n9w5r68, 6tkfb69smt, psb4w3z0tr): the job's status was cancelled, and
+    # the check Depot posted for it concluded cancelled. So a cancelled run's
+    # CI / CI result concludes cancelled or failure, never green. Each step has
+    # always() too, for a rollback to GitHub Actions: GitHub documents that
+    # always() steps run after a cancel while implicit success() ones are
+    # skipped, and a job whose every step was skipped is reported to conclude
+    # success. Neither is tested here. Lighthouse and its medians never run on
+    # a pull request and the deploys only after a merge, so none of them is
+    # read. A new job goes either in needs (and in ci-result.mjs's JOBS) or in
+    # the exempt list of ci-scope.test.mjs's needs test, which fails the scope
+    # job, and so this one, until it does.
     name: CI result
     needs: [ scope, gate, web-checks, web-e2e, web-screenshots ]
     if: ${{ always() }}

@@ -49,7 +49,7 @@ The figures behind ADR 0053's "Cost". Depot's Developer plan is about $20 a mont
 
 | Run | Sandbox-minutes | Trial run |
 |---|---|---|
-| Every job: a push to `main`, a dispatch, a `depot ci run` | 17.9: the five Lighthouse shards and the medians 11.1 (664 s), the gate 3.2, end-to-end 2.1, screenshots 0.8, checks 0.7, scope 0.05, CI result 0.07 (4 s) | zkp83r7b3s; CI result 6nc6zbxd7m |
+| Every job: a push to `main`, a dispatch, a `depot ci run` | 17.9: the measured 17.8 of run zkp83r7b3s, plus CI result's 0.07 (4 s). Its parts, each rounded and so not summing to the total: the five Lighthouse shards and the medians 11.1 (664 s), the gate 3.2, end-to-end 2.1, screenshots 0.8, checks 0.7, scope 0.05 | zkp83r7b3s; CI result 6nc6zbxd7m |
 | A pull request reaching both sides, or a shared path | 6.9: the same run without Lighthouse | zkp83r7b3s |
 | The front end alone | 3.6 | clmqq17s1c |
 | The plugin alone | 3.1 | fxprsxt9wx |

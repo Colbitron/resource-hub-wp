@@ -24,8 +24,8 @@
 // ci-result's needs (and here) or exempted; ci-scope.test.mjs fails until
 // it is one or the other.
 
-import { appendFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { appendFileSync, realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 /** Each job ci-result reads: the env variable with its result, and the scope side that may skip it. */
 export const JOBS = Object.freeze( {
@@ -110,6 +110,26 @@ export function main( env = process.env ) {
 	return passed;
 }
 
-if ( import.meta.url === pathToFileURL( process.argv[ 1 ] ?? '' ).href ) {
+/**
+ * Whether this file is the script node was asked to run, rather than a
+ * module a test imported. Both sides are compared as realpaths: node loads
+ * the main module through argv[1]'s realpath (unless --preserve-symlinks-main),
+ * so a symlink anywhere in the checkout's path would make a plain comparison
+ * false, main() would never run, and the step would exit 0 with no verdict.
+ *
+ * @return {boolean} Whether to run main().
+ */
+function isEntryPoint() {
+	if ( ! process.argv[ 1 ] ) {
+		return false;
+	}
+	try {
+		return realpathSync( process.argv[ 1 ] ) === realpathSync( fileURLToPath( import.meta.url ) );
+	} catch {
+		return false;
+	}
+}
+
+if ( isEntryPoint() ) {
 	process.exitCode = main() ? 0 : 1;
 }

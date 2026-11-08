@@ -6,9 +6,9 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -110,4 +110,33 @@ test( 'the script exits 1 on a problem and 0 without', () => {
 	assert.equal( run( pr( {} ) ), 0 );
 	assert.equal( run( pr( { WEB_CHECKS: 'failure' } ) ), 1 );
 	assert.equal( run( { EVENT_NAME: 'api', ...ALL_PASSED, GATE: 'skipped' } ), 1 );
+} );
+
+// A symlink in the checkout's path must not stop main() from running: the
+// step would then exit 0 with no verdict, a silent pass. Both a symlinked
+// directory and a symlinked file are tried, each with a failing environment
+// (exit 1) and a passing one (exit 0, and main() printed its verdict).
+test( 'the script runs main() when reached through a symlink', () => {
+	const dir = mkdtempSync( join( tmpdir(), 'ci-result-link-' ) );
+	try {
+		symlinkSync( dirname( SCRIPT ), join( dir, 'scripts' ), 'dir' );
+		symlinkSync( SCRIPT, join( dir, 'ci-result.mjs' ), 'file' );
+		for ( const path of [ join( dir, 'scripts', 'ci-result.mjs' ), join( dir, 'ci-result.mjs' ) ] ) {
+			const run = ( env ) => {
+				try {
+					return { status: 0, stdout: execFileSync( process.execPath, [ path ], { env: { PATH: process.env.PATH, ...env }, stdio: 'pipe', encoding: 'utf8' } ) };
+				} catch ( error ) {
+					return { status: error.status, stdout: error.stdout };
+				}
+			};
+			const failed = run( pr( { WEB_CHECKS: 'failure' } ) );
+			assert.equal( failed.status, 1, path );
+			assert.match( failed.stdout, /^::error::web-checks: /m, path );
+			const passed = run( pr( {} ) );
+			assert.equal( passed.status, 0, path );
+			assert.match( passed.stdout, /^web-screenshots: "success", passes$/m, path );
+		}
+	} finally {
+		rmSync( dir, { recursive: true, force: true } );
+	}
 } );
