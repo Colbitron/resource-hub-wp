@@ -1,0 +1,21 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "resource-hub/collection-head",
+	"version": "0.1.0",
+	"title": "Collection Head",
+	"category": "theme",
+	"icon": "filter",
+	"description": "A collection page's heading, its count and its type and topic filters, as the front end's library shows them. Rendered on the server from the page's query; empty anywhere but a collection.",
+	"keywords": [ "resource", "collection", "filters", "archive" ],
+	"textdomain": "resource-hub",
+	"supports": {
+		"html": false,
+		"className": false,
+		"customClassName": false,
+		"reusable": false,
+		"multiple": false
+	},
+	"editorScript": "file:./index.js",
+	"style": [ "resource-hub-tokens", "resource-hub-listing" ]
+}

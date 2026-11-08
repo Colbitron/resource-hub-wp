@@ -19,13 +19,15 @@ use WpOrg\Requests\IdnaEncoder;
 /**
  * One renderer for every block that writes a resource the way the front end does.
  *
- * Five blocks use it: `resource-hub/related-resources` and `resource-hub/related` (their rows, at `h3`),
+ * Six blocks use it: `resource-hub/related-resources` and `resource-hub/related` (their rows, at `h3`),
  * `resource-hub/resource-card` (one row in a post template), `resource-hub/resource-meta` (the single
- * resource page's meta line), `resource-hub/resource-summary` (its lead paragraph) and
- * `resource-hub/resource-source` (its source line). The markup is the front end's, element for element,
- * class for class and attribute for attribute, in the front end's order: `row()` is `ResourceCard`
- * (`apps/web/components/ResourceCard.tsx`), and `meta()`, `summary()` and `source()` are the meta line,
- * the summary and the source line `ResourceArticle` writes (`apps/web/components/ResourceArticle.tsx`).
+ * resource page's meta line), `resource-hub/resource-summary` (its lead paragraph),
+ * `resource-hub/resource-source` (its source line) and `resource-hub/featured-lead` (the library's lead).
+ * The markup is the front end's, element for element, class for class and attribute for attribute, in
+ * the front end's order: `row()` is `ResourceCard` (`apps/web/components/ResourceCard.tsx`); `meta()`,
+ * `summary()` and `source()` are the meta line, the summary and the source line `ResourceArticle` writes
+ * (`apps/web/components/ResourceArticle.tsx`); and `lead()` is `FeaturedLead`
+ * (`apps/web/components/FeaturedLead.tsx`), whose meta line and topics are the row's own parts.
  * The contract's markup fixtures (`packages/ui/fixtures/markup/`, `packages/ui/README.md`, "Markup
  * fixtures") hold both sides to the same HTML for a few sample resources (every part, no summary and no
  * topics, an unmapped type with apostrophes): the front end's vitest renders the components and this
@@ -38,6 +40,16 @@ use WpOrg\Requests\IdnaEncoder;
  *                 <p class="rh-card__summary">{summary}</p>                                   (when it has one)
  *                 <ul class="rh-card__topics" aria-label="Topics" role="list"><li class="rh-card__topic">{topic}</li>…</ul>
  *               </div>                                                                       (topics when it has any)
+ *             </article>
+ *
+ *     lead(): <article class="rh-lead">
+ *               <div class="rh-lead__media"><img src="…" width="…" height="…" alt="…" …></div>   (when it has a sized image)
+ *               <div class="rh-lead__body">
+ *                 <p class="rh-card__meta">…the row's meta line…</p>
+ *                 <h3 class="rh-lead__title"><a class="rh-lead__link" href="{permalink}">{title}</a></h3>
+ *                 <p class="rh-lead__summary">{summary}</p>                                   (when it has one)
+ *                 <ul class="rh-card__topics" aria-label="Topics" role="list">…</ul>           (when it has topics)
+ *               </div>
  *             </article>
  *
  *     meta(): <div class="rh-resource__meta">
@@ -114,6 +126,15 @@ use WpOrg\Requests\IdnaEncoder;
  *   are the front end's listing paths on the CMS's origin, `/resources/{type}/` and
  *   `/resources/topic/{topic}/` (`type_listing_url()`, `topic_listing_url()`), not core's term links,
  *   whose paths (`/resource-type/…`, `/resource-topic/…`) the front end has no route for.
+ * - **The lead's image** is the front end's `featuredImage()` rule as far as the CMS can follow it
+ *   (`apps/web/lib/wp/images.ts`): the resource's featured image, only when WordPress has measured it
+ *   (an SVG has no width and height and gets no box), in a 16:9 box with its dimensions on the `<img>`
+ *   so nothing moves when it lands, eager, at high fetch priority, with the front end's `sizes` for the
+ *   lead's two-column layout (`SIZES`). The `<img>` itself cannot match: the front end's is `next/image`'s,
+ *   with the optimizer's `src` and `srcset`, where this is `wp_get_attachment_image_src()`'s `large` size
+ *   and core's `srcset` of the uploaded sizes. So the contract's lead fixtures hold a lead without an
+ *   image, and the CMS's own test holds the box. The front end also preloads its image from the head,
+ *   which no block can.
  * - **"Topics"** is the topics list's label in plain English, not `esc_attr__()`: the front end hard-codes
  *   it, so a translated label here would make the two sites' markup differ. "Untitled resource" is the
  *   front end's `UNTITLED` for the same reason.
@@ -135,6 +156,23 @@ final class ResourceCardMarkup {
 	public const HEADINGS = array( 'h2', 'h3', 'h4' );
 
 	/**
+	 * The heading levels the lead's title may take, as `FeaturedLead`'s `headingLevel` prop allows.
+	 */
+	public const LEAD_HEADINGS = array( 'h2', 'h3' );
+
+	/**
+	 * `sizes` for the lead's image: the front end's `IMAGE_SIZES` (`apps/web/components/FeaturedLead.tsx`),
+	 * derived there from `lead.css`'s two columns and the shell's width; change the three together.
+	 */
+	public const SIZES = '(min-width: 72rem) 39rem, (min-width: 44rem) 58vw, 100vw';
+
+	/**
+	 * The image size the lead's `<img>` names: WordPress's 1024-wide `large`, the smallest core size over
+	 * the front end's 800 px minimum for a sharp lead at a device pixel ratio of two.
+	 */
+	public const IMAGE_SIZE = 'large';
+
+	/**
 	 * One resource as a row in `card.css`'s markup, as the front end's `ResourceCard` renders it.
 	 *
 	 * @param WP_Post $post    A published resource.
@@ -144,14 +182,10 @@ final class ResourceCardMarkup {
 	 */
 	public static function row( WP_Post $post, string $title, WP_Term $type, string $heading = 'h3' ): string {
 		$heading = in_array( $heading, self::HEADINGS, true ) ? $heading : 'h3';
-		$topics  = self::term_names( $post, Taxonomies::TOPIC );
 		$summary = (string) get_post_meta( $post->ID, Meta::SUMMARY, true );
 
 		$html  = '<article class="rh-card">';
-		$html .= '<p class="rh-card__meta">';
-		$html .= '<span class="rh-card__type" data-accent="' . esc_attr( TypeAccents::accent( $type ) ) . '">' . self::text_html( self::plain_text( $type->name ) ) . '</span>';
-		$html .= self::time( $post );
-		$html .= '</p>';
+		$html .= self::meta_line( $post, $type );
 		$html .= '<div class="rh-card__body">';
 		$html .= '<' . $heading . ' class="rh-card__title"><a class="rh-card__link" href="' . esc_url( (string) get_permalink( $post ) ) . '">' . self::text_html( $title ) . '</a></' . $heading . '>';
 
@@ -159,17 +193,107 @@ final class ResourceCardMarkup {
 			$html .= '<p class="rh-card__summary">' . self::text_html( $summary ) . '</p>';
 		}
 
-		if ( array() !== $topics ) {
-			$html .= '<ul class="rh-card__topics" aria-label="Topics" role="list">';
-
-			foreach ( $topics as $name ) {
-				$html .= '<li class="rh-card__topic">' . self::text_html( $name ) . '</li>';
-			}
-
-			$html .= '</ul>';
-		}
+		$html .= self::topics_list( $post );
 
 		return $html . '</div></article>';
+	}
+
+	/**
+	 * One resource as the library's lead in `lead.css`'s markup, as the front end's `FeaturedLead` renders it.
+	 *
+	 * @param WP_Post $post    A published resource.
+	 * @param string  $title   Its title as plain text, from `title()` or `UNTITLED`; escaped here.
+	 * @param WP_Term $type    Its one type, from `type()`.
+	 * @param string  $heading The title's element, one of `LEAD_HEADINGS`; anything else is `h3`.
+	 */
+	public static function lead( WP_Post $post, string $title, WP_Term $type, string $heading = 'h3' ): string {
+		$heading = in_array( $heading, self::LEAD_HEADINGS, true ) ? $heading : 'h3';
+		$summary = (string) get_post_meta( $post->ID, Meta::SUMMARY, true );
+
+		$html  = '<article class="rh-lead">';
+		$html .= self::lead_media( $post );
+		$html .= '<div class="rh-lead__body">';
+		$html .= self::meta_line( $post, $type );
+		$html .= '<' . $heading . ' class="rh-lead__title"><a class="rh-lead__link" href="' . esc_url( (string) get_permalink( $post ) ) . '">' . self::text_html( $title ) . '</a></' . $heading . '>';
+
+		if ( '' !== $summary ) {
+			$html .= '<p class="rh-lead__summary">' . self::text_html( $summary ) . '</p>';
+		}
+
+		$html .= self::topics_list( $post );
+
+		return $html . '</div></article>';
+	}
+
+	/**
+	 * The row's meta line: the type's name with its mark, and the date. Shared by the row and the lead.
+	 *
+	 * @param WP_Post $post The post.
+	 * @param WP_Term $type Its one type.
+	 */
+	private static function meta_line( WP_Post $post, WP_Term $type ): string {
+		return '<p class="rh-card__meta">'
+			. '<span class="rh-card__type" data-accent="' . esc_attr( TypeAccents::accent( $type ) ) . '">' . self::text_html( self::plain_text( $type->name ) ) . '</span>'
+			. self::time( $post )
+			. '</p>';
+	}
+
+	/**
+	 * The row's topics as plain labels in a list named "Topics", or nothing when there are none. Shared by the row and the lead.
+	 *
+	 * @param WP_Post $post The post.
+	 */
+	private static function topics_list( WP_Post $post ): string {
+		$topics = self::term_names( $post, Taxonomies::TOPIC );
+
+		if ( array() === $topics ) {
+			return '';
+		}
+
+		$html = '<ul class="rh-card__topics" aria-label="Topics" role="list">';
+
+		foreach ( $topics as $name ) {
+			$html .= '<li class="rh-card__topic">' . self::text_html( $name ) . '</li>';
+		}
+
+		return $html . '</ul>';
+	}
+
+	/**
+	 * The lead's image in its box, or nothing when the resource has no featured image WordPress has measured.
+	 *
+	 * @param WP_Post $post The post.
+	 */
+	private static function lead_media( WP_Post $post ): string {
+		$id = (int) get_post_thumbnail_id( $post );
+
+		if ( $id <= 0 ) {
+			return '';
+		}
+
+		// Measured by WordPress, as the front end's rule asks of `media_details`: an SVG has no metadata and no box.
+		$metadata = wp_get_attachment_metadata( $id );
+
+		if ( ! is_array( $metadata ) || (int) ( $metadata['width'] ?? 0 ) <= 0 || (int) ( $metadata['height'] ?? 0 ) <= 0 ) {
+			return '';
+		}
+
+		$image = wp_get_attachment_image_src( $id, self::IMAGE_SIZE );
+
+		if ( ! is_array( $image ) || (int) $image[1] <= 0 || (int) $image[2] <= 0 ) {
+			return '';
+		}
+
+		$alt    = (string) get_post_meta( $id, '_wp_attachment_image_alt', true );
+		$srcset = wp_get_attachment_image_srcset( $id, self::IMAGE_SIZE );
+
+		$html = '<div class="rh-lead__media"><img src="' . esc_url( (string) $image[0] ) . '" alt="' . esc_attr( $alt ) . '" width="' . (int) $image[1] . '" height="' . (int) $image[2] . '"';
+
+		if ( is_string( $srcset ) && '' !== $srcset ) {
+			$html .= ' srcset="' . esc_attr( $srcset ) . '"';
+		}
+
+		return $html . ' sizes="' . esc_attr( self::SIZES ) . '" loading="eager" fetchpriority="high" decoding="async"></div>';
 	}
 
 	/**
@@ -273,6 +397,30 @@ final class ResourceCardMarkup {
 	}
 
 	/**
+	 * The front end's listing path for a filter, `listingPath()` in `apps/web/lib/routes.ts`, on the CMS's origin:
+	 * `/resources/`, `/resources/{type}/`, `/resources/topic/{topic}/` or `/resources/{type}/topic/{topic}/`.
+	 *
+	 * The slugs are stored ones, in the lower-case percent-encoded form the front end's `canonicalSlug()`
+	 * writes (`SlugEscapes` keeps out the escapes its router would decode), so they go in as they are.
+	 *
+	 * @param string|null $type  A `resource_type` slug, or null.
+	 * @param string|null $topic A `resource_topic` slug, or null.
+	 */
+	public static function listing_url( ?string $type, ?string $topic ): string {
+		$path = '/resources/';
+
+		if ( null !== $type && '' !== $type ) {
+			$path .= $type . '/';
+		}
+
+		if ( null !== $topic && '' !== $topic ) {
+			$path .= 'topic/' . $topic . '/';
+		}
+
+		return home_url( $path );
+	}
+
+	/**
 	 * The front end's listing of one type, `/resources/{type}/`, on the CMS's origin.
 	 *
 	 * The slug is the stored one, which WordPress keeps in the lower-case percent-encoded form the front
@@ -281,7 +429,7 @@ final class ResourceCardMarkup {
 	 * @param WP_Term $type A `resource_type` term.
 	 */
 	public static function type_listing_url( WP_Term $type ): string {
-		return home_url( '/resources/' . $type->slug . '/' );
+		return self::listing_url( $type->slug, null );
 	}
 
 	/**
@@ -290,7 +438,7 @@ final class ResourceCardMarkup {
 	 * @param WP_Term $topic A `resource_topic` term.
 	 */
 	public static function topic_listing_url( WP_Term $topic ): string {
-		return home_url( '/resources/topic/' . $topic->slug . '/' );
+		return self::listing_url( null, $topic->slug );
 	}
 
 	/**
@@ -327,10 +475,11 @@ final class ResourceCardMarkup {
 	 * Text as the HTML React writes for it: every `&`, `<`, `>`, `"` and `'` encoded, an existing `&amp;` included.
 	 *
 	 * `htmlspecialchars()`, not `esc_html()`, which does not encode an `&` that already starts a reference.
+	 * Public for the collection blocks, which print term names and counts the same way.
 	 *
 	 * @param string $text Plain text.
 	 */
-	private static function text_html( string $text ): string {
+	public static function text_html( string $text ): string {
 		return htmlspecialchars( $text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
 	}
 
@@ -338,10 +487,12 @@ final class ResourceCardMarkup {
 	 * HTML as the plain text the front end's `plainText()` gives (`apps/web/lib/wp/cards.ts`).
 	 *
 	 * Tags stripped, entities decoded, every run of JavaScript's `\s` collapsed to one space and trimmed.
+	 * Public for the collection head, which names the terms it is filtered by and offers as the front end's
+	 * `plainText()` does.
 	 *
 	 * @param string $html A rendered title or a stored term name.
 	 */
-	private static function plain_text( string $html ): string {
+	public static function plain_text( string $html ): string {
 		return self::collapse_whitespace( html_entity_decode( wp_strip_all_tags( $html ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
 	}
 
