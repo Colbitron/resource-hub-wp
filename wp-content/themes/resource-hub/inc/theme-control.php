@@ -11,8 +11,8 @@
  * (`packages/ui/README.md`, "Markup fixtures").
  *
  * The behaviour is the theme's own script, `js/theme-control.js`, since the package shares no
- * JavaScript. This file prints that file inline in `<head>`, on `wp_head` before core prints a
- * stylesheet, so the stored choice is applied as the browser parses the head and never flashes the
+ * JavaScript. This file prints that file inline in `<head>`, on `wp_head` before any stylesheet
+ * `<link>`, so the stored choice is applied as the browser parses the head and never flashes the
  * other scheme, the way the front end's head script does; the same file then wires the radios once
  * the DOM is parsed. Inline, through `wp_print_inline_script_tag()`, so a Content Security Policy
  * added later can hash it (the script is a fixed file) and a nonce plugin can add its attribute
@@ -65,10 +65,23 @@ function resource_hub_theme_has_control(): bool {
  *
  * Read from the theme's own directory, not through `get_theme_file_path()`, so the file is the
  * theme's whatever theme is active when this is called (the PHPUnit suite loads this file alone).
- * A per-request read of a small file in the theme, as core reads a block theme's templates.
+ * A per-request read of a small file in the theme, as core reads a block theme's templates. The
+ * file is checked first, since `file_get_contents()` raises a warning for a missing one, which
+ * `display_errors` would print into `<head>`; the read can still fail after the check, so its
+ * result is checked too.
+ *
+ * @param string $file The script's path; the theme's own file unless a test names another.
  */
-function resource_hub_theme_control_script(): string {
-	$script = file_get_contents( dirname( __DIR__ ) . '/js/theme-control.js' );
+function resource_hub_theme_control_script( string $file = '' ): string {
+	if ( '' === $file ) {
+		$file = dirname( __DIR__ ) . '/js/theme-control.js';
+	}
+
+	if ( ! is_file( $file ) || ! is_readable( $file ) ) {
+		return '';
+	}
+
+	$script = file_get_contents( $file ); // phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- A local file just checked with is_file(), never a URL, read as core reads a block theme's templates.
 
 	return is_string( $script ) ? $script : '';
 }
@@ -77,8 +90,8 @@ function resource_hub_theme_control_script(): string {
  * Prints the control's script inline, and the `<noscript>` style that removes the control's slot
  * where script is off, on `wp_head`, on every page with the control.
  *
- * Hooked at priority 1 in `functions.php`: core prints the stylesheets at 8, so the script, whose
- * first statement sets `data-theme`, runs before the browser has even requested the CSS.
+ * Hooked at priority 1 in `functions.php`: core prints the stylesheets' `<link>`s at 8, so the
+ * script, whose first statement sets `data-theme`, runs before the browser has even requested the CSS.
  */
 function resource_hub_theme_print_control_script(): void {
 	if ( ! resource_hub_theme_has_control() ) {

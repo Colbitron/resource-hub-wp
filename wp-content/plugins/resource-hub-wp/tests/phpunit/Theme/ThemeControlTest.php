@@ -123,6 +123,19 @@ final class ThemeControlTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A script file that is missing, or is a directory, reads as an empty string, quietly: no
+	 * warning that `display_errors` would print into `<head>`. PHPUnit turns a warning into a
+	 * failure here, so a read without the check fails this test.
+	 */
+	public function test_missing_script_reads_as_empty_without_a_warning(): void {
+		$this->assertSame( '', resource_hub_theme_control_script( self::theme_dir() . '/js/no-such-file.js' ) );
+		$this->assertSame( '', resource_hub_theme_control_script( self::theme_dir() . '/js' ) );
+
+		// The default is the theme's own file.
+		$this->assertSame( $this->read( self::theme_dir() . '/js/theme-control.js' ), resource_hub_theme_control_script() );
+	}
+
+	/**
 	 * The file printed inline can be: it closes no `<script>` early and holds no PHP tag, and its
 	 * first statement applies the stored choice, before anything waits for the DOM.
 	 */
