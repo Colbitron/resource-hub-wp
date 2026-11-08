@@ -108,6 +108,4 @@ Slice 5 ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89), cl
 - **Buttons.** A button block is a filled button on the CMS and a plain link on the front end, whose content pass renders its markup with no core CSS. The look is core's default `theme.json` element style, printed in the global styles the pages and the editor canvas share, so the theme cannot drop it on its pages alone; matching the front end would mean styling buttons as links in the canvas too, or filtering core's `theme.json` data per request.
 - **The editor canvas's column.** `layout.contentSize` is `--rh-measure`, `65ch`, which core applies to each child of the canvas's constrained root, so a heading's column there is measured in its own, larger `ch` and is wider than the paragraphs'. The theme's pages put the measure on a wrapper, as the front end does; the canvas is core's layout.
 
-Outside the theme, the featured-image generator (`tools/featured-images/generate.mts`) keeps its own copy of the type accents, which nothing ties to `packages/ui/type-accents.json` ([issue #102](https://github.com/Colbitron/resource-hub-wp/issues/102)).
-
 Issue #89's third note, the Site Editor revalidation notice, is settled: page editing stays in the post editor, and the Site Editor gets no notice (above).

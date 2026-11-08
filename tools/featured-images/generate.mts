@@ -23,6 +23,8 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import accentTable from "../../packages/ui/type-accents.json" with { type: "json" };
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 /**
@@ -68,19 +70,16 @@ const WARM_LINE = "rgb(120 100 60 / 0.22)";
 const SHADOW = "0 10px 30px -18px rgb(30 28 34 / 0.3)";
 
 /**
- * Which accent marks each resource type, keyed by slug: the mapping in the
- * shared table, `packages/ui/type-accents.json`, which is keyed by term ID.
- * This map is a known third copy of that table, beside the front end's and
- * the plugin's readers, and is to be derived from it; until then a change
- * there must be made here by hand. A seeder type missing here fails the run.
+ * Which accent marks each resource type, keyed by slug, built from the shared
+ * table, `packages/ui/type-accents.json`, the one file the front end and the
+ * plugin read too. The table is keyed by term ID; the seeder's types are
+ * slugs, so this keys its rows by their slug. readCatalogue() fails the run
+ * on a row whose accent is not in PALETTE, and on a table and a seeder that
+ * disagree on the types.
  */
-const TYPE_ACCENTS: Readonly<Record<string, Accent>> = {
-  article: "mint",
-  ebook: "grape",
-  webinar: "coral",
-  podcast: "lemon",
-  "case-study": "cobalt",
-};
+const TYPE_ACCENTS: Readonly<Record<string, Accent>> = Object.fromEntries(
+  accentTable.types.map((row) => [row.slug, row.accent as Accent]),
+);
 
 /**
  * A second palette colour each type may show sparingly in one orb, chosen so
@@ -120,14 +119,23 @@ async function readCatalogue(): Promise<Resource[]> {
   const typesBlock = source.match(/public const TYPES = array\(([\s\S]*?)\);/);
   if (!typesBlock) throw new Error(`Could not find the TYPES constant in ${SEEDER}`);
   const seederTypes = [...typesBlock[1].matchAll(/'([a-z-]+)'\s*=>/g)].map((m) => m[1]);
+  for (const [type, accent] of Object.entries(TYPE_ACCENTS)) {
+    if (!Object.hasOwn(PALETTE, accent)) {
+      throw new Error(`packages/ui/type-accents.json gives "${type}" the accent "${accent}", which PALETTE does not have.`);
+    }
+  }
   for (const type of seederTypes) {
-    if (!(type in TYPE_ACCENTS)) {
-      throw new Error(`Seeder type "${type}" has no accent in TYPE_ACCENTS; add it before generating.`);
+    if (!Object.hasOwn(TYPE_ACCENTS, type)) {
+      throw new Error(
+        `Seeder type "${type}" has no row in packages/ui/type-accents.json; add its row there before generating.`,
+      );
     }
   }
   for (const type of Object.keys(TYPE_ACCENTS)) {
     if (!seederTypes.includes(type)) {
-      throw new Error(`TYPE_ACCENTS knows "${type}" but the seeder's TYPES does not; the table is stale.`);
+      throw new Error(
+        `packages/ui/type-accents.json has a row for "${type}" but the seeder's TYPES does not; one of the two is stale.`,
+      );
     }
   }
 
