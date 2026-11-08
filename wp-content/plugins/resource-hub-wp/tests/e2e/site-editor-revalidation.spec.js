@@ -20,6 +20,7 @@ const NOT_CONFIGURED =
 	'Revalidation skipped: the front-end URL or the secret is not configured.';
 const NOTICE_ID = 'resource-hub-revalidation';
 const SCRIPT_ID = 'resource-hub-revalidation-feedback-js';
+const SEEDED_TEXT = 'A page the front end serves.';
 
 /**
  * The REST route a request is for, with pretty or plain permalinks.
@@ -96,8 +97,7 @@ test.describe( 'Revalidation from the Site Editor', () => {
 			data: {
 				title: `E2E Site Editor page ${ Date.now() }`,
 				status: 'publish',
-				content:
-					'<!-- wp:paragraph --><p>A page the front end serves.</p><!-- /wp:paragraph -->',
+				content: `<!-- wp:paragraph --><p>${ SEEDED_TEXT }</p><!-- /wp:paragraph -->`,
 			},
 		} );
 	} );
@@ -156,8 +156,12 @@ test.describe( 'Revalidation from the Site Editor', () => {
 			}
 		} );
 
+		// The page's own paragraph: the template and its parts hold
+		// paragraphs too, and selectors are strict.
 		await editor.canvas
+			.locator( '.wp-block-post-content' )
 			.getByRole( 'document', { name: 'Block: Paragraph' } )
+			.filter( { hasText: SEEDED_TEXT } )
 			.click();
 		await page.keyboard.press( 'End' );
 		await page.keyboard.type( ' Edited in the Site Editor.' );
@@ -189,6 +193,8 @@ test.describe( 'Revalidation from the Site Editor', () => {
 
 		// The post editor's script polls at once after a save that sent
 		// something; give it well over one poll interval to show none runs.
+		// The screen-state check already proves the script is absent; this
+		// wait catches a later change that loads it in the Site Editor.
 		await page.waitForTimeout( 2500 );
 		expect( polls ).toEqual( [] );
 		expect( await shownNotices( page ) ).toEqual( [] );
@@ -201,6 +207,7 @@ test.describe( 'Revalidation from the Site Editor', () => {
 			postType: 'page',
 			canvas: 'edit',
 		} );
+		// As above: a guard for a later change that loads the script here.
 		await page.waitForTimeout( 1000 );
 		expect(
 			await page.evaluate(
