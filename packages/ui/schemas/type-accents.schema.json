@@ -2,7 +2,7 @@
 	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"$id": "https://raw.githubusercontent.com/Colbitron/resource-hub-wp/main/packages/ui/schemas/type-accents.schema.json",
 	"title": "Type-accent table",
-	"description": "The shape of the package's type-accent table, type-accents.json: which brand accent marks each resource_type term, keyed by the term's ID, with the slug that ID is expected to carry. It is data both sides read at build time, not a payload either sends: the front end imports it, and the plugin's build copies it into build/, where the related-resources block reads it. A type the table does not know, or whose ID now carries a different slug, gets the neutral mark on both sides. That no two rows share an ID, a slug or an accent is checked by the package's test, since a schema cannot say it.",
+	"description": "The shape of the package's type-accent table, type-accents.json: which brand accent marks each resource_type term, keyed by the term's ID, with the slug that ID is expected to carry. It is data, not a payload either sends: the front end imports it at build time, and the plugin's build copies it into build/, where the plugin reads the copy per request for the related-resources block. A type the table does not know, or whose ID now carries a different slug, gets the neutral mark on both sides. That no two rows share an ID, a slug or an accent is checked by the package's test, since a schema cannot say it.",
 	"type": "object",
 	"properties": {
 		"types": {

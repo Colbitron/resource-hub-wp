@@ -17,7 +17,7 @@ Contract changes land in one pull request that touches both sides and the schema
 | `schemas/resolve-response.schema.json` | `GET /wp-json/resource-hub/v1/resolve?slug=…`: an old or current slug to the resource's canonical id, type and slug |
 | `schemas/page-response.schema.json` | `GET /wp-json/resource-hub/v1/page?path=…`: the published page the front end serves at a public path, with its canonical path, or `null` |
 | `schemas/wp-error.schema.json` | The WordPress core REST error shape the custom routes return for `400` and `404` |
-| `schemas/type-accents.schema.json` | The package's type-accent table, `type-accents.json`: which brand accent marks each `resource_type` term, by term ID; data both sides read at build time, not a payload (see [Type accents](#type-accents)) |
+| `schemas/type-accents.schema.json` | The package's type-accent table, `type-accents.json`: which brand accent marks each `resource_type` term, by term ID; data, not a payload: the front end imports it at build time, and the plugin's build copies it into `build/`, which the plugin reads per request (see [Type accents](#type-accents)) |
 | `schemas/common.schema.json` | Shared `$defs` the others reference: `id`, `slug`, `typeSlug`, `topicSlug`, `typeList`, `topicList`, `path`, `pagePath` |
 
 The bearer token on the revalidation request is a header and is not part of any schema. The stylesheets the package also holds are described under [Stylesheets](#stylesheets), and the type-accent table under [Type accents](#type-accents).

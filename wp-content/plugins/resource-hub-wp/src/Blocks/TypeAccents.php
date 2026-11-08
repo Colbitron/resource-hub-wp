@@ -31,8 +31,10 @@ use WP_Term;
  * The file is read once per request, on first use, with core's `wp_json_file_decode()`. It is the
  * plugin's own build output, never written at runtime. A missing or unreadable file, or a row that is not
  * the schema's shape (an ID that is not a positive integer, a slug that is not a string, an accent that
- * is not one of the five), gives no row, so a broken build shows neutral marks rather than an error;
- * without a build the block is not registered at all.
+ * is not one of the five), gives no row, so a broken build shows neutral marks. A file that is not
+ * valid JSON also gives no rows; in production that is all, and under `WP_DEBUG` core's
+ * `wp_json_file_decode()` raises an `E_USER_NOTICE` as well. Without a build the block is not
+ * registered at all.
  */
 final class TypeAccents {
 	/**
