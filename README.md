@@ -21,7 +21,7 @@ The plugin models a filterable resources library: a `resource` post type with `r
 └─ .claude/rules/                        path-scoped rules for agents, loaded only when a matching file is touched
 ```
 
-The theme is a block theme for editors and logged-in previews: anonymous visitors get the lockdown's 404 ([ADR 0031](docs/adr/0031-cms-theme-pages-are-for-logged-in-users.md)), which in wp-env is rendered with this theme's 404 template. The hosted CMS still runs its old theme until a later slice-5 pull request deploys this one. It is a skeleton so far; keeping it in sync with the front end through the `packages/ui` tokens and CSS is planned.
+The theme is a block theme for editors and logged-in previews: anonymous visitors get the lockdown's 404 ([ADR 0031](docs/adr/0031-cms-theme-pages-are-for-logged-in-users.md)), rendered with this theme's 404 template, in wp-env and on the hosted CMS, where every `main` deploy ships the theme and activates it ([`docs/runbooks/deploy.md`](docs/runbooks/deploy.md), "Activating the theme"). It draws with the `packages/ui` tokens and CSS, so a logged-in preview looks like the front end, and is still being built in slice 5.
 
 ## Status
 
@@ -54,7 +54,8 @@ Everything marked done exists on `main` and is green in CI.
 | CMS block theme skeleton: header, footer, `index` and `404` templates, active on both wp-env sites, its 404 listing no pages and printing no pingback link ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
 | CMS block theme assets: the `packages/ui` tokens, Figtree and its fallback faces, and the lockup, built into the theme and loaded on its pages and in the editor canvas, one copy of the tokens beside the related-resources block ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
 | CMS block theme foundation: every template in the front end's shell, the page and welcome templates, the base, shell and component stylesheets after core's global styles, tables in the front end's scroll region, and computed-style and screenshot parity checks ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
-| CMS block theme: the plugin's blocks, the single-resource and collection templates, the footer's System / Light / Dark control and its deploy ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | slice 5 |
+| CMS block theme deploy: an allowlist sync to the host and activation on every deploy, kept only once WordPress loads with it and its anonymous 404 renders ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | done |
+| CMS block theme: the plugin's blocks, the single-resource and collection templates and the footer's System / Light / Dark control ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)) | slice 5 |
 
 ## Architecture
 
@@ -67,7 +68,7 @@ flowchart LR
             rest["REST<br/>/wp/v2/resources, /wp/v2/pages<br/>/resource-hub/v1/resolve<br/>/resource-hub/v1/page<br/>/resource-hub/v1/related"]
             block["related-resources block<br/>server-rendered marker + card-row fallback"]
             hook["Revalidation hook<br/>wp_after_insert_post, before_delete_post,<br/>term and option hooks; sent from WP-Cron"]
-            theme["Block theme (slice 5: skeleton and assets)<br/>logged-in users only;<br/>404 for anonymous visitors"]
+            theme["Block theme (slice 5, in progress)<br/>logged-in users only;<br/>404 for anonymous visitors"]
             editor --> cpt
             cpt --> rest
             cpt --> block
@@ -93,8 +94,8 @@ flowchart LR
     ui -.->|"workspace:*"| theme
     ui -.->|"workspace:*"| pages
 
-    classDef planned stroke-dasharray: 5 5
-    class theme planned
+    classDef building stroke-dasharray: 5 5
+    class theme building
 ```
 
 The front end reads content through the core REST API and the custom routes, always from the Next.js server, so the CMS's address never reaches a browser; it rewrites CMS links to its own domain and CMS images to its `/media/` path. WordPress pushes a small bearer-authenticated batch when content changes, from a cron request after the save, so it never renders pages for the front end and the editor never waits on it; each result is stored on the objects it covered and, when configured, sent to PostHog. The CMS's own theme pages exist only for logged-in users and previews, and answer anyone else with a 404. Both sides take the schemas and the shared styles from `packages/ui` through the pnpm workspace, so a contract change is one pull request; the package is never published. The theme (dashed above) is still being built in slice 5; the CMS deploy ships it and activates it.
