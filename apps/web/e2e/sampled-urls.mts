@@ -68,7 +68,20 @@ export const SAMPLED_URLS: readonly SampledUrl[] = [
   // Its LCP image is the body's diagram, the lead image `renderContent`
   // preloads (`takeLead` in lib/content/render.tsx).
   { label: "CMS page", path: "/welcome/", status: 200, lighthouse: true, imageLed: true },
-  { label: "library", path: "/resources/", status: 200, lighthouse: true, imageLed: true },
+  // Exempt from the whole-document check by the owner's decision of
+  // 2026-11-08 (issue #125): the header's search control (issue #115) is
+  // wanted content on every page, and on this page alone it tips the HTML
+  // over the first round trip, through a gzip-window edge the inlined CSS's
+  // copies sit on. The reason, the ceiling and the measurements are in
+  // `document-size.spec.ts`'s docblock; the discovery check still applies.
+  {
+    label: "library",
+    path: "/resources/",
+    status: 200,
+    lighthouse: true,
+    imageLed: true,
+    wholeDocumentGuard: false,
+  },
   { label: "type listing", path: "/resources/webinar/", status: 200, lighthouse: true, imageLed: false },
   { label: "topic listing", path: "/resources/topic/performance/", status: 200, lighthouse: true, imageLed: false },
   {
