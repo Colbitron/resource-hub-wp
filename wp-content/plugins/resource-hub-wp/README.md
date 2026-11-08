@@ -15,7 +15,8 @@ src/
   Rest/                  resolve route, page route, related route and its salted cache, the no-cache
                          header on anonymous REST reads, RouteMatch (which route and handler a request
                          reached, for the content-model REST guards)
-  Blocks/                the related-resources block: registration from build/ and the render callback
+  Blocks/                the related-resources block: registration from build/ and the render callback;
+                         TypeAccents, the shared type-accent table from build/type-accents.json
   Revalidation/          events, queue, dispatcher, sender, results, config, PostHog
   Pages/                 page path rules shared by the page route and page events
   Lockdown/              anonymous visitors get a 404 from theme pages; robots, sitemaps, oEmbed
@@ -43,7 +44,7 @@ Requirements on the host machine: Docker, Node 24 and pnpm. PHP, Composer and WP
 pnpm install               # the whole workspace
 pnpm env:start             # WordPress at http://localhost:8888, the tests site at :8889
 pnpm composer install      # inside the container; vendor/ lands in this directory
-pnpm build                 # compiles blocks/, editor/ and admin/ into build/ (not committed); the block is registered from there
+pnpm build                 # compiles blocks/, editor/ and admin/ into build/ (not committed), with the type-accent table; the block is registered from there
 pnpm wp resource-hub seed  # optional sample content
 ```
 
