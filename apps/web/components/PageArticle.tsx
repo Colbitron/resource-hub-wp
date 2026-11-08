@@ -9,7 +9,7 @@ import { shareMetadata } from "@/lib/share-metadata";
 import { plainText } from "@/lib/wp/cards";
 import type { WpPage } from "@/lib/wp/schemas/rest";
 
-import "./page.css";
+import "@colbitron/resource-hub-ui/page.css";
 import "@colbitron/resource-hub-ui/prose.css";
 
 /**

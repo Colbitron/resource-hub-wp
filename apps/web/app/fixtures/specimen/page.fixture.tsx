@@ -37,11 +37,12 @@ import {
 } from "./tokens";
 import { StillThemeFieldset } from "./StillThemeFieldset";
 
-// The listing's own styles (filters, pagination, the empty state), which
+// The listing's styles (filters, pagination, the empty state), which
 // ListingPage imports for the real routes; every other component brings its
 // own stylesheet, as on the real pages (ResourceArticle `resource.css` and
-// `prose.css`, PageArticle and WelcomePage `page.css`, the 404 page
-// `not-found.css`, ResourceCard the shared `card.css`).
+// `prose.css`, PageArticle `page.css`, WelcomePage `page.css` and its own
+// `welcome.css`, the 404 page `not-found.css`, ResourceCard `card.css`; all
+// from the shared package but `welcome.css`).
 import "@colbitron/resource-hub-ui/listing.css";
 import "@colbitron/resource-hub-ui/prose.css";
 import "./specimen.css";

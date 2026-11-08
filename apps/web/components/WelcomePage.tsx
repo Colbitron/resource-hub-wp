@@ -4,7 +4,8 @@ import Link from "next/link";
 import { DEFAULT_SHARE_IMAGE } from "@/lib/share-image";
 import { shareMetadata } from "@/lib/share-metadata";
 
-import "./page.css";
+import "@colbitron/resource-hub-ui/page.css";
+import "./welcome.css";
 
 /**
  * What `/` shows when the CMS has no static front page (Settings > Reading
