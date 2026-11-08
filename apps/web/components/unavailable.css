@@ -1,9 +1,9 @@
 /*
  * The routes' error boundaries (the error.tsx beside the resource and the
  * page routes): a sentence and a way to try again, in the same centred
- * column as the article they stand in for. The button is the one filled
- * control on the site, inverted ink, so it reads as a control and not a
- * link. Built on the shared tokens (packages/ui/DESIGN.md). These classes
+ * column as the article they stand in for. The button is the site's one
+ * kind of filled control, inverted ink, so it reads as a control and not a
+ * link; the search form's button (search.css) is the same. Built on the shared tokens (packages/ui/DESIGN.md). These classes
  * are the front end's own, not part of the contract: the CMS renders no
  * error boundary.
  */

@@ -12,6 +12,7 @@ import { startMockCms, type MockCms } from "../e2e/mock-cms/server.mts";
 import { parsePaginationHeaders } from "../lib/wp/schemas/pagination";
 import { resolveResponseSchemaStrict } from "../lib/wp/schemas/resolve";
 import { pageResponseSchemaStrict } from "../lib/wp/schemas/page";
+import { searchResponseSchemaStrict } from "../lib/wp/schemas/search";
 import { wpMediaSchema, wpPageSchema, wpResourceListSchema, wpResourceSchema, wpTermListSchema } from "../lib/wp/schemas/rest";
 import { wpErrorSchema } from "../lib/wp/schemas/wp-error";
 
@@ -806,6 +807,89 @@ describe("GET /resource-hub/v1/related/{id}", () => {
       expect(response.headers.get("cache-control")).toBe(NO_CACHE);
       expect(wpErrorSchema.parse(response.body)).toMatchObject({ data: { status: 404 } });
     }
+  });
+});
+
+describe("GET /resource-hub/v1/search", () => {
+  /** `cms.search()`, with every 200 checked against the contract's schema and the front end's strict reader. */
+  async function search(q: string, page?: number | string) {
+    const response = await cms.search(q, page);
+    if (response.status === 200) {
+      expectContract("search-response", response.body);
+      searchResponseSchemaStrict.parse(response.body);
+    }
+    return response;
+  }
+
+  it("matches resources and served pages by title, summary, excerpt and term names, mixed, newest first", async () => {
+    const response = await search("team");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe(NO_CACHE);
+    expect(response.headers.get("allow")).toBe("GET");
+    // 21's summary says "team"; 62 and 66 are titled "…team".
+    expect(response.body).toEqual({
+      total: 3,
+      pages: 1,
+      items: [
+        { id: 21, type: "resource" },
+        { id: 62, type: "page" },
+        { id: 66, type: "page" },
+      ],
+    });
+    const resources = await search("REVALIDATION");
+    expect((resources.body as { items: { type: string }[] }).items.every((item) => item.type === "resource")).toBe(true);
+    expect((resources.body as { total: number }).total).toBeGreaterThan(0);
+    // A topic's name matches the resources in it.
+    const accessibility = (await search("accessibility")).body as { total: number };
+    expect(accessibility.total).toBeGreaterThan(1);
+  });
+
+  it("collapses whitespace before matching, and answers no match with zeros", async () => {
+    expect((await search("  the   team ")).body).toEqual({ items: [{ id: 62, type: "page" }], total: 1, pages: 1 });
+    expect((await search("zzzz")).body).toEqual({ items: [], total: 0, pages: 0 });
+    // The draft page 63 is never matched; the posts page 68 is matched only while the front page is the posts list, as the plugin's rule says.
+    expect((await search("history")).body).toEqual({ items: [], total: 0, pages: 0 });
+    expect((await search("news")).body).toEqual({ items: [{ id: 68, type: "page" }], total: 1, pages: 1 });
+    await cms.setFrontPage(60);
+    expect((await search("news")).body).toEqual({ items: [], total: 0, pages: 0 });
+  });
+
+  it("pages by 12, caps pages at 10, and answers a page past the last with no items and the same counts", async () => {
+    for (let index = 0; index < 13; index++) {
+      await cms.createResource({ slug: `paging-probe-${index}`, title: `Paging probe ${index}`, type: "article", topics: [] });
+    }
+    const first = (await search("paging probe")).body as { items: unknown[]; total: number; pages: number };
+    expect(first).toMatchObject({ total: 13, pages: 2 });
+    expect(first.items).toHaveLength(12);
+    expect(((await search("paging probe", 2)).body as { items: unknown[] }).items).toHaveLength(1);
+    expect((await search("paging probe", 3)).body).toEqual({ items: [], total: 13, pages: 2 });
+  });
+
+  it("answers a query or page the plugin refuses with a 400, and a missing q with core's missing-parameter error", async () => {
+    for (const [q, page] of [["a", undefined], ["a".repeat(101), undefined], ["ab", "0"], ["ab", "11"], ["ab", "x"]] as const) {
+      const response = await search(q, page);
+      expect(response.status, `${q.length} ${String(page)}`).toBe(400);
+      expect(wpErrorSchema.parse(response.body).code).toBe("rest_invalid_param");
+    }
+    const missing = await cms.get("/wp-json/resource-hub/v1/search");
+    expect(missing.status).toBe(400);
+    expect(wpErrorSchema.parse(missing.body).code).toBe("rest_missing_callback_param");
+  });
+});
+
+describe("GET /wp/v2/pages", () => {
+  it("answers the published pages among include, in the order given, each passing the reader", async () => {
+    const response = await cms.get<unknown[]>("/wp-json/wp/v2/pages?include=66,63,60,62&orderby=include&per_page=4");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe(NO_CACHE);
+    expect(response.body.map((page) => wpPageSchema.parse(page).id)).toEqual([66, 60, 62]);
+    expect(parsePaginationHeaders(response.headers)).toMatchObject({ total: 3, totalPages: 1 });
+  });
+
+  it("refuses orderby=include without include, as core does", async () => {
+    const response = await cms.get("/wp-json/wp/v2/pages?orderby=include");
+    expect(response.status).toBe(400);
+    expect(wpErrorSchema.parse(response.body).code).toBe("rest_orderby_include_missing_include");
   });
 });
 

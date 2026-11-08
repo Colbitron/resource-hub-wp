@@ -24,6 +24,15 @@
  *     </li>
  *   </ul>
  *
+ * A CMS page in a mixed list (the search results) is the same row with its
+ * own meta line: the small label "Page", `.rh-card__kind`, in place of the
+ * type and the date, with no mark, because the mark stands for a resource
+ * type; and no topics.
+ *   <article class="rh-card">
+ *     <p class="rh-card__meta"><span class="rh-card__kind">Page</span></p>
+ *     <div class="rh-card__body">…the title and the summary, as above…</div>
+ *   </article>
+ *
  * The row has no image: the list is typographic, and the list's one image is
  * the front end's lead above it. The meta line comes before the body, as a
  * sibling, so the row can lay the two out side by side without a wrapper.
@@ -97,6 +106,15 @@
 	color: var(--rh-color-text-muted);
 	font-size: var(--rh-text-sm);
 	font-variant-numeric: tabular-nums;
+}
+
+/* A page's label in its meta line: the type's small upper-case label without the mark (card-labels.css). */
+
+.rh-card__kind {
+	color: var(--rh-color-text);
+	font-weight: 600;
+	letter-spacing: var(--rh-tracking-label);
+	text-transform: uppercase;
 }
 
 /* The body: the title, the summary and the topics, beside the meta line where they fit. */

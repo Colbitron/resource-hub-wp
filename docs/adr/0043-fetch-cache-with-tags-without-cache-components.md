@@ -2,7 +2,7 @@
 status: accepted
 date: 2026-11-05
 merges: 0023, and the cores of 0046 and 0050 (2026-11-06)
-amended: 2026-11-07
+amended: [2026-11-07, 2026-11-07]
 ---
 
 # The caching model: the `fetch` Data Cache with tags, the only HTTP cache, cleared by the union of each event's states, with a build that never fails because of the CMS
@@ -59,3 +59,27 @@ Next.js 16 has two caching models. Cache Components (`cacheComponents: true`, th
 - The set is fixed at build; a deploy the CMS did not answer keeps prefetch off until the next one.
 
 The budgets, partial results, param decoding and measurements are in [`docs/architecture/caching.md`](../architecture/caching.md), "Prefetching".
+
+### 2026-11-07: the search page is the one dynamic route
+
+**What changed.** The search page, `/search/?q=…&page=n` ([issue #115](https://github.com/Colbitron/resource-hub-wp/issues/115)), is the one route that is not ISR: an exception to "every route is ISR with `generateStaticParams` returning `[]`" above. It reads `searchParams` and renders on every request, and it exports no `revalidate`, `dynamic` or `generateStaticParams`. Every other route stays ISR as the decision and the amendment above say, and a second dynamic route needs an amendment of its own.
+
+**Why.** `searchParams` makes a page dynamic, and prerendering arbitrary queries is impossible: a query is the visitor's own words, so there is no set of them to name at build.
+
+**Costs.**
+
+- One function run per uncached request. Nothing caches the page itself: Next.js sends a dynamic render with `private, no-cache, no-store, max-age=0, must-revalidate`, and on Vercel a repeated request was `x-vercel-cache: MISS` (a preview, 2026-11-07), so in practice that is every request.
+- Its reads still go through the tagged Data Cache: every CMS read is the data layer's `force-cache` fetch with the `resources`, `terms` and `pages` tags fixed before the request, so a repeated query is a render without a CMS request until an event clears those tags, and each distinct query and page its own entry, costing one CMS search the first time. The saving was measured on a Vercel preview on 2026-11-08 (a repeat's fetches 5 to 8 ms with the first response's `Date`, against 163 to 224 ms for a new query); the clear by an event was measured under `next start` only.
+- It is bounded at the edge by the Vercel Firewall rate-limit rule "Rate limit search"; its current settings and mode are in `caching.md`.
+
+**Options weighed.**
+
+- The query in the path, ISR (`/search/{q}/`): every distinct query becomes a stored page, a store a crawler can grow without bound, and most queries are not slugs.
+- A client-side fetch against a route handler, with a static `/search/` page: the results would need JavaScript to appear, and the handler is still a function run per query.
+- A static `/search/` shell with the results streamed in behind a Suspense boundary or a `loading.tsx`: without Cache Components, rejected above, reading `searchParams` anywhere makes the whole route dynamic, so there is no static shell to gain, and a CMS error after the shell had streamed would leave a 200 already sent.
+- An index shipped to the browser and searched there: every reader downloads the library's text, and the CMS's engine, which indexes the summaries and term names, is bypassed.
+- A dynamic page that reads `searchParams`, with its reads in the Data Cache: chosen.
+
+**How the rules above still hold.** The Data Cache stays the only cache, with tags fixed from the request. The build still never needs the CMS: the page prerenders nothing. The not-found boundary's 404 depends on ISR, so the page never answers a 404 or a redirect: every state, a page out of range included, is a 200, and a CMS error is a 500 with `no-store`.
+
+The headers, the Data Cache measurement and the rule's settings are in [`docs/architecture/caching.md`](../architecture/caching.md), "The search page".

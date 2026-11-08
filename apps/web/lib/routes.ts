@@ -318,21 +318,49 @@ export const RESERVED_ROOT_SEGMENTS = ["resources", "api", "media", "_next", "se
 /**
  * The front end's own routes under a reserved first segment, or outside the
  * page catch-all altogether, that answer for themselves: the revalidate
- * route (`app/api/revalidate/route.ts`) and the metadata files the brand
- * layer serves at the root (`app/favicon.ico`, `icon.svg`, `icon.png`,
- * `apple-icon.png` and `opengraph-image.png`; `packages/ui/DESIGN.md`,
- * "Brand"). Every other `/api/…` path, and every other path with a dot,
- * falls through to the page catch-all and is a 404 decided from the path
- * alone, which `lib/path-decision.ts` answers before any route runs; these
- * it leaves alone, by their exact, case-sensitive path, as Next.js matches
- * a route. A metadata file is served with its query-string hash, which the
+ * route (`app/api/revalidate/route.ts`), the search page (`app/search/`,
+ * `SEARCH_PATH`), and the metadata files the brand layer serves at the root
+ * (`app/favicon.ico`, `icon.svg`, `icon.png`, `apple-icon.png` and
+ * `opengraph-image.png`; `packages/ui/DESIGN.md`, "Brand"). Every other
+ * `/api/…` and `/search/…` path, and every other path with a dot, falls
+ * through to the page catch-all and is a 404 decided from the path alone,
+ * which `lib/path-decision.ts` answers before any route runs; these it
+ * leaves alone, by their exact, case-sensitive path, as Next.js matches a
+ * route. The search page's query string is not part of its path. A metadata file is served with its query-string hash, which the
  * path does not include. `/media/…` and `/_next/…` are not listed: the
  * uploads rewrite and the framework own everything under them.
  * `test/routes.test.ts` walks `app/` and `public/`, so a new route handler,
  * metadata file or public file the proxy would answer fails there until it
  * is listed here.
  */
-export const OWN_ROUTE_PATHS = ["/api/revalidate/", "/favicon.ico", "/icon.svg", "/icon.png", "/apple-icon.png", "/opengraph-image.png"] as const;
+export const OWN_ROUTE_PATHS = ["/api/revalidate/", "/search/", "/favicon.ico", "/icon.svg", "/icon.png", "/apple-icon.png", "/opengraph-image.png"] as const;
+
+/*
+ * Search (issue #115): the one public URL with a query string, because a
+ * search is not a path (`packages/ui/README.md`, "Public URL shape").
+ */
+
+/** The search page's path. Its query and page number are in the query string, never in the path. */
+export const SEARCH_PATH = "/search/";
+
+/**
+ * The URL of page `page` of the results for `query`: `/search/?q={query}`,
+ * with `&page={page}` from page 2. `query` is written as given, encoded by
+ * `URLSearchParams` (a space as `+`), so the caller passes the normalised
+ * query (`searchQuery` in `lib/wp/search.ts`) and every link to one page of
+ * one search is the same URL. Throws a `RangeError` on a page that is not a
+ * positive integer.
+ */
+export function searchPath(query: string, page = 1): string {
+  if (!isPageNumber(page)) {
+    throw new RangeError(`Not a page number: ${String(page)}`);
+  }
+  const params = new URLSearchParams({ q: query });
+  if (page > 1) {
+    params.set("page", String(page));
+  }
+  return `${SEARCH_PATH}?${params.toString()}`;
+}
 
 /**
  * The longest page path, in characters of its canonical form, that is looked

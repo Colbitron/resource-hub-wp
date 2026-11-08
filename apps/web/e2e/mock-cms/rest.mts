@@ -6,8 +6,8 @@ import type { Taxonomy } from "./types.mts";
 /**
  * The public routes under `/wp-json/`, as WordPress core and the plugin
  * answer an anonymous reader: the resources collection and item, the three
- * taxonomy collections and items, the plugin's resolve and related routes,
- * and the REST index. Each handler takes the request URL and returns a status, headers
+ * taxonomy collections and items, the pages collection and item, the
+ * plugin's resolve, page, related and search routes, and the REST index. Each handler takes the request URL and returns a status, headers
  * and a JSON body; the HTTP layer is `server.ts`.
  *
  * Errors are core's `WP_Error` shape (`wp-error.schema.json`), with core's
@@ -647,6 +647,76 @@ function pageLookup(state: MockState, url: URL): MockResponse {
   return { status: 200, headers: { ...JSON_HEADERS }, body: { page: state.lookupPage(segments) } };
 }
 
+// --- /wp/v2/pages and /resource-hub/v1/search (issue #115) --------------------------
+
+/**
+ * The pages collection, as far as the front end reads it: `include` with
+ * `orderby=include` or the default `date`, `per_page` and `page`, published
+ * pages only, as core answers an anonymous reader. The front end reads it
+ * only for search results (`readPagesByIds`), by ID.
+ */
+function pagesCollection(state: MockState, url: URL, origin: string): MockResponse {
+  const q = url.searchParams;
+  const errors = paramErrors();
+  const page = intParam(q, "page", 1, { min: 1 }, errors.validated);
+  const perPage = intParam(q, "per_page", 10, { min: 1, max: 100 }, errors.validated);
+  const include = intListParam(q, "include", errors.sanitized);
+  const orderBy = enumParam(q, "orderby", "date", ["date", "id", "include", "slug", "title"] as const, errors.sanitized);
+  const invalid = invalidParamsResponse(q, errors);
+  if (invalid !== null) return invalid;
+  if (orderBy === "include" && include === null) {
+    return wpError(400, "rest_orderby_include_missing_include", "You need to define an include parameter to order by include.");
+  }
+  let matches = state.pages.filter((wpPage) => wpPage.status === "publish").sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  if (include !== null) {
+    matches = matches.filter((wpPage) => include.includes(wpPage.id));
+    if (orderBy === "include") matches.sort((a, b) => include.indexOf(a.id) - include.indexOf(b.id));
+  }
+  const result = paginate(matches, page, perPage, url, () =>
+    wpError(400, "rest_post_invalid_page_number", "The page number requested is larger than the number of pages available."),
+  );
+  if (isMockResponse(result)) return result;
+  return { status: 200, headers: result.headers, body: result.page.map((wpPage) => renderPage(state, wpPage, origin)) };
+}
+
+/** The plugin's search route's limits (`SearchRoute`): the query's length in code points once normalised, the page cap and the page size. */
+const MIN_SEARCH_QUERY = 2;
+const MAX_SEARCH_QUERY = 100;
+const MAX_SEARCH_PAGE = 10;
+const SEARCH_PER_PAGE = 12;
+
+/**
+ * The plugin's search route by the contract (`packages/ui/README.md`,
+ * "Search"): `q` has its whitespace runs collapsed and its ends trimmed and
+ * must then be 2 to 100 code points, `page` is 1 to 10, and anything else is
+ * a 400 `rest_invalid_param`, a missing `q` core's
+ * `rest_missing_callback_param`. A page past the last is a 200 with no items
+ * and the same counts. The matching is `MockState.search()`.
+ */
+function search(state: MockState, url: URL): MockResponse {
+  const raw = phpParam(url.searchParams, "q");
+  if (raw === undefined) {
+    return wpError(400, "rest_missing_callback_param", "Missing parameter(s): q", { params: ["q"] });
+  }
+  const query = Array.isArray(raw) ? null : raw.replace(/\s+/gu, " ").trim();
+  const length = query === null ? 0 : [...query].length;
+  const errors = paramErrors();
+  if (query === null || length < MIN_SEARCH_QUERY || length > MAX_SEARCH_QUERY) {
+    errors.sanitized.push({ param: "q", code: "rest_invalid_param", message: `q must be ${MIN_SEARCH_QUERY} to ${MAX_SEARCH_QUERY} characters long.`, data: null });
+  }
+  const page = intParam(url.searchParams, "page", 1, { min: 1, max: MAX_SEARCH_PAGE }, errors.sanitized);
+  const invalid = invalidParamsResponse(url.searchParams, errors);
+  if (invalid !== null) return invalid;
+  // A `q` that is not a string has already failed above.
+  const matches = state.search(query ?? "");
+  const items = matches.slice((page - 1) * SEARCH_PER_PAGE, page * SEARCH_PER_PAGE).map(({ id, type }) => ({ id, type }));
+  return {
+    status: 200,
+    headers: { ...JSON_HEADERS },
+    body: { items, total: matches.length, pages: Math.min(MAX_SEARCH_PAGE, Math.ceil(matches.length / SEARCH_PER_PAGE)) },
+  };
+}
+
 // --- Routing -----------------------------------------------------------------------
 
 /**
@@ -683,12 +753,16 @@ export function handleRest(state: MockState, method: string, url: URL, origin: s
     );
   }
 
+  if (path === "/wp/v2/pages") return covered(allowGet(pagesCollection(state, url, origin)));
+
   match = /^\/wp\/v2\/pages\/(\d+)$/.exec(path);
   if (match) return covered(pageItem(state, Number(match[1]), origin));
 
   if (path === "/resource-hub/v1/page") return covered(allowGet(pageLookup(state, url)));
 
   if (path === "/resource-hub/v1/resolve") return covered(allowGet(resolve(state, url)));
+
+  if (path === "/resource-hub/v1/search") return covered(allowGet(search(state, url)));
 
   match = /^\/resource-hub\/v1\/related\/(\d+)$/.exec(path);
   if (match) return covered(allowGet(related(state, Number(match[1]), url)));

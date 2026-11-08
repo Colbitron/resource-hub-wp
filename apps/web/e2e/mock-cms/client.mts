@@ -198,6 +198,11 @@ export class MockCmsClient {
     return this.get(`/wp-json/resource-hub/v1/related/${id}${count === undefined ? "" : `?count=${encodeURIComponent(count)}`}`);
   }
 
+  /** `GET /wp-json/resource-hub/v1/search?q=…`, with `&page=` when given. */
+  search(q: string, page?: number | string): Promise<PublicResponse> {
+    return this.get(`/wp-json/resource-hub/v1/search?q=${encodeURIComponent(q)}${page === undefined ? "" : `&page=${encodeURIComponent(page)}`}`);
+  }
+
   private async control<T>(method: "GET" | "POST" | "DELETE", path: string, body?: unknown): Promise<T> {
     const response = await fetch(`${this.origin}${path}`, {
       method,

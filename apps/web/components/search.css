@@ -1,0 +1,77 @@
+/*
+ * The search page's own layout (`components/SearchPage.tsx`): the form and
+ * the count line. The rows are card.css's, the header, the empty states and
+ * the pagination listing.css's, both from the shared package. These classes
+ * are the front end's own, not part of the contract: the CMS theme's search
+ * template renders core's search block, whose markup is WordPress's own.
+ * Built on the shared tokens (packages/ui/DESIGN.md).
+ *
+ * Markup:
+ *   <form class="rh-search" role="search" action="/search/" method="get">
+ *     <label class="rh-search__label" for="…">…</label>
+ *     <div class="rh-search__row">
+ *       <input class="rh-search__input" id="…" type="search" name="q">
+ *       <button class="rh-search__button" type="submit">Search</button>
+ *     </div>
+ *   </form>
+ *   <p class="rh-search__summary">…</p>
+ *
+ * The input's edge is what shows it is a field, so it is the strong border,
+ * at 3:1 against both surfaces (DESIGN.md, "Colors"); the button is the
+ * error boundaries' filled control in inverted ink (unavailable.css), so the
+ * site has one kind of button. The row wraps: the button drops under the
+ * input where both do not fit, and the input never narrows below 12rem.
+ */
+
+.rh-search {
+	display: flex;
+	flex-direction: column;
+	gap: var(--rh-space-2);
+	max-width: var(--rh-measure);
+	margin-bottom: var(--rh-space-6);
+}
+
+.rh-search__label {
+	font-weight: 600;
+}
+
+.rh-search__row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--rh-space-2);
+}
+
+.rh-search__input {
+	flex: 1 1 12rem;
+	min-width: 0;
+	min-height: 2.5rem;
+	padding: var(--rh-space-2) var(--rh-space-3);
+	border: var(--rh-border-width) solid var(--rh-color-border-strong);
+	border-radius: var(--rh-radius-sm);
+	background: var(--rh-color-surface);
+	color: var(--rh-color-text);
+	font: inherit;
+}
+
+.rh-search__button {
+	min-height: 2.5rem;
+	padding: var(--rh-space-2) var(--rh-space-4);
+	border: var(--rh-border-width) solid var(--rh-color-text);
+	border-radius: var(--rh-radius-sm);
+	background: var(--rh-color-text);
+	color: var(--rh-color-surface);
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.rh-search__button:hover {
+	background: var(--rh-color-surface);
+	color: var(--rh-color-text);
+}
+
+.rh-search__summary {
+	margin: 0 0 var(--rh-space-2);
+	color: var(--rh-color-text-muted);
+	font-variant-numeric: tabular-nums;
+}

@@ -46,7 +46,7 @@ export function medianTable(runs: readonly Lhr[], runsPerUrl: number): string {
     const pick = (read: (lhr: Lhr) => number | null | undefined) =>
       median(lhrs.map(read).filter((value): value is number => typeof value === "number"));
     rows.push(
-      `| ${new URL(url).pathname} | ${lhrs.length} | ${cell(pick((l) => l.categories.performance?.score), fixed(2))} | ${cell(pick((l) => l.categories.accessibility?.score), fixed(2))} | ${cell(pick((l) => l.audits["largest-contentful-paint"]?.numericValue), whole)} | ${cell(pick((l) => l.audits["cumulative-layout-shift"]?.numericValue), fixed(3))} | ${cell(pick((l) => l.audits["total-blocking-time"]?.numericValue), whole)} |`,
+      `| ${new URL(url).pathname}${new URL(url).search} | ${lhrs.length} | ${cell(pick((l) => l.categories.performance?.score), fixed(2))} | ${cell(pick((l) => l.categories.accessibility?.score), fixed(2))} | ${cell(pick((l) => l.audits["largest-contentful-paint"]?.numericValue), whole)} | ${cell(pick((l) => l.audits["cumulative-layout-shift"]?.numericValue), fixed(3))} | ${cell(pick((l) => l.audits["total-blocking-time"]?.numericValue), whole)} |`,
     );
   }
   return `### Lighthouse (mobile, median of ${runsPerUrl})\n\n${rows.join("\n")}\n`;

@@ -3,7 +3,7 @@ import { getMiddlewareRouteMatcher } from "next/dist/shared/lib/router/utils/mid
 import { describe, expect, it } from "vitest";
 
 import { decidePath } from "../lib/path-decision";
-import { MAX_PAGE_PATH_LENGTH, OWN_ROUTE_PATHS, pagePath, resourcePath, ROOT_PATH } from "../lib/routes";
+import { MAX_PAGE_PATH_LENGTH, OWN_ROUTE_PATHS, pagePath, resourcePath, ROOT_PATH, SEARCH_PATH } from "../lib/routes";
 import { config } from "../proxy";
 
 /**
@@ -53,7 +53,7 @@ describe("the proxy's matcher", () => {
     }
   });
 
-  it("never matches the front end's own routes outside the library: the metadata files and the revalidate route", () => {
+  it("never matches the front end's own routes outside the library: the metadata files, the revalidate route and the search page", () => {
     for (const path of [...OWN_ROUTE_PATHS, "/api/revalidate"]) {
       expect(decidePath(path), path).toBeNull();
       expect(proxied(path), path).toBe(false);
@@ -76,7 +76,9 @@ describe("the proxy's matcher", () => {
     }
     expect(exempt).toContain("/favicon.ico");
     expect(exempt).toContain("/api/revalidate/");
-    expect([...exempt].sort()).toEqual([...OWN_ROUTE_PATHS].sort());
+    // The search page needs no exemption: its path has no dot and no upper case, and is under no matched prefix, so no clause reaches it.
+    expect(proxied(SEARCH_PATH)).toBe(false);
+    expect([...exempt].sort()).toEqual(OWN_ROUTE_PATHS.filter((path) => path !== SEARCH_PATH).sort());
   });
 
   it("matches every /resources/** path, canonical or not, for the page/1 rule and the library's shapes", () => {

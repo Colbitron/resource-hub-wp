@@ -3,16 +3,20 @@ import "server-only";
 import { DomUtils, parseDocument } from "htmlparser2";
 
 import type { ResourceCardProps } from "../../components/ResourceCard";
-import { isTypeSlug, resourcePath } from "../routes";
+import { isTypeSlug, pagePath, pagePathProblem, pagePathSegments, resourcePath } from "../routes";
 import { typeAccent } from "../type-accents";
+import { stripCmsOrigin } from "../urls";
 import { featuredImage, type FeaturedImage } from "./images";
-import type { WpEmbeddedTerm, WpResource } from "./schemas/rest";
+import type { WpEmbeddedTerm, WpPage, WpResource } from "./schemas/rest";
 
 /**
  * The title a card shows when the resource's is empty or only zero-width
  * characters, so its one link still has a visible, spoken name.
  */
 export const UNTITLED = "Untitled resource";
+
+/** The title a page shows when its own is only whitespace, so its heading and its search row are never empty. */
+export const UNTITLED_PAGE = "Untitled page";
 
 /** Zero-width spaces, joiners and byte-order marks (U+200B to U+200D, U+FEFF). */
 const ZERO_WIDTH = /[\u200B-\u200D\uFEFF]/g;
@@ -128,5 +132,43 @@ export function toCard(resource: WpResource): CardData | null {
     summary: resource.meta.summary,
     date: `${resource.date_gmt}Z`,
     ...(image === null ? {} : { image }),
+  };
+}
+
+/** A CMS page as a search result shows it: `PageCard`'s props. */
+export interface PageCardData {
+  /** The page's post ID. */
+  readonly id: number;
+  /** `title.rendered` as plain text, or `UNTITLED_PAGE` when it shows nothing. */
+  readonly title: string;
+  /** The page's public path on the front end, canonical and root-relative: `/` for the front page. */
+  readonly href: string;
+  /** The excerpt as plain text, `""` when the page has none. */
+  readonly summary: string;
+}
+
+/**
+ * A parsed page as `PageCardData`, or `null` when its `link` is not a page
+ * path the front end serves. The caller skips a `null`.
+ *
+ * `link` is `get_permalink()`, an absolute CMS URL; public paths are the same
+ * on both sites (`packages/ui/README.md`, "Public URL shape"), so the path is
+ * the link without the CMS's origin (`stripCmsOrigin`), in canonical form
+ * (`pagePath`). A link that keeps an origin (another host), that has a query
+ * or a fragment (plain permalinks, `?page_id=7`), or whose path no page can
+ * have on the front end (`pagePathProblem`: a reserved first segment, a
+ * segment with a dot, one over the length cap) has no URL here and is `null`,
+ * so no result row ever links to the CMS or to a guaranteed 404.
+ */
+export function toPageCard(page: WpPage, cmsOrigins: readonly string[]): PageCardData | null {
+  const segments = pagePathSegments(stripCmsOrigin(page.link, cmsOrigins));
+  if (segments === null || (segments.length > 0 && pagePathProblem(segments) !== null)) {
+    return null;
+  }
+  return {
+    id: page.id,
+    title: hasVisibleTitle(page.title.rendered) ? plainText(page.title.rendered) : UNTITLED_PAGE,
+    href: pagePath(segments),
+    summary: plainText(page.excerpt.rendered),
   };
 }

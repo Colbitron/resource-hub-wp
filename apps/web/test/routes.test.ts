@@ -23,6 +23,8 @@ import {
   parsePageSegment,
   parseResourcesSegments,
   resourcePath,
+  SEARCH_PATH,
+  searchPath,
   slugProblem,
   topicListingPath,
   typeListingPath,
@@ -493,8 +495,8 @@ describe("pagePathProblem", () => {
 });
 
 describe("OWN_ROUTE_PATHS", () => {
-  it("are the revalidate route and the metadata files, with the trailing slash every route path has and a file path has not", () => {
-    expect(OWN_ROUTE_PATHS).toEqual(["/api/revalidate/", "/favicon.ico", "/icon.svg", "/icon.png", "/apple-icon.png", "/opengraph-image.png"]);
+  it("are the revalidate route, the search page and the metadata files, with the trailing slash every route path has and a file path has not", () => {
+    expect(OWN_ROUTE_PATHS).toEqual(["/api/revalidate/", "/search/", "/favicon.ico", "/icon.svg", "/icon.png", "/apple-icon.png", "/opengraph-image.png"]);
   });
 
   // The proxy runs before every route and before `public/`, so a route or a
@@ -623,5 +625,26 @@ describe("parseResourcesSegments", () => {
         expect(isTypeSlug(parsed.type) && isSlug(parsed.slug), pattern.join("/")).toBe(true);
       }
     }
+  });
+});
+
+describe("searchPath", () => {
+  it("is /search/ with the query, and the page from 2, encoded as a form submits it", () => {
+    expect(SEARCH_PATH).toBe("/search/");
+    expect(searchPath("core web vitals")).toBe("/search/?q=core+web+vitals");
+    expect(searchPath("core web vitals", 1)).toBe("/search/?q=core+web+vitals");
+    expect(searchPath("core web vitals", 3)).toBe("/search/?q=core+web+vitals&page=3");
+    expect(searchPath("a&b=c#d?")).toBe("/search/?q=a%26b%3Dc%23d%3F");
+    expect(searchPath("日本")).toBe("/search/?q=%E6%97%A5%E6%9C%AC");
+  });
+
+  it("refuses a page that is not a positive integer", () => {
+    for (const page of [0, -1, 1.5, Number.NaN]) {
+      expect(() => searchPath("ab", page), String(page)).toThrow(RangeError);
+    }
+  });
+
+  it("is a path the proxy leaves to the search page", () => {
+    expect(decidePath(new URL(searchPath("ab", 2), "https://example.com").pathname)).toBeNull();
   });
 });

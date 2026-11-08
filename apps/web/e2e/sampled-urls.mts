@@ -7,12 +7,14 @@
  * What is sampled, exactly: the welcome page at `/`, one CMS page, the
  * library, a type listing, a topic listing, a type-within-topic listing with
  * resources and one without (the empty state), the library's page 2, one
- * resource (the long-form one), and both kinds of 404: one decided by data
+ * resource (the long-form one), one page of search results (the one dynamic
+ * route, with a resource row and two page rows), and both kinds of 404: one decided by data
  * (a path no CMS page has, the root catch-all's `DataNotFound`) and one
  * decided from the path alone (the proxy's rewrite to the prerendered
  * not-found page). Not sampled: a CMS page set as the static front page, a
  * paginated filtered listing, a listing's or resource's own `DataNotFound`,
- * a resource without an image or without a body, and every fixture page;
+ * a resource without an image or without a body, the search page's other
+ * states (no query, too short, no results, unavailable), and every fixture page;
  * their markup is the same components with other data, which the specs for
  * each route check.
  *
@@ -32,7 +34,7 @@ export interface SampledUrl {
    * last page), as the test titles name it.
    */
   readonly label: string;
-  /** A root-relative path with the trailing slash every public URL has. */
+  /** A root-relative path with the trailing slash every public URL has, and a query string only on the search page. */
   readonly path: string;
   /** The status the URL answers with on the seed. */
   readonly status: 200 | 404;
@@ -102,6 +104,10 @@ export const SAMPLED_URLS: readonly SampledUrl[] = [
     imageLed: true,
     wholeDocumentGuard: false,
   },
+  // The search page (issue #115), dynamic on every request (ADR 0043, amended):
+  // "team" matches one resource's summary and two pages' titles on the seed,
+  // so both row shapes are on it, with no image and no pagination.
+  { label: "search results", path: "/search/?q=team", status: 200, lighthouse: true, imageLed: false },
   // A path no page has: the root catch-all asks the CMS and answers with
   // `DataNotFound`, stored per URL (ADR 0052).
   { label: "not found by data", path: "/no-such-page/", status: 404, lighthouse: false, imageLed: false },

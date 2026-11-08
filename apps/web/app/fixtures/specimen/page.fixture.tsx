@@ -10,9 +10,11 @@ import { BrandLockup, BrandMark } from "@/components/Brand";
 import { FeaturedLead, type FeaturedLeadProps } from "@/components/FeaturedLead";
 import { FilterNav, type FilterTerm } from "@/components/FilterNav";
 import { PageArticle } from "@/components/PageArticle";
+import { PageCard } from "@/components/PageCard";
 import { Pagination } from "@/components/Pagination";
 import { ResourceArticle } from "@/components/ResourceArticle";
 import { ResourceCard, type ResourceCardProps } from "@/components/ResourceCard";
+import { SearchForm } from "@/components/SearchForm";
 import { WelcomePage } from "@/components/WelcomePage";
 import { renderContent, type RenderBlock } from "@/lib/content/render";
 import { cmsUrls } from "@/lib/env";
@@ -549,6 +551,25 @@ export default function SpecimenFixturePage() {
               <ResourceCard {...card} headingLevel="h3" />
             </li>
           ))}
+        </ul>
+      </Section>
+
+      <Section id="specimen-search" title="Search">
+        <p>
+          The search page&rsquo;s form and count line, and its two row shapes: a resource as the listing&rsquo;s row, and a page with
+          the label &ldquo;Page&rdquo;, no mark and no date.
+        </p>
+        <SearchForm input="team" describedBy="specimen-search-count" />
+        <p className="rh-search__summary" id="specimen-search-count">
+          2 results for &ldquo;team&rdquo;
+        </p>
+        <ul className="rh-card-grid" role="list">
+          <li>
+            <ResourceCard {...CARDS[0]} headingLevel="h3" />
+          </li>
+          <li>
+            <PageCard title="The team" href="/about/team/" summary="Who writes the resources." headingLevel="h3" />
+          </li>
         </ul>
       </Section>
 
