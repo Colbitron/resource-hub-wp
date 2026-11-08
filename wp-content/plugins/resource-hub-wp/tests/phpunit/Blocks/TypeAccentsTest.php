@@ -130,4 +130,60 @@ final class TypeAccentsTest extends WP_UnitTestCase {
 		$this->assertSame( array(), TypeAccents::read( $fixtures . '/invalid/type-accents.bare-array.json' ) );
 	}
 
+	/**
+	 * A bad row is skipped alone: the good row beside it survives.
+	 */
+	public function test_read_keeps_a_good_row_beside_a_bad_one(): void {
+		$this->assertSame(
+			array(
+				12 => array(
+					'slug'   => 'guide',
+					'accent' => 'mint',
+				),
+			),
+			TypeAccents::read( SchemaValidator::fixtures_dir() . '/invalid/type-accents.good-row-beside-bad-row.json' )
+		);
+	}
+
+	/**
+	 * A file that is not JSON gives no rows, and core reports why.
+	 *
+	 * Core's `wp_json_file_decode()` reports the failure through `wp_trigger_error()`, which always fires
+	 * `wp_trigger_error_always_run` and raises an `E_USER_NOTICE` only under `WP_DEBUG`. The tests site
+	 * defines `WP_DEBUG` as false, so the report is recorded through the action; an error handler for the
+	 * one call catches the notice where `WP_DEBUG` is on, which PHPUnit would otherwise turn into an
+	 * exception before `read()` returned, and it is always removed.
+	 */
+	public function test_read_gives_no_rows_for_a_file_that_is_not_json(): void {
+		$reports = array();
+		$record  = static function ( string $function_name, string $message ) use ( &$reports ): void {
+			$reports[] = array( $function_name, $message );
+		};
+		$notices = array();
+		add_action( 'wp_trigger_error_always_run', $record, 10, 2 );
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_set_error_handler -- A test catching core's notice for one call, restored in `finally`.
+		set_error_handler(
+			static function ( int $level, string $message ) use ( &$notices ): bool {
+				$notices[] = array( $level, $message );
+				return true;
+			},
+			E_USER_NOTICE
+		);
+
+		try {
+			$rows = TypeAccents::read( __DIR__ . '/fixtures/type-accents.malformed.json' );
+		} finally {
+			restore_error_handler();
+			remove_action( 'wp_trigger_error_always_run', $record, 10 );
+		}
+
+		$this->assertSame( array(), $rows );
+		$this->assertCount( 1, $reports, 'Core reports the decoding error once.' );
+		$this->assertSame( 'wp_json_file_decode', $reports[0][0] );
+		$this->assertStringContainsString( 'Error when decoding a JSON file', $reports[0][1] );
+		$this->assertCount( WP_DEBUG ? 1 : 0, $notices, 'A notice only under WP_DEBUG.' );
+		if ( WP_DEBUG ) {
+			$this->assertSame( E_USER_NOTICE, $notices[0][0] );
+		}
+	}
 }

@@ -92,6 +92,7 @@ const expectedIssuePaths: Record<string, (string | number)[][]> = {
   "type-accents.string-id.json": [["types", 0, "id"]],
   "type-accents.missing-slug.json": [["types", 0, "slug"]],
   "type-accents.extra-row-property.json": [["types", 0]],
+  "type-accents.good-row-beside-bad-row.json": [["types", 1, "accent"]],
 };
 
 /** The path of every issue in a failed parse, or `[]` when it succeeded. */
