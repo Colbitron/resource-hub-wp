@@ -1,0 +1,28 @@
+{
+	"$comment": "The full case: every part of the row and the meta line, with a type that has an accent, two topics, and a summary and title whose & < > \" the two sides must escape alike. Each value is in the form the REST API gives it: title.rendered as get_the_title() texturizes it, term names as core stores them (& as &amp;), the summary as MetaRules stores it, date_gmt without its Z. Topics are in get_the_terms() order, by name. README.md, \"Markup fixtures\", has the cases and the rules.",
+	"id": 101,
+	"slug": "caching-and-revalidation",
+	"title": {
+		"raw": "Caching & revalidation: the CDN's view",
+		"rendered": "Caching &#038; revalidation: the CDN&#8217;s view"
+	},
+	"date_gmt": "2026-11-01T09:30:00",
+	"summary": "Tags, purges & why 5 < 10 > 3: what \"stale\" means.",
+	"type": {
+		"id": 3,
+		"slug": "article",
+		"name": "Article"
+	},
+	"topics": [
+		{
+			"id": 13,
+			"slug": "caching-and-cdns",
+			"name": "Caching &amp; CDNs"
+		},
+		{
+			"id": 9,
+			"slug": "headless-delivery",
+			"name": "Headless delivery"
+		}
+	]
+}

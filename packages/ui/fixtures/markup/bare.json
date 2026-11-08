@@ -1,0 +1,13 @@
+{
+	"$comment": "The bare case: an empty summary and no topics, so the row has no summary paragraph and neither the row nor the meta line has a topics list. The type has an accent. README.md, \"Markup fixtures\".",
+	"id": 102,
+	"slug": "release-notes",
+	"title": {
+		"raw": "Release notes",
+		"rendered": "Release notes"
+	},
+	"date_gmt": "2026-09-30T23:59:59",
+	"summary": "",
+	"type": { "id": 5, "slug": "webinar", "name": "Webinar" },
+	"topics": []
+}

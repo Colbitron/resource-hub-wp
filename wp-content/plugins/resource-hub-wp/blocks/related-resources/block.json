@@ -29,5 +29,5 @@
 		"align": [ "wide", "full" ]
 	},
 	"editorScript": "file:./index.js",
-	"style": [ "resource-hub-tokens", "file:./style-index.css" ]
+	"style": [ "resource-hub-tokens", "resource-hub-card" ]
 }

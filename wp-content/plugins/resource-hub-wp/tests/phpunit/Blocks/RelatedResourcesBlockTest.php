@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace ResourceHub\Tests\Blocks;
 
 use ResourceHub\Blocks\RelatedResourcesBlock;
+use ResourceHub\Blocks\SharedCard;
 use ResourceHub\Blocks\SharedTokens;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\PostType;
@@ -115,18 +116,10 @@ final class RelatedResourcesBlockTest extends WP_UnitTestCase {
 		$this->assertSame( '', $type->attributes['heading']['default'] );
 		$this->assertSame( array( 'postId' ), $type->uses_context );
 
-		// The shared tokens handle first (SharedTokensTest), then the block's own file.
-		$this->assertCount( 2, $type->style_handles );
-		$this->assertSame( SharedTokens::HANDLE, $type->style_handles[0] );
-		$style = wp_styles()->registered[ $type->style_handles[1] ] ?? null;
-		$this->assertNotNull( $style, 'The block style is registered with wp_styles().' );
-		$this->assertStringEndsWith( '/build/related-resources/style-index.css', $style->src );
-
-		// The compiled stylesheet is the shared package's row, with no tokens of its own.
-		$css = file_get_contents( dirname( __DIR__, 3 ) . '/build/related-resources/style-index.css' ); // phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- A local file from the plugin's own build, read by a test, never a remote URL.
-		$this->assertStringNotContainsString( '--rh-color-text:', $css );
-		$this->assertStringContainsString( '.rh-card', $css );
-		$this->assertStringContainsString( '.rh-card__type', $css, 'card-labels.css, which card.css imports, is inlined too.' );
+		// The shared tokens handle first (SharedTokensTest), then the shared row (SharedCardTest), and no
+		// stylesheet of the block's own, so a page with resource-card rows too loads card.css once.
+		$this->assertSame( array( SharedTokens::HANDLE, SharedCard::HANDLE ), $type->style_handles );
+		$this->assertFileDoesNotExist( dirname( __DIR__, 3 ) . '/build/related-resources/style-index.css' );
 	}
 
 	/**
@@ -911,6 +904,18 @@ final class RelatedResourcesBlockTest extends WP_UnitTestCase {
 		$html = $this->render( array( 'topic' => $this->topic ), $host );
 		$this->assertStringContainsString( '<h2>More on R&amp;D &quot;quoted&quot;</h2>', $html );
 		$this->assertStringNotContainsString( '&amp;amp;', $html );
+	}
+
+	/**
+	 * A password-protected resource is a published one, listed as the related route lists it, and its row's
+	 * title is the REST API's `title.rendered`, without core's "Protected: " prefix.
+	 */
+	public function test_password_protected_resource_gets_a_row_without_the_prefix(): void {
+		$id = $this->resource( 'locked', array( 'post_password' => 'secret' ) );
+		$this->assertStringStartsWith( 'Protected: ', get_the_title( $id ), 'Core prefixes the title outside the REST API.' );
+
+		$this->assertSame( array( get_permalink( $id ) => 'Resource locked' ), $this->links( $this->render( array( 'topic' => $this->topic ), null ) ) );
+		$this->assertStringStartsWith( 'Protected: ', get_the_title( $id ), 'The prefix is dropped for the row alone.' );
 	}
 
 	/**

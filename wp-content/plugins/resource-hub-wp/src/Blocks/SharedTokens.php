@@ -12,13 +12,13 @@ namespace ResourceHub\Blocks;
 /**
  * Registers the shared package's `tokens.css` under one handle, unless the theme already has.
  *
- * The related-resources block's stylesheet builds on the `--rh-` tokens, and so does the
- * `resource-hub` theme's. Both used to carry their own copy: the block's build inlined `tokens.css`
+ * The plugin's blocks' stylesheets build on the `--rh-` tokens, and so does the `resource-hub`
+ * theme's. Both used to carry their own copy: the related-resources block's build inlined `tokens.css`
  * into its `style-index.css`, so a page with the block, on the theme, declared every token twice.
- * Now there is one handle, {@see self::HANDLE}, and both name it: the block's `block.json` lists it
- * before its own file in `style`, and the theme enqueues it. WordPress prints a handle once per
- * document, so a page with the block loads the tokens once, in the editor canvas and on the CMS's
- * own pages alike.
+ * Now there is one handle, {@see self::HANDLE}, and all of them name it: each block's `block.json`
+ * lists it first in `style`, before the shared row's handle (`SharedCard`) or the block's own file,
+ * and the theme enqueues it. WordPress prints a handle once per document, so a page with the blocks
+ * loads the tokens once, in the editor canvas and on the CMS's own pages alike.
  *
  * Whoever registers the handle first provides the file, and this registers it at `init` priority
  * {@see self::PRIORITY}, after the theme's `functions.php` has had its turn at the default priority,
@@ -34,8 +34,8 @@ namespace ResourceHub\Blocks;
  */
 final class SharedTokens {
 	/**
-	 * The stylesheet handle the block and the theme share. Renaming it means renaming it in
-	 * `blocks/related-resources/block.json` and in the theme's `functions.php`.
+	 * The stylesheet handle the blocks and the theme share. Renaming it means renaming it in each
+	 * `blocks/{name}/block.json` and in the theme's `functions.php`.
 	 */
 	public const HANDLE = 'resource-hub-tokens';
 

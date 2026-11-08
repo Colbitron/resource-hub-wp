@@ -17,9 +17,10 @@ use WP_Term;
  * The table is the shared package's `type-accents.json` (`packages/ui/README.md`, "Type accents"), which
  * the front end imports from the workspace. The host never has the workspace: the deploy syncs only the
  * plugin's main file, `src/`, `build/` and `vendor/`. So the plugin's webpack build emits the file
- * unchanged as `build/type-accents.json`, beside the block's compiled stylesheet, and this class reads
- * that copy. `TypeAccentsTest` fails when the copy differs from the package's, so a stale build cannot
- * pass the gate. Rejected: a committed PHP copy of the table, which is a second source that can drift
+ * unchanged as `build/type-accents.json`, and this class reads that copy for every type mark the plugin
+ * writes: the related-resources block's rows, the resource-card block's row and the resource-meta
+ * block's meta line, all through `ResourceCardMarkup`. `TypeAccentsTest` fails when the copy differs
+ * from the package's, so a stale build cannot pass the gate. Rejected: a committed PHP copy of the table, which is a second source that can drift
  * between the test runs that catch it; reading `packages/ui/` at runtime, which is not on the host; and
  * generating PHP in the build, which needs escaping where a JSON copy needs none.
  *
@@ -33,7 +34,7 @@ use WP_Term;
  * the schema's shape (an ID that is not a positive integer, a slug that is not a string, an accent that
  * is not one of the five), gives no row, so a broken build shows neutral marks. A file that is not
  * valid JSON also gives no rows; in production that is all, and under `WP_DEBUG` core's
- * `wp_json_file_decode()` raises an `E_USER_NOTICE` as well. Without a build the block is not
+ * `wp_json_file_decode()` raises an `E_USER_NOTICE` as well. Without a build none of the blocks is
  * registered at all.
  */
 final class TypeAccents {

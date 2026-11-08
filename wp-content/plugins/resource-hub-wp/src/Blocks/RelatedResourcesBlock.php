@@ -9,11 +9,9 @@ declare(strict_types=1);
 
 namespace ResourceHub\Blocks;
 
-use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\Taxonomies;
 use WP_Block;
-use WP_Post;
 use WP_Query;
 use WP_Term;
 
@@ -27,9 +25,11 @@ use WP_Term;
  * the deploy syncs `build/` and `src/` to the host and leaves `blocks/` behind (`.depot/workflows/ci.yml`,
  * "Sync the plugin"), and the compiled `block.json` sits beside the script and the stylesheet it names.
  * Without a build the block is simply not registered, as the editor scripts are not enqueued without
- * theirs; `pnpm build` is part of running the plugin (`README.md`). The stylesheet is the shared
- * package's `tokens.css` and `card.css`, inlined into `build/related-resources/style-index.css` by the
- * build and listed as the block's `style`, so core enqueues it where the block is used and nowhere else.
+ * theirs; `pnpm build` is part of running the plugin (`README.md`). The block has no stylesheet of its
+ * own: its `style` is two shared handles, `resource-hub-tokens` (`SharedTokens`) and then
+ * `resource-hub-card` (`SharedCard`), the shared package's `tokens.css` and `card.css` copied byte for
+ * byte into `build/shared/`, so core enqueues them where the block is used and nowhere else, and a page
+ * that also lists `resource-card` rows loads each once.
  *
  * The render is the contract's marker (`packages/ui/README.md`, "Block marker") around the heading and
  * rows in `card.css`'s markup, the same rows the front end's `ResourceCard` renders, titles at `h3`:
@@ -50,38 +50,17 @@ use WP_Term;
  * The rows are the card's markup because the CMS's own pages and the editor preview then show the
  * same rows the front end shows, styled by the stylesheet the block already loads; the front end swaps
  * the whole wrapper for its own component and reads only the `data-*` attributes and the `<h2>`'s
- * text, so what is inside the wrapper costs it nothing. The type's span carries `data-accent` from the
- * shared type-accent table (`TypeAccents`), the type's accent or `neutral`, as the front end's
- * `ResourceCard` writes it, so the CMS's own pages mark each type as the site does; the front end drops
- * the attribute from the rows it keeps as its fallback. The date is `date_gmt` in UTC, as an ISO instant in `datetime` and as
- * "Nov 1, 2026" in the text, the front end's format (`apps/web/lib/dates.ts`). Every text in a row is
- * the text the front end's card prints, escaped with `htmlspecialchars()`, which encodes every `&` as
- * React escapes text, where `esc_html()` would leave an `&amp;` already in the text alone (so a title
- * `Tips &amp;amp; tricks` or a summary `Tips &amp; tricks` reads "Tips &amp; tricks" on both sites):
- *
- * - The title (`get_the_title()`, as `title.rendered`), the type's name and each topic's name are plain
- *   text, as the front end's `plainText()` makes them (`apps/web/lib/wp/cards.ts`): tags stripped,
- *   entities decoded, runs of whitespace collapsed to one space and trimmed (`plain_text()`). The names
- *   are the stored `name`, the string the REST API embeds; core stores `&` in it as `&amp;`, so most
- *   names read the same either way, but `Caf&eacute;`, `A&nbsp;&nbsp;B` or markup a PHP caller saved do
- *   not. A name that is empty as plain text keeps its (empty) element, as the front end keeps it. Exact
- *   parity is not attempted for two cases, reachable only with `unfiltered_html` or rare:
- *   `wp_strip_all_tags()` removes a `<script>` or `<style>` element's contents where the front end keeps
- *   their text, which is the safer side; and `html_entity_decode()` reads a reference with no semicolon,
- *   or a numeric one in the C1 range, differently from htmlparser2.
- * - Topics are in `get_the_terms()` order, which is the order the REST API lists them in, each once as
- *   plain text: the front end dedupes after `plainText()`, so `A&nbsp;B` and `A B` are one topic.
- * - The summary is the stored `summary` meta as it is, the front end's `meta.summary`, which it renders
- *   as React text with nothing stripped, decoded or collapsed: `MetaRules::sanitize_summary()` already
- *   stores plain text, so an entity left in it (`Caf&eacute;`) is literal text on both sites. Its `<p>`
- *   is left out only when it is the empty string, the front end's `summary &&` test, so a summary of
- *   `0` still gets one.
+ * text, so what is inside the wrapper costs it nothing. Each row is `ResourceCardMarkup::row()` at
+ * `h3`, the renderer the `resource-card` block shares, and that class's docblock has the row's rules:
+ * the type's `data-accent` from the shared type-accent table (the front end drops the attribute from
+ * the rows it keeps as its fallback), the date, the plain-text title and names, the topics' order and
+ * dedupe, the summary as stored, and the escaping, all the front end's `ResourceCard`'s.
  *
  * - **Dropped rows.** A resource whose title is empty, or that does not have exactly one type, gets no
  *   row at all: no "Untitled resource" row, no typeless row. "Empty" is the front end's test
- *   (`cardTitle()`): nothing left of the plain-text title once JavaScript's whitespace (U+0009–U+000D,
- *   `\p{Z}`, NBSP among them, and U+FEFF) and the zero-width U+200B–U+200D are removed, so `&nbsp;`, `&#8203;` or `<em></em>`
- *   alone is empty. "Exactly one type" counts the `resource_type` terms directly, not names, as the
+ *   (`ResourceCardMarkup::title()` is null): nothing left of the plain-text title once whitespace and the
+ *   zero-width characters are removed, so `&nbsp;`, `&#8203;` or `<em></em>` alone is empty. "Exactly
+ *   one type" counts the `resource_type` terms directly, not names, as the
  *   front end's `resourceType()` counts IDs, since the taxonomy is hierarchical and two terms can share
  *   a name; only a PHP caller can publish a resource with no type or two (ADR 0024). Typeless ones
  *   never come back from SQL (an `EXISTS` clause on `resource_type`); the PHP check catches the rest.
@@ -212,126 +191,13 @@ final class RelatedResourcesBlock {
 			$html .= '<ul class="rh-card-grid" role="list">';
 
 			foreach ( $rows as $row ) {
-				$html .= '<li>' . $this->row( $row['post'], $row['title'], $row['type'] ) . '</li>';
+				$html .= '<li>' . ResourceCardMarkup::row( $row['post'], $row['title'], $row['type'] ) . '</li>';
 			}
 
 			$html .= '</ul>';
 		}
 
 		return $html . '</div>';
-	}
-
-	/**
-	 * One resource as a row in `card.css`'s markup, as the front end's `ResourceCard` renders it at `h3`.
-	 *
-	 * @param WP_Post $post  A published resource.
-	 * @param string  $title Its title as plain text, from `card_title()`; escaped with `text_html()`, see the class docblock.
-	 * @param WP_Term $type  Its one type, from `card_type()`.
-	 */
-	private function row( WP_Post $post, string $title, WP_Term $type ): string {
-		$timestamp = (int) get_post_time( 'U', true, $post );
-		$topics    = $this->term_names( $post, Taxonomies::TOPIC );
-		$summary   = (string) get_post_meta( $post->ID, Meta::SUMMARY, true );
-
-		$html  = '<article class="rh-card">';
-		$html .= '<p class="rh-card__meta">';
-		$html .= '<span class="rh-card__type" data-accent="' . esc_attr( TypeAccents::accent( $type ) ) . '">' . self::text_html( self::plain_text( $type->name ) ) . '</span>';
-		$html .= '<time datetime="' . esc_attr( gmdate( 'Y-m-d\TH:i:s\Z', $timestamp ) ) . '">' . esc_html( gmdate( 'M j, Y', $timestamp ) ) . '</time>';
-		$html .= '</p>';
-		$html .= '<div class="rh-card__body">';
-		$html .= '<h3 class="rh-card__title"><a class="rh-card__link" href="' . esc_url( (string) get_permalink( $post ) ) . '">' . self::text_html( $title ) . '</a></h3>';
-
-		if ( '' !== $summary ) {
-			$html .= '<p class="rh-card__summary">' . self::text_html( $summary ) . '</p>';
-		}
-
-		if ( array() !== $topics ) {
-			// Plain English, not `esc_attr__()`: the front end's `ResourceCard` hard-codes "Topics", so a
-			// translated label here would make the CMS's rows and the front end's differ.
-			$html .= '<ul class="rh-card__topics" aria-label="Topics" role="list">';
-
-			foreach ( $topics as $name ) {
-				$html .= '<li class="rh-card__topic">' . self::text_html( $name ) . '</li>';
-			}
-
-			$html .= '</ul>';
-		}
-
-		return $html . '</div></article>';
-	}
-
-	/**
-	 * The names of a post's terms in one taxonomy as plain text, in `get_the_terms()` order, each once.
-	 *
-	 * Deduplicated after `plain_text()`, as the front end's `toCard()` puts the `plainText()` labels in a `Set`.
-	 *
-	 * @param WP_Post $post     The post.
-	 * @param string  $taxonomy The taxonomy.
-	 * @return string[]
-	 */
-	private function term_names( WP_Post $post, string $taxonomy ): array {
-		$terms = get_the_terms( $post, $taxonomy );
-
-		if ( ! is_array( $terms ) ) {
-			return array();
-		}
-
-		return array_values( array_unique( array_map( array( self::class, 'plain_text' ), wp_list_pluck( $terms, 'name' ) ) ) );
-	}
-
-	/**
-	 * Text as the HTML React writes for it: every `&`, `<`, `>`, `"` and `'` encoded, an existing `&amp;` included.
-	 *
-	 * `htmlspecialchars()`, not `esc_html()`, which does not encode an `&` that already starts a reference.
-	 * React writes `'` as `&#x27;` and this as `&#039;`: the same character in the page.
-	 *
-	 * @param string $text Plain text.
-	 */
-	private static function text_html( string $text ): string {
-		return htmlspecialchars( $text, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8' );
-	}
-
-	/**
-	 * HTML as the plain text the front end's `plainText()` gives (`apps/web/lib/wp/cards.ts`).
-	 *
-	 * Tags stripped, entities decoded, every run of JavaScript's `\s` collapsed to one space and trimmed.
-	 * JavaScript's `\s` is spelled out as U+0009–U+000D, `\p{Z}` and U+FEFF, not PCRE's `\s`, which under
-	 * `/u` also matches U+0085 (NEL), as JavaScript's does not.
-	 *
-	 * @param string $html A rendered title or a stored term name.
-	 */
-	private static function plain_text( string $html ): string {
-		$text = html_entity_decode( wp_strip_all_tags( $html ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-
-		return trim( (string) preg_replace( '/[\x{9}-\x{D}\p{Z}\x{FEFF}]+/u', ' ', $text ), ' ' );
-	}
-
-	/**
-	 * The post's title as the front end's card shows it, or null when that is empty and the row is dropped.
-	 *
-	 * `cardTitle()` in `apps/web/lib/wp/cards.ts`: `plain_text()` of the rendered title, empty when nothing
-	 * is left once whitespace and the zero-width U+200B–U+200D are removed too.
-	 *
-	 * @param WP_Post $post The post.
-	 */
-	private static function card_title( WP_Post $post ): ?string {
-		$text = self::plain_text( get_the_title( $post ) );
-
-		return 1 === preg_match( '/^[\x{9}-\x{D}\p{Z}\x{200B}-\x{200D}\x{FEFF}]*$/u', $text ) ? null : $text;
-	}
-
-	/**
-	 * The post's one `resource_type` term, or null when it has none or several and the row is dropped.
-	 *
-	 * Terms are counted, not names (the taxonomy is hierarchical, so two terms can share a name), as the
-	 * front end's `resourceType()` counts the IDs in `resource_type`.
-	 *
-	 * @param WP_Post $post The post.
-	 */
-	private static function card_type( WP_Post $post ): ?WP_Term {
-		$terms = get_the_terms( $post, Taxonomies::TYPE );
-
-		return is_array( $terms ) && 1 === count( $terms ) ? reset( $terms ) : null;
 	}
 
 	/**
@@ -419,8 +285,8 @@ final class RelatedResourcesBlock {
 				continue;
 			}
 
-			$title = self::card_title( $post );
-			$type  = self::card_type( $post );
+			$title = ResourceCardMarkup::title( $post );
+			$type  = ResourceCardMarkup::type( $post );
 
 			if ( null !== $title && null !== $type ) {
 				$rows[] = array(
