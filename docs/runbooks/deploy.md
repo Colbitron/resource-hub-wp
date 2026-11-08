@@ -6,6 +6,22 @@ For the maintainer deploying the CMS or the front end, rolling either back, or r
 
 Nothing is deployed by hand. A push to `main` runs the gate on Depot CI, then the `deploy` job syncs the plugin to the Cloudways host, then the `deploy-web` job starts the front end's Vercel production build. The CMS goes first and the front end second, so the front end never goes live ahead of the CMS it reads; additive contract changes make that order safe. The CMS deploy needs only the CMS gate, so a front-end failure never blocks a CMS deploy or a rollback. Pull requests and other branches never deploy; pull requests get Vercel preview deploys.
 
+## Which jobs a pull request runs
+
+A push to `main` and every dispatch, on `main` or a tag, run every job; only a pull request is scoped. Its first job, **Scope: the jobs this change needs**, diffs the merge commit Depot checks out against the base (`.depot/scripts/ci-scope.mjs`, whose tests run in the same job) and decides from the changed paths, renames counted at both ends:
+
+| The pull request changes | Runs | About |
+|---|---|---|
+| only `wp-content/` (and inert paths) | the plugin's gate | 3 sandbox-minutes |
+| only `apps/` (and inert paths) | the front-end jobs and Lighthouse; Lighthouse is skipped when the `apps/` changes are all Markdown | 14.5, or 3.5 without Lighthouse |
+| `packages/`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.depot/`, `.gitignore`, any other path, or both `wp-content/` and `apps/` | everything | 17 |
+| `.wp-env.json` | everything but Lighthouse | 6.5 |
+| only inert paths: `docs/`, `.claude/`, `.github/`, `tools/`, a Markdown file at the root | nothing but the scope job | 0.1 |
+
+A skipped job shows as skipped in `depot ci status`, not as passed or failed; the pull request's checks should list it as skipped too, which the first scoped pull request will confirm. When the scope job cannot read the paths for certain, its summary says why and every job runs; if it fails, every job behind it is skipped and the run is red. Neither deploy can run behind a skipped job, and on `main` no job is skipped (the reasoning is in `ci.yml`, above the triggers). To run a job a pull request skipped, the whole workflow can be run by hand on the branch, `depot ci run --workflow .depot/workflows/ci.yml`, which is event `api`, never scoped.
+
+A new top-level path runs everything until a rule in `ci-scope.mjs` says otherwise; add the rule, and its case to `ci-scope.test.mjs`, in the pull request that adds the path.
+
 ## Secrets
 
 Six secrets feed the two deploy jobs, and a seventh the preview Lighthouse workflow. None is in git. All seven are Depot CI secrets scoped to this repository (`depot ci secrets list --repo Colbitron/resource-hub-wp` shows the names, never the values). The preview Lighthouse workflow runs on GitHub Actions (ADR 0053), so the secret it reads, `VERCEL_PROTECTION_BYPASS`, must also stay a GitHub repository secret (`gh secret list`); Depot's copy is read by nothing yet. The other six stay in GitHub's repository secrets too until the follow-up that removes the cutover switch, so a rollback to GitHub Actions needs no secret re-entered; delete them from GitHub after that, and set them there again only for a rollback.
@@ -34,7 +50,7 @@ Both deploy jobs also require the Depot CI variable `DEPOT_DEPLOY_ENABLED` to be
 2. Once that run is green, set the variable: `depot ci vars add DEPOT_DEPLOY_ENABLED --repo Colbitron/resource-hub-wp --value true`, and check it with `depot ci vars list --repo Colbitron/resource-hub-wp`.
 3. Start the first Depot CI deploy by hand and watch it to the end: `depot ci dispatch --repo Colbitron/resource-hub-wp --workflow ci.yml --ref main`, then `depot ci status <run-id>` until both deploy jobs finish.
 
-Depot CI registers a workflow's `push` and `pull_request` triggers only once it is on the default branch, so before the merge every Depot run was a `depot ci run` of local files. The `pull_request` path (`github.base_ref`, `github.event_name`, the check names on the pull request, and Lighthouse's warn-only condition for a pull request into `main`) is first exercised by the next pull request after the merge; check that run's jobs and checks.
+Depot CI registers a workflow's `push` and `pull_request` triggers only once it is on the default branch, so before the merge every Depot run was a `depot ci run` of local files. The `pull_request` path (`github.base_ref`, `github.event_name`, the check names on the pull request, Lighthouse's warn-only condition for a pull request into `main`, and the scope job's use of `github.event.pull_request.head.sha`) is first exercised by the next pull request after the merge; check that run's jobs and checks, and that the scope job's summary lists the changed paths rather than "Every job runs: no pull request head SHA", which would mean Depot left the head SHA out and nothing is being scoped.
 
 **Afterwards**, a follow-up pull request drops the variable's line from both jobs' `if:` and then the variable (`depot ci vars remove DEPOT_DEPLOY_ENABLED --repo Colbitron/resource-hub-wp --force`). Until it lands, removing the variable is the quickest way to stop Depot CI deploying.
 
