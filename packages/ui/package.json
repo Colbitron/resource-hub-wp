@@ -13,6 +13,7 @@
 	"files": [
 		"schemas",
 		"fonts",
+		"brand",
 		"tokens.css",
 		"card.css",
 		"card-labels.css",
@@ -22,6 +23,7 @@
 	"exports": {
 		"./schemas/*": "./schemas/*",
 		"./fonts/*": "./fonts/*",
+		"./brand/*": "./brand/*",
 		"./tokens.css": "./tokens.css",
 		"./card.css": "./card.css",
 		"./card-labels.css": "./card-labels.css"
