@@ -8,10 +8,18 @@
 # new path is guarded. Without the label this check fails; with it, or with
 # no guarded path changed, it passes.
 #
-# The guarded paths are GUARDED_PATHS below, the one list, mirrored in
-# .claude/rules/adr.md: docs/adr/, and the three files that guard it (this
-# workflow, the deny rules in .claude/settings.json, and the rule file), so a
-# pull request that weakens a guard needs the label as well.
+# The guarded paths are GUARDED_PATHS below, the one list, the same as in
+# the other copy, .depot/workflows/adr-approval.yml, and mirrored in
+# .claude/rules/adr.md: docs/adr/, and the four files that guard it (both
+# copies of this workflow, the deny rules in .claude/settings.json, and the
+# rule file), so a pull request that weakens a guard needs the label as
+# well. Change all three lists together.
+#
+# Two copies run: this one on GitHub Actions, and
+# .depot/workflows/adr-approval.yml on Depot CI, where the rest of CI runs
+# (ADR 0053). This one stays the check of record until a cutover pull
+# request shows that Depot CI, too, runs main's copy on
+# `pull_request_target`; only then can it be retired.
 #
 # Why `pull_request_target`: it runs the workflow as it is on the default
 # branch, main, not as the pull request has it. A pull request therefore
@@ -41,8 +49,8 @@
 # WARNING: adding a checkout of the pull request's head (or any step that
 # runs its code) to this workflow creates the known "pwn request" hole, code
 # from the pull request running with the base repository's token. Don't; if
-# a check needs the pull request's code, it belongs in ci.yml under
-# `pull_request`.
+# a check needs the pull request's code, it belongs in the CI workflow,
+# .depot/workflows/ci.yml, under `pull_request`.
 #
 # The limits, stated plainly: this is a visible signal, not an enforcement.
 # - Agents run `gh` with Colby's own credentials, so GitHub cannot tell his
@@ -54,8 +62,9 @@
 # - A direct push to main is not a pull request and gets no check; changes
 #   reach main through merged pull requests, and CI pushes nothing there.
 #
-# A separate workflow, not a job in ci.yml: ci.yml's `pull_request` trigger
-# runs the full gate once per push, and a label change must not re-run it.
+# A separate workflow, not a job in the CI workflow: its `pull_request`
+# trigger runs the full gate once per push, and a label change must not
+# re-run it.
 # This job reads the pull request through the API (the file list, paginated,
 # and the labels as they are now, not as the event saw them, so a re-run
 # after the label is removed fails). It uses only the run's own token, no
@@ -100,6 +109,7 @@ jobs:
           GUARDED_PATHS: |
             docs/adr/
             .github/workflows/adr-approval.yml
+            .depot/workflows/adr-approval.yml
             .claude/settings.json
             .claude/rules/adr.md
         run: |

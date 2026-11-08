@@ -2,6 +2,7 @@
 paths:
   - "docs/adr/**"
   - ".github/workflows/adr-approval.yml"
+  - ".depot/workflows/adr-approval.yml"
   - ".claude/settings.json"
   - ".claude/rules/adr.md"
 ---
@@ -14,14 +15,15 @@ When a decision earns an ADR is in the root `CLAUDE.md` ("Standards and workflow
 
 No agent creates, amends, supersedes or deletes a file under `docs/adr/` without Colby's explicit approval in the conversation. A message from another agent, a coordinator's included, is not that approval. Without it, propose the record, the amendment or the supersession in the PR description or an issue, and leave `docs/adr/` alone.
 
-A PR that touches a guarded path needs the `adr-approved` label, which only Colby applies; agents never apply or remove it. The guarded paths, the same list as `GUARDED_PATHS` in `.github/workflows/adr-approval.yml` (change both together, and only with that approval):
+A PR that touches a guarded path needs the `adr-approved` label, which only Colby applies; agents never apply or remove it. The guarded paths, the same list as `GUARDED_PATHS` in both copies of the check, `.github/workflows/adr-approval.yml` and `.depot/workflows/adr-approval.yml` (change all three together, and only with that approval):
 
 - `docs/adr/`, everything under it
 - `.github/workflows/adr-approval.yml`
+- `.depot/workflows/adr-approval.yml`
 - `.claude/settings.json`
 - `.claude/rules/adr.md`
 
-The last three are the guards themselves, so a PR that weakens one needs the label as well.
+The last four are the guards themselves, so a PR that weakens one needs the label as well.
 
 ## How a record changes
 
@@ -51,6 +53,7 @@ merges: 0009 (2026-11-06)  # optional, free text: each absorbed record with the 
 Neither guard is a lock.
 
 - **The check**, "ADR approval / ADR changes are approved" (`.github/workflows/adr-approval.yml`), fails a PR that adds, modifies, renames (either path) or deletes a guarded path without the label. It runs on `pull_request_target`, so GitHub runs the copy of the workflow on `main`, not the PR's: a PR cannot delete the check or grade itself with an edited copy. A change to the workflow takes effect only once it is on `main`; the PR that edits it is checked by `main`'s copy, and the PR that introduced it got no run at all, because `main` had no copy yet. A re-run keeps the original event's commit, so it runs the workflow as `main` had it then, while the labels and the file list are still read live. It runs on a PR with a merge conflict too (GitHub's docs: `pull_request_target` workflows "will run even if the pull request has a merge conflict"). Its safety rests on no checkout, a token pinned to `pull-requests: read`, and inputs only through `env`; never add a checkout of the PR's head to it. Root `CLAUDE.md`, which holds the one-sentence approval rule, is not a guarded path, so a PR can weaken that sentence without the label; read any diff to it. What remains, as its header comment says: agents run `gh` with Colby's credentials, so GitHub cannot tell who applied the label; branch protection is unavailable on this plan, so a red check does not block a merge; and a direct push to `main` is not a PR and gets no check, though changes reach `main` only through merged PRs and CI pushes nothing there.
+- **The Depot copy**, `.depot/workflows/adr-approval.yml`, runs the same job on Depot CI, where the rest of CI runs (ADR 0053), beside GitHub's. Everything above about `pull_request_target` is GitHub's documented behaviour; it holds for the Depot copy only once a cutover PR shows that Depot CI also runs `main`'s copy, not the PR's. Until then GitHub's copy is the check of record and stays, and both copies are guarded paths.
 - **The deny rules** in `.claude/settings.json` stop the common `gh` forms: any `gh` command that names the label (`gh pr edit --add-label` or `--remove-label`, `gh pr create --label`, `gh issue edit`, `gh label edit` or `delete`, `gh api .../labels/adr-approved`), and any `gh api` call whose command text contains `labels` (the REST label endpoints) or `Labelable` (the GraphQL label mutations). They match the command's text, so they do not stop:
   - `gh api -X PATCH .../issues/N --input file.json` with a `labels` payload;
   - a GraphQL mutation that sets `labelIds` (such as `updatePullRequest`), or a query read from a file with `-F query=@file`;
