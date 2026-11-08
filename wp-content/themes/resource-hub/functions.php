@@ -42,6 +42,11 @@ function resource_hub_theme_register_styles(): void {
 	}
 
 	$assets = require __DIR__ . '/build/assets.php';
+	// A build from before the manifest had `styles` returned the hashes alone; without the table
+	// there is nothing to register, quietly, until the next `pnpm build`.
+	if ( ! is_array( $assets['styles'] ?? null ) ) {
+		return;
+	}
 
 	foreach ( $assets['styles'] as $handle => list( $file, $deps ) ) {
 		wp_register_style( $handle, get_theme_file_uri( 'build/' . $file ), $deps, substr( (string) ( $assets['copies'][ $file ] ?? '' ), 0, 20 ) );

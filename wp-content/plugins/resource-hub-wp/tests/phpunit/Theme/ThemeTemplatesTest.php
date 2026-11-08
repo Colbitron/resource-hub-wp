@@ -94,6 +94,19 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A front page set to a page but with no page chosen is the welcome, `home.html`, as the front
+	 * end shows its welcome then: core reads it as the posts index.
+	 */
+	public function test_page_on_front_without_a_page_is_the_welcome(): void {
+		update_option( 'show_on_front', 'page' );
+		update_option( 'page_on_front', 0 );
+
+		$this->assertSame( 'resource-hub//home', $this->template_for( home_url( '/' ) ) );
+		$this->assertFalse( is_front_page() );
+		$this->assertOneHeading( 'Resource Hub' );
+	}
+
+	/**
 	 * Any other page is `page.html`.
 	 */
 	public function test_page_is_the_page(): void {
@@ -112,6 +125,24 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 
 		$this->assertSame( 'resource-hub//singular', $this->template_for( get_permalink( $post ) ) );
 		$this->assertOneHeading( get_the_title( $post ) );
+	}
+
+	/**
+	 * A resource is `singular.html` too, until the single-resource template lands. Factory-made, so
+	 * it needs no type, topic or summary (`OneType` and `RequiredFields` guard the save paths, not
+	 * the factory); its permalink is the plain `?resource=` form the tests site's permalinks give.
+	 */
+	public function test_resource_is_singular(): void {
+		$resource = self::factory()->post->create(
+			array(
+				'post_type'  => 'resource',
+				'post_title' => 'A sample resource',
+			)
+		);
+
+		$this->assertSame( 'resource-hub//singular', $this->template_for( get_permalink( $resource ) ) );
+		$this->assertTrue( is_singular( 'resource' ) );
+		$this->assertOneHeading( 'A sample resource' );
 	}
 
 	/**
