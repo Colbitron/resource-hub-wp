@@ -83,8 +83,9 @@
 # both.
 #
 # The deploy job runs after the gate, only on main and on manual dispatch, and
-# syncs the plugin, from wp-content/plugins/resource-hub-wp, to the Cloudways
-# host (ADR 0005). The deploy-web job runs after deploy and every front-end
+# syncs the plugin, from wp-content/plugins/resource-hub-wp, Relevanssi and
+# the CMS theme, from wp-content/themes/resource-hub, to the Cloudways host
+# (ADR 0005). The deploy-web job runs after deploy and every front-end
 # job, and starts the front end's production deploy on Vercel through a
 # deploy hook (ADR 0051).
 #
@@ -248,6 +249,14 @@ jobs:
       - name: Test the deploy's plugin checksum check
         if: github.event_name == 'pull_request'
         run: node --test .depot/scripts/plugin-checksums.test.mjs
+
+      # The deploy's theme sync is an allowlist the deploy alone exercises,
+      # so its tests hold it to the theme as committed: every file the theme
+      # loads is shipped, and every tracked file is shipped or named as
+      # staying behind (.depot/scripts/theme-allowlist.test.mjs).
+      - name: Test the deploy's theme allowlist
+        if: github.event_name == 'pull_request'
+        run: node --test .depot/scripts/theme-allowlist.test.mjs
 
       # The runner's own Node and git; nothing is installed.
       - name: Test the scope rules and CI result's verdict
@@ -994,6 +1003,8 @@ jobs:
       # root, which is that value without the plugin suffix. RELEVANSSI_DIR is
       # Relevanssi's directory beside it, built from that same checked root
       # with a fixed suffix, so its rsync --delete can reach no other plugin.
+      # THEME_DIR is the CMS theme's directory, built the same way, so its
+      # rsync --delete can reach no other theme.
       - name: Check the deploy path
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
@@ -1016,6 +1027,7 @@ jobs:
           echo "REMOTE_DIR=$path" >> "$GITHUB_ENV"
           echo "WP_ROOT=$wp_root" >> "$GITHUB_ENV"
           echo "RELEVANSSI_DIR=$wp_root/wp-content/plugins/relevanssi" >> "$GITHUB_ENV"
+          echo "THEME_DIR=$wp_root/wp-content/themes/resource-hub" >> "$GITHUB_ENV"
 
       # The deploy never talks to GitHub after checkout, so the token is not
       # left in .git/config.
@@ -1034,8 +1046,28 @@ jobs:
         with:
           save-store: 'true'
 
+      # The plugin's blocks and the CMS theme's build/, which copies the
+      # contract package's tokens, stylesheets and font into the theme.
       - name: Build the block
         run: pnpm build
+
+      # The theme's build/ is gitignored and the theme sync below sends it as
+      # it finds it, so a build that wrote nothing would ship a theme that
+      # registers no stylesheet and serves no font, quietly: functions.php
+      # skips registration without build/assets.php. So the manifest, the
+      # tokens and every file theme.json loads (`file:./`, Figtree) must be
+      # there, non-empty, before anything reaches the host.
+      - name: Check the theme's build
+        working-directory: wp-content/themes/resource-hub
+        run: |
+          missing=0
+          for file in build/assets.php build/tokens.css $(jq -r '.. | strings | select(startswith("file:./")) | ltrimstr("file:./")' theme.json); do
+            if [ ! -s "$file" ]; then
+              echo "::error::wp-content/themes/resource-hub/$file is missing or empty after pnpm build. Nothing was deployed."
+              missing=1
+            fi
+          done
+          exit "$missing"
 
       # Composer's download cache, kept across deploys so that while the two
       # locks are unchanged neither install downloads a dist: on a hit each
@@ -1299,6 +1331,41 @@ jobs:
             '--include=/vendor/***' \
             '--exclude=*' \
             ./ "deploy:$REMOTE_DIR/"
+
+      # The CMS block theme, after the plugin: its templates render the
+      # plugin's blocks, and the plugin's blocks only ever gain, so a failure
+      # here leaves a newer plugin beside the theme as it was, which still
+      # renders, and no step after this one runs.
+      #
+      # The same shape as the plugin's sync: the source is the theme
+      # directory itself, the target THEME_DIR, built from the checked
+      # WordPress root with a fixed suffix, so --delete can reach no other
+      # theme; the same flags, for the same reasons; and an allowlist of what
+      # WordPress loads at runtime, the final '*' excluding the rest:
+      # style.css (the theme's header), theme.json, functions.php and the
+      # inc/ files it requires, templates/ and parts/, and build/, the copies
+      # of the contract package's files and their manifest, which
+      # functions.php and theme.json load. README.md, package.json, scripts/
+      # (the build), figtree.sha256 (a test's record) and node_modules/ stay
+      # behind. A new runtime file or directory must be added here;
+      # .depot/scripts/theme-allowlist.test.mjs fails until every tracked
+      # file in the theme is either shipped here or named there as staying
+      # behind, and until every file the theme loads is shipped.
+      - name: Sync the theme
+        working-directory: wp-content/themes/resource-hub
+        run: |
+          rsync --archive --compress --no-owner --no-group --chmod=D755,F644 \
+            --omit-dir-times --timeout=120 \
+            --delete-delay --delay-updates --itemize-changes \
+            '--include=/style.css' \
+            '--include=/theme.json' \
+            '--include=/functions.php' \
+            '--include=/inc/***' \
+            '--include=/templates/***' \
+            '--include=/parts/***' \
+            '--include=/build/***' \
+            '--exclude=*' \
+            ./ "deploy:$THEME_DIR/"
 
       # WP-CLI runs from the WordPress root. It would walk up from the plugin
       # directory to find WordPress, but it evaluates wp-config.php without
