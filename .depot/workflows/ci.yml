@@ -235,30 +235,17 @@ jobs:
           path: wp-content/plugins/resource-hub-wp/vendor
           key: ${{ steps.composer-cache.outputs.cache-primary-key }}
 
-      # PHPCS and PHPUnit side by side: each held about one of the sandbox's
-      # two vCPUs (40 to 45% of the whole) when they ran one after the other,
-      # and they run in different containers (cli and tests-cli), so neither
-      # waits on the other. PHPCS's output is kept in a file and printed after
-      # PHPUnit's, so the two never interleave; the step fails, naming which,
-      # when either does. PHPUnit still runs before Playwright, which it must,
-      # since it reinstalls the tests database.
-      - name: Lint PHP and run PHPUnit
-        run: |
-          lint_log="$RUNNER_TEMP/phpcs.log"
-          pnpm lint > "$lint_log" 2>&1 &
-          lint_pid=$!
-          echo "::group::PHPUnit"
-          phpunit=0
-          pnpm test:php || phpunit=$?
-          echo "::endgroup::"
-          lint=0
-          wait "$lint_pid" || lint=$?
-          echo "::group::PHPCS"
-          cat "$lint_log"
-          echo "::endgroup::"
-          if [ "$lint" -ne 0 ]; then echo "::error::PHPCS failed (exit $lint); its output is in the PHPCS group above."; fi
-          if [ "$phpunit" -ne 0 ]; then echo "::error::PHPUnit failed (exit $phpunit); its output is in the PHPUnit group above."; fi
-          [ "$lint" -eq 0 ] && [ "$phpunit" -eq 0 ]
+      # PHPCS and PHPUnit run one after the other. Side by side they would
+      # save about 7 s (each held about one of the two vCPUs), but two
+      # `wp-env run` commands at once fail: the second reported
+      # "Environment not initialized" in trial run s13jwxd9r0. PHPUnit runs
+      # before Playwright, which it must, since it reinstalls the tests
+      # database.
+      - name: Lint PHP
+        run: pnpm lint
+
+      - name: Run PHPUnit
+        run: pnpm test:php
 
       # Joins the background install started before wp-env and fails here,
       # with its log, if it failed. The limit is generous for a slow mirror.
