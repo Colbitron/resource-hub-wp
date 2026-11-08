@@ -9,7 +9,7 @@ The plugin models a filterable resources library: a `resource` post type with `r
 ```
 /                                        pnpm workspace root: .wp-env.json, CLAUDE.md, this README
 ├─ wp-content/plugins/resource-hub-wp/   the WordPress plugin (its own README.md and CLAUDE.md)
-├─ wp-content/themes/resource-hub/       the CMS's block theme, a slice-5 skeleton so far (its own README.md)
+├─ wp-content/themes/resource-hub/       the CMS's block theme, slice 5: skeleton and assets so far (its own README.md)
 ├─ apps/web/                             the Next.js front end (its own README.md and CLAUDE.md)
 ├─ packages/ui/                          @colbitron/resource-hub-ui: the contract's JSON Schemas, shared styles and DESIGN.md
 ├─ docs/adr/                             the hard-to-reverse decisions, one sequence for the whole project
@@ -62,7 +62,7 @@ flowchart LR
             rest["REST<br/>/wp/v2/resources, /wp/v2/pages<br/>/resource-hub/v1/resolve<br/>/resource-hub/v1/page<br/>/resource-hub/v1/related"]
             block["related-resources block<br/>server-rendered marker + card-row fallback"]
             hook["Revalidation hook<br/>wp_after_insert_post, before_delete_post,<br/>term and option hooks; sent from WP-Cron"]
-            theme["Block theme (slice 5, skeleton)<br/>logged-in users only;<br/>404 for anonymous visitors"]
+            theme["Block theme (slice 5: skeleton and assets)<br/>logged-in users only;<br/>404 for anonymous visitors"]
             editor --> cpt
             cpt --> rest
             cpt --> block

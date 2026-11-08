@@ -182,16 +182,30 @@ test.describe( "The theme's stylesheets", () => {
 
 	test( 'the page follows the system colour scheme', async ( { page } ) => {
 		await page.goto( pageWithBlock.link );
-		const surface = () =>
-			page.evaluate(
-				() => window.getComputedStyle( document.body ).backgroundColor
-			);
+		// The body's background, and --rh-color-surface resolved on a probe in
+		// the same document, so the expected colour comes from tokens.css.
+		const surfaces = () =>
+			page.evaluate( () => {
+				const probe = document.createElement( 'div' );
+				probe.style.backgroundColor = 'var(--rh-color-surface)';
+				document.body.append( probe );
+				const token = window.getComputedStyle( probe ).backgroundColor;
+				probe.remove();
+				return {
+					body: window.getComputedStyle( document.body )
+						.backgroundColor,
+					token,
+				};
+			} );
 
-		// tokens.css's --rh-color-surface, light and dark.
 		await page.emulateMedia( { colorScheme: 'light' } );
-		expect( await surface() ).toBe( 'rgb(246, 244, 239)' );
+		const light = await surfaces();
+		expect( light.body ).toBe( light.token );
 		await page.emulateMedia( { colorScheme: 'dark' } );
-		expect( await surface() ).toBe( 'rgb(22, 21, 25)' );
+		const dark = await surfaces();
+		expect( dark.body ).toBe( dark.token );
+		// The token's two sides differ, so the body really followed the scheme.
+		expect( dark.token ).not.toBe( light.token );
 	} );
 
 	test( 'the editor canvas loads the tokens once, and the theme adds nothing around it', async ( {

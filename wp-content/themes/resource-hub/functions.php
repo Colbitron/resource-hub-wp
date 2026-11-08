@@ -46,6 +46,8 @@ function resource_hub_theme_register_styles(): void {
 	wp_register_style( 'resource-hub-figtree-fallback', get_theme_file_uri( 'build/fonts/figtree-fallback.css' ), array(), $version( 'fonts/figtree-fallback.css' ) );
 	wp_register_style( 'resource-hub-brand', get_theme_file_uri( 'build/brand.css' ), array( 'resource-hub-tokens' ), $version( 'brand.css' ) );
 }
+// At init's default priority, so the theme registers `resource-hub-tokens` before the plugin's
+// fallback registration at priority 20 (`SharedTokens::PRIORITY`) and its copy is the one served.
 add_action( 'init', 'resource_hub_theme_register_styles' );
 
 /**
@@ -61,6 +63,9 @@ add_action( 'init', 'resource_hub_theme_register_styles' );
  * its stylesheet did before the handle existed.) `add_editor_style()` is not used, because it inlines
  * a copy of the file into the editor's settings, which would load the tokens a second time beside the
  * block's handle.
+ *
+ * Caveat: if core ever draws the canvas without an iframe, the canvas is part of that admin page, so
+ * it would get the tokens through the block's handle but not the fallback faces or the lockup's CSS.
  */
 function resource_hub_theme_enqueue_styles(): void {
 	if ( is_admin() && wp_should_load_block_editor_scripts_and_styles() ) {

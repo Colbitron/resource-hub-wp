@@ -62,9 +62,19 @@ class TypeAccentsPlugin {
 	}
 }
 
-const CopyPlugin = scriptConfig.plugins.find(
+// Found among wp-scripts' own plugins rather than declared here, so the build
+// keeps the one copy-webpack-plugin wp-scripts is tested with. If a wp-scripts
+// upgrade drops or renames it, fail loudly instead of silently shipping a build
+// without the tokens copy that `src/Blocks/SharedTokens.php` registers.
+const copyPluginInstance = scriptConfig.plugins.find(
 	( plugin ) => plugin.constructor.name === 'CopyPlugin'
-).constructor;
+);
+if ( ! copyPluginInstance ) {
+	throw new Error(
+		'webpack.config.js: @wordpress/scripts no longer configures CopyPlugin, so build/shared/tokens.css cannot be copied. Declare copy-webpack-plugin in package.json and import it here instead.'
+	);
+}
+const CopyPlugin = copyPluginInstance.constructor;
 
 const tokens = require.resolve( '@colbitron/resource-hub-ui/tokens.css' );
 
