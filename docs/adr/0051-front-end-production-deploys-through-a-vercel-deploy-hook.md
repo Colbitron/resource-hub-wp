@@ -31,6 +31,6 @@ The deploy order puts the CMS first and the front end second: the front end goes
 
 ### 2026-11-07: `deploy-web` runs on Depot CI
 
-**What changed.** CI moved to Depot CI (ADR 0053), and `deploy-web` with it. The single `web` job it needed was split into parallel front-end jobs, so it now needs `deploy` plus every one of them: the checks (lint, typecheck, unit tests, the production build and its fixture-route check), the end-to-end suite, the screenshots and brand images, the Lighthouse shards and the job that merges their medians. `VERCEL_DEPLOY_HOOK_URL` is a Depot CI secret, no longer a GitHub repository secret.
+**What changed.** `deploy-web` runs on Depot CI, because CI moved there (ADR 0053). The single `web` job it needed was split into parallel front-end jobs, so it now needs `deploy` plus every one of them: the checks (lint, typecheck, unit tests, the production build and its fixture-route check), the end-to-end suite, the screenshots and brand images, the Lighthouse shards and the job that merges their medians. `VERCEL_DEPLOY_HOOK_URL` is a Depot CI secret, no longer a GitHub repository secret, because the job that reads it moved with CI.
 
 **What did not.** The hook, the head check before it fires and the rest of this record are unchanged: the front end still deploys only after the CMS, only from `main`, and only when every front-end job has passed on the commit the run tested.

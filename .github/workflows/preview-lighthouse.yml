@@ -10,10 +10,13 @@
 # and how to make it blocking later are in apps/web/e2e/README.md ("The
 # design gates").
 #
-# It stays on GitHub Actions while the rest of CI runs on Depot CI (ADR
-# 0053): Depot CI does not support the deployment_status trigger, and the
-# run is informational, so an Actions outage costs a comment, never a merge
-# or a deploy.
+# It stays on GitHub Actions for now while the rest of CI runs on Depot CI
+# (ADR 0053); moving it is a follow-up. Depot CI's compatibility page lists
+# on.deployment_status as supported (https://depot.dev/docs/ci/compatibility),
+# so the trigger is no obstacle. It still uses GitHub Actions minutes, and
+# if the GitHub limit is reached again it does not run; it is
+# informational, so nothing waits on it and that costs a comment, never a
+# merge or a deploy.
 #
 # Trigger: GitHub's deployment_status event, which Vercel sends when a
 # deployment it created on GitHub changes state. It fires only while the
