@@ -13,17 +13,17 @@
  * choices.
  *
  * `inc/theme-control.php` prints this whole file inline in `<head>`, before
- * core prints a stylesheet, so the first statement that runs sets the
+ * any stylesheet `<link>`, so the first statement that runs sets the
  * attribute as the browser parses the head, before anything is painted and
  * before any other script loads: a stored choice never flashes the other
  * scheme, with no external file to wait for. The rest waits for the DOM: it
  * checks the stored choice's radio, shows the group (`rh-theme--pending` off),
  * and applies and stores each change. Other open tabs follow a choice through
- * the `storage` event, and a page restored from the back/forward cache
- * re-reads the stored value, since it missed any such event while frozen. When
- * storage refuses a write (blocked, full), the choice still applies to this
- * page; after a reload both the page and the control fall back to what storage
- * holds, as on the front end.
+ * `localStorage`'s `storage` event, and a page restored from the back/forward
+ * cache re-reads the stored value, since it missed any such event while
+ * frozen. When storage refuses a write (blocked, full), the choice still
+ * applies to this page; after a reload both the page and the control fall
+ * back to what storage holds, as on the front end.
  *
  * No identifier leaks into the page's global scope, and no inline event
  * handler is written: the one `change` listener is added here. Modern syntax,
@@ -92,6 +92,22 @@
 		apply( choice );
 	};
 
+	/**
+	 * Whether a `storage` event is about `localStorage`, not `sessionStorage`;
+	 * false when reading `localStorage` throws (blocked), as in the front end's
+	 * `lib/theme-store.ts`.
+	 *
+	 * @param {Storage|null} area The event's `storageArea`.
+	 * @return {boolean} Whether it is `localStorage`.
+	 */
+	const isLocalStorage = ( area ) => {
+		try {
+			return area === localStorage;
+		} catch {
+			return false;
+		}
+	};
+
 	/** After something outside this page may have changed the stored value. */
 	const resync = () => {
 		const choice = stored();
@@ -109,7 +125,10 @@
 		}
 		// Another tab wrote localStorage: a null key is `clear()`, which removes ours too.
 		window.addEventListener( 'storage', ( event ) => {
-			if ( event.key === null || event.key === STORAGE_KEY ) {
+			if (
+				isLocalStorage( event.storageArea ) &&
+				( event.key === null || event.key === STORAGE_KEY )
+			) {
 				resync();
 			}
 		} );
