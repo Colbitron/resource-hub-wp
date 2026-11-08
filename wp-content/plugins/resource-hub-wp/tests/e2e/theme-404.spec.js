@@ -7,8 +7,8 @@
  * head nor an `X-Pingback` header.
  *
  * The site is given a published page, a resource and a post open to pings,
- * each with a title no fixed text contains, so a listing or a title on the
- * 404 would show up. Each is asked for as an anonymous visitor at a path that
+ * each with a title no fixed text contains, and a type and a topic with such
+ * names, so a listing, a title or a term on the 404 would show up. Each is asked for as an anonymous visitor at a path that
  * would otherwise render it, and the 404 is read twice: as HTML from a request
  * context, for the head and the headers, and in a browser with no session,
  * for what a visitor's accessibility tree shows. The theme's own lockup is
@@ -63,6 +63,13 @@ test.describe( "The theme's 404 for anonymous visitors", () => {
 	let resource;
 	let paths;
 
+	// Every title and term name the site was given, none of which a 404 may show.
+	const hiddenNames = () => [
+		...Object.values( titles ),
+		type.name,
+		topic.name,
+	];
+
 	test.beforeAll( async ( { requestUtils } ) => {
 		page = await requestUtils.rest( {
 			method: 'POST',
@@ -114,18 +121,22 @@ test.describe( "The theme's 404 for anonymous visitors", () => {
 	} );
 
 	test.afterAll( async ( { requestUtils } ) => {
-		for ( const path of [
-			`/wp/v2/resources/${ resource.id }`,
-			`/wp/v2/resource_type/${ type.id }`,
-			`/wp/v2/resource_topic/${ topic.id }`,
-			`/wp/v2/posts/${ post.id }`,
-			`/wp/v2/pages/${ page.id }`,
-		] ) {
-			await requestUtils.rest( {
-				method: 'DELETE',
-				path,
-				params: { force: true },
-			} );
+		// Guarded, so a beforeAll that failed part-way reports its own error, not a TypeError here.
+		const created = [
+			[ 'resources', resource ],
+			[ 'resource_type', type ],
+			[ 'resource_topic', topic ],
+			[ 'posts', post ],
+			[ 'pages', page ],
+		];
+		for ( const [ route, item ] of created ) {
+			if ( item?.id ) {
+				await requestUtils.rest( {
+					method: 'DELETE',
+					path: `/wp/v2/${ route }/${ item.id }`,
+					params: { force: true },
+				} );
+			}
 		}
 	} );
 
@@ -142,14 +153,14 @@ test.describe( "The theme's 404 for anonymous visitors", () => {
 			expect( html, path ).toContain( 'Page not found' );
 
 			expect( headers[ 'x-pingback' ], path ).toBeUndefined();
-			expect( html, path ).not.toMatch( /rel=["']?pingback/i );
+			expect( html, path ).not.toMatch( /rel\s*=\s*["']?pingback/i );
 			expect( html, path ).not.toContain( 'xmlrpc.php' );
 
 			expect( html, path ).not.toMatch( /<nav\b/i );
 			expect( html, path ).not.toContain( 'wp-block-navigation' );
 			expect( html, path ).not.toContain( 'wp-block-page-list' );
-			for ( const title of Object.values( titles ) ) {
-				expect( html, path ).not.toContain( title );
+			for ( const name of hiddenNames() ) {
+				expect( html, path ).not.toContain( name );
 			}
 		}
 	} );
@@ -177,9 +188,9 @@ test.describe( "The theme's 404 for anonymous visitors", () => {
 				anonymousPage.getByRole( 'navigation' ),
 				path
 			).toHaveCount( 0 );
-			for ( const title of Object.values( titles ) ) {
+			for ( const name of hiddenNames() ) {
 				await expect(
-					anonymousPage.getByText( title ),
+					anonymousPage.getByText( name ),
 					path
 				).toHaveCount( 0 );
 			}
