@@ -15,6 +15,7 @@ src/
   Rest/                  resolve route, page route, related route and its salted cache, the no-cache
                          header on anonymous REST reads, RouteMatch (which route and handler a request
                          reached, for the content-model REST guards)
+  Blocks/                the related-resources block: registration from build/ and the render callback
   Revalidation/          events, queue, dispatcher, sender, results, config, PostHog
   Pages/                 page path rules shared by the page route and page events
   Lockdown/              anonymous visitors get a 404 from theme pages; robots, sitemaps, oEmbed
@@ -23,7 +24,7 @@ src/
   Editor/                enqueues the editor scripts below
   Cli/                   the two WP-CLI commands
   Seed/                  the seeder behind `wp resource-hub seed`
-blocks/related-resources/  the block scaffold (editor only; the render callback is slice 4)
+blocks/related-resources/  the block's editor source: block.json, edit.js and the stylesheet imports
 editor/                  block-editor scripts: resource details panel with the related picks control,
                          type radios, required-fields notice and lock, revalidation notice
 admin/status-page/       the status page's picker script
@@ -42,7 +43,7 @@ Requirements on the host machine: Docker, Node 24 and pnpm. PHP, Composer and WP
 pnpm install               # the whole workspace
 pnpm env:start             # WordPress at http://localhost:8888, the tests site at :8889
 pnpm composer install      # inside the container; vendor/ lands in this directory
-pnpm build                 # compiles blocks/ and editor/ into build/ (not committed)
+pnpm build                 # compiles blocks/, editor/ and admin/ into build/ (not committed); the block is registered from there
 pnpm wp resource-hub seed  # optional sample content
 ```
 
@@ -83,12 +84,13 @@ Things to know:
 - **Publishing in a test takes all four fields.** A public resource needs a title, one type, a topic and a summary (`OneType`, `RequiredFields`), so a PHPUnit test that publishes through REST, and every Playwright spec that publishes, sends or stores them; `tests/e2e/required-fields.spec.js` covers the editor's notice, lock and checklist, with an axe scan of the sidebar through `@axe-core/playwright`, the workspace's accessibility scanner.
 - **Payloads are validated against the shared schemas.** `tests/phpunit/Revalidation/SchemaValidator.php` registers every schema in `packages/ui/schemas/` under its `$id` with `opis/json-schema` (draft 2020-12, cross-file `$ref`s) and checks every payload a test builds. `SchemaTest` runs the package's `revalidate-request.*.json` fixtures through the PHP validator, so the two validators agree on the request schema. No PHP test runs the other schemas' fixtures, and Ajv's strict compile runs only under `pnpm test:schemas`. `opis/json-schema` is a dev dependency and is never shipped.
 - **`build/` is not committed.** CI builds it before the gate runs; locally, run `pnpm build` (or `pnpm start` to watch) after `pnpm env:start`. `webpack.config.js` extends the `@wordpress/scripts` config with the non-block entries under `editor/` and `admin/`.
+- **The block is registered from `build/`, not `blocks/`.** The deploy syncs `src/`, `build/` and `vendor/` and leaves `blocks/` behind, so `RelatedResourcesBlock` reads `build/related-resources/block.json`; without a build the block is not registered, and `RelatedResourcesBlockTest` fails on its first assertion. Run `pnpm build` before `pnpm test:php` and `pnpm test:e2e`, as CI does. The block's stylesheet is the shared package's `tokens.css` and `card.css` (`@colbitron/resource-hub-ui`, a workspace dev dependency of the plugin), imported by `blocks/related-resources/style.css` and inlined by the build into `build/related-resources/style-index.css`, which the compiled `block.json` names as the block's `style`, so core enqueues it only where the block is used; it styles the block's resources, which render as `card.css` rows. Core enqueues that style for every instance of the block, even one whose callback renders nothing (no topic, or a deleted one).
 - **PHP 8.4 in wp-env, CI and on the host.** The declared floor (`Requires PHP`, `composer.json`, PHPCS `testVersion`) stays at 8.2 and is not exercised by CI.
 - **WordPress 6.9 or newer** (`Requires at least`). The salted object-cache helpers behind the related route's cache (`wp_cache_set_salted()`, `wp_cache_get_salted()`) arrived in 6.9.
 
 ## What is not built yet
 
-The block's render callback and its marker are the rest of slice 4; the related route (`GET /resource-hub/v1/related/{id}?count=n`) and the `related_picks` meta exist, with the editor's control for the picks in the Resource details panel, and the front end does not read them yet. The block directory holds an editor scaffold only. The CMS block theme is slice 5. The spec for both is in the slice-4 issue linked from the root README's status table.
+Slice 4 is built: the related route (`GET /resource-hub/v1/related/{id}?count=n`) and the `related_picks` meta, the editor's control for the picks in the Resource details panel, and the `resource-hub/related-resources` block, whose render callback writes the contract's marker (`packages/ui/README.md`, "Block marker") with card rows inside; the front end reads the route for its related section and swaps the marker for its own list. The CMS block theme is slice 5 ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)). Open follow-ups are issues [#85](https://github.com/Colbitron/resource-hub-wp/issues/85), [#86](https://github.com/Colbitron/resource-hub-wp/issues/86) and [#87](https://github.com/Colbitron/resource-hub-wp/issues/87), the last the related list's scale path.
 
 ## Possible next steps
 

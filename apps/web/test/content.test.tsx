@@ -780,7 +780,7 @@ describe("the block marker", () => {
 });
 
 describe("the block marker's rows", () => {
-  // The marker as the CMS block (a sibling branch, issue #50) writes it: the row markup of
+  // The marker as the CMS block (`RelatedResourcesBlock` in the plugin) writes it: the row markup of
   // `packages/ui/card.css`, with `role="list"` on both lists and no
   // `data-accent` (packages/ui/README.md, "Block marker").
   const ROW =
