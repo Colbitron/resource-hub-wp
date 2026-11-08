@@ -76,7 +76,7 @@ Three gates, all run by CI on Depot CI (`.depot/workflows/ci.yml`, the `gate` jo
 | `pnpm lint` / `pnpm lint:fix` | PHPCS / PHPCBF on WordPress Coding Standards as the base, the WordPress VIP Minimum ruleset on top, and the PSR-12 sniffs that do not conflict. Where WordPress and PSR-12 disagree, WordPress wins, and each exclusion in `phpcs.xml.dist` names the conflict. Warnings fail the gate: fix, do not silence. |
 | `pnpm test:php` | PHPUnit 9.6 inside the WordPress core test library that wp-env provides. The pin follows that library: as of WordPress 7.1 it depends on `yoast/phpunit-polyfills` 1.x, whose ceiling is PHPUnit 9. Tests are written against polyfills 4.x, but `phpunit.xml.dist` uses PHPUnit 9 names (`convertDeprecationsToExceptions`, `<coverage>`), so when core raises its ceiling, moving the pin also needs the PHPUnit 10+ configuration migration. |
 | `pnpm test:e2e` / `test:e2e:debug` | Playwright against the tests site on port 8889, with the WordPress e2e utilities. |
-| `pnpm lint:js` / `pnpm format` | ESLint and Prettier with the WordPress presets on `admin/`, `blocks/`, `editor/` and `tests/e2e/`. |
+| `pnpm lint:js` / `pnpm format` | ESLint and Prettier with the WordPress presets on `admin/`, `blocks/`, `editor/` and `tests/e2e/`, and on the CMS theme's `scripts/` (`lint:js:theme`, `format:theme`, run from the repository root so the workspace keeps one `@wordpress/scripts`). |
 | `pnpm test:schemas` | The contract's own test in `packages/ui`: Ajv compiles every schema in strict mode and checks every fixture. |
 
 Things to know:
