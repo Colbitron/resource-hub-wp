@@ -1218,13 +1218,16 @@ jobs:
           ssh deploy "cd $dir && $WP_CLI rewrite flush"
 
       # Relevanssi's index holds what the plugin's settings selected when it
-      # was built, so it is rebuilt on every deploy: after Relevanssi's first
-      # activation its tables are empty, and a deploy is the only way those
-      # settings change. The command (the plugin's SearchIndex class) empties
-      # the index and indexes every resource and page again, so a rerun
-      # leaves the same index; it is one pass over a few dozen posts, and the
-      # job's timeout bounds it. It fails the deploy if Relevanssi is not
-      # active or the build stops early.
+      # was built. A rebuild empties it first, so live search finds nothing
+      # or part of the library while it runs; the command (the plugin's
+      # SearchIndex class) therefore rebuilds only when the index is out of
+      # date: Relevanssi has no complete index, as after its first
+      # activation, or the stamp stored at the last build no longer matches
+      # Relevanssi's version, its database version and the index settings.
+      # On any other deploy it changes nothing. A rebuild is one pass over
+      # a few dozen posts, bounded by the job's timeout, and records the new
+      # stamp. It fails the deploy if Relevanssi is not active or the build
+      # stops early. `--force` is for a rebuild by hand, never here.
       - name: Build the search index
         run: |
           dir=$(printf '%q' "$WP_ROOT")

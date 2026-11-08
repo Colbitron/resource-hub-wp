@@ -19,20 +19,17 @@ use WP_REST_Request;
 use WP_UnitTestCase;
 
 /**
- * Each test builds the index through {@see SearchIndex}, as `wp resource-hub search-index` does,
- * then searches with `'relevanssi' => true`, the query var that turns Relevanssi on for a query
- * that is not the main one (Relevanssi 4.28.8, `lib/search.php:57`).
- *
- * The build truncates the index and analyzes the table, and both statements commit MySQL's open
- * transaction, which would keep this test's posts after its rollback. So {@see set_up()} turns
- * the truncate into a `DELETE` through Relevanssi's own filter and the analyze into a no-op, and
- * answers the build's fire-and-forget request to `admin-ajax.php` locally. None of these changes
- * what the index holds.
+ * Each test builds the index through {@see SearchIndex}, as `wp resource-hub search-index --force`
+ * does, then searches with `'relevanssi' => true`, the query var that turns Relevanssi on for a
+ * query that is not the main one (Relevanssi 4.28.8, `lib/search.php:57`). {@see BuildsSearchIndex}
+ * keeps those builds inside the test's transaction.
  *
  * "Core's search" below is a `WP_Query` with `s` and no `relevanssi` var, which Relevanssi does not
  * answer; it reads the title, excerpt and content alone, so it shows a match came from the index.
  */
 final class RelevanssiSearchTest extends WP_UnitTestCase {
+	use BuildsSearchIndex;
+
 	/**
 	 * A type term every resource gets.
 	 *
@@ -48,37 +45,13 @@ final class RelevanssiSearchTest extends WP_UnitTestCase {
 	private int $relevanssi_searches = 0;
 
 	/**
-	 * Fails without Relevanssi, unless the suite was asked to run without it; makes the index
-	 * build safe inside the test's transaction; creates a type.
+	 * Makes index builds safe inside the test's transaction, counts Relevanssi's searches and
+	 * creates a type.
 	 */
 	public function set_up(): void {
 		parent::set_up();
+		$this->use_transaction_safe_builds();
 
-		if ( getenv( 'RESOURCE_HUB_TESTS_WITHOUT_RELEVANSSI' ) ) {
-			$this->markTestSkipped( 'The suite is running without Relevanssi.' );
-		}
-
-		$this->assertTrue( ( new SearchIndex() )->available(), 'Relevanssi is not loaded. Run `pnpm env:start`, whose afterStart installs it from site-plugins/.' );
-
-		global $wpdb;
-		$table = $wpdb->prefix . 'relevanssi';
-
-		add_filter( 'relevanssi_truncate_index', static fn(): string => "DELETE FROM {$table}" );
-		add_filter( 'query', static fn( string $query ): string => str_starts_with( $query, 'ANALYZE TABLE' ) ? 'SELECT 1' : $query );
-		add_filter(
-			'pre_http_request',
-			static fn( $pre, array $args, string $url ) => str_contains( $url, 'admin-ajax.php' ) ? array(
-				'headers'  => array(),
-				'body'     => '',
-				'response' => array(
-					'code'    => 200,
-					'message' => 'OK',
-				),
-				'cookies'  => array(),
-			) : $pre,
-			10,
-			3
-		);
 		add_filter(
 			'relevanssi_hits_filter',
 			function ( array $data ): array {
@@ -301,6 +274,106 @@ final class RelevanssiSearchTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A draft, pending, private or scheduled resource never reaches `wp_relevanssi`, neither when it
+	 * is saved nor in a full build, so no query against the index can return it.
+	 *
+	 * @dataProvider unpublished_provider
+	 *
+	 * @param string $status The post status.
+	 */
+	public function test_an_unpublished_resource_never_reaches_the_index( string $status ): void {
+		$args = array( 'post_status' => $status );
+		if ( 'future' === $status ) {
+			$args['post_date'] = gmdate( 'Y-m-d H:i:s', time() + DAY_IN_SECONDS );
+		}
+		$hidden    = $this->resource( 'Zephyrine almanac', 'A field guide to zephyrine glass.', null, $args );
+		$published = $this->resource( 'Lantern almanac', 'A field guide.' );
+		relevanssi_insert_edit( $hidden );
+
+		$this->assertSame( $status, get_post_status( $hidden ) );
+		$this->assertSame( 0, $this->index_rows( $hidden ), 'Indexed on save.' );
+
+		$this->build_index();
+
+		$this->assertSame( 0, $this->index_rows( $hidden ), 'Indexed by the full build.' );
+		$this->assertGreaterThan( 0, $this->index_rows( $published ) );
+	}
+
+	/**
+	 * The statuses Relevanssi would index by default that the plugin keeps out.
+	 *
+	 * @return array<string, array{string}>
+	 */
+	public static function unpublished_provider(): array {
+		return array(
+			'draft'     => array( 'draft' ),
+			'pending'   => array( 'pending' ),
+			'private'   => array( 'private' ),
+			'scheduled' => array( 'future' ),
+		);
+	}
+
+	/**
+	 * Publishing adds a resource to the index and unpublishing, trashing and deleting take it out,
+	 * each through Relevanssi's save-time update with no rebuild.
+	 */
+	public function test_status_changes_add_and_remove_a_resource(): void {
+		$id = $this->resource( 'Lantern almanac', 'A field guide to zephyrine glass.', null, array( 'post_status' => 'draft' ) );
+		$this->build_index();
+		$this->assertSame( 0, $this->index_rows( $id ) );
+
+		wp_publish_post( $id );
+		$this->assertGreaterThan( 0, $this->index_rows( $id ), 'Publishing did not index it.' );
+		$this->assertSame( array( $id ), $this->search( 'zephyrine' )->posts, 'The summary was not indexed on publish.' );
+
+		wp_update_post(
+			array(
+				'ID'          => $id,
+				'post_status' => 'draft',
+			)
+		);
+		$this->assertSame( 0, $this->index_rows( $id ), 'Unpublishing did not remove it.' );
+
+		wp_publish_post( $id );
+		$this->assertGreaterThan( 0, $this->index_rows( $id ) );
+
+		wp_trash_post( $id );
+		$this->assertSame( 0, $this->index_rows( $id ), 'Trashing did not remove it.' );
+
+		wp_untrash_post( $id );
+		$this->assertSame( 'draft', get_post_status( $id ) );
+		$this->assertSame( 0, $this->index_rows( $id ), 'Restoring from the trash, as a draft, indexed it.' );
+
+		wp_publish_post( $id );
+		$this->assertGreaterThan( 0, $this->index_rows( $id ) );
+
+		wp_delete_post( $id, true );
+		$this->assertSame( 0, $this->index_rows( $id ), 'Deleting did not remove it.' );
+	}
+
+	/**
+	 * Core cleaning a post's cache drops it from Relevanssi's in-request copy under both its keys, and
+	 * leaves other posts there. Without that, the publish step of the test above finds nothing: the
+	 * copy Relevanssi read while the post was a draft would still say draft.
+	 */
+	public function test_cleaning_a_post_cache_drops_relevanssis_copy(): void {
+		global $relevanssi_post_array;
+		$id    = $this->resource( 'Lantern almanac', 'A field guide.' );
+		$other = $this->resource( 'Another resource', 'A field guide.' );
+		$blog  = get_current_blog_id();
+
+		$relevanssi_post_array[ $id ]                = get_post( $id ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Relevanssi's global.
+		$relevanssi_post_array[ "{$blog}|{$id}" ]    = get_post( $id ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Relevanssi's global.
+		$relevanssi_post_array[ "{$blog}|{$other}" ] = get_post( $other ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Relevanssi's global.
+
+		clean_post_cache( $id );
+
+		$this->assertArrayNotHasKey( $id, $relevanssi_post_array );
+		$this->assertArrayNotHasKey( "{$blog}|{$id}", $relevanssi_post_array );
+		$this->assertArrayHasKey( "{$blog}|{$other}", $relevanssi_post_array );
+	}
+
+	/**
 	 * A post type outside the configured two is not indexed, so it is never found.
 	 */
 	public function test_only_resources_and_pages_are_indexed(): void {
@@ -367,34 +440,28 @@ final class RelevanssiSearchTest extends WP_UnitTestCase {
 	/**
 	 * Creates a published resource with one type and a summary.
 	 *
-	 * @param string   $title   The title.
-	 * @param string   $summary The summary meta.
-	 * @param int|null $type    A type term ID, or null for the shared one.
+	 * @param string               $title   The title.
+	 * @param string               $summary The summary meta.
+	 * @param int|null             $type    A type term ID, or null for the shared one.
+	 * @param array<string, mixed> $args    More `wp_insert_post()` arguments, such as the status.
 	 * @return int The post ID.
 	 */
-	private function resource( string $title, string $summary, ?int $type = null ): int {
+	private function resource( string $title, string $summary, ?int $type = null, array $args = array() ): int {
 		$id = self::factory()->post->create(
-			array(
-				'post_type'    => PostType::NAME,
-				'post_status'  => 'publish',
-				'post_title'   => $title,
-				'post_content' => 'Body text.',
+			array_merge(
+				array(
+					'post_type'    => PostType::NAME,
+					'post_status'  => 'publish',
+					'post_title'   => $title,
+					'post_content' => 'Body text.',
+				),
+				$args
 			)
 		);
 		wp_set_object_terms( $id, $type ?? $this->type, Taxonomies::TYPE );
 		update_post_meta( $id, Meta::SUMMARY, $summary );
 
 		return $id;
-	}
-
-	/**
-	 * Builds the index the way the WP-CLI command does.
-	 */
-	private function build_index(): void {
-		$result = ( new SearchIndex() )->build();
-
-		$this->assertIsArray( $result );
-		$this->assertTrue( $result['complete'] );
 	}
 
 	/**

@@ -32,13 +32,25 @@ use ResourceHub\ContentModel\Taxonomies;
  * - **The resource summary is indexed.** `relevanssi_index_fields` takes a comma-separated list
  *   of meta keys (`lib/common.php:336`); only `summary` holds text a reader would search for.
  *   `source_url` is a URL and `related_picks` a list of IDs.
+ * - **Only published posts are indexed.** Relevanssi indexes drafts, pending, private and scheduled
+ *   posts too by default (`relevanssi_valid_status`, `lib/indexing.php:267`), and leaves it to each
+ *   search to filter them out. A public route queries this index, so nothing unpublished is put in
+ *   it at all: one missed filter in a query can then never leak it. The same list decides both the
+ *   full build (`lib/indexing.php:333`) and the save-time update (`relevanssi_insert_edit()`,
+ *   `lib/indexing.php:889`), which drops a post from the index once it is unpublished, trashed or
+ *   scheduled, and adds it back when it is published. On each save of a post outside the list,
+ *   Relevanssi also writes an empty `_relevanssi_noindex_reason` meta row, its own bookkeeping.
+ *   Password-protected posts are published, so they are indexed; the search route filters them.
  * - **Topic and type names are indexed.** `relevanssi_index_taxonomies_list` adds each listed
  *   taxonomy's term names to the post's index (`lib/indexing.php:564`). `resource_flag` is left
  *   out: it is not public, and its one term, `featured`, is a code-managed marker rather than
  *   anything a reader searches for.
  *
- * Changing any of these changes what the index holds, so the index must be rebuilt afterwards:
- * `wp resource-hub search-index`, which the deploy runs ({@see SearchIndex}).
+ * Changing any of these changes what the index holds, so the index must be rebuilt afterwards.
+ * {@see fingerprint()} reads them all, as Relevanssi will see them, into the stamp
+ * {@see SearchIndex} compares, so a change to any of them makes the deploy's
+ * `wp resource-hub search-index` rebuild; a new setting that changes what is indexed must be added
+ * there too.
  *
  * One behaviour is set through Relevanssi's own filter instead of an option:
  *
@@ -86,6 +98,13 @@ final class RelevanssiConfig {
 	public const TAXONOMIES = array( Taxonomies::TOPIC, Taxonomies::TYPE );
 
 	/**
+	 * The post statuses Relevanssi indexes.
+	 *
+	 * @var string[]
+	 */
+	public const STATUSES = array( 'publish' );
+
+	/**
 	 * Hooks the option filters.
 	 */
 	public function register(): void {
@@ -94,6 +113,23 @@ final class RelevanssiConfig {
 		add_filter( 'pre_option_relevanssi_index_fields', array( $this, 'index_fields' ) );
 		add_filter( 'pre_option_relevanssi_index_taxonomies_list', array( $this, 'index_taxonomies' ) );
 		add_filter( 'relevanssi_prevent_default_request', '__return_false' );
+		add_filter( 'relevanssi_valid_status', array( $this, 'index_statuses' ) );
+	}
+
+	/**
+	 * Every setting that decides what the index holds, read the way Relevanssi reads it, so a filter
+	 * added elsewhere counts too. The post statuses come from Relevanssi's own filter, with its
+	 * default as the starting value.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function fingerprint(): array {
+		return array(
+			'post_types' => get_option( 'relevanssi_index_post_types' ),
+			'fields'     => get_option( 'relevanssi_index_fields' ),
+			'taxonomies' => get_option( 'relevanssi_index_taxonomies_list' ),
+			'statuses'   => apply_filters( 'relevanssi_valid_status', array( 'publish', 'draft', 'private', 'pending', 'future' ) ), // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Relevanssi's filter, read as Relevanssi applies it.
+		);
 	}
 
 	/**
@@ -121,6 +157,15 @@ final class RelevanssiConfig {
 	 */
 	public function index_fields(): string {
 		return implode( ',', self::META_KEYS );
+	}
+
+	/**
+	 * `relevanssi_valid_status`: published posts only.
+	 *
+	 * @return string[]
+	 */
+	public function index_statuses(): array {
+		return self::STATUSES;
 	}
 
 	/**

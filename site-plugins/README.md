@@ -8,7 +8,7 @@ The plugins the CMS runs beside its own, as a Composer project: today one, [Rele
 
 - **wp-env.** `.wp-env.json` maps this directory and the repository's `wp-content/plugins/` into both containers, and its `afterStart` script runs `composer install` here on every start, then activates Relevanssi on both sites and builds the search index. It cannot be a wp-env `plugins` entry: wp-env activates those before `afterStart`, when a fresh checkout has no Relevanssi yet. The whole `plugins` directory is mapped, not Relevanssi's alone, because Composer replaces a package by deleting its directory, which fails on a mount point and leaves the plugin empty.
 - **CI.** The gate needs nothing extra: `pnpm env:start` installs it, from a fresh checkout every run, so a restored wp-env cache cannot hold a stale copy.
-- **The deploy.** The `deploy` job in `.depot/workflows/ci.yml` runs `composer install --no-dev` here on the runner, checks the installed version against the lock, rsyncs `wp-content/plugins/relevanssi/` into the same directory on the host, activates it and rebuilds the index (`docs/runbooks/deploy.md`, "The CMS deploy").
+- **The deploy.** The `deploy` job in `.depot/workflows/ci.yml` runs `composer install --no-dev` here on the runner, checks the installed version against the lock, rsyncs `wp-content/plugins/relevanssi/` into the same directory on the host, activates it and rebuilds the index if it is out of date, which a version change makes it (`docs/runbooks/deploy.md`, "The CMS deploy").
 
 Relevanssi's settings are not set here or in its settings screen: the plugin answers them in code (`wp-content/plugins/resource-hub-wp/src/Search/RelevanssiConfig.php`).
 
@@ -19,7 +19,7 @@ From the repository root, with wp-env running:
 ```sh
 # Edit the exact version in composer.json, then:
 pnpm composer:site update wpackagist-plugin/relevanssi
-pnpm wp resource-hub search-index
+pnpm wp resource-hub search-index   # rebuilds, since the version changed
 ```
 
 Commit `composer.json` and `composer.lock` together. Read the plugin's changelog first, check its `Requires PHP` and `Requires at least` against the host (PHP 8.4), and run the plugin's gate: `pnpm test:php` runs the search tests against the version installed. Relevanssi 4.28.8 declares `Requires PHP: 7.1` and `Requires at least: 4.9`, in its `readme.txt`. A release that changes Relevanssi's database version upgrades its tables on the first admin page load after the deploy, not from WP-CLI, so load one before relying on search.

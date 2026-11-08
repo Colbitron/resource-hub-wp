@@ -107,7 +107,7 @@ pnpm env:start          # WordPress at http://localhost:8888, tests site at :888
 pnpm composer install   # inside the container; vendor/ lands in the plugin directory
 pnpm build              # compiles the block and editor scripts into the plugin's build/, and copies the theme's assets into its build/
 pnpm wp resource-hub seed   # optional: fictional sample resources to list and filter
-pnpm wp resource-hub search-index   # builds the search index; later starts build it themselves
+pnpm wp resource-hub search-index --force   # rebuilds the search index after seeding; starts rebuild it only when out of date
 ```
 
 Log in at `http://localhost:8888/wp-admin` with `admin` / `password`. The plugin's [README](wp-content/plugins/resource-hub-wp/README.md) has the rest: configuration, the WP-CLI commands and testing. The front end's [README](apps/web/README.md) covers `apps/web`.

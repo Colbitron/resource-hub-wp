@@ -48,7 +48,7 @@ pnpm env:start             # WordPress at http://localhost:8888, the tests site 
 pnpm composer install      # inside the container; vendor/ lands in this directory
 pnpm build                 # compiles blocks/, editor/ and admin/ into build/ (not committed), with the type-accent table; the block is registered from there
 pnpm wp resource-hub seed  # optional sample content
-pnpm wp resource-hub search-index  # builds Relevanssi's index; later starts build it themselves
+pnpm wp resource-hub search-index --force  # rebuilds Relevanssi's index, since the seeder sets terms after saving
 ```
 
 `pnpm env:start` also installs Relevanssi from `site-plugins/` and activates it on both sites; it builds the search index too once this plugin's `vendor/` exists, so on the first start, before `pnpm composer install`, it prints that it skipped it.
@@ -70,20 +70,24 @@ Each runs through `pnpm wp` (the dev site) or `pnpm wp:tests` (the tests site).
   wp eval 'foreach ( get_posts( array( "post_type" => "resource", "post_status" => array( "publish", "future" ), "posts_per_page" => -1, "fields" => "ids" ) ) as $id ) { if ( ResourceHub\ContentModel\RequiredFields::missing_stored( $id ) ) { WP_CLI::line( $id . "\t" . get_post( $id )->post_title ); } }'
   ```
 
-- `wp resource-hub search-index` rebuilds Relevanssi's search index from scratch: it empties the index, then indexes every resource and page with its title, content, `summary` and topic and type names, the set `src/Search/RelevanssiConfig.php` selects. Safe to rerun; it fails when Relevanssi is not active. See [The search index](#the-search-index).
+- `wp resource-hub search-index [--force]` rebuilds Relevanssi's search index if it is out of date, and otherwise changes nothing: it empties the index, then indexes every published resource and page with its title, content, `summary` and topic and type names, the set `src/Search/RelevanssiConfig.php` selects. `--force` rebuilds a current index too. Fails when Relevanssi is not active. See [The search index](#the-search-index).
 - `wp resource-hub decode-slugs [--apply]` lists every `resource` post and every term in the three taxonomies whose stored slug still holds a percent escape the front end's router decodes (one of `A-Z a-z 0-9 - _ . ! ~ * ' ( )`), with the decoded slug and anything already holding it. A dry run unless given `--apply`, which saves each through core (`wp_update_post()`, `wp_update_term()`), so the old slug is kept in `_wp_old_slug` and the front end is revalidated as on any save. A term whose decoded slug another term has is skipped and reported: core refuses it, and an editor must type a new slug. Slugs saved since the `SlugEscapes` rule need no repair; only a cron publish of a scheduled resource bypasses it, because it writes the status alone.
 
 ## The search index
 
 Search runs on [Relevanssi](https://wordpress.org/plugins/relevanssi/), the free version, installed and pinned in [`site-plugins/`](../../../site-plugins/README.md). The plugin works without it: nothing in it needs Relevanssi, and `pnpm test:php` passes with it absent (below). Its settings live in code, in `src/Search/RelevanssiConfig.php`, as `pre_option_*` filters, so nothing is stored and its settings screen shows them but cannot change them: search logging off (Relevanssi's default too, now pinned), only resources and pages indexed, the `summary` meta and the topic and type names indexed, and every search query Relevanssi does not answer, the REST API's included, left to core's search. A query asks for it with `'relevanssi' => true` beside `s`; `src/Search/RelevanssiFoundPosts.php` keeps such a query's `found_posts` right, which Relevanssi alone gets wrong for `fields => ids`.
 
-The index holds what those settings selected when it was built, so it is rebuilt with `wp resource-hub search-index`:
+Only published posts are indexed: a draft, pending, private or scheduled resource or page never reaches Relevanssi's tables, so a query against the index cannot return one by mistake. Relevanssi applies the same rule on every save, so publishing adds a post, and unpublishing, trashing or deleting it takes it out.
 
-1. **After Relevanssi is first activated**, since its tables start empty. `pnpm env:start` does it on both wp-env sites; the deploy does it on the host.
-2. **After changing `RelevanssiConfig`**, locally with `pnpm wp resource-hub search-index`. The deploy rebuilds on every run, so the host follows on merge.
-3. **After renaming a topic or type**, if search must find the new name at once: Relevanssi re-indexes a resource when it is saved, terms and meta included, but not when one of its terms is renamed. Otherwise the next deploy catches it up.
+The index holds what those settings selected when it was built. `wp resource-hub search-index` compares a stamp of Relevanssi's version, its database version and those settings, stored in the `resource_hub_search_index_stamp` option at the last complete build, and rebuilds only when it differs or Relevanssi has no complete index. A rebuild empties the index first, so live search finds nothing or part of the library while it runs, which is why the deploy, which runs the command on every merge, must not rebuild a current index. Relevanssi has no full rebuild that skips the truncate (`src/Search/SearchIndex.php`). In practice:
 
-The build empties the index first, so while it runs a search finds only what it has indexed so far; the whole command took under a second for the 18 seeded resources and pages, WP-CLI's start-up included. Relevanssi keeps its index in its own tables (`wp_relevanssi` and two more); it writes no files.
+1. **After Relevanssi is first activated** its tables are empty and it reports no complete index, so the next run rebuilds. `pnpm env:start` runs it on both wp-env sites; the deploy runs it on the host.
+2. **After changing `RelevanssiConfig`, or upgrading Relevanssi**, the stamp differs, so the next run rebuilds: locally `pnpm wp resource-hub search-index`, on the host the deploy that ships the change.
+3. **After activating or deactivating Relevanssi or this plugin**, the stamp is deleted, since saves made meanwhile were indexed on Relevanssi's defaults or not at all, so the next run rebuilds.
+4. **After renaming or deleting a topic or type**, nothing to do: `src/Search/TermReindex.php` re-indexes that term's resources from WP-Cron, in events of at most 50, or at once under WP-CLI.
+5. **After a script assigns terms to posts it saved earlier**, as the seeder does, run `search-index --force`: Relevanssi re-indexes a post on save, not on a later term assignment.
+
+The whole command took under a second for the 17 seeded resources and published page, WP-CLI's start-up included. Relevanssi keeps its index in its own tables (`wp_relevanssi` and two more); it writes no files. It also keeps a copy of each post it reads for the rest of the request and never refreshes it, so `src/Search/RelevanssiPostCache.php` drops a post's copy whenever core cleans its own cache; without that, a post published in the same request it was read in as a draft stays out of that request's searches.
 
 ## Testing
 
