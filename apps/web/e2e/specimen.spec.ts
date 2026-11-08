@@ -117,7 +117,8 @@ test("shows a resource, a CMS page, the welcome page and the 404 page", async ({
   expect(decodeURIComponent((await body.locator("figure.wp-block-image img").getAttribute("src")) ?? "")).toContain("/media/2026/11/content-model.png");
   await expect(body.locator("figure.wp-block-image figcaption")).toBeVisible();
   // The related-resources block's fallback: the CMS's heading and its rows of card.css, kept by the pass inside the
-  // wrapper it marks `rh-related`, with the rows' links made root-relative and the rows' marks in the neutral ink.
+  // wrapper it marks `rh-related`, with the rows' links made root-relative and the rows' marks in the neutral ink
+  // (the CMS writes each row's `data-accent`, and the pass drops it).
   const related = body.locator(".rh-related");
   await expect(related.getByRole("heading", { level: 2, name: "More on content modelling" })).toBeVisible();
   await expect(related.locator("ul.rh-card-grid[role=list] > li > article.rh-card")).toHaveCount(2);

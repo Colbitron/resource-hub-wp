@@ -781,10 +781,11 @@ describe("the block marker", () => {
 
 describe("the block marker's rows", () => {
   // The marker as the CMS block (`RelatedResourcesBlock` in the plugin) writes it: the row markup of
-  // `packages/ui/card.css`, with `role="list"` on both lists and no
-  // `data-accent` (packages/ui/README.md, "Block marker").
+  // `packages/ui/card.css`, with `role="list"` on both lists and the type's
+  // `data-accent` from the shared table, which the fallback drops
+  // (packages/ui/README.md, "Block marker").
   const ROW =
-    '<li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type">Webinar</span><time datetime="2026-10-30T09:00:00Z">Oct 30, 2026</time></p>' +
+    '<li><article class="rh-card"><p class="rh-card__meta"><span class="rh-card__type" data-accent="coral">Webinar</span><time datetime="2026-10-30T09:00:00Z">Oct 30, 2026</time></p>' +
     '<div class="rh-card__body"><h3 class="rh-card__title"><a class="rh-card__link" href="https://cms.example/resources/webinar/example/">Example</a></h3>' +
     '<p class="rh-card__summary">A summary.</p><ul class="rh-card__topics" aria-label="Topics" role="list"><li class="rh-card__topic">Headless delivery</li></ul></div></article></li>';
   const CARD_MARKER =
