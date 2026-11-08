@@ -23,14 +23,22 @@ namespace ResourceHub\Search;
  *   at `edited_{taxonomy}`, as {@see \ResourceHub\Revalidation\TermEvents} does; and a deletion, whose
  *   posts are read at `pre_delete_term`, before core removes the relationships. A slug or
  *   description change re-indexes nothing, since only names are indexed.
- * - **When.** Out of the request, as the revalidation hook sends: the post IDs collected during the
- *   request are scheduled at `shutdown` as single WP-Cron events of at most {@see BATCH_SIZE} IDs
- *   each, so saving a term with many resources costs the editor one cron schedule, and each cron run
- *   is bounded. Under WP-CLI there is no later request to run cron, so they are re-indexed at
- *   `shutdown` straight away; so are they if core refuses to schedule the event.
- * - **How.** Each post goes through `relevanssi_insert_edit()`, Relevanssi's own save-time update,
- *   so it is indexed if it is published and removed from the index if not, under the same rules as
- *   a save.
+ * - **When.** Out of the request, as the revalidation hook defers its sends: the post IDs collected
+ *   during the request are sorted and scheduled at `shutdown` as single WP-Cron events of at most
+ *   {@see BATCH_SIZE} IDs each, so saving a term with many resources costs the editor a few cron
+ *   schedules, and each cron run is bounded. Sorting makes the same set of posts the same event
+ *   arguments, so core's rule against a duplicate event within ten minutes drops a repeat. The
+ *   events are {@see STAGGER} seconds apart, so one cron request does not take the whole term at
+ *   once. Nothing spawns cron directly: core runs due events on the next request, which on the host
+ *   is any request, since `DISABLE_WP_CRON` is unset there (checked read-only, 2026-11-08), and a
+ *   site that sets it runs them from its own cron instead. Under WP-CLI there is no later request
+ *   to count on, so the posts are re-indexed at `shutdown` straight away; so are they if core
+ *   refuses to schedule an event for any reason but that duplicate.
+ * - **How.** Each post that still exists and is published goes through `relevanssi_insert_edit()`,
+ *   Relevanssi's own save-time update, under the same rules as a save. A post deleted or unpublished
+ *   since it was queued is skipped: Relevanssi's own save and delete hooks already took it out of
+ *   the index, and `relevanssi_insert_edit()` on a missing post would write its
+ *   `_relevanssi_noindex_reason` meta for an ID that has no post.
  * - **Absent Relevanssi.** Nothing is queued or run; the next full rebuild after Relevanssi is
  *   activated covers it ({@see SearchIndex}).
  */
@@ -44,6 +52,11 @@ final class TermReindex {
 	 * Most post IDs in one cron event.
 	 */
 	public const BATCH_SIZE = 50;
+
+	/**
+	 * Seconds between one batch's event and the next.
+	 */
+	public const STAGGER = 60;
 
 	/**
 	 * The registered instance.
@@ -168,19 +181,20 @@ final class TermReindex {
 			return;
 		}
 
-		$scheduled = false;
+		sort( $ids );
+		$now = time();
 
-		foreach ( array_chunk( $ids, self::BATCH_SIZE ) as $batch ) {
-			if ( ! $this->synchronous && true === wp_schedule_single_event( time(), self::CRON_HOOK, array( $batch ), true ) ) {
-				$scheduled = true;
-				continue;
+		foreach ( array_chunk( $ids, self::BATCH_SIZE ) as $index => $batch ) {
+			if ( ! $this->synchronous ) {
+				$scheduled = wp_schedule_single_event( $now + $index * self::STAGGER, self::CRON_HOOK, array( $batch ), true );
+
+				// The same batch already waiting is the dedupe working: it will run once.
+				if ( true === $scheduled || ( is_wp_error( $scheduled ) && 'duplicate_event' === $scheduled->get_error_code() ) ) {
+					continue;
+				}
 			}
 
 			$this->run( $batch );
-		}
-
-		if ( $scheduled ) {
-			spawn_cron();
 		}
 	}
 
@@ -195,7 +209,13 @@ final class TermReindex {
 		}
 
 		foreach ( array_slice( $ids, 0, self::BATCH_SIZE ) as $id ) {
-			if ( is_numeric( $id ) && (int) $id > 0 ) {
+			if ( ! is_numeric( $id ) || (int) $id < 1 ) {
+				continue;
+			}
+
+			$status = get_post_status( (int) $id );
+
+			if ( false !== $status && in_array( $status, RelevanssiConfig::STATUSES, true ) ) {
 				relevanssi_insert_edit( (int) $id );
 			}
 		}

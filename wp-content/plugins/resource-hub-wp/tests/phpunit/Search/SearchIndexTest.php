@@ -110,9 +110,10 @@ final class SearchIndexTest extends WP_UnitTestCase {
 		match ( $change ) {
 			'relevanssi not indexed' => update_option( 'relevanssi_indexed', '' ),
 			'relevanssi version'     => $relevanssi_variables['plugin_version']   = '0.0.1', // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Relevanssi's global.
-			'relevanssi database'    => $relevanssi_variables['database_version'] = 1, // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Relevanssi's global.
+			'relevanssi database'    => $relevanssi_variables['database_version'] = (int) $relevanssi_variables['database_version'] + 1, // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Relevanssi's global.
 			'taxonomies'             => add_filter( 'pre_option_relevanssi_index_taxonomies_list', static fn(): array => array( Taxonomies::TOPIC ), 20 ),
 			'statuses'               => add_filter( 'relevanssi_valid_status', static fn(): array => array( 'publish', 'private' ), 20 ),
+			'stopwords'              => update_option( 'relevanssi_stopwords', array( 'en_US' => 'zzz' ) ),
 			'stamp missing'          => SearchIndex::forget(),
 		};
 
@@ -144,8 +145,104 @@ final class SearchIndexTest extends WP_UnitTestCase {
 			"Relevanssi's database changed"    => array( 'relevanssi database' ),
 			'the indexed taxonomies changed'   => array( 'taxonomies' ),
 			'the indexed statuses changed'     => array( 'statuses' ),
+			'the stopword list changed'        => array( 'stopwords' ),
 			'no build was recorded'            => array( 'stamp missing' ),
 		);
+	}
+
+	/**
+	 * A setting the plugin pins, saved to the database as Relevanssi's settings screen would save
+	 * it, changes nothing Relevanssi reads, so the index stays current.
+	 */
+	public function test_saving_a_pinned_setting_leaves_the_index_current(): void {
+		update_option( 'relevanssi_index_comments', 'all' );
+		update_option( 'relevanssi_expand_shortcodes', 'on' );
+
+		$this->assertNull( ( new SearchIndex() )->stale_reason() );
+	}
+
+	/**
+	 * After a Relevanssi upgrade that raises its database version, the build first brings the
+	 * tables to that version, as Relevanssi's own admin load would, then stores a stamp that says
+	 * so. The tables already have the current shape here, so the upgrade sends no DDL, which
+	 * would commit the test's transaction; the check below would say if it did.
+	 */
+	public function test_the_tables_are_upgraded_before_a_build(): void {
+		global $relevanssi_variables;
+		$saved = $relevanssi_variables;
+		$ddl   = array();
+		$watch = static function ( string $query ) use ( &$ddl ): string {
+			if ( preg_match( '/^\s*(ALTER|CREATE|DROP|RENAME)\b/i', $query ) ) {
+				$ddl[] = $query;
+			}
+			return $query;
+		};
+
+		try {
+			$relevanssi_variables['database_version'] = (int) get_option( 'relevanssi_db_version' ) + 1; // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Relevanssi's global.
+			$this->assertSame( "Relevanssi's tables are not at its database version", ( new SearchIndex() )->stale_reason() );
+
+			add_filter( 'query', $watch );
+			$result = ( new SearchIndex() )->build();
+			remove_filter( 'query', $watch );
+
+			$this->assertSame( array(), $ddl, 'The upgrade sent DDL inside the test.' );
+			$this->assertTrue( $result['built'] );
+			$this->assertSame( $relevanssi_variables['database_version'], (int) get_option( 'relevanssi_db_version' ) );
+			$this->assertNull( ( new SearchIndex() )->stale_reason() );
+		} finally {
+			$relevanssi_variables = $saved; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited, WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Relevanssi's global, restored.
+		}
+	}
+
+	/**
+	 * A build that completes on tables the upgrade did not bring to Relevanssi's database version
+	 * stores no stamp, so the next run tries again instead of calling old tables current.
+	 */
+	public function test_a_build_on_tables_left_behind_stores_no_stamp(): void {
+		global $relevanssi_variables;
+		$saved = $relevanssi_variables;
+		add_filter( 'pre_update_option_relevanssi_db_version', static fn( $value, $old ) => $old, 10, 2 );
+
+		try {
+			$relevanssi_variables['database_version'] = (int) get_option( 'relevanssi_db_version' ) + 1; // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Relevanssi's global.
+			$result                                   = ( new SearchIndex( static fn(): array => array( true, 1 ) ) )->build();
+
+			$this->assertTrue( $result['complete'] );
+			$this->assertFalse( get_option( SearchIndex::STAMP_OPTION ) );
+			$this->assertSame( "Relevanssi's tables are not at its database version", ( new SearchIndex() )->stale_reason() );
+		} finally {
+			$relevanssi_variables = $saved; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited, WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Relevanssi's global, restored.
+		}
+	}
+
+	/**
+	 * A build Relevanssi reports incomplete, or one that dies part way, leaves no stamp, though the
+	 * index was current before it: the stamp goes before the build starts, so an interrupted
+	 * `--force` reads as stale on the next run.
+	 */
+	public function test_an_incomplete_or_interrupted_build_stores_no_stamp(): void {
+		$this->assertIsString( get_option( SearchIndex::STAMP_OPTION ) );
+
+		$result = ( new SearchIndex( static fn(): array => array( false, 3 ) ) )->build( true );
+
+		$this->assertFalse( $result['complete'] );
+		$this->assertSame( 3, $result['indexed'] );
+		$this->assertFalse( get_option( SearchIndex::STAMP_OPTION ) );
+		$this->assertNotNull( ( new SearchIndex() )->stale_reason() );
+
+		$this->build_index();
+		try {
+			( new SearchIndex(
+				static function (): array {
+					throw new \RuntimeException( 'Killed.' );
+				}
+			) )->build( true );
+			$this->fail( 'The build was expected to throw.' );
+		} catch ( \RuntimeException $e ) {
+			$this->assertSame( 'Killed.', $e->getMessage() );
+		}
+		$this->assertFalse( get_option( SearchIndex::STAMP_OPTION ) );
 	}
 
 	/**

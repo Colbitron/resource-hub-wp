@@ -243,6 +243,12 @@ jobs:
         if: github.event_name == 'pull_request'
         run: node --test .depot/scripts/host-php-floor.test.mjs
 
+      # The same for the deploy's check of Relevanssi's files
+      # (.depot/scripts/plugin-checksums.mjs).
+      - name: Test the deploy's plugin checksum check
+        if: github.event_name == 'pull_request'
+        run: node --test .depot/scripts/plugin-checksums.test.mjs
+
       # The runner's own Node and git; nothing is installed.
       - name: Test the scope rules and CI result's verdict
         if: github.event_name == 'pull_request'
@@ -1053,22 +1059,39 @@ jobs:
         run: composer install --no-dev --prefer-dist --no-interaction --no-progress
 
       # The Relevanssi rsync below deletes on the host whatever its source
-      # lacks, so an empty or partial install would strip the host's copy.
-      # The source must hold the plugin's main file, at the version the lock
-      # pins, before anything is sent.
+      # lacks, and the lock pins Relevanssi's version and archive URL but no
+      # checksum: WordPress.org builds its zips on demand, so a zip's hash can
+      # change between downloads of one release. So the installed directory
+      # is checked against what WordPress.org publishes for that exact
+      # version, a SHA-256 for every file, the list `wp plugin
+      # verify-checksums` reads: every listed file present and unchanged,
+      # lib/ included, and nothing unlisted (.depot/scripts/
+      # plugin-checksums.mjs, failing closed). The version is checked first,
+      # in the shape a version has, before it goes into the URL.
       - name: Check Relevanssi's files
         run: |
           locked=$(jq -r '.packages[] | select(.name == "wpackagist-plugin/relevanssi") | .version' site-plugins/composer.lock)
+          if ! [[ "$locked" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
+            echo "::error::site-plugins/composer.lock pins no Relevanssi version in a recognised shape (got '$locked'). Nothing was deployed."
+            exit 1
+          fi
           main=wp-content/plugins/relevanssi/relevanssi.php
           installed=''
           if [ -f "$main" ]; then
             installed=$(sed -n '/^ \* Version:/{s/^ \* Version: *//p;q;}' "$main")
           fi
-          if [ -z "$locked" ] || [ "$locked" != "$installed" ]; then
+          if [ "$locked" != "$installed" ]; then
             echo "::error::wp-content/plugins/relevanssi holds version '$installed', but site-plugins/composer.lock pins '$locked'. Nothing was deployed."
             exit 1
           fi
-          echo "Relevanssi $installed is ready to sync."
+          checksums="$RUNNER_TEMP/relevanssi-checksums.json"
+          curl -fsS --max-time 30 --retry 3 --retry-delay 5 \
+            "https://downloads.wordpress.org/plugin-checksums/relevanssi/$locked.json" -o "$checksums" || {
+            echo "::error::Could not download WordPress.org's checksums for Relevanssi $locked. Nothing was deployed."
+            exit 1
+          }
+          PLUGIN_DIR=wp-content/plugins/relevanssi CHECKSUMS="$checksums" PLUGIN_SLUG=relevanssi EXPECT_VERSION="$locked" \
+            node .depot/scripts/plugin-checksums.mjs
 
       # The host key comes from a secret, so the first connection never trusts
       # an unknown key. The sandbox is discarded after the job, and the
@@ -1222,18 +1245,30 @@ jobs:
       # or part of the library while it runs; the command (the plugin's
       # SearchIndex class) therefore rebuilds only when the index is out of
       # date: Relevanssi has no complete index, as after its first
-      # activation, or the stamp stored at the last build no longer matches
-      # Relevanssi's version, its database version and the index settings.
-      # On any other deploy it changes nothing. A rebuild is one pass over
-      # a few dozen posts, bounded by the job's timeout, and records the new
-      # stamp. It fails the deploy if Relevanssi is not active or the build
-      # stops early. `--force` is for a rebuild by hand, never here.
+      # activation, its tables are not at its database version (the command
+      # upgrades them first), or the stamp stored at the last build no
+      # longer matches Relevanssi's version, its database version and the
+      # index settings. On any other deploy it changes nothing. A rebuild is
+      # one pass over a few dozen posts and records the new stamp only when
+      # it completes. `--force` is for a rebuild by hand, never here.
+      #
+      # Not fatal: by now the plugin and Relevanssi are live on the host, so
+      # failing here would only hold back the front-end deploy, which does
+      # not read the index, without repairing it. A failure, or a build that
+      # outlives the 4-minute limit inside the step, is a warning annotation
+      # instead, and the stamp it did not write makes the next deploy try
+      # again; docs/runbooks/deploy.md has the manual rebuild. The step's
+      # own timeout is the backstop if ssh itself hangs, at 6 minutes, below
+      # the job's 10 with room for the steps after it.
       - name: Build the search index
+        timeout-minutes: 6
         run: |
           dir=$(printf '%q' "$WP_ROOT")
           # $dir and $WP_CLI are meant to expand on the runner; printf %q has quoted $dir for the remote shell.
           # shellcheck disable=SC2029
-          ssh deploy "cd $dir && $WP_CLI resource-hub search-index"
+          if ! timeout 240 ssh deploy "cd $dir && $WP_CLI resource-hub search-index"; then
+            echo "::warning title=Search index not built::wp resource-hub search-index failed or ran past 4 minutes on the host. The CMS and Relevanssi are deployed, and the next deploy retries; to rebuild now, see docs/runbooks/deploy.md, \"The CMS deploy\"."
+          fi
 
       # The site's own home URL, read over SSH, so no hostname is committed and
       # no extra secret is needed. jq checks the body is the REST index, not

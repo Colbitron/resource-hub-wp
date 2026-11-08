@@ -209,7 +209,7 @@ final class RelevanssiSearchTest extends WP_UnitTestCase {
 		remove_all_filters( 'pre_option_relevanssi_log_queries' );
 		update_option( 'relevanssi_log_queries', 'on' );
 		$this->assertSame( 'on', get_option( 'relevanssi_log_queries' ) );
-		add_filter( 'pre_option_relevanssi_log_queries', array( new RelevanssiConfig(), 'log_queries' ) );
+		add_filter( 'pre_option_relevanssi_log_queries', array( new RelevanssiConfig(), 'pinned' ), 10, 2 );
 
 		$before = $this->log_rows( $log );
 		$this->assertCount( 1, $this->search( 'zephyrine' )->posts );
@@ -371,6 +371,45 @@ final class RelevanssiSearchTest extends WP_UnitTestCase {
 		$this->assertArrayNotHasKey( $id, $relevanssi_post_array );
 		$this->assertArrayNotHasKey( "{$blog}|{$id}", $relevanssi_post_array );
 		$this->assertArrayHasKey( "{$blog}|{$other}", $relevanssi_post_array );
+	}
+
+	/**
+	 * A page that holds only the related-resources block does not take the listed resources' words
+	 * as its own, and the block is never rendered while the index is built. Without the plugin's
+	 * filter the same page does take them, so the test can fail.
+	 */
+	public function test_the_related_block_is_not_indexed_into_its_page(): void {
+		$topic    = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TOPIC ) );
+		$resource = $this->resource( 'Lantern almanac', 'A field guide to zephyrine glass.' );
+		wp_set_object_terms( $resource, $topic, Taxonomies::TOPIC );
+		$page = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_title'   => 'Reading list',
+				'post_content' => sprintf( '<!-- wp:resource-hub/related-resources {"topic":%d,"count":3} /-->', $topic ),
+			)
+		);
+		$this->assertTrue( \WP_Block_Type_Registry::get_instance()->is_registered( 'resource-hub/related-resources' ), 'The block is not registered: run pnpm build.' );
+		$this->assertStringContainsString( 'Lantern almanac', do_blocks( get_post( $page )->post_content ), 'The block rendered nothing, so the test proves nothing.' );
+
+		$renders = 0;
+		$count   = static function ( $content, array $block ) use ( &$renders ) {
+			if ( 'resource-hub/related-resources' === $block['blockName'] ) {
+				++$renders;
+			}
+			return $content;
+		};
+		add_filter( 'render_block', $count, 10, 2 );
+		$this->build_index();
+		remove_filter( 'render_block', $count, 10 );
+
+		$this->assertSame( 0, $renders, 'The block was rendered for the index.' );
+		$this->assertSame( array( $resource ), $this->search( 'zephyrine' )->posts );
+		$this->assertSame( array( $resource ), $this->search( 'lantern' )->posts );
+
+		remove_all_filters( 'relevanssi_block_to_render' );
+		relevanssi_index_doc( $page, true, relevanssi_get_custom_fields(), true );
+		$this->assertContains( $page, $this->search( 'zephyrine' )->posts, 'Without the filter the page was expected to take the listed summary.' );
 	}
 
 	/**

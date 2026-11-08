@@ -28,10 +28,22 @@ use WP_Error;
  *   post that no longer belongs, so neither can apply a settings change. Hence the stamp below, so
  *   the deploy, which runs this on every merge, rebuilds only when it must.
  * - **When it rebuilds.** When Relevanssi has no complete index (`relevanssi_indexed` is not
- *   `done`, as after its first activation, before any build), or when the stamp stored at the last
- *   complete build differs from the current one: a hash of Relevanssi's version, its database
- *   version and {@see RelevanssiConfig::fingerprint()}. So a Relevanssi upgrade or a change to what
- *   is indexed rebuilds, and an ordinary deploy is a no-op. `--force` rebuilds regardless.
+ *   `done`, as after its first activation, before any build); when its tables are not at the
+ *   database version its code expects (`relevanssi_db_version`, below); or when the stamp stored at
+ *   the last complete build differs from the current one: a hash of Relevanssi's version, the
+ *   database version its code expects, the one its tables are at, and
+ *   {@see RelevanssiConfig::fingerprint()}. So a Relevanssi upgrade or a change to what is indexed
+ *   rebuilds, and an ordinary deploy is a no-op. `--force` rebuilds regardless.
+ * - **Its tables first.** Relevanssi upgrades its tables only from `relevanssi_admin_init`, on an
+ *   admin page load (`lib/init.php:184`), never from WP-CLI, so after an upgrade that changes its
+ *   database version a build from the deploy would run on the old tables. Before building, this
+ *   calls the same `relevanssi_create_database_tables()` with the version Relevanssi's code
+ *   expects; it does nothing when the stored version already matches (`lib/init.php:311`), and
+ *   otherwise runs `dbDelta()` and stores the new version. A build whose tables still are not at
+ *   that version afterwards stores no stamp, so the next run tries again.
+ * - **An interrupted build reads as stale.** The stamp is deleted before the build starts and
+ *   written only after a complete one, so a build that was killed, timed out or stopped early
+ *   (Relevanssi reports it incomplete) always leaves the index out of date for the next run.
  * - **The stamp.** One option, {@see STAMP_OPTION}, not autoloaded, written by the CLI command
  *   after a complete build: at deploy time or by hand, never on a reader's request. It is deleted
  *   when Relevanssi is activated or deactivated and when this plugin is activated
@@ -61,6 +73,23 @@ final class SearchIndex {
 	private const RELEVANSSI_PLUGIN = 'relevanssi/relevanssi.php';
 
 	/**
+	 * Runs the build: `relevanssi_build_index()` with `false`, unless a test supplies its own.
+	 *
+	 * @var \Closure(): array{0: bool, 1: int}
+	 */
+	private \Closure $builder;
+
+	/**
+	 * Constructor. Both arguments exist for tests; the plugin passes neither.
+	 *
+	 * @param \Closure|null $builder   The build to run, returning Relevanssi's `array( complete, indexed )`; null for Relevanssi's own.
+	 * @param bool|null     $available Whether Relevanssi counts as loaded; null to check for its build function.
+	 */
+	public function __construct( ?\Closure $builder = null, private ?bool $available = null ) {
+		$this->builder = $builder ?? static fn(): array => relevanssi_build_index( false );
+	}
+
+	/**
 	 * Hooks the stamp's removal to Relevanssi's activation and deactivation.
 	 */
 	public function register(): void {
@@ -72,7 +101,7 @@ final class SearchIndex {
 	 * Whether Relevanssi is loaded, so there is an index to build.
 	 */
 	public function available(): bool {
-		return function_exists( 'relevanssi_build_index' );
+		return $this->available ?? function_exists( 'relevanssi_build_index' );
 	}
 
 	/**
@@ -86,6 +115,7 @@ final class SearchIndex {
 				array(
 					'relevanssi' => $relevanssi_variables['plugin_version'] ?? null,
 					'database'   => $relevanssi_variables['database_version'] ?? null,
+					'tables'     => get_option( 'relevanssi_db_version' ),
 					'config'     => RelevanssiConfig::fingerprint(),
 				)
 			)
@@ -98,6 +128,10 @@ final class SearchIndex {
 	public function stale_reason(): ?string {
 		if ( 'done' !== get_option( 'relevanssi_indexed' ) ) {
 			return 'Relevanssi has no complete index';
+		}
+
+		if ( ! $this->tables_current() ) {
+			return "Relevanssi's tables are not at its database version";
 		}
 
 		$stored = get_option( self::STAMP_OPTION );
@@ -137,9 +171,16 @@ final class SearchIndex {
 			);
 		}
 
-		list( $complete, $indexed ) = relevanssi_build_index( false );
+		self::forget();
 
-		if ( $complete ) {
+		global $relevanssi_variables;
+		if ( function_exists( 'relevanssi_create_database_tables' ) && isset( $relevanssi_variables['database_version'] ) ) {
+			relevanssi_create_database_tables( $relevanssi_variables['database_version'] );
+		}
+
+		list( $complete, $indexed ) = ( $this->builder )();
+
+		if ( $complete && $this->tables_current() ) {
 			update_option( self::STAMP_OPTION, $this->stamp(), false );
 		}
 
@@ -149,6 +190,16 @@ final class SearchIndex {
 			'complete' => (bool) $complete,
 			'indexed'  => (int) $indexed,
 		);
+	}
+
+	/**
+	 * Whether Relevanssi's tables are at the database version its code expects.
+	 */
+	private function tables_current(): bool {
+		global $relevanssi_variables;
+
+		return isset( $relevanssi_variables['database_version'] )
+			&& (int) get_option( 'relevanssi_db_version' ) === (int) $relevanssi_variables['database_version'];
 	}
 
 	/**

@@ -159,6 +159,69 @@ final class TermReindexTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The batches are sorted by ID and scheduled {@see TermReindex::STAGGER} seconds apart, and the
+	 * same posts queued again within core's ten-minute window make no second event.
+	 */
+	public function test_batches_are_sorted_staggered_and_deduplicated(): void {
+		$ids = array();
+		for ( $i = 0; $i <= TermReindex::BATCH_SIZE; $i++ ) {
+			$ids[] = $this->resource();
+		}
+
+		$this->reindexer()->on_delete( $this->topic, Taxonomies::TOPIC );
+		$this->reindexer()->flush();
+
+		$indexed = 0;
+		$count   = static function ( $index ) use ( &$indexed ) {
+			++$indexed;
+			return $index;
+		};
+		add_filter( 'relevanssi_index_content', $count );
+		$this->reindexer()->on_delete( $this->topic, Taxonomies::TOPIC );
+		$this->reindexer()->flush();
+		remove_filter( 'relevanssi_index_content', $count );
+		$this->assertSame( 0, $indexed, 'A duplicate batch was re-indexed in the request instead of left to its event.' );
+
+		$events = array();
+		foreach ( _get_cron_array() as $timestamp => $hooks ) {
+			foreach ( $hooks[ TermReindex::CRON_HOOK ] ?? array() as $event ) {
+				$events[] = array( $timestamp, $event['args'][0] );
+			}
+		}
+
+		$this->assertCount( 2, $events );
+		$this->assertSame( TermReindex::STAGGER, $events[1][0] - $events[0][0] );
+		sort( $ids );
+		$this->assertSame( array_slice( $ids, 0, TermReindex::BATCH_SIZE ), $events[0][1] );
+		$this->assertSame( array_slice( $ids, TermReindex::BATCH_SIZE ), $events[1][1] );
+	}
+
+	/**
+	 * A queued post deleted, or unpublished, before its event runs is skipped: nothing is indexed
+	 * for it and Relevanssi writes no meta for an ID with no post.
+	 */
+	public function test_gone_or_unpublished_posts_are_skipped(): void {
+		global $wpdb;
+		$gone  = $this->resource();
+		$draft = $this->resource();
+		wp_delete_post( $gone, true );
+		wp_update_post(
+			array(
+				'ID'          => $draft,
+				'post_status' => 'draft',
+			)
+		);
+		delete_post_meta( $draft, '_relevanssi_noindex_reason' );
+
+		$this->reindexer()->run( array( $gone, $draft ) );
+
+		$this->assertSame( 0, (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE post_id = %d", $gone ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$this->assertSame( array(), get_post_meta( $draft, '_relevanssi_noindex_reason', false ) );
+		$this->assertSame( 0, $this->index_rows( $gone ) );
+		$this->assertSame( 0, $this->index_rows( $draft ) );
+	}
+
+	/**
 	 * Under WP-CLI, which has no later request to run cron, the posts are re-indexed at `shutdown`
 	 * itself and nothing is scheduled.
 	 */

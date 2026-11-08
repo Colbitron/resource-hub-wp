@@ -21,6 +21,14 @@ use WP_CLI\Utils;
  */
 final class SearchIndexCommand {
 	/**
+	 * Constructor. WP-CLI passes nothing; a test passes its own index.
+	 *
+	 * @param SearchIndex|null $index The index to build; null for the plugin's.
+	 */
+	public function __construct( private ?SearchIndex $index = null ) {
+	}
+
+	/**
 	 * Rebuilds the Relevanssi search index if it is out of date.
 	 *
 	 * The index is out of date when Relevanssi has no complete index (as after
@@ -47,7 +55,7 @@ final class SearchIndexCommand {
 	public function __invoke( array $args, array $assoc_args ): void {
 		unset( $args );
 
-		$result = ( new SearchIndex() )->build( (bool) Utils\get_flag_value( $assoc_args, 'force', false ) );
+		$result = ( $this->index ?? new SearchIndex() )->build( (bool) Utils\get_flag_value( $assoc_args, 'force', false ) );
 
 		if ( is_wp_error( $result ) ) {
 			WP_CLI::error( $result->get_error_message() );

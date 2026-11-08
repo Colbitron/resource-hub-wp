@@ -18,45 +18,40 @@ use WP_UnitTestCase;
  */
 final class RelevanssiConfigTest extends WP_UnitTestCase {
 	/**
-	 * Each pinned option reads the code's value whatever is stored, which is what a save on
-	 * Relevanssi's settings screen would store. The pin is lifted while the value is stored, since
-	 * with it in place `add_option()` sees the filtered value and stores nothing.
-	 *
-	 * @dataProvider pinned_provider
-	 *
-	 * @param string $option   The option name.
-	 * @param mixed  $stored   A value saved to the database.
-	 * @param mixed  $expected What `get_option()` must answer.
+	 * Every pinned option reads the code's value whatever is stored, as a save on Relevanssi's
+	 * settings screen would store it. The pin is lifted while the value is stored, since with it in
+	 * place `add_option()` sees the filtered value and stores nothing.
 	 */
-	public function test_option_is_answered_from_code( string $option, $stored, $expected ): void {
-		remove_all_filters( 'pre_option_' . $option );
-		update_option( $option, $stored );
-		$this->assertSame( $stored, get_option( $option ) );
+	public function test_every_pinned_option_is_answered_from_code(): void {
+		foreach ( RelevanssiConfig::PINNED as $option => $expected ) {
+			$stored = is_array( $expected ) ? array( 'stored' => 'by the settings screen' ) : 'stored-by-the-settings-screen';
+
+			remove_all_filters( 'pre_option_' . $option );
+			update_option( $option, $stored );
+			$this->assertSame( $stored, get_option( $option ), $option );
+		}
 
 		( new RelevanssiConfig() )->register();
 
-		$this->assertSame( $expected, get_option( $option ) );
+		foreach ( RelevanssiConfig::PINNED as $option => $expected ) {
+			$this->assertSame( $expected, get_option( $option ), $option );
+		}
 	}
 
 	/**
-	 * Relevanssi never blanks the SQL of a search it will not answer.
+	 * The values that matter, spelled out, so a change to the table is a change to this test too.
 	 */
-	public function test_default_request_is_never_prevented(): void {
-		$this->assertFalse( apply_filters( 'relevanssi_prevent_default_request', true, new WP_Query() ) ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Relevanssi's hook.
-	}
-
-	/**
-	 * The four pinned options, each stored as Relevanssi's settings screen could store it.
-	 *
-	 * @return array<string, array{string, mixed, mixed}>
-	 */
-	public static function pinned_provider(): array {
-		return array(
-			'logging'    => array( 'relevanssi_log_queries', 'on', 'off' ),
-			'post types' => array( 'relevanssi_index_post_types', array( 'post', 'page', 'attachment' ), array( 'resource', 'page' ) ),
-			'meta'       => array( 'relevanssi_index_fields', 'all', 'summary' ),
-			'taxonomies' => array( 'relevanssi_index_taxonomies_list', array( 'category' ), array( 'resource_topic', 'resource_type' ) ),
-		);
+	public function test_the_pinned_values(): void {
+		$this->assertSame( 'off', get_option( 'relevanssi_log_queries' ) );
+		$this->assertSame( 'off', get_option( 'relevanssi_admin_search' ) );
+		$this->assertSame( array( 'resource', 'page' ), get_option( 'relevanssi_index_post_types' ) );
+		$this->assertSame( 'summary', get_option( 'relevanssi_index_fields' ) );
+		$this->assertSame( array( 'resource_topic', 'resource_type' ), get_option( 'relevanssi_index_taxonomies_list' ) );
+		$this->assertSame( 'none', get_option( 'relevanssi_index_comments' ) );
+		$this->assertSame( 'off', get_option( 'relevanssi_index_author' ) );
+		$this->assertSame( 'off', get_option( 'relevanssi_index_excerpt' ) );
+		$this->assertSame( 'off', get_option( 'relevanssi_expand_shortcodes' ) );
+		$this->assertSame( '3', get_option( 'relevanssi_min_word_length' ) );
 	}
 
 	/**
@@ -72,5 +67,25 @@ final class RelevanssiConfigTest extends WP_UnitTestCase {
 		wp_cache_delete( 'relevanssi_index_post_types', 'options' );
 		wp_cache_delete( 'notoptions', 'options' );
 		$this->assertFalse( get_option( 'relevanssi_index_post_types' ) );
+	}
+
+	/**
+	 * Relevanssi never blanks the SQL of a search it will not answer.
+	 */
+	public function test_default_request_is_never_prevented(): void {
+		$this->assertFalse( apply_filters( 'relevanssi_prevent_default_request', true, new WP_Query() ) ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Relevanssi's hook.
+	}
+
+	/**
+	 * The related-resources block is dropped before Relevanssi renders it for the index; any other
+	 * block, and a value another filter already dropped, pass through.
+	 */
+	public function test_only_the_related_block_is_dropped(): void {
+		$config = new RelevanssiConfig();
+
+		$this->assertNull( $config->block_to_render( array( 'blockName' => 'resource-hub/related-resources' ) ) );
+		$this->assertSame( array( 'blockName' => 'core/paragraph' ), $config->block_to_render( array( 'blockName' => 'core/paragraph' ) ) );
+		$this->assertNull( $config->block_to_render( null ) );
+		$this->assertNull( apply_filters( 'relevanssi_block_to_render', array( 'blockName' => 'resource-hub/related-resources' ) ) ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Relevanssi's hook.
 	}
 }
