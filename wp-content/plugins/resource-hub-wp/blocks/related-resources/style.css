@@ -1,0 +1,16 @@
+/*
+ * The block's stylesheet: the shared package's tokens first, then the row
+ * stylesheet, as `DESIGN.md` ("Consumers and loading") says every consumer
+ * loads them. The block renders its resources as `card.css` rows, so this is
+ * what styles them in the editor and on the CMS's own pages. Nothing of the
+ * block's own is defined here.
+ *
+ * `wp-scripts build` inlines both imports (and `card-labels.css`, which
+ * `card.css` imports from beside it) into `build/related-resources/style-index.css`,
+ * which `block.json` registers as the block's `style`, so the deploy's rsync of
+ * `build/` carries the CSS and WordPress enqueues it only where the block is used.
+ * The editor's own stylesheet pipeline expects the file to be named `style.css`
+ * for that split.
+ */
+@import "@colbitron/resource-hub-ui/tokens.css";
+@import "@colbitron/resource-hub-ui/card.css";

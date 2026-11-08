@@ -6,23 +6,28 @@
 	"title": "Related Resources",
 	"category": "widgets",
 	"icon": "networking",
-	"description": "Lists resources that share a topic with the current one. Rendered on the server so the editor preview and the front end show the same HTML.",
+	"description": "The newest resources in one topic, leaving out the post this block sits in. Rendered on the server, so the editor preview and the CMS's own pages show the same list; the front end swaps it for its own.",
 	"keywords": [ "resources", "related", "topic" ],
 	"textdomain": "resource-hub",
 	"attributes": {
+		"topic": {
+			"type": "integer",
+			"default": 0
+		},
 		"count": {
 			"type": "integer",
 			"default": 3
 		},
-		"topic": {
+		"heading": {
 			"type": "string",
 			"default": ""
 		}
 	},
-	"usesContext": [ "postId", "postType" ],
+	"usesContext": [ "postId" ],
 	"supports": {
 		"html": false,
 		"align": [ "wide", "full" ]
 	},
-	"editorScript": "file:./index.js"
+	"editorScript": "file:./index.js",
+	"style": "file:./style-index.css"
 }

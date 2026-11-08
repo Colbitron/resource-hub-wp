@@ -12,6 +12,7 @@ namespace ResourceHub;
 use ResourceHub\Admin\ListColumn;
 use ResourceHub\Admin\StatusPage;
 use ResourceHub\Admin\TermNotice;
+use ResourceHub\Blocks\RelatedResourcesBlock;
 use ResourceHub\Cli\DecodeSlugsCommand;
 use ResourceHub\Cli\SeedCommand;
 use ResourceHub\ContentModel\Meta;
@@ -92,6 +93,7 @@ final class Plugin {
 		add_action( 'enqueue_block_editor_assets', array( new RequiredFieldsAssets( $this->file ), 'enqueue' ) );
 		add_action( 'enqueue_block_editor_assets', array( new RevalidationAssets( $this->file ), 'enqueue' ) );
 		( new Revalidation() )->register();
+		( new RelatedResourcesBlock() )->register();
 		add_action( 'rest_api_init', array( new ResolveRoute(), 'register' ) );
 		add_action( 'rest_api_init', array( new PageRoute(), 'register' ) );
 		$related_cache = new RelatedCache();

@@ -1,11 +1,14 @@
 /**
  * Registers the Related Resources block on the editor side. Rendering happens
- * in PHP; this file only wires metadata and the inspector controls.
+ * in PHP (`src/Blocks/RelatedResourcesBlock.php`); this file wires the
+ * metadata, the inspector controls and the stylesheet.
  */
 import { registerBlockType } from '@wordpress/blocks';
 
 import metadata from './block.json';
 import Edit from './edit';
+// Extracted to build/related-resources/style-index.css, which block.json loads.
+import './style.css';
 
 registerBlockType( metadata.name, {
 	edit: Edit,
