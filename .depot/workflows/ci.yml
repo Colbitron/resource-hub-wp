@@ -1,0 +1,1062 @@
+# Depot CI Migration
+# Source: .github/workflows/ci.yml
+#
+# Changes made:
+# - Changed GitHub runs-on labels to their Depot equivalents
+
+# The gate. Every pull request and every push to main runs the full chain
+# inside the same wp-env containers used locally, so a green run here means
+# the same thing as a green run on a laptop.
+#
+# Order matters in one place: PHPUnit reinstalls the tests database, which
+# deactivates every plugin on the tests site, so it runs before Playwright
+# and the Playwright specs re-activate the plugin themselves.
+#
+# The web job lints, typechecks, unit-tests, builds and end-to-end tests the Next.js front end
+# in apps/web alongside the gate, then runs its visual, accessibility and
+# performance gates on the end-to-end build: the axe scan runs inside the
+# end-to-end suite, the specimen's screenshots in Playwright's Docker image,
+# and Lighthouse CI against the same build. It needs no secrets: it builds
+# against a placeholder CMS URL and makes no CMS calls at build time. Every
+# step of it blocks a merge into main, and on main every step also blocks the
+# front end's deploy, except a Lighthouse budget miss: on a pull request into
+# main, a push to main or a manual dispatch on main a missed budget is a
+# warning, until issue #76 calibrates it (see the step). Any other Lighthouse
+# failure, such as a broken harness, still blocks. WCAG A and AA
+# accessibility stays gated by the axe scan, which blocks both.
+#
+# The deploy job runs after the gate, only on main and on manual dispatch, and
+# syncs the plugin, from wp-content/plugins/resource-hub-wp, to the Cloudways
+# host (ADR 0005). The deploy-web job runs after both deploy and web, and
+# starts the front end's production deploy on Vercel through a deploy hook
+# (ADR 0051).
+#
+# Lighthouse against each pull request's Vercel preview is a separate,
+# non-blocking workflow, preview-lighthouse.yml.
+name: CI
+
+# Pull requests run the gate once. A plain `push:` trigger alongside
+# `pull_request:` would run every branch twice, so pushes only count on main,
+# where the merge commit needs its own run (and later, its deploy).
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# A newer push to a pull request supersedes the older run. On main and for
+# manual dispatches a running run is never cancelled, because that would also
+# cancel its deploy job mid-sync, which the deploy job's own concurrency group
+# cannot prevent. GitHub keeps one waiting run per group and replaces it with
+# a newer one, which is fine: the newer commit includes the older.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+# Caches are restored everywhere and saved only from main. A cache entry
+# belongs to the ref that saved it: a pull request's run saves under
+# refs/pull/N/merge, which only that pull request can read, while every
+# run can also read what its base branch, main, saved. So entries saved on
+# main serve every pull request, and an entry a pull request saved serves
+# that pull request alone. On 2026-11-06 the repository's Actions cache was
+# at its 10 GB limit, where GitHub evicts the least recently used entries,
+# main's included: 18 of its 24 entries, about 8.2 GB, were per-PR copies
+# of the ~460 MB pnpm store that actions/setup-node's `cache: pnpm` saved.
+#
+# So every cache below is an actions/cache/restore step and a separate
+# actions/cache/save step (actions/cache@v6 has no input that turns its own
+# save off), and each save runs only when SAVE_CACHES is true and its
+# restore missed: cache-hit is 'true' only for an exact match of the key,
+# so main never uploads an identical entry again. Each save runs straight
+# after the step that fills the directory, so a later failure does not lose
+# it. A manual dispatch on main saves too: it runs in main's scope, which
+# pull requests read, so it can re-fill an evicted entry without waiting
+# for a merge. A dispatch on a tag, which is how a rollback deploys, does
+# not, since only that tag could read what it saved.
+env:
+  SAVE_CACHES: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+
+jobs:
+  gate:
+    name: Lint, build, and test
+    runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        # Reads the version from the packageManager field in package.json.
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # The pnpm store is cached by hand rather than with setup-node's
+      # `cache: pnpm`, which saves on every run (see the comment above jobs).
+      # The path comes from `pnpm store path --silent`, the command setup-node
+      # runs, and the key is the one setup-node v7 builds (src/cache-restore.ts:
+      # node-cache-<RUNNER_OS>-<os.arch()>-pnpm-<hash of pnpm-lock.yaml>, where
+      # os.arch() is Node's process.arch), so the entries setup-node saved on
+      # main still hit. actions/cache also versions an entry by its path
+      # string, so a different path, even to the same directory, would miss.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: |
+          store=$(pnpm store path --silent)
+          arch=$(node -p process.arch)
+          if [[ "$store" != /* ]] || [ -z "$arch" ]; then
+            echo "::error::Could not read the pnpm store path (got: $store) or Node's architecture (got: $arch)."
+            exit 1
+          fi
+          {
+            echo "path=$store"
+            echo "key-prefix=node-cache-$RUNNER_OS-$arch-pnpm-"
+          } >> "$GITHUB_OUTPUT"
+
+      # A pull request that changes the lockfile misses the key and falls back
+      # to main's latest store, so pnpm downloads only what changed. main gets
+      # no fallback: after a lockfile change it installs into an empty store
+      # and saves that, so main's entry holds the current lockfile's packages
+      # and never piles up the ones it dropped.
+      - name: Restore the pnpm store
+        id: pnpm-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-store.outputs.key-prefix }}${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ env.SAVE_CACHES != 'true' && steps.pnpm-store.outputs.key-prefix || '' }}
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Save the pnpm store
+        if: env.SAVE_CACHES == 'true' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
+
+      # The JSON Schema contract with the front end (ADR 0010): compiles every
+      # schema in strict mode and checks every fixture. Pure Node, so it runs
+      # before anything that needs Docker.
+      - name: Test the contract schemas
+        run: pnpm --filter @colbitron/resource-hub-ui test
+
+      - name: Lint JavaScript
+        run: pnpm lint:js
+
+      - name: Build the block
+        run: pnpm build
+
+      # wp-env picks ~/wp-env (no dot) on Linux hosts that have /snap, which the
+      # GitHub runners do. Pin the location so the cache path below is exact.
+      # Playwright is a dependency of the plugin package, not the root, so its
+      # version is read from there. A failed or garbled read fails the step
+      # rather than caching under a key like playwright-Linux-: pnpm exits 0
+      # and prints a message when the filter matches no package, so the value
+      # is checked, not just the exit code. ImageOS and ImageVersion name the
+      # runner image (GitHub-hosted runners set them), which decides the
+      # versions apt installs; they are checked for the same reason.
+      - name: Compute cache keys
+        id: keys
+        run: |
+          playwright=$(pnpm --filter resource-hub-wp exec node -p "require('@playwright/test/package.json').version")
+          if ! [[ "$playwright" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Could not read the Playwright version from resource-hub-wp (got: $playwright)."
+            exit 1
+          fi
+          if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
+            echo "::error::ImageOS or ImageVersion is not set; the apt package cache needs a GitHub-hosted runner image."
+            exit 1
+          fi
+          {
+            echo "week=$(date -u +%G-W%V)"
+            echo "playwright=$playwright"
+            echo "image=$ImageOS-$ImageVersion"
+            echo "wp_env_home=$RUNNER_TEMP/wp-env"
+            echo "apt_dir=$RUNNER_TEMP/playwright-apt"
+          } >> "$GITHUB_OUTPUT"
+          echo "WP_ENV_HOME=$RUNNER_TEMP/wp-env" >> "$GITHUB_ENV"
+
+      # wp-env downloads WordPress core and the core test library into
+      # WP_ENV_HOME and reuses them when its config checksum matches. The weekly
+      # suffix keeps the unpinned "latest" core from freezing at whatever was
+      # cached first, so there are no restore keys: a fallback to last week's
+      # entry would be saved again under this week's key and never refresh.
+      # Until main runs in a new week, pull requests miss and download.
+      - name: Restore wp-env downloads
+        id: wp-env-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.keys.outputs.wp_env_home }}
+          key: wp-env-${{ runner.os }}-${{ hashFiles('.wp-env.json') }}-${{ steps.keys.outputs.week }}
+
+      - name: Start wp-env
+        run: pnpm env:start
+
+      - name: Save wp-env downloads
+        if: env.SAVE_CACHES == 'true' && steps.wp-env-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.keys.outputs.wp_env_home }}
+          key: ${{ steps.wp-env-cache.outputs.cache-primary-key }}
+
+      - name: Restore Composer vendor directory
+        id: composer-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: wp-content/plugins/resource-hub-wp/vendor
+          key: composer-${{ runner.os }}-${{ hashFiles('wp-content/plugins/resource-hub-wp/composer.lock') }}
+
+      - name: Install PHP dependencies
+        run: pnpm composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Save Composer vendor directory
+        if: env.SAVE_CACHES == 'true' && steps.composer-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: wp-content/plugins/resource-hub-wp/vendor
+          key: ${{ steps.composer-cache.outputs.cache-primary-key }}
+
+      - name: Lint PHP
+        run: pnpm lint
+
+      - name: Run PHPUnit
+        run: pnpm test:php
+
+      # The key holds the resolved Playwright version, so an upgrade misses and
+      # downloads the new browser.
+      - name: Restore Playwright browser
+        id: playwright-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.keys.outputs.playwright }}
+
+      # The slow part of the install is apt, not the browser. Over 24 runs, six
+      # install steps in five runs (42260378556 in both jobs, 42286339233,
+      # 42289940447, 42295207168 and 42295912781) took 559 to 615 seconds
+      # instead of 10 to 30, and one more (42304468204, attempt 1) was
+      # cancelled at about 8.4 minutes: azure.archive.ubuntu.com sent the
+      # ~22 MB of fonts Playwright asks for at 30 to 40 kB/s, while the index
+      # update before it took 2 seconds (run 42289940447). So the .deb files
+      # apt downloads are cached. The fonts are new packages, resolved from the
+      # live index apt-get update fetches, so the key cannot pin their
+      # versions: the Playwright version fixes the package list, and the
+      # runner image (ImageOS, ImageVersion) works as a refresh clock, so a new
+      # image or an upgrade misses and saves a fresh set. A file the index no
+      # longer names has a different versioned filename, which apt ignores and
+      # downloads past; the save runs only on a miss, so such a partial hit is
+      # not refreshed until the key changes. apt checks only the size of a file
+      # already in place, so a corrupt one of the right size fails dpkg on every
+      # hit; to recover, delete the entry (gh cache delete <key>, or Actions >
+      # Caches).
+      - name: Restore Playwright's apt packages
+        id: apt-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.keys.outputs.apt_dir }}
+          key: playwright-apt-${{ steps.keys.outputs.image }}-${{ runner.arch }}-${{ steps.keys.outputs.playwright }}
+
+      # On a browser cache hit only the system packages are installed
+      # (install-deps); on a miss the browser is downloaded too. Either way
+      # Playwright runs `apt-get update` and then `apt-get install`, which
+      # skips any package whose .deb is already in /var/cache/apt/archives
+      # (root-owned, hence sudo). On an apt cache miss the files apt fetched
+      # are copied out for the save step below; the runner image ends with
+      # `apt-get clean`, and apt-get keeps what it downloads, so everything
+      # there came from this install. The step limit sits above the slowest
+      # install seen (10.2 minutes), so a miss on a slow mirror still passes.
+      - name: Install Playwright browser
+        id: install-browser
+        timeout-minutes: 15
+        env:
+          CACHE_HIT: ${{ steps.playwright-cache.outputs.cache-hit }}
+          APT_CACHE_HIT: ${{ steps.apt-cache.outputs.cache-hit }}
+          APT_DIR: ${{ steps.keys.outputs.apt_dir }}
+        run: |
+          shopt -s nullglob
+          archives=/var/cache/apt/archives
+          if [ "$APT_CACHE_HIT" = 'true' ]; then
+            cached=("$APT_DIR"/*.deb)
+            if [ "${#cached[@]}" -gt 0 ]; then
+              sudo cp -- "${cached[@]}" "$archives/"
+              echo "Placed ${#cached[@]} cached .deb files in $archives."
+            else
+              echo "::warning::The apt package cache hit but held no .deb files; apt downloads them."
+            fi
+          fi
+          if [ "$CACHE_HIT" = 'true' ]; then
+            pnpm --filter resource-hub-wp exec playwright install-deps chromium
+          else
+            pnpm --filter resource-hub-wp exec playwright install --with-deps chromium
+          fi
+          if [ "$APT_CACHE_HIT" != 'true' ]; then
+            downloaded=("$archives"/*.deb)
+            echo "apt downloaded ${#downloaded[@]} .deb files."
+            if [ "${#downloaded[@]}" -gt 0 ]; then
+              mkdir -p "$APT_DIR"
+              cp -- "${downloaded[@]}" "$APT_DIR/"
+              echo "save-apt=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      # Saved straight after the install, not in a post step, so a later test
+      # failure does not throw away a slow download. Nothing is saved when apt
+      # downloaded nothing, so an empty entry never hides a later download.
+      - name: Save Playwright's apt packages
+        if: env.SAVE_CACHES == 'true' && steps.install-browser.outputs.save-apt == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.keys.outputs.apt_dir }}
+          key: ${{ steps.apt-cache.outputs.cache-primary-key }}
+
+      - name: Save Playwright browser
+        if: env.SAVE_CACHES == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.playwright-cache.outputs.cache-primary-key }}
+
+      - name: Run Playwright
+        run: pnpm test:e2e
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-artifacts
+          path: wp-content/plugins/resource-hub-wp/artifacts/
+          retention-days: 7
+
+      - name: wp-env logs
+        if: failure()
+        run: pnpm exec wp-env logs tests --watch=false
+
+  web:
+    # The name is kept as it was before the screenshot and Lighthouse steps
+    # joined the job, so a required status check that names it still matches.
+    name: Lint, typecheck, and build the front end
+    runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
+    # Room for the install step's own 15-minute limit (an apt cache miss on a
+    # slow mirror) plus the rest of the job: about 10.5 minutes in run
+    # 42337676741 with Lighthouse at three runs per URL (327 s), and about 3.6
+    # more now that it takes five (about 545 s at the same pace), so about 14.
+    timeout-minutes: 35
+
+    # A placeholder, never a secret. next.config.ts builds the /media/ rewrite
+    # from WP_API_URL, so CI builds the same routes a deploy does; nothing
+    # fetches from it during the build. cms.example is a reserved name that never
+    # resolves. REVALIDATE_SECRET is read only when the revalidate route runs,
+    # so it is not set here.
+    env:
+      WP_API_URL: https://cms.example/wp-json
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # The same store, key and rule as the gate's; see the comments there.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: |
+          store=$(pnpm store path --silent)
+          arch=$(node -p process.arch)
+          if [[ "$store" != /* ]] || [ -z "$arch" ]; then
+            echo "::error::Could not read the pnpm store path (got: $store) or Node's architecture (got: $arch)."
+            exit 1
+          fi
+          {
+            echo "path=$store"
+            echo "key-prefix=node-cache-$RUNNER_OS-$arch-pnpm-"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pnpm store
+        id: pnpm-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-store.outputs.key-prefix }}${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ env.SAVE_CACHES != 'true' && steps.pnpm-store.outputs.key-prefix || '' }}
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Save the pnpm store
+        if: env.SAVE_CACHES == 'true' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
+
+      # Playwright is a dependency of apps/web, so the version for the cache
+      # keys is read from there, and checked like the gate's (see "Compute
+      # cache keys" there), so a failed read fails the step rather than
+      # caching under an empty or garbled version. `image` is the runner's
+      # image, for the apt cache key.
+      #
+      # The screenshot tests run Chromium in Playwright's official Docker image,
+      # pinned by digest in apps/web/e2e/playwright-image.mts (`docker_image`).
+      # The image is large, so its pull starts here in the background and
+      # overlaps lint, typecheck, the builds and the end-to-end run. The pull's
+      # exit status goes to a file that the "Wait for the screenshot image"
+      # step below reads, so a failed pull shows as its own error with its log,
+      # not as a late, slower pull inside the screenshot step.
+      - name: Compute Playwright's cache keys and start pulling its image
+        id: playwright
+        run: |
+          version=$(pnpm --filter resource-hub-web exec node -p "require('@playwright/test/package.json').version")
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Could not read the Playwright version from resource-hub-web (got: $version)."
+            exit 1
+          fi
+          if [ -z "${ImageOS:-}" ] || [ -z "${ImageVersion:-}" ]; then
+            echo "::error::ImageOS or ImageVersion is not set; the apt package cache needs a GitHub-hosted runner image."
+            exit 1
+          fi
+          docker_image=$(node -e "import('./apps/web/e2e/playwright-image.mts').then((m) => console.log(m.PLAYWRIGHT_IMAGE))")
+          {
+            echo "version=$version"
+            echo "image=$ImageOS-$ImageVersion"
+            echo "apt_dir=$RUNNER_TEMP/playwright-apt"
+            echo "docker_image=$docker_image"
+          } >> "$GITHUB_OUTPUT"
+          # The inner sh expands $1, $2 and $? itself, so the single quotes are intended.
+          # shellcheck disable=SC2016
+          nohup sh -c 'docker pull --platform linux/amd64 "$1"; echo $? > "$2"' sh "$docker_image" \
+            "$RUNNER_TEMP/playwright-image-pull.status" > "$RUNNER_TEMP/playwright-image-pull.log" 2>&1 &
+
+      - name: Lint the front end
+        run: pnpm web:lint
+
+      - name: Typecheck the front end
+        run: pnpm web:typecheck
+
+      - name: Run the front end's unit tests
+        run: pnpm web:test
+
+      - name: Build the front end
+        run: pnpm web:build
+
+      # The fixture pages are routes only under RH_FIXTURES=1 (see
+      # apps/web/e2e/README.md). This build runs without it, so if they reached
+      # the output anyway, the test-only pages would ship; fail before the e2e
+      # build overwrites .next.
+      - name: Check the fixture routes are not in the production build
+        run: |
+          if [ -e apps/web/.next/server/app/fixtures ]; then
+            echo "::error::The production build contains apps/web/.next/server/app/fixtures; the fixture routes must never ship."
+            exit 1
+          fi
+
+      # The fonts apt fetches from a sometimes very slow Ubuntu mirror, cached
+      # and keyed like the gate's; see the comment there. While both jobs
+      # resolve the same Playwright version they share one entry.
+      - name: Restore Playwright's apt packages
+        id: apt-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.playwright.outputs.apt_dir }}
+          key: playwright-apt-${{ steps.playwright.outputs.image }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+
+      # Places the cached .deb files where apt looks for them, installs the
+      # browser and its system packages, and on an apt cache miss copies out
+      # what apt fetched; see the gate's install step for why, and for the step
+      # limit. There is no browser cache here: restoring it took about as long
+      # as downloading Chromium (about 11 seconds, run 42304468204 attempt 2),
+      # and the repository's Actions cache is already at its 10 GB limit. The
+      # browser serves the end-to-end suite and Lighthouse CI, which runs
+      # Playwright's Chromium (apps/web/lighthouserc.cjs).
+      - name: Install Playwright's browser
+        id: install-browser
+        timeout-minutes: 15
+        env:
+          APT_CACHE_HIT: ${{ steps.apt-cache.outputs.cache-hit }}
+          APT_DIR: ${{ steps.playwright.outputs.apt_dir }}
+        run: |
+          shopt -s nullglob
+          archives=/var/cache/apt/archives
+          if [ "$APT_CACHE_HIT" = 'true' ]; then
+            cached=("$APT_DIR"/*.deb)
+            if [ "${#cached[@]}" -gt 0 ]; then
+              sudo cp -- "${cached[@]}" "$archives/"
+              echo "Placed ${#cached[@]} cached .deb files in $archives."
+            else
+              echo "::warning::The apt package cache hit but held no .deb files; apt downloads them."
+            fi
+          fi
+          pnpm --filter resource-hub-web exec playwright install --with-deps chromium
+          if [ "$APT_CACHE_HIT" != 'true' ]; then
+            downloaded=("$archives"/*.deb)
+            echo "apt downloaded ${#downloaded[@]} .deb files."
+            if [ "${#downloaded[@]}" -gt 0 ]; then
+              mkdir -p "$APT_DIR"
+              cp -- "${downloaded[@]}" "$APT_DIR/"
+              echo "save-apt=true" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      # Saved straight after the install; see the gate's save step.
+      - name: Save Playwright's apt packages
+        if: env.SAVE_CACHES == 'true' && steps.install-browser.outputs.save-apt == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.playwright.outputs.apt_dir }}
+          key: ${{ steps.apt-cache.outputs.cache-primary-key }}
+
+      # Starts the mock CMS (apps/web/e2e/mock-cms, plain Node, no Docker and
+      # no secrets), builds again with the test-only fixture routes
+      # (RH_FIXTURES=1) and WP_API_URL pointing at the mock, and runs the
+      # specs against `next start`; see apps/web/playwright.config.ts and
+      # apps/web/e2e/README.md.
+      - name: Run the front end's end-to-end tests
+        id: e2e
+        run: pnpm web:test:e2e
+
+      # The rest reuse the build the end-to-end run left in apps/web/.next
+      # (RH_E2E_PREBUILT=1), built with the fixture routes and the mock CMS on
+      # the default ports, so no third `next build` runs; the harness stamps
+      # that build and each step checks the stamp first
+      # (apps/web/e2e/build-stamp.mts), so a missing or other build fails
+      # with the reason.
+      #
+      # They need that build, not a passing end-to-end run, so they run
+      # whenever the end-to-end step ran, pass or fail: a failing spec must
+      # not hide a screenshot diff or a budget. A failure in any of them
+      # still fails the job, except a Lighthouse budget miss on a pull request
+      # into main, a push to main or a manual dispatch on main, which is a
+      # warning (see the Lighthouse step).
+
+      # Joins the background pull started above and fails here, with its log,
+      # if it failed.
+      - name: Wait for the screenshot image
+        id: image
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
+        timeout-minutes: 10
+        run: |
+          status_file="$RUNNER_TEMP/playwright-image-pull.status"
+          until [ -s "$status_file" ]; do sleep 2; done
+          echo "::group::docker pull log"
+          cat "$RUNNER_TEMP/playwright-image-pull.log"
+          echo "::endgroup::"
+          if [ "$(cat "$status_file")" != "0" ]; then
+            echo "::error::Pulling ${{ steps.playwright.outputs.docker_image }} failed; the log is above."
+            exit 1
+          fi
+
+      # The specimen page (app/fixtures/specimen/) against the baselines in
+      # apps/web/e2e/__screenshots__/, in Chromium inside Playwright's Docker
+      # image, as they were generated. A missing baseline fails; CI never
+      # writes one. On a failure the actual and diff images are in the traces
+      # artifact below, from the project's own output directory. When CI and
+      # a laptop disagree on a baseline, apps/web/e2e/README.md says what to
+      # do. The same run first checks the committed brand images
+      # (apps/web/app/*.png, favicon.ico) against a fresh render in the same
+      # container (apps/web/scripts/render-brand-images.mts), and fails, naming
+      # the file, when one is stale. Skipped when the image's pull failed (the
+      # step above has already failed the job), so a broken registry never
+      # starts a second pull.
+      - name: Run the front end's screenshot tests
+        if: ${{ !cancelled() && steps.image.outcome == 'success' }}
+        env:
+          RH_E2E_PREBUILT: '1'
+        run: pnpm web:test:screenshots
+
+      # Lighthouse CI, mobile, five runs per sampled URL at Lighthouse's
+      # fixed 4x CPU slowdown (apps/web/lighthouserc.cjs): performance at least
+      # 0.95, accessibility 1, LCP at most 2500 ms, CLS at most 0.05, TBT at
+      # most 200 ms, on the medians. 4x multiplies this runner's own task
+      # times, and the runner is faster than the reference phone: calibrated
+      # to it, GitHub's runner CPUs measured about 3.4x to 5x, so 4x is about
+      # right on the slowest and gentler than a calibrated gate on the rest.
+      # Calibrating it is issue #76 (branch lhci/snapshot-calibration). The
+      # medians go to the job summary; the reports are an artifact below.
+      #
+      # Until #76 lands, Lighthouse decides neither merges nor deploys. The
+      # runners vary about 2-3x in CPU speed, and the fixed 4x slowdown
+      # multiplies the runner's own task times, so TBT on identical code
+      # ranges about 80 to 300 ms between runs: on 2026-11-07 main's run
+      # 42362572282 failed it twice on slow runners after the same code had
+      # passed on its pull request, which skipped the production deploy, and
+      # PR #79 failed it at 201 and 209 ms against the 200 ms budget with no
+      # runtime change, which blocked its merge until a rerun. So on a pull
+      # request into main, a push to main or a manual dispatch on main,
+      # continue-on-error lets the step's failure through to the next step:
+      # its outcome is still failure, its conclusion success. That step
+      # passes the job, and with it the merge or deploy-web, only when the
+      # failure is a missed budget on record, and fails it on any other
+      # Lighthouse failure. The test names the events, not "always", so a
+      # dispatch on another branch still fails on a miss, and a trigger added
+      # later blocks by default. Leaving the budgets out of the gate is safe
+      # for WCAG A and AA accessibility, which stays gated by the axe scan
+      # inside the end-to-end suite on every WCAG 2.0-2.2 A and AA rule in
+      # light and dark; Lighthouse's accessibility score also counts
+      # best-practice rules that axe's WCAG tags leave out, and a miss there
+      # is a warning like any other budget. The document-size check, the
+      # screenshots and every other step still block. The budgets are the
+      # same on every event.
+      - name: Run Lighthouse CI on the front end
+        id: lighthouse
+        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
+        continue-on-error: ${{ (github.event_name == 'pull_request' && github.base_ref == 'main') || (github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')) }}
+        env:
+          RH_E2E_PREBUILT: '1'
+        run: pnpm web:test:lighthouse
+
+      # Runs only when every earlier step passed and Lighthouse's failure was
+      # let through by continue-on-error: success() reads conclusions, which
+      # continue-on-error turns to success, so it is true only then, and the
+      # outcome test leaves out a run where Lighthouse passed. So it never
+      # runs on a dispatch off main or a pull request into another branch,
+      # where the failed step fails the job, nor when an earlier step already
+      # failed the job, where the merge or the deploy is blocked anyway and
+      # saying otherwise would be false. It reads the failed assertions
+      # `lhci assert` saves (apps/web/.lighthouseci/, which e2e/lighthouse.mts
+      # empties before each run, so nothing is stale).
+      #
+      # Only a missed budget is a warning. When the file names at least one
+      # failed error-level assertion, the step writes a warning annotation
+      # and a job-summary line naming each URL and metric that missed, and
+      # passes; its wording follows the event: on a pull request the miss
+      # does not block the merge, and on main it does not hold the deploy
+      # back (deploy-web still has its own needs and head check, so it says
+      # no more than that). When no failed assertion is on record (the file
+      # is missing because a stage before the assertions failed, such as a
+      # syntax error in lighthouserc.cjs or lighthouse.mts, Chromium failing
+      # to launch or a build-stamp mismatch; or every assertion passed and
+      # the report upload failed; or jq could not read the file), Lighthouse
+      # is broken rather than slow, so the step writes an error and exits 1,
+      # which fails the job on every event, the deploy on main included. The
+      # `title=` values hold no comma or colon, which would need escaping as
+      # annotation properties. A warning here is a finding to look at, not
+      # noise: if the same URL and metric miss again on the next run, treat
+      # it as a regression (docs/runbooks/deploy.md).
+      - name: Report a Lighthouse budget miss, or fail on any other Lighthouse failure
+        if: ${{ success() && steps.lighthouse.outcome == 'failure' }}
+        env:
+          RESULTS: apps/web/.lighthouseci/assertion-results.json
+          ISSUE_URL: ${{ github.server_url }}/${{ github.repository }}/issues/76
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            gated='merge'
+            effect='this miss does not block the merge'
+          else
+            gated='deploy'
+            effect='this miss does not hold the deploy back'
+          fi
+          misses=''
+          if [ -s "$RESULTS" ]; then
+            misses=$(jq -r '
+              def num: if . == null then "n/a" elif . >= 10 then (. | round | tostring) else ((. * 1000 | round) / 1000 | tostring) end;
+              [ .[] | select(.passed | not) | select(.level == "error")
+                | "\(.url | sub("^[a-z]+://[^/]+"; "")) \(.auditId)\(if .auditProperty then ":" + .auditProperty else "" end) \(.actual | num) (budget \(.operator) \(.expected))" ]
+              | join("; ")' "$RESULTS") || misses=''
+          fi
+          if [ -z "$misses" ]; then
+            what="Lighthouse failed without a missed budget on record (a stage before the assertions, or the report upload, failed); its step's log says why. Only a missed budget is a warning until #76, so this fails the job."
+            echo "::error title=Lighthouse failed without a missed budget::$what"
+            {
+              echo "### Lighthouse failed (blocking)"
+              echo
+              echo "${what/\#76/[#76]($ISSUE_URL)}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          what="Missed budget: $misses."
+          advice="Lighthouse does not gate merges into main or the production deploy until #76 calibrates it, so $effect. This is a finding to look at: if the same URL and metric miss again on the next run, treat it as a regression."
+          echo "::warning title=Lighthouse failed but did not block the $gated::$what $advice ($ISSUE_URL)"
+          {
+            echo "### Lighthouse failed (not blocking the $gated)"
+            echo
+            echo "$what ${advice/\#76/[#76]($ISSUE_URL)} The reports are in the web-lighthouse-reports artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Traces are kept only for failed tests (trace: retain-on-failure): the
+      # end-to-end run's in Playwright's default output directory, and the
+      # screenshot run's, with its actual and diff images, in a directory of
+      # its own (playwright.config.ts), so the screenshot run, which follows,
+      # never empties the end-to-end run's before this upload.
+      - name: Upload the front end's Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-playwright-traces
+          path: |
+            apps/web/test-results/
+            apps/web/test-results-screenshots/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      # Every Lighthouse report, pass or fail, from LHCI's filesystem target.
+      # The repository is private, so the reports stay in the run's own
+      # artifacts, never in LHCI's temporary public storage.
+      - name: Upload the Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-lighthouse-reports
+          path: apps/web/lighthouse-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  deploy:
+    name: Deploy to the host
+    # The CMS deploy waits only on the CMS's own CI, so a front-end failure or
+    # flake can never block a CMS deploy or a rollback. The dependency runs
+    # the other way: the front-end production deploy, deploy-web below, needs
+    # both this job and the web job.
+    needs: [ gate ]
+    # Pushes only trigger on main already; the ref check keeps that true if the
+    # trigger list ever widens. A manual dispatch deploys only from main or a
+    # tag: a tag on an earlier commit is how a rollback is redeployed. Pushing
+    # a tag does not start CI (the push trigger is main only), so a tag deploy
+    # is always a dispatch.
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_dispatch'
+      && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')))
+    runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
+    timeout-minutes: 10
+    # One deploy at a time across every ref. A running deploy is never
+    # cancelled; a waiting one is replaced by a newer one, which is fine
+    # because the newer commit includes the older.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    # An explicit bash shell runs with -o pipefail, so a failed curl fails
+    # the smoke check even though jq reads its output.
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      # An unset secret reads as an empty string, which would otherwise surface
+      # later as a confusing ssh or rsync error. Only names are printed.
+      - name: Check the deploy secrets are set
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          for name in DEPLOY_SSH_KEY DEPLOY_HOST DEPLOY_USER DEPLOY_PATH DEPLOY_KNOWN_HOSTS; do
+            [ -n "${!name}" ] || {
+              echo "::error::Repository secret $name is empty or not set."
+              exit 1
+            }
+          done
+
+      # DEPLOY_PATH is assumed to be the absolute path of the plugin directory
+      # itself on the host, ending in wp-content/plugins/resource-hub-wp, not
+      # the plugins directory above it. Anything else is refused, because
+      # rsync --delete into the wrong directory would remove other plugins.
+      # A CR or LF is refused too, since the value is written to GITHUB_ENV,
+      # where a newline would start a new variable. REMOTE_DIR carries the
+      # checked value to the later steps, and WP_ROOT carries the WordPress
+      # root, which is that value without the plugin suffix.
+      - name: Check the deploy path
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          case "$DEPLOY_PATH" in
+            *$'\n'* | *$'\r'*)
+              echo "::error::DEPLOY_PATH must be a single line."
+              exit 1
+              ;;
+          esac
+          path="${DEPLOY_PATH%/}"
+          case "$path" in
+            /*/wp-content/plugins/resource-hub-wp) ;;
+            *)
+              echo "::error::DEPLOY_PATH must be the absolute path of wp-content/plugins/resource-hub-wp on the host."
+              exit 1
+              ;;
+          esac
+          wp_root="${path%/wp-content/plugins/resource-hub-wp}"
+          echo "REMOTE_DIR=$path" >> "$GITHUB_ENV"
+          echo "WP_ROOT=$wp_root" >> "$GITHUB_ENV"
+
+      # The deploy never talks to GitHub after checkout, so the token is not
+      # left in .git/config.
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # The same store, key and rule as the gate's; see the comments there.
+      # On main this job runs after the gate, which has usually saved this key
+      # already, so it hits and saves nothing; on a tag nothing is saved.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: |
+          store=$(pnpm store path --silent)
+          arch=$(node -p process.arch)
+          if [[ "$store" != /* ]] || [ -z "$arch" ]; then
+            echo "::error::Could not read the pnpm store path (got: $store) or Node's architecture (got: $arch)."
+            exit 1
+          fi
+          {
+            echo "path=$store"
+            echo "key-prefix=node-cache-$RUNNER_OS-$arch-pnpm-"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pnpm store
+        id: pnpm-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-store.outputs.key-prefix }}${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ env.SAVE_CACHES != 'true' && steps.pnpm-store.outputs.key-prefix || '' }}
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Save the pnpm store
+        if: env.SAVE_CACHES == 'true' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-cache.outputs.cache-primary-key }}
+
+      - name: Build the block
+        run: pnpm build
+
+      # The gate runs PHP inside the wp-env containers. The deploy only needs
+      # Composer to write a production vendor/ directory, and starting Docker
+      # and wp-env for that would cost minutes, so PHP runs on the runner here,
+      # on the same 8.4 minor version as wp-env and the host.
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer
+          coverage: none
+
+      - name: Install PHP dependencies for production
+        working-directory: wp-content/plugins/resource-hub-wp
+        run: composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
+
+      # The host key comes from a secret, so the first connection never trusts
+      # an unknown key. The runner is discarded after the job, key included.
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts_deploy
+          chmod 600 ~/.ssh/known_hosts_deploy
+          cat > ~/.ssh/config <<EOF
+          Host deploy
+            HostName $DEPLOY_HOST
+            User $DEPLOY_USER
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts_deploy
+            GlobalKnownHostsFile /dev/null
+            StrictHostKeyChecking yes
+            BatchMode yes
+            ConnectTimeout 20
+            ServerAliveInterval 15
+            ServerAliveCountMax 3
+          EOF
+          chmod 600 ~/.ssh/config
+
+      # The source is the plugin directory itself, so the allowlist paths and
+      # the host layout match one to one and nothing else in the workspace
+      # (apps/, packages/, the root tooling) is ever a candidate.
+      #
+      # An allowlist: only what WordPress loads at runtime is sent, and
+      # everything else is excluded by the final '*', so a new development-only
+      # file never ships by default. A new runtime file or directory must be
+      # added here. build/ and vendor/ are gitignored but still sent, because
+      # rsync does not read .gitignore. blocks/ is block source and stays
+      # behind; the block will be registered from its compiled copy in build/.
+      #
+      # --delay-updates writes every changed file aside and renames them all
+      # at the end; --delete-delay (--delete, run after that) keeps removals
+      # out of the window when old and new files are both being served.
+      # --delete-excluded is not set, so anything on the host outside the
+      # allowlist is left alone, not deleted.
+      #
+      # --omit-dir-times: with ./ as the source, rsync would otherwise set the
+      # mtime of the plugin directory itself, which fails (exit 23) if
+      # DEPLOY_USER does not own it, after the files are already in place.
+      # --timeout ends a stalled transfer instead of waiting for the job limit.
+      - name: Sync the plugin
+        working-directory: wp-content/plugins/resource-hub-wp
+        run: |
+          rsync --archive --compress --no-owner --no-group --chmod=D755,F644 \
+            --omit-dir-times --timeout=120 \
+            --delete-delay --delay-updates --itemize-changes \
+            '--include=/resource-hub.php' \
+            '--include=/src/***' \
+            '--include=/build/***' \
+            '--include=/vendor/***' \
+            '--exclude=*' \
+            ./ "deploy:$REMOTE_DIR/"
+
+      # WP-CLI runs from the WordPress root. It would walk up from the plugin
+      # directory to find WordPress, but it evaluates wp-config.php without
+      # changing directory, so the host's relative require('wp-salt.php')
+      # resolves against the working directory and fails anywhere but the
+      # root. Current WP-CLI already exits 0 for an active plugin, but the
+      # host's version is not pinned, so the is-active check keeps the step
+      # idempotent anyway.
+      - name: Activate the plugin
+        run: |
+          dir=$(printf '%q' "$WP_ROOT")
+          # $dir is meant to expand on the runner; printf %q has quoted it for the remote shell.
+          # shellcheck disable=SC2029
+          ssh deploy "cd $dir && { wp plugin is-active resource-hub-wp || wp plugin activate resource-hub-wp; }"
+
+      # Activation clears the rewrite rules only when the plugin was inactive,
+      # so a deploy that changes the permalink structure (ADR 0024) would keep
+      # serving the old rules. A soft flush regenerates them in the database
+      # on every deploy and writes no files. Run from the WordPress root for
+      # the reason given above.
+      - name: Flush rewrite rules
+        run: |
+          dir=$(printf '%q' "$WP_ROOT")
+          # $dir is meant to expand on the runner; printf %q has quoted it for the remote shell.
+          # shellcheck disable=SC2029
+          ssh deploy "cd $dir && wp rewrite flush"
+
+      # The site's own home URL, read over SSH, so no hostname is committed and
+      # no extra secret is needed. jq checks the body is the REST index, not
+      # an HTML error page served with a 200.
+      - name: Smoke-check the REST root
+        run: |
+          dir=$(printf '%q' "$WP_ROOT")
+          # $dir is meant to expand on the runner; printf %q has quoted it for the remote shell.
+          # shellcheck disable=SC2029
+          home=$(ssh deploy "cd $dir && wp option get home --skip-plugins --skip-themes")
+          case "$home" in
+            https://*) ;;
+            *)
+              echo "::error::The site's home option is not an https URL: $home"
+              exit 1
+              ;;
+          esac
+          curl -fsS --max-time 20 --retry 3 --retry-delay 5 "${home%/}/wp-json/" \
+            | jq -e '.namespaces | index("wp/v2")' > /dev/null
+          echo "REST root answered at ${home%/}/wp-json/"
+
+  deploy-web:
+    name: Deploy the front end to Vercel
+    # The front end goes live only after the CMS it reads (ADR 0051; see
+    # docs/runbooks/deploy.md), and only when its own lint, typecheck, unit
+    # and end-to-end tests (axe and the document-size check included), build,
+    # screenshots and brand-image check have passed on this commit. A
+    # Lighthouse budget miss is reported but does not hold it back until
+    # issue #76; any other Lighthouse failure does (see the web job's
+    # Lighthouse step).
+    needs: [ deploy, web ]
+    # Main only, on a push or a manual dispatch. Unlike the CMS deploy, a tag
+    # dispatch does not deploy the front end: a deploy hook always builds the
+    # head of main, never the tagged commit, so firing it from a rollback run
+    # would ship main, not the rollback. The front end is rolled back on
+    # Vercel instead, by promoting an earlier deployment (ADR 0051).
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
+    runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
+    timeout-minutes: 5
+    # Its own group, so a front-end deploy never waits on, or holds up, the
+    # CMS deploy group. Never cancelled; a waiting run is replaced by a newer
+    # one, which is fine because the hook builds the head of main either way.
+    concurrency:
+      group: deploy-web-production
+      cancel-in-progress: false
+    # The job reads one commit SHA from the API and checks nothing out.
+    permissions:
+      contents: read
+
+    # An explicit bash shell runs with -o pipefail, so a failed curl fails the
+    # step even though jq reads its output.
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      # An unset secret reads as an empty string, which curl would report as a
+      # malformed URL. Only the name is printed.
+      - name: Check the deploy hook secret is set
+        env:
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          [ -n "$VERCEL_DEPLOY_HOOK_URL" ] || {
+            echo "::error::Repository secret VERCEL_DEPLOY_HOOK_URL is empty or not set."
+            exit 1
+          }
+
+      # The hook takes no commit: Vercel builds whatever main points at when it
+      # receives the request. CI runs on main one at a time, so by the time this
+      # job runs a later merge may already be on main with its own run still
+      # waiting, and firing now would ship that later commit before its gate.
+      # So the hook fires only while main still points at the commit this run
+      # tested; otherwise the later run, if green, deploys it.
+      - name: Check main has not moved on
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$head" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::main is now at $head, not $GITHUB_SHA; skipping. The run for the newer commit deploys the front end if its gate passes."
+          fi
+
+      # Fire and forget: the hook answers as soon as Vercel has queued the
+      # build, and the job reports the queued job's id and state without
+      # waiting on the build itself. Vercel shows the build's result, and a
+      # failed build leaves the previous production deployment serving. The
+      # URL is the credential, so it stays in the environment, is never
+      # written into the script, and is never printed; curl's own error
+      # messages name the host at most. No --retry: a POST that timed out may
+      # still have queued a build, and rerunning the job is the retry.
+      - name: Trigger the production deploy
+        if: steps.head.outputs.current == 'true'
+        env:
+          VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          response=$(curl --fail --silent --show-error -X POST --max-time 30 "$VERCEL_DEPLOY_HOOK_URL")
+          job=$(jq -r '.job.id // empty' <<< "$response") || job=''
+          state=$(jq -r '.job.state // "unknown"' <<< "$response") || state='unknown'
+          if [ -z "$job" ]; then
+            echo "::error::The deploy hook answered without a job id."
+            exit 1
+          fi
+          echo "Vercel queued deploy job $job (state: $state) for $GITHUB_SHA."

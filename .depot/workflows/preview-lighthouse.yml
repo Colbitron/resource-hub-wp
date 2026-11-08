@@ -1,0 +1,231 @@
+# Depot CI Migration
+# Source: .github/workflows/preview-lighthouse.yml
+#
+# Changes made:
+# - Removed unsupported trigger "deployment_status"
+# - Changed GitHub runs-on labels to their Depot equivalents
+
+# Lighthouse on each pull request's Vercel preview, reported as one comment
+# on the pull request. Informational: it is not a required check, and a
+# measurement that fails is reported in the comment rather than as a red
+# job (see the measure job). The blocking gate stays in ci.yml, against
+# `next start` and the mock CMS, where it measures the code, not the
+# content; this run sees what the gate cannot: the CDN, HTTP/2 and TLS,
+# compression, the hosted image optimiser's AVIF sizes and the hosted CMS's
+# real images and pages. How it works, its URL list, its cost against the
+# image optimiser's allowance and how to make it blocking later are in
+# apps/web/e2e/README.md ("The design gates").
+#
+# Trigger: GitHub's deployment_status event, which Vercel sends when a
+# deployment it created on GitHub changes state. It fires only while the
+# Vercel project creates GitHub Deployments (its Git settings; they were
+# off when this workflow was written, so it stays idle until that is turned
+# on). GitHub runs a deployment_status workflow from the deployed commit,
+# so a pull request that changes this file runs its own version against
+# its own preview. The event carries no pull request number, so the first
+# job looks it up from the commit.
+name: Preview Lighthouse
+
+# Removed unsupported trigger: deployment_status. Deployment status events are not supported.
+on: {}
+
+# Nothing by default; each job states what it needs.
+permissions: {}
+
+jobs:
+  pr:
+    name: Find the pull request
+    # Only a finished, successful deployment that Vercel reported, and not a
+    # production one: Vercel names its environments "Preview" and
+    # "Production", with the project name appended in some setups, hence
+    # startsWith. A failed or pending status is not a preview to measure.
+    if: >-
+      github.event.deployment_status.state == 'success'
+      && !startsWith(github.event.deployment.environment, 'Production')
+      && github.event.deployment_status.creator.login == 'vercel[bot]'
+    runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
+    timeout-minutes: 5
+    # Listing the pull requests of a commit needs only this.
+    permissions:
+      pull-requests: read
+    outputs:
+      number: ${{ steps.lookup.outputs.number }}
+      url: ${{ steps.lookup.outputs.url }}
+    steps:
+      # A deployment of a commit no open pull request has (a branch without
+      # one yet, or a merged one) ends here quietly: nothing to comment on.
+      # The commit's pull requests include any whose history holds it (a
+      # pull request stacked on this one, or its base after a merge), so
+      # only the one whose head is this commit counts: a late status for an
+      # older commit then measures nothing rather than overwrite a newer
+      # comment. The preview URL is the status's environment_url (target_url
+      # is Vercel's inspector page, not the preview); it is checked to be an
+      # https origin and nothing else, one line, before it goes anywhere.
+      - name: Look up the open pull request for the deployed commit
+        id: lookup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.deployment.sha }}
+          PREVIEW_URL: ${{ github.event.deployment_status.environment_url }}
+        run: |
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The deployment's sha is not a full commit SHA."
+            exit 1
+          fi
+          pulls=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls")
+          # $sha is jq's variable, bound with --arg, not the shell's.
+          # shellcheck disable=SC2016
+          number=$(printf '%s' "$pulls" | jq -r --arg sha "$SHA" '[.[] | select(.state == "open" and .head.sha == $sha)][0].number // empty')
+          if [ -z "$number" ]; then
+            echo "No open pull request has commit $SHA as its head; nothing to measure."
+            exit 0
+          fi
+          if [ -z "$PREVIEW_URL" ]; then
+            echo "The deployment status carries no environment_url; nothing to measure."
+            exit 0
+          fi
+          if ! [[ "$PREVIEW_URL" =~ ^https://[A-Za-z0-9.-]+$ ]]; then
+            echo "::error::The deployment status's environment_url is not an https origin."
+            exit 1
+          fi
+          echo "Pull request #$number, preview $PREVIEW_URL."
+          {
+            echo "number=$number"
+            echo "url=$PREVIEW_URL"
+          } >> "$GITHUB_OUTPUT"
+
+  measure:
+    name: Measure the preview
+    needs: pr
+    if: needs.pr.outputs.number != ''
+    runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
+    # Five runs per URL take about a minute per URL on these runners (the
+    # gate's timing in ci.yml), eight URLs here, plus the install.
+    timeout-minutes: 25
+    # One run per pull request: a newer preview of the same pull request
+    # cancels an older run, whose comment it would only overwrite.
+    concurrency:
+      group: preview-lighthouse-${{ needs.pr.outputs.number }}
+      cancel-in-progress: true
+    # contents to check out, pull-requests to comment; nothing else.
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      # An unset secret reads as an empty string, which would surface later as
+      # the preview refusing every request. Only the name is printed. GitHub
+      # masks ${{ secrets }} values in the log on its own; the mask is added
+      # again here in case the value ever reaches the log by another route.
+      - name: Check the bypass secret is set and mask it
+        env:
+          VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
+        run: |
+          [ -n "$VERCEL_PROTECTION_BYPASS" ] || {
+            echo "::error::Repository secret VERCEL_PROTECTION_BYPASS is empty or not set."
+            exit 1
+          }
+          echo "::add-mask::$VERCEL_PROTECTION_BYPASS"
+
+      # The deployed commit, which is what GitHub runs this workflow from.
+      # Nothing here talks to GitHub through git after the checkout, so the
+      # token is not left in .git/config, as in ci.yml's deploy job.
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # The pnpm store is restored from the entry main's CI saved (the same
+      # path and key as ci.yml's "Locate the pnpm store"; see the comments
+      # there) and never saved: this job runs for pull requests only, and
+      # per-pull-request entries were what filled the repository's cache.
+      - name: Locate the pnpm store
+        id: pnpm-store
+        run: |
+          store=$(pnpm store path --silent)
+          arch=$(node -p process.arch)
+          if [[ "$store" != /* ]] || [ -z "$arch" ]; then
+            echo "::error::Could not read the pnpm store path (got: $store) or Node's architecture (got: $arch)."
+            exit 1
+          fi
+          {
+            echo "path=$store"
+            echo "key-prefix=node-cache-$RUNNER_OS-$arch-pnpm-"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Restore the pnpm store
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ steps.pnpm-store.outputs.key-prefix }}${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: ${{ steps.pnpm-store.outputs.key-prefix }}
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Lighthouse runs Playwright's Chromium, as the gate does
+      # (apps/web/lighthouserc.cjs), so the two measure with the same browser.
+      - name: Install Playwright's browser
+        timeout-minutes: 15
+        run: pnpm --filter resource-hub-web exec playwright install --with-deps chromium
+
+      # Warms and measures each sampled URL at the gate's settings and posts
+      # or updates the comment (apps/web/e2e/preview-lighthouse.mts). The
+      # script exits 2 when some URLs could not be measured but the reasons
+      # reached the comment, and 1 when nothing did or the secret went
+      # somewhere it should not. continue-on-error keeps the job green
+      # either way, so that a flaky preview or a missing page never shows as
+      # a failed check on the pull request; the last step fails the job
+      # only when the comment was not posted (nothing else would surface
+      # that) or the secret reached another origin (the script's `leak`
+      # output). The script hands lhci and Chrome a minimal environment, so
+      # the token below never reaches them.
+      - name: Measure the preview and comment on the pull request
+        id: measure
+        continue-on-error: true
+        env:
+          VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PREVIEW_URL: ${{ needs.pr.outputs.url }}
+          SHA: ${{ github.event.deployment.sha }}
+          NUMBER: ${{ needs.pr.outputs.number }}
+        run: |
+          pnpm --filter resource-hub-web exec node e2e/preview-lighthouse.mts \
+            --origin "$PREVIEW_URL" --sha "$SHA" --pr "$NUMBER"
+
+      # The redacted reports the script wrote (the header is replaced and the
+      # files checked for the secret before they are written). The raw runs
+      # in apps/web/.lighthouseci carry the header and are never uploaded.
+      - name: Upload the Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-preview-lighthouse-reports
+          path: apps/web/lighthouse-preview-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Two cases turn the job red: nothing reached the pull request, and
+      # the secret reached another origin (the script's `leak` output, set
+      # after the comment that names the origin is posted). A measurement
+      # failure that is in the comment (the script's exit 2) stays green.
+      - name: Fail if nothing reached the pull request or the secret went elsewhere
+        if: steps.measure.outputs.reported != 'true' || steps.measure.outputs.leak == 'true'
+        env:
+          REPORTED: ${{ steps.measure.outputs.reported }}
+          NUMBER: ${{ needs.pr.outputs.number }}
+        run: |
+          if [ "$REPORTED" != 'true' ]; then
+            echo "::error::The preview Lighthouse run posted nothing on pull request #$NUMBER; its log is above."
+          else
+            echo "::error::The preview's page requested another origin, which received the bypass header; the comment on pull request #$NUMBER names it."
+          fi
+          exit 1

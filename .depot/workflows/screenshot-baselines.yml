@@ -1,0 +1,71 @@
+# Depot CI Migration
+# Source: .github/workflows/screenshot-baselines.yml
+#
+# Changes made:
+# - Changed GitHub runs-on labels to their Depot equivalents
+
+# Regenerates the specimen's screenshot baselines on a GitHub runner, for
+# when a laptop's render and CI's disagree. Baselines are normally made on a
+# laptop (`pnpm web:test:screenshots:update`), in the same pinned Docker image
+# CI compares in, but an Apple-silicon laptop renders under amd64 emulation;
+# if CI then fails on a pixel-level difference that no design change explains,
+# run this workflow (Actions > Screenshot baselines > Run workflow, choosing
+# the branch), download the `screenshot-baselines` artifact, unzip it over
+# apps/web/e2e/__screenshots__/, look at the images, and commit them.
+#
+# GitHub offers a manual workflow only once its file is on the default
+# branch, so this can be dispatched only after it has merged to main; from
+# then on it runs against any branch chosen in that menu. Before that, the
+# failed CI run's own actual images (the web-playwright-traces artifact) are
+# the runner's render to compare and, if they are right, commit.
+#
+# Manual only, read-only, and it never commits: the artifact stays in the
+# private repository's run, and the baselines reach a branch only through a
+# person's commit and the pull request's diff.
+name: Screenshot baselines
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baselines:
+    name: Regenerate the specimen's screenshot baselines
+    runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Builds the fixture app against the mock CMS, starts the pinned image's
+      # browser server, and rewrites every baseline, matching or not
+      # (`--update-snapshots=all`), so the artifact is a complete set from
+      # this runner.
+      - name: Regenerate the baselines
+        working-directory: apps/web
+        run: node e2e/screenshots.mts --update-snapshots=all
+
+      - name: Upload the baselines
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshot-baselines
+          path: apps/web/e2e/__screenshots__/
+          if-no-files-found: error
+          retention-days: 7
