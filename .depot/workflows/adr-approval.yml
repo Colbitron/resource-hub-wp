@@ -26,8 +26,9 @@
 # Flags a pull request that changes an architecture decision record, or the
 # guards on them, without the owner's approval. ADRs record the decisions
 # that are expensive to undo, so no agent creates, amends, supersedes or
-# deletes one without Colby's explicit approval in the conversation (root
-# CLAUDE.md; the details are in .claude/rules/adr.md). A pull request that
+# deletes one without Colby's explicit approval, given directly or relayed
+# by the orchestrator that briefed the agent (root CLAUDE.md; the details are
+# in .claude/rules/adr.md). A pull request that
 # adds, modifies, renames or deletes a guarded path needs the `adr-approved`
 # label, which only Colby applies; a rename counts when either its old or its
 # new path is guarded. Without the label this check fails; with it, or with
