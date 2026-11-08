@@ -85,9 +85,9 @@
 # The deploy job runs after the gate, only on main and on manual dispatch, and
 # syncs the plugin, from wp-content/plugins/resource-hub-wp, Relevanssi and
 # the CMS theme, from wp-content/themes/resource-hub, to the Cloudways host
-# (ADR 0005), and activates all three. The deploy-web job runs after deploy and every front-end
-# job, and starts the front end's production deploy on Vercel through a
-# deploy hook (ADR 0051).
+# (ADR 0005), and activates all three. The deploy-web job runs after deploy
+# and every front-end job, and starts the front end's production deploy on
+# Vercel through a deploy hook (ADR 0051).
 #
 # Lighthouse against the Vercel preview of each pull request that reaches
 # the front end is a separate, non-blocking workflow,
@@ -1056,18 +1056,33 @@ jobs:
       # registers no stylesheet and serves no font, quietly: functions.php
       # skips registration without build/assets.php. So the manifest, the
       # tokens and every file theme.json loads (`file:./`, Figtree) must be
-      # there, non-empty, before anything reaches the host.
+      # there, non-empty, before anything reaches the host. theme.json is read
+      # into a variable first, so a jq failure fails the step rather than
+      # quietly emptying the list.
       - name: Check the theme's build
         working-directory: wp-content/themes/resource-hub
         run: |
+          loads=$(jq -r '.. | strings | select(startswith("file:./")) | ltrimstr("file:./")' theme.json) || {
+            echo "::error::wp-content/themes/resource-hub/theme.json could not be read. Nothing was deployed."
+            exit 1
+          }
           missing=0
-          for file in build/assets.php build/tokens.css $(jq -r '.. | strings | select(startswith("file:./")) | ltrimstr("file:./")' theme.json); do
+          while IFS= read -r file; do
+            [ -n "$file" ] || continue
             if [ ! -s "$file" ]; then
               echo "::error::wp-content/themes/resource-hub/$file is missing or empty after pnpm build. Nothing was deployed."
               missing=1
             fi
-          done
+          done < <(printf '%s\n' build/assets.php build/tokens.css "$loads")
           exit "$missing"
+
+      # The same tests the scope job runs on every pull request, run again
+      # here on the commit being deployed: two pull requests can each pass
+      # alone and still merge into a main whose theme loads a file the sync
+      # does not ship, and nothing else would catch it before the host. Node
+      # and git only, from the checkout; no secret reaches this step.
+      - name: Test the theme allowlist
+        run: node --test .depot/scripts/theme-allowlist.test.mjs
 
       # Composer's download cache, kept across deploys so that while the two
       # locks are unchanged neither install downloads a dist: on a hit each
@@ -1355,6 +1370,7 @@ jobs:
       - name: Sync the theme
         working-directory: wp-content/themes/resource-hub
         run: |
+          : "${THEME_DIR:?THEME_DIR is not set; the deploy path check did not run.}"
           rsync --archive --compress --no-owner --no-group --chmod=D755,F644 \
             --omit-dir-times --timeout=120 \
             --delete-delay --delay-updates --itemize-changes \
