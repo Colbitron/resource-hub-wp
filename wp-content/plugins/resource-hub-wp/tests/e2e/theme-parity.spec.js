@@ -46,7 +46,9 @@
  * pagination. The tests site has plain permalinks, so each collection is
  * requested by the query vars the plugin's rewrite rules map to
  * (`?post_type=resource`, `?resource_type=…`, `?resource_topic=…`, `&paged=2`);
- * the rules themselves are PHPUnit's (`RoutesTest`).
+ * the rules themselves are PHPUnit's (`RoutesTest`). Its last test holds
+ * `listing.css` to the collections and `lead.css` to the library's first
+ * page, and keeps both off a page, the welcome, the 404 and a resource.
  */
 const { test, expect } = require( './fixtures' );
 const {
@@ -1703,5 +1705,50 @@ test.describe( "A CMS collection computes the front end's styles", () => {
 		expect(
 			await page.evaluate( () => document.documentElement.scrollWidth )
 		).toBeLessThanOrEqual( 360 );
+	} );
+
+	test( "the collections' stylesheets load on the collections only, and the lead's on the library's first page only", async ( {
+		page,
+		requestUtils,
+	} ) => {
+		const cmsPage = await requestUtils.createPage( {
+			title: `Collection styles sample ${ Date.now() }`,
+			content:
+				'<!-- wp:paragraph --><p>A page.</p><!-- /wp:paragraph -->',
+			status: 'publish',
+		} );
+		const topic = content.topics[ 0 ];
+		try {
+			// [ url, status, listing.css, lead.css ]. `?p=` with an ID no post
+			// has is a 404 under any permalink structure; the tests site has
+			// none, so an unknown path would be the welcome.
+			for ( const [ url, status, listing, lead ] of [
+				[ cmsPage.link, 200, false, false ],
+				[ '/', 200, false, false ],
+				[ '/?p=999999999', 404, false, false ],
+				[ content.lead.link, 200, false, false ],
+				[ '/?post_type=resource', 200, true, true ],
+				[ '/?post_type=resource&paged=2', 200, true, false ],
+				[ `/?resource_type=${ content.type.slug }`, 200, true, false ],
+				[ `/?resource_topic=${ topic.slug }`, 200, true, false ],
+			] ) {
+				const response = await page.goto( url );
+				expect( response.status(), url ).toBe( status );
+				await expect(
+					page.locator( 'link#resource-hub-listing-css' ),
+					`listing.css on ${ url }`
+				).toHaveCount( listing ? 1 : 0 );
+				await expect(
+					page.locator( 'link#resource-hub-lead-css' ),
+					`lead.css on ${ url }`
+				).toHaveCount( lead ? 1 : 0 );
+			}
+		} finally {
+			await requestUtils.rest( {
+				method: 'DELETE',
+				path: `/wp/v2/pages/${ cmsPage.id }`,
+				params: { force: true },
+			} );
+		}
 	} );
 } );
