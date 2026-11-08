@@ -727,10 +727,18 @@ jobs:
     # tag: a tag on an earlier commit is how a rollback is redeployed. Pushing
     # a tag does not start CI (the push trigger is main only), so a tag deploy
     # is always a dispatch.
+    #
+    # Depot CI cutover guard: the job runs only once the Depot CI variable
+    # DEPOT_DEPLOY_ENABLED is 'true'. While it is unset (the trial, and until
+    # the deploy secrets are in Depot and GitHub's copy of this workflow is
+    # retired), nothing here can reach the host, whatever the event or ref.
+    # At cutover, set the variable; once the GitHub copy is gone, drop the
+    # first line of the condition. deploy-web carries the same guard.
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      vars.DEPOT_DEPLOY_ENABLED == 'true'
+      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
       || (github.event_name == 'workflow_dispatch'
-      && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')))
+      && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))))
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 10
     # One deploy at a time across every ref. A running deploy is never
@@ -987,8 +995,14 @@ jobs:
     # head of main, never the tagged commit, so firing it from a rollback run
     # would ship main, not the rollback. The front end is rolled back on
     # Vercel instead, by promoting an earlier deployment (ADR 0051).
+    #
+    # The same Depot CI cutover guard as deploy's: never runs until the Depot
+    # CI variable DEPOT_DEPLOY_ENABLED is 'true'. It needs deploy as well, so
+    # the guard there would already skip it; this one keeps it off even if
+    # that dependency changes.
     if: >-
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      vars.DEPOT_DEPLOY_ENABLED == 'true'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.ref == 'refs/heads/main'
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 5
