@@ -376,8 +376,9 @@ describe("previewComment", () => {
 
 describe("findStickyComment", () => {
   it("is the id of the workflow's own comment carrying the marker, or null", () => {
-    const bot = { login: "github-actions[bot]" };
+    const bot = { login: "depot-code-access[bot]" };
     const comments = [
+      { id: 0, body: `${COMMENT_MARKER}\n\nfrom GitHub Actions`, user: { login: "github-actions[bot]" } },
       { id: 1, body: "Looks good", user: bot },
       { id: 2, body: null, user: bot },
       { id: 3, body: `${COMMENT_MARKER} quoted by a person`, user: { login: "colby" } },

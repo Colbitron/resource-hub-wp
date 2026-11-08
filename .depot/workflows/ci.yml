@@ -80,9 +80,10 @@
 # job, and starts the front end's production deploy on Vercel through a
 # deploy hook (ADR 0051).
 #
-# Lighthouse against each pull request's Vercel preview is a separate,
-# non-blocking workflow, .github/workflows/preview-lighthouse.yml, which
-# stays on GitHub Actions for now; moving it is a follow-up (ADR 0053).
+# Lighthouse against the Vercel preview of each pull request that reaches
+# the front end is a separate, non-blocking workflow,
+# .depot/workflows/preview-lighthouse.yml, which reads the same scope rules
+# (ADR 0053).
 #
 # Scoping a pull request. Depot CI bills each job's sandbox time, about
 # 17.8 sandbox-minutes for the whole run (docs/runbooks/deploy.md, "CI

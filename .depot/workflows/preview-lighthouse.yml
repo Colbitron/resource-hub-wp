@@ -1,0 +1,316 @@
+# Lighthouse on the Vercel preview of each pull request that reaches the
+# front end, reported as one comment on the pull request. Informational: it
+# is not a required check, and a measurement that fails is reported in the
+# comment rather than as a red job (see the measure job). CI's own
+# Lighthouse (.depot/workflows/ci.yml, on main) runs against `next start`
+# and the mock CMS, where it measures the code, not the content; this run
+# sees what the gate cannot: the CDN, HTTP/2 and TLS, compression, the
+# hosted image optimiser's AVIF sizes and the hosted CMS's real images and
+# pages. How it works, its URL list, its cost against the image
+# optimiser's allowance and how to make it blocking later are in
+# apps/web/e2e/README.md ("The design gates").
+#
+# It runs on Depot CI with the rest of CI (ADR 0053). It began as
+# .github/workflows/preview-lighthouse.yml, deleted in the same change; git
+# history keeps it. What changed in the move:
+# - the pull request's changed paths decide whether it measures (below);
+# - the shared .depot/actions/setup-js installs the front end's part of the
+#   workspace, from Depot's cache, as CI's front-end jobs do;
+# - VERCEL_PROTECTION_BYPASS is read from Depot CI's secrets;
+# - CI is set by the job, as in ci.yml, rather than left to the host.
+# Kept from the GitHub copy, in this workflow's own steps: the secret is
+# masked, redacted from the copies and searched for before anything is
+# written or posted; vercel.live is blocked; the foreign-origin check runs;
+# the raw reports are never uploaded; lhci and Chrome get a minimal
+# environment without the token; and the last step fails the job when
+# nothing reached the pull request or the secret went elsewhere. Assumed on
+# Depot and not yet confirmed (docs/runbooks/deploy.md, "Preview
+# Lighthouse", the first-event checklist): that github.token is narrowed to
+# each job's `permissions:` (Depot's docs do not say so, and the Depot app
+# behind the token holds contents, workflows and actions write and secrets
+# read), and that the host masks secret values in the log on its own.
+#
+# Trigger: the deployment_status event, which Vercel sends when a GitHub
+# Deployment it created changes state (the Vercel project's Git setting
+# that creates them is on: PR #98's head has a Preview deployment from
+# vercel[bot]). Depot CI lists on.deployment_status as supported
+# (https://depot.dev/docs/ci/compatibility) but does not say which commit's
+# copy of the workflow it runs; GitHub runs the deployed commit's. The
+# checkouts below take the commit Depot runs the workflow from
+# (github.sha), so the workflow and the scripts it calls always come from
+# the same commit, and the first job logs that commit beside the deployed
+# one. Until a real event has run here, this trigger is unexercised:
+# `depot ci run` reports event `api`, and the trial (docs/runbooks/deploy.md,
+# "Preview Lighthouse", run f4q02z8k5s) injected the event's values instead.
+#
+# Only front-end pull requests are measured. The event names a deployment,
+# not a pull request, so the first job finds the open pull request, from
+# this repository rather than a fork, whose head is the deployed commit,
+# lists its changed files through GitHub's pull request files API and
+# classifies them with CI's own rules (.depot/scripts/ci-scope.mjs,
+# --pr-files). It measures when the `web` side is reached, and when the
+# list cannot be read for certain, so that in doubt it measures. A plugin-only or docs-only pull request costs that
+# one short job, posts nothing, and leaves any earlier comment as it was.
+name: Preview Lighthouse
+
+on:
+  deployment_status:
+
+# Nothing by default; each job states what it needs.
+permissions: {}
+
+jobs:
+  pr:
+    name: Find the pull request and whether it reaches the front end
+    # Only a finished, successful deployment that Vercel reported, and not a
+    # production one: Vercel names its environments "Preview" and
+    # "Production", with the project name appended in some setups, hence
+    # startsWith. A failed or pending status is not a preview to measure.
+    if: >-
+      github.event.deployment_status.state == 'success'
+      && !startsWith(github.event.deployment.environment, 'Production')
+      && github.event.deployment_status.creator.login == 'vercel[bot]'
+    runs-on: depot-ubuntu-latest
+    timeout-minutes: 5
+    # What the job asks for: contents to check out the scope rules,
+    # pull-requests to list the commit's pull requests and the chosen one's
+    # files. On Depot the token may carry the Depot app's whole installation
+    # instead (see the header); the job writes nothing either way.
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      number: ${{ steps.lookup.outputs.number }}
+      url: ${{ steps.lookup.outputs.url }}
+      # ci-scope.mjs's `web` output, 'true' or 'false'; empty when there is
+      # no pull request to measure.
+      measure: ${{ steps.decide.outputs.web }}
+    # An explicit bash shell runs with -o pipefail.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # The scope rules, .depot/scripts/ci-scope.mjs. It runs before the
+      # lookup and unconditionally, because `depot ci run` applies its patch
+      # of local changes right after the checkout and fails when the
+      # checkout was skipped (ci.yml's scope job, trial run r02hgbd8qq).
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # A deployment of a commit no open pull request has (a branch without
+      # one yet, or a merged one) ends here quietly: nothing to comment on.
+      # The commit's pull requests include any whose history holds it (a
+      # pull request stacked on this one, or its base after a merge), so
+      # only the one whose head is this commit counts: a late status for an
+      # older commit then measures nothing rather than overwrite a newer
+      # comment. The pull request's head must be in this repository, not a
+      # fork. The preview URL is the status's environment_url (target_url is
+      # Vercel's inspector page, not the preview); it must be one
+      # https://<name>.vercel.app origin and nothing else, before it goes
+      # anywhere: every Preview status on this repository so far has had that
+      # shape (the project has no custom preview domain), and the bypass
+      # header is sent to that origin.
+      - name: Look up the open pull request for the deployed commit
+        id: lookup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.deployment.sha }}
+          PREVIEW_URL: ${{ github.event.deployment_status.environment_url }}
+        run: |
+          if ! [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The deployment's sha is not a full commit SHA."
+            exit 1
+          fi
+          echo "Deployed commit $SHA; this workflow runs from $GITHUB_SHA."
+          pulls=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls")
+          # $sha and $repo are jq's variables, bound with --arg, not the shell's.
+          # shellcheck disable=SC2016
+          number=$(printf '%s' "$pulls" | jq -r --arg sha "$SHA" --arg repo "$GITHUB_REPOSITORY" '[.[] | select(.state == "open" and .head.sha == $sha and .head.repo.full_name == $repo)][0].number // empty')
+          if [ -z "$number" ]; then
+            echo "No open pull request has commit $SHA as its head; nothing to measure."
+            exit 0
+          fi
+          if [ -z "$PREVIEW_URL" ]; then
+            echo "The deployment status carries no environment_url; nothing to measure."
+            exit 0
+          fi
+          if ! [[ "$PREVIEW_URL" =~ ^https://[A-Za-z0-9-]+\.vercel\.app$ ]]; then
+            echo "::error::The deployment status's environment_url is not an https://<name>.vercel.app origin."
+            exit 1
+          fi
+          echo "Pull request #$number, preview $PREVIEW_URL."
+          {
+            echo "number=$number"
+            echo "url=$PREVIEW_URL"
+          } >> "$GITHUB_OUTPUT"
+
+      # The pull request's changed files, every page merged into one array
+      # (the files API lists at most 3,000), and its changed_files count,
+      # classified by ci-scope.mjs, which writes web= and plugin= to the
+      # step's outputs and a table to the job summary. The count and the
+      # head come from one read of the pull request, taken before the files,
+      # and the files are listed only while that head is still the deployed
+      # commit, so the count belongs to this commit. A head that moved since
+      # (a push in between, whose own preview follows), a failed API call or
+      # a missing count leaves the list or the count empty, which the script
+      # reads as unknown, every side, so it measures: only a list it can
+      # prove complete and free of front-end paths skips the measurement. A
+      # push between the two reads could still pair this count with the
+      # newer head's files; either way the newer preview is classified on
+      # its own. The script prints each path JSON-encoded, so a crafted file
+      # name cannot start a workflow command.
+      - name: Decide whether the change reaches the front end
+        id: decide
+        if: steps.lookup.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ steps.lookup.outputs.number }}
+          SHA: ${{ github.event.deployment.sha }}
+        run: |
+          files="$RUNNER_TEMP/pr-files.json"
+          changed=''
+          : > "$files"
+          if ! pull=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMBER"); then
+            echo "::warning::Could not read pull request #$NUMBER, so the scope is unknown and the preview is measured."
+          elif [ "$(printf '%s' "$pull" | jq -r '.head.sha')" != "$SHA" ]; then
+            echo "::warning::Pull request #$NUMBER's head is no longer $SHA, so the scope is unknown and the preview is measured."
+          elif ! gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/files?per_page=100" | jq -s 'add // []' > "$files"; then
+            echo "::warning::Could not list pull request #$NUMBER's files, so the scope is unknown and the preview is measured."
+            : > "$files"
+          else
+            changed=$(printf '%s' "$pull" | jq -r '.changed_files // empty')
+          fi
+          node .depot/scripts/ci-scope.mjs --pr-files "$files" --changed-files "$changed"
+
+  measure:
+    name: Measure the preview
+    needs: pr
+    if: needs.pr.outputs.measure == 'true'
+    runs-on: depot-ubuntu-latest
+    # Five runs per URL take about a minute per URL on a 2-vCPU sandbox,
+    # eight URLs, plus the install: about 10 minutes in the trial.
+    timeout-minutes: 25
+    # One run per pull request: a newer preview of the same pull request
+    # cancels an older run, whose comment it would only overwrite. The
+    # number is always set when this job runs (measure needs it), but
+    # Depot's evaluation of `needs` in a job's concurrency group is
+    # unexercised; were it empty, every pull request would share one group
+    # and cancel each other's runs. The deployed SHA, which the first job
+    # has already checked is a full SHA, is the fallback: a group per
+    # preview, which loses only the cancelling of an older run.
+    concurrency:
+      group: preview-lighthouse-${{ needs.pr.outputs.number || github.event.deployment.sha }}
+      cancel-in-progress: true
+    # What the job asks for: contents to check out, pull-requests to
+    # comment. On Depot the token may carry the Depot app's whole
+    # installation instead (see the header), which is one more reason the
+    # checkout leaves no token in .git/config and lhci and Chrome never get
+    # it.
+    permissions:
+      contents: read
+      pull-requests: write
+    # As in ci.yml's Lighthouse job: lighthouserc.cjs refuses the local
+    # smell-test settings only when CI is set, and the host is not trusted
+    # to set it.
+    env:
+      CI: 'true'
+    # An explicit bash shell runs with -o pipefail, as in the first job.
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      # An unset secret reads as an empty string, which would surface later as
+      # the preview refusing every request. Only the name is printed. The
+      # host is assumed to mask secret values in the log on its own, as
+      # GitHub does (unconfirmed on Depot; the runbook's first-event
+      # checklist checks it); the mask is added here either way. The
+      # outputs do not rest on either: the reports are redacted and searched
+      # for the secret before they are written, and the comment before it is
+      # posted.
+      - name: Check the bypass secret is set and mask it
+        env:
+          VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
+        run: |
+          [ -n "$VERCEL_PROTECTION_BYPASS" ] || {
+            echo "::error::Depot CI secret VERCEL_PROTECTION_BYPASS is empty or not set."
+            exit 1
+          }
+          echo "::add-mask::$VERCEL_PROTECTION_BYPASS"
+
+      # The commit this workflow runs from (see the header). Nothing here
+      # talks to GitHub through git after the checkout, so the token is not
+      # left in .git/config, as in CI's deploy job.
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The front end's part of the workspace, as CI's front-end jobs
+      # install it; the pnpm store is restored from main's entry and never
+      # saved (SAVE_CACHES is unset here; see .depot/actions/setup-js).
+      - name: Set up Node, pnpm and the JavaScript dependencies
+        uses: ./.depot/actions/setup-js
+        with:
+          filter: resource-hub-web...
+
+      # Lighthouse runs Playwright's Chromium, as the gate does
+      # (apps/web/lighthouserc.cjs), so the two measure with the same browser.
+      - name: Install Playwright's browser
+        timeout-minutes: 10
+        run: pnpm --filter resource-hub-web exec playwright install --with-deps chromium
+
+      # Warms and measures each sampled URL at the gate's settings and posts
+      # or updates the comment (apps/web/e2e/preview-lighthouse.mts). The
+      # script exits 2 when some URLs could not be measured but the reasons
+      # reached the comment, and 1 when nothing did or the secret went
+      # somewhere it should not. continue-on-error keeps the job green
+      # either way, so that a flaky preview or a missing page never shows as
+      # a failed check on the pull request; the last step fails the job
+      # only when the comment was not posted (nothing else would surface
+      # that) or the secret reached another origin (the script's `leak`
+      # output). The script hands lhci and Chrome a minimal environment, so
+      # the token below never reaches them.
+      - name: Measure the preview and comment on the pull request
+        id: measure
+        continue-on-error: true
+        env:
+          VERCEL_PROTECTION_BYPASS: ${{ secrets.VERCEL_PROTECTION_BYPASS }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PREVIEW_URL: ${{ needs.pr.outputs.url }}
+          SHA: ${{ github.event.deployment.sha }}
+          NUMBER: ${{ needs.pr.outputs.number }}
+        run: |
+          pnpm --filter resource-hub-web exec node e2e/preview-lighthouse.mts \
+            --origin "$PREVIEW_URL" --sha "$SHA" --pr "$NUMBER"
+
+      # The redacted reports the script wrote (the header is replaced and the
+      # files checked for the secret before they are written). The raw runs
+      # in apps/web/.lighthouseci carry the header and are never uploaded.
+      - name: Upload the Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-preview-lighthouse-reports
+          path: apps/web/lighthouse-preview-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Two cases turn the job red: nothing reached the pull request, and
+      # the secret reached another origin (the script's `leak` output, set
+      # after the comment that names the origin is posted). A measurement
+      # failure that is in the comment (the script's exit 2) stays green.
+      - name: Fail if nothing reached the pull request or the secret went elsewhere
+        if: steps.measure.outputs.reported != 'true' || steps.measure.outputs.leak == 'true'
+        env:
+          REPORTED: ${{ steps.measure.outputs.reported }}
+          NUMBER: ${{ needs.pr.outputs.number }}
+        run: |
+          if [ "$REPORTED" != 'true' ]; then
+            echo "::error::The preview Lighthouse run posted nothing on pull request #$NUMBER; its log is above."
+          else
+            echo "::error::The preview's page requested another origin, which received the bypass header; the comment on pull request #$NUMBER names it."
+          fi
+          exit 1

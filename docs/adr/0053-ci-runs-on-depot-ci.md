@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-11-07
+amended: 2026-11-07
 ---
 
 # CI runs on Depot CI, the deploys included
@@ -33,3 +34,11 @@ Depot CI was chosen because it accepts personal accounts and ran the whole suite
 - **A Lighthouse error first shows up on `main`.** A crash, missing runs or a failed upload is no longer caught before the merge: it fails `main`'s run and holds `deploy-web` back until a fix lands, while the CMS deploy goes ahead. A budget regression likewise first appears there, as a warning; the smell test should catch most breakages, but it is not a gate. `depot ci run` on a branch runs Lighthouse, for CI's numbers before a merge, and `preview-lighthouse.yml` still measures each pull request's Vercel preview, blocking nothing.
 - **Lighthouse is sharded by URL**, each URL's five runs in one shard on its own 2-vCPU sandbox, so a shard asserts what one run of the whole list would.
 - **Rollback** is restoring `.github/workflows/ci.yml` from git and unsetting the Depot variable `DEPOT_DEPLOY_ENABLED`, which keeps Depot's deploy jobs off. It needs Actions minutes: if GitHub's limit is reached again, the restored jobs wait for the reset or a raised budget. The steps are in the runbook.
+
+## Amendments
+
+### 2026-11-07: Preview Lighthouse moves to Depot CI
+
+**What changed.** Preview Lighthouse runs on Depot CI from `.depot/workflows/preview-lighthouse.yml`, on `deployment_status`, and GitHub's copy is deleted, so GitHub Actions now runs only the ADR guard's GitHub copy. It measures only pull requests whose changed files reach the front end, by `ci-scope.mjs --pr-files`, and measures when those files cannot be read for certain. It comments as `depot-code-access[bot]`, still blocking nothing. A measured preview costs about 8.3 sandbox-minutes: about $41 a month at the pace above, $125 in all with the plan, and within the included minutes at four runs a day ([`docs/runbooks/deploy.md`](../runbooks/deploy.md), "CI cost"). Depot lists the trigger as supported; the first real event confirms it (the runbook's "Preview Lighthouse" checklist). This replaces the consequence "`preview-lighthouse.yml` stays on GitHub for now", which stays above as written; "each pull request's Vercel preview" above now means each front-end one.
+
+**What did not.** The decision and the other consequences: pull requests still run only the jobs their changes reach and never CI's Lighthouse, and the ADR guard keeps its GitHub copy.

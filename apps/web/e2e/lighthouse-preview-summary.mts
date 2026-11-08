@@ -25,8 +25,15 @@ import { cell, median, type Lhr } from "./lighthouse-summary.mts";
 /** Finds the comment on later runs; an HTML comment does not render. */
 export const COMMENT_MARKER = "<!-- resource-hub: preview lighthouse -->";
 
-/** The login the workflow's token comments as; only its comments are candidates for the marker. */
-export const COMMENT_AUTHOR = "github-actions[bot]";
+/**
+ * The login the workflow's token comments as; only its comments are
+ * candidates for the marker. The workflow runs on Depot CI, whose
+ * `github.token` is an installation token of the Depot Code Access GitHub
+ * App (slug `depot-code-access`), so its comments are that app's bot's. The
+ * comments `github-actions[bot]` left while the workflow ran on GitHub
+ * Actions are not edited: a pull request that has one gets a second.
+ */
+export const COMMENT_AUTHOR = "depot-code-access[bot]";
 
 /** An audit as the comment reads it: a number, or a details list. */
 export interface PreviewAudit {
