@@ -138,19 +138,22 @@ const RESOURCE_HUB_THEME_ADMIN_BAR_SHELL = 'body.admin-bar .rh-shell { min-heigh
  * and `page.css`.
  *
  * **Core block styles that fight the body's.** Core enqueues each block's stylesheet as the block
- * renders, before `wp_head`, and five draw over what `prose.css` gives the same elements, which the
+ * renders, before `wp_head`, and six draw over what `prose.css` or `resource.css` gives the same elements, which the
  * front end, loading no core CSS, never shows: `wp-block-table` (a border on every side of every
  * cell, a 3 px rule under the head, a fixed table layout, the scroll on the figure rather than the
  * region), `wp-block-code` (the code inside the block set as a block that breaks spaces, not the
  * inset's inline code), `wp-block-separator` (its dots style: three dots, with the hairline's
  * border taken off `!important`),
  * `wp-block-quote` (the large style's own padding, margins and italic, right-aligned citation,
- * where the front end draws every quote as the one inset) and `wp-block-image` (a margin under the
- * caption, and the alignment, sizing and lightbox rules, none of which the front end draws). They
+ * where the front end draws every quote as the one inset), `wp-block-image` (a margin under the
+ * caption, and the alignment, sizing and lightbox rules, none of which the front end draws) and
+ * `wp-block-post-featured-image` (its image at `width: 100%`, which stretches an image narrower than
+ * the column, where `resource.css` keeps it at its own width up to the column's; its other rules are
+ * margins, box sizing and a link's box that `resource.css` and `base.css` already set). They
  * are dequeued here, on the CMS's own pages only; the editor canvas keeps them. Without the image
  * stylesheet a lightbox's overlay would show, so those pages also render every image with its
  * lightbox off (`inc/image-lightbox.php`), as the front end shows it. `theme-parity.spec.js` holds
- * each element to `prose.css`. The other core block styles a body can bring set box sizing,
+ * each element to `prose.css`, and a narrow featured image to `resource.css`. The other core block styles a body can bring set box sizing,
  * wrapping or classes an editor opts into, and stay. Core's button look is not a block stylesheet
  * but core's default `theme.json` element style, printed in the global styles both the pages and the
  * canvas share, so it is not removed here: a button block is a filled button on the CMS and a link
@@ -174,7 +177,7 @@ function resource_hub_theme_enqueue_page_styles(): void {
 		wp_enqueue_style( 'resource-hub-page' );
 	}
 
-	foreach ( array( 'wp-block-table', 'wp-block-code', 'wp-block-separator', 'wp-block-quote', 'wp-block-image' ) as $handle ) {
+	foreach ( array( 'wp-block-table', 'wp-block-code', 'wp-block-separator', 'wp-block-quote', 'wp-block-image', 'wp-block-post-featured-image' ) as $handle ) {
 		wp_dequeue_style( $handle );
 	}
 }

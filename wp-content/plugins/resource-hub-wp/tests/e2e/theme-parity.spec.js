@@ -31,12 +31,16 @@
  * block writes, the featured image, the summary, the body, the source line
  * and the related section, each held to `resource.css`, `card-labels.css`,
  * `related.css` and `card.css`, on a resource `resource-page-seed.js`
- * creates with a pick and a topic match.
+ * creates with a pick and a topic match. A second resource, made here with a
+ * topic of its own so the seeded page's related rows and its screenshots do
+ * not change, holds a featured image narrower than the column to its own
+ * width.
  */
 const { test, expect } = require( './fixtures' );
 const {
 	seedResourcePage,
 	deleteResourcePage,
+	flatPng,
 } = require( './resource-page-seed' );
 
 /** The page's body: one of each element `prose.css` styles that a core block prints, with core's large quote and dots separator styles, and an image set to expand on click. */
@@ -733,15 +737,78 @@ test.describe( "A CMS page computes the front end's styles", () => {
 
 test.describe( "A CMS resource page computes the front end's styles", () => {
 	let seed;
+	/** A resource with a narrow featured image and a related-resources block in its body, with its own topic and image. */
+	let narrow;
 
 	test.beforeAll( async ( { requestUtils } ) => {
 		seed = await seedResourcePage( requestUtils );
+		const stamp = Date.now();
+		const topic = await requestUtils.rest( {
+			method: 'POST',
+			path: '/wp/v2/resource_topic',
+			data: { name: 'Narrow topic', slug: `narrow-topic-${ stamp }` },
+		} );
+		const media = await requestUtils.uploadMedia( {
+			name: `narrow-featured-${ stamp }.png`,
+			mimeType: 'image/png',
+			buffer: flatPng( 240, 135, [ 0x6b, 0x9e, 0x9a ] ),
+		} );
+		const resource = await requestUtils.rest( {
+			method: 'POST',
+			path: '/wp/v2/resources',
+			data: {
+				status: 'publish',
+				title: 'A resource with a narrow image',
+				slug: `narrow-resource-${ stamp }`,
+				resource_type: [ seed.type.id ],
+				resource_topic: [ topic.id ],
+				featured_media: media.id,
+				// The seeded topic's resources, under a body block's heading.
+				content: `<!-- wp:paragraph --><p>A paragraph before the block.</p><!-- /wp:paragraph -->\n\n<!-- wp:resource-hub/related-resources {"topic":${ seed.topic.id }} /-->`,
+				meta: {
+					summary:
+						'A resource whose image is narrower than the column.',
+				},
+			},
+		} );
+		narrow = { topic, media, resource };
 	} );
 
 	test.afterAll( async ( { requestUtils } ) => {
+		const remove = ( path ) =>
+			requestUtils.rest( {
+				method: 'DELETE',
+				path,
+				params: { force: true },
+			} );
+		if ( narrow ) {
+			await remove( `/wp/v2/resources/${ narrow.resource.id }` );
+			await remove( `/wp/v2/media/${ narrow.media.id }` );
+			await remove( `/wp/v2/resource_topic/${ narrow.topic.id }` );
+		}
 		if ( seed ) {
 			await deleteResourcePage( requestUtils, seed );
 		}
+	} );
+
+	test( 'a featured image narrower than the column keeps its own width, as resource.css draws it', async ( {
+		page,
+	} ) => {
+		await page.setViewportSize( { width: 1280, height: 900 } );
+		await page.goto( narrow.resource.link );
+
+		// Its own size inside the wider column: core's post-featured-image
+		// style, which the theme leaves out, would stretch it to `width: 100%`.
+		const image = await box( page, '.rh-resource__media img' );
+		const article = await box( page, 'article.rh-resource' );
+		expect( article.width ).toBeGreaterThan( 240 );
+		expect( image.width ).toBeCloseTo( 240, 1 );
+		expect( image.height ).toBeCloseTo( 135, 1 );
+		await expect(
+			page.locator(
+				'#wp-block-post-featured-image-css, #wp-block-post-featured-image-inline-css'
+			)
+		).toHaveCount( 0 );
 	} );
 
 	for ( const colorScheme of [ 'light', 'dark' ] ) {
