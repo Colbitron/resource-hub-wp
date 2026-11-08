@@ -243,8 +243,9 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 	/**
 	 * A type within a topic sets both taxonomies' query vars. Core resolves the template of the taxonomy
 	 * whose term is the queried object, the first of the two in its taxonomy order, which the tests
-	 * re-register in varying orders; the two templates are the same shell around the collection part, so
-	 * either is right, and the head names both terms.
+	 * re-register in varying orders; the two templates are the same shell around the collection part
+	 * (`test_collection_templates_are_identical()` holds them to it), so either is right, and the head
+	 * names both terms.
 	 */
 	public function test_type_within_topic_is_a_taxonomy_template(): void {
 		$this->collection_content();
@@ -258,6 +259,24 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 		$this->assertSame( 'caching', get_query_var( 'resource_topic' ) );
 		$this->assertOneHeading( 'Webinar resources on Caching' );
 		$this->assertSame( 1, substr_count( $this->html, '<article class="rh-card">' ) );
+	}
+
+	/**
+	 * The three collection templates are the same file byte for byte: the shell around the collection part.
+	 * Core picks one of the two taxonomy templates for a type within a topic by its taxonomy order, which
+	 * no one sets (`test_type_within_topic_is_a_taxonomy_template()`), so that pick may not matter; a change
+	 * to one template is a change to all three, or a way to tell them apart that this test should name.
+	 */
+	public function test_collection_templates_are_identical(): void {
+		$dir      = WP_CONTENT_DIR . '/themes/resource-hub/templates/';
+		$library  = $dir . 'archive-resource.html';
+		$template = (string) file_get_contents( $library ); // phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- The theme's own template, read by a test.
+		$this->assertStringContainsString( '<!-- wp:template-part {"slug":"collection"} /-->', $template );
+
+		foreach ( array( 'taxonomy-resource_type.html', 'taxonomy-resource_topic.html' ) as $file ) {
+			$this->assertFileIsReadable( $dir . $file );
+			$this->assertSame( $template, file_get_contents( $dir . $file ), "{$file} differs from archive-resource.html." ); // phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- The theme's own template, read by a test.
+		}
 	}
 
 	/**
