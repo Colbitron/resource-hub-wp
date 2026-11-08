@@ -79,6 +79,70 @@ final class TableRegionTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A caption of nothing but invisible characters names nothing: no-break spaces and U+FEFF are
+	 * whitespace, as JavaScript's `\s` counts it, and the zero-width characters are removed.
+	 */
+	public function test_invisible_caption_is_called_table(): void {
+		foreach ( array( "\u{FEFF}", "\u{200B}", "\u{200C}\u{200D}", '&nbsp;&#8203;&nbsp;', "\u{3000}\u{2028}" ) as $caption ) {
+			$this->assertSame(
+				'Table',
+				$this->region_attributes( resource_hub_theme_table_region( $this->block( "<figcaption>{$caption}</figcaption>" ) ) )['aria-label'],
+				bin2hex( $caption )
+			);
+		}
+	}
+
+	/**
+	 * No-break spaces inside a caption collapse with the rest of its whitespace.
+	 */
+	public function test_no_break_spaces_collapse(): void {
+		$this->assertSame(
+			'Prices by plan',
+			$this->region_attributes( resource_hub_theme_table_region( $this->block( '<figcaption>&nbsp;Prices&nbsp;&nbsp;by &nbsp;plan&nbsp;</figcaption>' ) ) )['aria-label']
+		);
+	}
+
+	/**
+	 * Text the front end never renders is not read: a script, a style, a form control.
+	 */
+	public function test_unrendered_text_is_not_read(): void {
+		$this->assertSame(
+			'Prices by plan',
+			$this->region_attributes( resource_hub_theme_table_region( $this->block( '<figcaption>Prices<script>alert(1)</script> by<style>p{}</style> <button>Buy</button>plan</figcaption>' ) ) )['aria-label']
+		);
+	}
+
+	/**
+	 * The cap counts UTF-16 code units, as the front end's string length does: a character outside
+	 * the Basic Multilingual Plane counts two and is never cut in half; a space just past the cap
+	 * is a word boundary, as `lastIndexOf( ' ', 150 )` finds it.
+	 */
+	public function test_cap_counts_utf16_units(): void {
+		$label = fn ( string $caption ): string => $this->region_attributes( resource_hub_theme_table_region( $this->block( "<figcaption>{$caption}</figcaption>" ) ) )['aria-label'];
+
+		$this->assertSame( str_repeat( '😀', 75 ), $label( str_repeat( '😀', 100 ) ) );
+		$this->assertSame( 'a' . str_repeat( '😀', 74 ), $label( 'a' . str_repeat( '😀', 80 ) ) );
+		$this->assertSame( 'ab ' . str_repeat( 'x', 147 ), $label( 'ab ' . str_repeat( 'x', 147 ) . ' tail' ) );
+		$this->assertSame( 'Café ' . str_repeat( 'é', 145 ), $label( 'Café ' . str_repeat( 'é', 145 ) ) );
+	}
+
+	/**
+	 * Every table directly in the figure gets its own region; one nested in a cell does not.
+	 */
+	public function test_each_table_in_the_figure_is_wrapped(): void {
+		$html = resource_hub_theme_table_region(
+			'<figure class="wp-block-table"><table><caption>First</caption><tbody><tr><td><table><tbody><tr><td>Inner</td></tr></tbody></table></td></tr></tbody></table><table><tbody><tr><td>2</td></tr></tbody></table><figcaption>Both</figcaption></figure>'
+		);
+
+		$document = HTMLDocument::createFromString( '<!DOCTYPE html><html><body>' . $html . '</body></html>', LIBXML_NOERROR );
+		$regions  = $document->querySelectorAll( 'figure > div.rh-table-scroll > table' );
+		$this->assertCount( 2, $regions );
+		$this->assertCount( 2, $document->querySelectorAll( '.rh-table-scroll' ) );
+		$labels = array_map( static fn ( $region ): string => (string) $region->getAttribute( 'aria-label' ), iterator_to_array( $document->querySelectorAll( '.rh-table-scroll' ) ) );
+		$this->assertSame( array( 'First', 'Both' ), $labels );
+	}
+
+	/**
 	 * A caption's quotes and markup reach the attribute as text, escaped.
 	 */
 	public function test_label_is_escaped_text(): void {
@@ -117,19 +181,23 @@ final class TableRegionTest extends WP_UnitTestCase {
 	/**
 	 * Loading the file hooks nothing, so REST's `content.rendered`, which the front end reads, stays
 	 * core's markup; the theme adds the filter on `template_redirect`, for a page core renders, and
-	 * not for a feed. Logged in, as the lockdown answers an anonymous feed with its 404.
+	 * not for a feed or an embed. Logged in, as the lockdown answers an anonymous feed with its 404.
 	 */
 	public function test_filter_is_added_only_for_a_rendered_page(): void {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
 		remove_all_filters( 'render_block_core/table' );
 		$this->assertFalse( has_filter( 'render_block_core/table', 'resource_hub_theme_table_region' ) );
 
-		$this->go_to( get_feed_link() );
-		$this->assertTrue( is_feed() );
-		resource_hub_theme_add_table_regions();
-		$this->assertFalse( has_filter( 'render_block_core/table', 'resource_hub_theme_table_region' ) );
+		$page = self::factory()->post->create( array( 'post_type' => 'page' ) );
 
-		$this->go_to( get_permalink( self::factory()->post->create( array( 'post_type' => 'page' ) ) ) );
+		foreach ( array( get_feed_link(), get_post_embed_url( $page ) ) as $url ) {
+			$this->go_to( $url );
+			$this->assertTrue( is_feed() || is_embed(), $url );
+			resource_hub_theme_add_table_regions();
+			$this->assertFalse( has_filter( 'render_block_core/table', 'resource_hub_theme_table_region' ), $url );
+		}
+
+		$this->go_to( get_permalink( $page ) );
 		resource_hub_theme_add_table_regions();
 		$this->assertSame( 10, has_filter( 'render_block_core/table', 'resource_hub_theme_table_region' ) );
 	}
