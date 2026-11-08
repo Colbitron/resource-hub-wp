@@ -2,7 +2,7 @@
 
 For a contributor new to the plugin: how to run it, test it and find your way around. The rules an agent follows on every edit are in [`CLAUDE.md`](CLAUDE.md) beside this file; the project's architecture, contract and decisions are in the [root README](../../../README.md).
 
-The plugin models a filterable resources library for a headless front end: the `resource` post type with its taxonomies and meta, four custom REST routes (resolve a slug, a page by path, the resources related to one, and a search of resources and pages), the revalidation hook that tells the Next.js front end what changed, the lockdown that keeps the CMS's own pages for logged-in users, and the admin screens that show what happened. It is a demonstration of a pattern, written fresh, not production code.
+The plugin models a filterable resources library for a headless front end: the `resource` post type with its taxonomies and meta, four custom REST routes (resolve a slug, a page by path, the resources related to one, and a search of resources and pages), the revalidation hook that tells the Next.js front end what changed, the lockdown that keeps the CMS's own pages for logged-in users, the admin screens that show what happened, and the settings of Relevanssi, the search engine installed beside it from [`site-plugins/`](../../../site-plugins/README.md). It is a demonstration of a pattern, written fresh, not production code.
 
 ## Directory map
 
@@ -22,9 +22,10 @@ src/
   Lockdown/              anonymous visitors get a 404 from theme pages; robots, sitemaps, oEmbed
   Security/              XML-RPC off; incoming trackbacks and pingbacks off for every post type;
                          no outgoing pingbacks, trackbacks, update-service pings or enclosure fetches
+  Search/                Relevanssi's settings in code, its found_posts fix, the index build
   Admin/                 the status page, the list column, the term notice, result wording
   Editor/                enqueues the editor scripts below
-  Cli/                   the two WP-CLI commands
+  Cli/                   the three WP-CLI commands
   Seed/                  the seeder behind `wp resource-hub seed`
 blocks/related-resources/  the block's editor source: block.json, edit.js and the stylesheet imports
 editor/                  block-editor scripts: resource details panel with the related picks control,
@@ -47,7 +48,10 @@ pnpm env:start             # WordPress at http://localhost:8888, the tests site 
 pnpm composer install      # inside the container; vendor/ lands in this directory
 pnpm build                 # compiles blocks/, editor/ and admin/ into build/ (not committed), with the type-accent table; the block is registered from there
 pnpm wp resource-hub seed  # optional sample content
+pnpm wp resource-hub search-index  # builds Relevanssi's index; later starts build it themselves
 ```
+
+`pnpm env:start` also installs Relevanssi from `site-plugins/` and activates it on both sites; it builds the search index too once this plugin's `vendor/` exists, so on the first start, before `pnpm composer install`, it prints that it skipped it.
 
 Log in at `http://localhost:8888/wp-admin` with `admin` / `password`. Activating the plugin deletes the stored rewrite rules so `/resources/…` permalinks work without a visit to Settings > Permalinks; `flush_rewrite_rules()` itself is forbidden by the VIP ruleset. If the URLs 404 later, `pnpm wp rewrite flush` is the manual equivalent.
 
@@ -57,7 +61,7 @@ The revalidation settings come from the `RESOURCE_HUB_FRONTEND_URL` and `RESOURC
 
 ## WP-CLI commands
 
-Both run through `pnpm wp` (the dev site) or `pnpm wp:tests` (the tests site).
+Each runs through `pnpm wp` (the dev site) or `pnpm wp:tests` (the tests site).
 
 - `wp resource-hub seed [--count=<n>]` seeds the five types, the topics and `--count` fictional resources (default `Seeder::DEFAULT_COUNT`, 12; the catalogue holds 16). Safe to rerun.
 - Not a command of the plugin's, but the one-liner for the host after the required-fields rule: every published or scheduled resource that lacks a title, a topic or a summary (`RequiredFields::missing_stored()`), as ID and title, and nothing written. The editor keeps such a resource's Update button off until someone fills the gap.
@@ -66,7 +70,20 @@ Both run through `pnpm wp` (the dev site) or `pnpm wp:tests` (the tests site).
   wp eval 'foreach ( get_posts( array( "post_type" => "resource", "post_status" => array( "publish", "future" ), "posts_per_page" => -1, "fields" => "ids" ) ) as $id ) { if ( ResourceHub\ContentModel\RequiredFields::missing_stored( $id ) ) { WP_CLI::line( $id . "\t" . get_post( $id )->post_title ); } }'
   ```
 
+- `wp resource-hub search-index` rebuilds Relevanssi's search index from scratch: it empties the index, then indexes every resource and page with its title, content, `summary` and topic and type names, the set `src/Search/RelevanssiConfig.php` selects. Safe to rerun; it fails when Relevanssi is not active. See [The search index](#the-search-index).
 - `wp resource-hub decode-slugs [--apply]` lists every `resource` post and every term in the three taxonomies whose stored slug still holds a percent escape the front end's router decodes (one of `A-Z a-z 0-9 - _ . ! ~ * ' ( )`), with the decoded slug and anything already holding it. A dry run unless given `--apply`, which saves each through core (`wp_update_post()`, `wp_update_term()`), so the old slug is kept in `_wp_old_slug` and the front end is revalidated as on any save. A term whose decoded slug another term has is skipped and reported: core refuses it, and an editor must type a new slug. Slugs saved since the `SlugEscapes` rule need no repair; only a cron publish of a scheduled resource bypasses it, because it writes the status alone.
+
+## The search index
+
+Search runs on [Relevanssi](https://wordpress.org/plugins/relevanssi/), the free version, installed and pinned in [`site-plugins/`](../../../site-plugins/README.md). The plugin works without it: nothing in it needs Relevanssi, and `pnpm test:php` passes with it absent (below). Its settings live in code, in `src/Search/RelevanssiConfig.php`, as `pre_option_*` filters, so nothing is stored and its settings screen shows them but cannot change them: search logging off (Relevanssi's default too, now pinned), only resources and pages indexed, the `summary` meta and the topic and type names indexed, and every search query Relevanssi does not answer, the REST API's included, left to core's search. A query asks for it with `'relevanssi' => true` beside `s`; `src/Search/RelevanssiFoundPosts.php` keeps such a query's `found_posts` right, which Relevanssi alone gets wrong for `fields => ids`.
+
+The index holds what those settings selected when it was built, so it is rebuilt with `wp resource-hub search-index`:
+
+1. **After Relevanssi is first activated**, since its tables start empty. `pnpm env:start` does it on both wp-env sites; the deploy does it on the host.
+2. **After changing `RelevanssiConfig`**, locally with `pnpm wp resource-hub search-index`. The deploy rebuilds on every run, so the host follows on merge.
+3. **After renaming a topic or type**, if search must find the new name at once: Relevanssi re-indexes a resource when it is saved, terms and meta included, but not when one of its terms is renamed. Otherwise the next deploy catches it up.
+
+The build empties the index first, so while it runs a search finds only what it has indexed so far; the whole command took under a second for the 18 seeded resources and pages, WP-CLI's start-up included. Relevanssi keeps its index in its own tables (`wp_relevanssi` and two more); it writes no files.
 
 ## Testing
 
@@ -82,7 +99,8 @@ Three gates, all run by CI on Depot CI (`.depot/workflows/ci.yml`, the `gate` jo
 
 Things to know:
 
-- **PHPUnit reinstalls the tests site.** The bootstrap drops and reinstalls the tests database, which deactivates every plugin there. CI runs PHPUnit before Playwright, and every Playwright spec imports `test` from `tests/e2e/fixtures.js`, a worker-scoped fixture that activates the plugin and the `resource-hub` theme before any spec runs. The dev site on 8888 is untouched.
+- **PHPUnit reinstalls the tests site.** The bootstrap drops and reinstalls the tests database, which deactivates every plugin there. CI runs PHPUnit before Playwright, and every Playwright spec imports `test` from `tests/e2e/fixtures.js`, a worker-scoped fixture that activates the plugin, Relevanssi and the `resource-hub` theme before any spec runs. The dev site on 8888 is untouched.
+- **PHPUnit loads Relevanssi.** The bootstrap loads it beside the plugin and creates its tables once the database is reinstalled, so the search tests in `tests/phpunit/Search/` run against the version `site-plugins/` installed, and fail if it is missing. To show the plugin works without it, run `pnpm exec wp-env run tests-cli --env-cwd=wp-content/plugins/resource-hub-wp env RESOURCE_HUB_TESTS_WITHOUT_RELEVANSSI=1 composer test`: the search tests skip and everything else passes. The index build truncates and analyzes its table, which would commit a test's transaction, so the search tests swap those two statements for transaction-safe ones (the test's docblock).
 - **Publishing in a test takes all four fields.** A public resource needs a title, one type, a topic and a summary (`OneType`, `RequiredFields`), so a PHPUnit test that publishes through REST, and every Playwright spec that publishes, sends or stores them; `tests/e2e/required-fields.spec.js` covers the editor's notice, lock and checklist, with an axe scan of the sidebar through `@axe-core/playwright`, the workspace's accessibility scanner.
 - **Payloads are validated against the shared schemas.** `tests/phpunit/Revalidation/SchemaValidator.php` registers every schema in `packages/ui/schemas/` under its `$id` with `opis/json-schema` (draft 2020-12, cross-file `$ref`s) and checks every payload a test builds. `SchemaTest` runs the package's `revalidate-request.*.json` fixtures through the PHP validator, so the two validators agree on the request schema. No PHP test runs the other schemas' fixtures, and Ajv's strict compile runs only under `pnpm test:schemas`. `opis/json-schema` is a dev dependency and is never shipped.
 - **`build/` is not committed.** CI builds it before the gate runs; locally, run `pnpm build` (or `pnpm start` to watch) after `pnpm env:start`. `webpack.config.js` extends the `@wordpress/scripts` config with the non-block entries under `editor/` and `admin/`.
@@ -92,7 +110,7 @@ Things to know:
 
 ## What is not built yet
 
-Slice 4 is built: the related route (`GET /resource-hub/v1/related/{id}?count=n`) and the `related_picks` meta, the editor's control for the picks in the Resource details panel, and the `resource-hub/related-resources` block, whose render callback writes the contract's marker (`packages/ui/README.md`, "Block marker") with card rows inside; the front end reads the route for its related section and swaps the marker for its own list. The CMS block theme is slice 5 ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)); its skeleton and its assets are at `wp-content/themes/resource-hub/`, and this plugin's PHPUnit and Playwright suites check its files, its 404, its copies of the contract package's assets, its `theme.json` presets against the tokens, and its stylesheets on a page with the block. Open follow-ups are issues [#85](https://github.com/Colbitron/resource-hub-wp/issues/85) and [#87](https://github.com/Colbitron/resource-hub-wp/issues/87), the last the related list's scale path.
+Slice 4 is built: the related route (`GET /resource-hub/v1/related/{id}?count=n`) and the `related_picks` meta, the editor's control for the picks in the Resource details panel, and the `resource-hub/related-resources` block, whose render callback writes the contract's marker (`packages/ui/README.md`, "Block marker") with card rows inside; the front end reads the route for its related section and swaps the marker for its own list. The CMS block theme is slice 5 ([issue #89](https://github.com/Colbitron/resource-hub-wp/issues/89)); its skeleton and its assets are at `wp-content/themes/resource-hub/`, and this plugin's PHPUnit and Playwright suites check its files, its 404, its copies of the contract package's assets, its `theme.json` presets against the tokens, and its stylesheets on a page with the block. Search is its own slice ([issue #115](https://github.com/Colbitron/resource-hub-wp/issues/115)): Relevanssi is installed, configured and indexed, and the search route that will query it is not built yet. Open follow-ups are issues [#85](https://github.com/Colbitron/resource-hub-wp/issues/85) and [#87](https://github.com/Colbitron/resource-hub-wp/issues/87), the last the related list's scale path.
 
 ## Possible next steps
 

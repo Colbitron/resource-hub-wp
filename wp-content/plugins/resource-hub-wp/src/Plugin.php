@@ -15,6 +15,7 @@ use ResourceHub\Admin\TermNotice;
 use ResourceHub\Blocks\RelatedResourcesBlock;
 use ResourceHub\Blocks\SharedTokens;
 use ResourceHub\Cli\DecodeSlugsCommand;
+use ResourceHub\Cli\SearchIndexCommand;
 use ResourceHub\Cli\SeedCommand;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\OneType;
@@ -40,6 +41,8 @@ use ResourceHub\Rest\SearchRoute;
 use ResourceHub\Revalidation\Revalidation;
 use ResourceHub\Security\OutgoingPings;
 use ResourceHub\Security\Pings;
+use ResourceHub\Search\RelevanssiConfig;
+use ResourceHub\Search\RelevanssiFoundPosts;
 use ResourceHub\Security\XmlRpc;
 
 /**
@@ -116,10 +119,13 @@ final class Plugin {
 		( new XmlRpc() )->register();
 		( new Pings() )->register();
 		( new OutgoingPings() )->register();
+		( new RelevanssiConfig() )->register();
+		( new RelevanssiFoundPosts() )->register();
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			\WP_CLI::add_command( 'resource-hub seed', SeedCommand::class );
 			\WP_CLI::add_command( 'resource-hub decode-slugs', DecodeSlugsCommand::class );
+			\WP_CLI::add_command( 'resource-hub search-index', SearchIndexCommand::class );
 		}
 	}
 
