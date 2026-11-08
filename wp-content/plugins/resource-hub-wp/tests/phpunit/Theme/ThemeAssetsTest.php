@@ -21,31 +21,23 @@ use WP_UnitTestCase;
  * loading") promises that the copy of the font is byte for byte the package's, proved by a SHA-256
  * the theme records: that record is `figtree.sha256`, committed in the theme, so a new font file
  * fails here until the record is changed with it on purpose. Every other copy is compared with its
- * source directly, and `build/assets.php`, which `functions.php` takes the stylesheets' versions
- * from, must hold each copy's real hash.
+ * source directly.
+ *
+ * The theme's one list of what it copies, and of the stylesheets it registers with their handles
+ * and order, is `ASSETS` in `scripts/build.mjs`, which the build writes into `build/assets.php`:
+ * `copies` (each copy's path under `build/`, the same as its path in the package, and its SHA-256)
+ * and `styles` (each handle's file and the handles it loads after). `functions.php` registers every
+ * stylesheet from that manifest. So these tests read the manifest rather than keep a list of their
+ * own: every copy must be the package's file with its real hash, every registered stylesheet a
+ * copied one and every copied stylesheet registered, and every handle `functions.php` enqueues one
+ * the manifest registers, so a stylesheet dropped from the build, or a handle renamed on one side,
+ * fails here.
  *
  * `pnpm build` runs before PHPUnit, locally and in CI, so a missing build fails here rather than
  * skipping. wp-env mounts `packages/ui` at the same path relative to the WordPress root
  * (`.wp-env.json`), as `BrandMarkTest` reads it.
  */
 final class ThemeAssetsTest extends WP_UnitTestCase {
-	/**
-	 * Each copy's path under the theme's `build/`, and its source under `packages/ui/`.
-	 */
-	private const COPIES = array(
-		'tokens.css'                            => 'tokens.css',
-		'brand.css'                             => 'brand.css',
-		'fonts/figtree-latin-wght-normal.woff2' => 'fonts/figtree-latin-wght-normal.woff2',
-		'fonts/LICENSE-Figtree.txt'             => 'fonts/LICENSE-Figtree.txt',
-		'fonts/figtree-fallback.css'            => 'fonts/figtree-fallback.css',
-		'base.css'                              => 'base.css',
-		'shell.css'                             => 'shell.css',
-		'prose.css'                             => 'prose.css',
-		'page.css'                              => 'page.css',
-		'welcome.css'                           => 'welcome.css',
-		'not-found.css'                         => 'not-found.css',
-	);
-
 	/**
 	 * The font's path under `build/`, as `theme.json` names it and `figtree.sha256` records it.
 	 */
@@ -55,7 +47,14 @@ final class ThemeAssetsTest extends WP_UnitTestCase {
 	 * Every copy is its source byte for byte.
 	 */
 	public function test_every_copy_is_the_package_file(): void {
-		foreach ( self::COPIES as $copy => $source ) {
+		$copies = $this->manifest()['copies'];
+		// The manifest is not passing on an empty list: the tokens, the font and its licence are in it.
+		foreach ( array( 'tokens.css', self::FONT, 'fonts/LICENSE-Figtree.txt' ) as $required ) {
+			$this->assertArrayHasKey( $required, $copies );
+		}
+
+		foreach ( array_keys( $copies ) as $copy ) {
+			$source = $copy;
 			$this->assertFileExists( $this->theme( 'build/' . $copy ), "Run `pnpm build`: the theme's build has no {$copy}." );
 			$this->assertSame(
 				$this->sha256( $this->package( $source ) ),
@@ -88,14 +87,59 @@ final class ThemeAssetsTest extends WP_UnitTestCase {
 	 * `build/assets.php` lists exactly the copies, each with its real SHA-256.
 	 */
 	public function test_assets_manifest_holds_each_copys_hash(): void {
+		foreach ( $this->manifest()['copies'] as $copy => $hash ) {
+			$this->assertSame( $this->sha256( $this->theme( 'build/' . $copy ) ), $hash, "build/assets.php has a stale hash for {$copy}." );
+		}
+	}
+
+	/**
+	 * Every registered stylesheet is a copied `.css` file, every copied stylesheet is registered, and
+	 * every handle a stylesheet loads after is registered by the theme or, for none yet, core.
+	 */
+	public function test_every_copied_stylesheet_is_registered(): void {
+		$manifest = $this->manifest();
+		$files    = array_column( $manifest['styles'], 0 );
+
+		$this->assertContains( 'resource-hub-tokens', array_keys( $manifest['styles'] ) );
+		foreach ( $manifest['styles'] as $handle => list( $file, $deps ) ) {
+			$this->assertStringStartsWith( 'resource-hub-', $handle );
+			$this->assertArrayHasKey( $file, $manifest['copies'], "{$handle} names {$file}, which the build does not copy." );
+			foreach ( $deps as $dep ) {
+				$this->assertArrayHasKey( $dep, $manifest['styles'], "{$handle} loads after {$dep}, which the theme does not register." );
+			}
+		}
+		foreach ( array_keys( $manifest['copies'] ) as $copy ) {
+			if ( str_ends_with( $copy, '.css' ) ) {
+				$this->assertContains( $copy, $files, "The build copies {$copy} but registers no handle for it." );
+			}
+		}
+	}
+
+	/**
+	 * Every handle `functions.php` enqueues is one the manifest registers.
+	 */
+	public function test_every_enqueued_handle_is_registered(): void {
+		$styles = $this->manifest()['styles'];
+
+		$this->assertGreaterThan( 5, preg_match_all( "/wp_enqueue_style\\(\\s*'([^']+)'/", $this->read( $this->theme( 'functions.php' ) ), $matches ) );
+		foreach ( array_unique( $matches[1] ) as $handle ) {
+			$this->assertArrayHasKey( $handle, $styles, "functions.php enqueues {$handle}, which build/assets.php does not register." );
+		}
+	}
+
+	/**
+	 * The manifest `scripts/build.mjs` writes.
+	 *
+	 * @return array{copies: array<string, string>, styles: array<string, array{0: string, 1: string[]}>}
+	 */
+	private function manifest(): array {
+		$this->assertFileExists( WP_CONTENT_DIR . '/themes/resource-hub/build/assets.php', 'Run `pnpm build`: the theme has no build/assets.php.' );
 		$manifest = require WP_CONTENT_DIR . '/themes/resource-hub/build/assets.php';
 
 		$this->assertIsArray( $manifest );
-		$this->assertSame( array_keys( self::COPIES ), array_keys( $manifest ) );
+		$this->assertSame( array( 'copies', 'styles' ), array_keys( $manifest ) );
 
-		foreach ( $manifest as $copy => $hash ) {
-			$this->assertSame( $this->sha256( $this->theme( 'build/' . $copy ) ), $hash, "build/assets.php has a stale hash for {$copy}." );
-		}
+		return $manifest;
 	}
 
 	/**

@@ -1,6 +1,6 @@
 <?php
 /**
- * The Resource Hub theme's stylesheets, and the table block's scroll region.
+ * The Resource Hub theme's stylesheets, and its adjustments to core's table and image blocks.
  *
  * `theme.json` does the editor-facing styling: it registers Figtree from `build/fonts/` and maps its
  * colour, type and spacing presets to the `--rh-` tokens, which this file loads, and mirrors the
@@ -22,54 +22,29 @@ require_once __DIR__ . '/inc/table-region.php';
 require_once __DIR__ . '/inc/image-lightbox.php';
 
 /**
- * Each stylesheet's handle, its copy under `build/`, and the handles it loads after.
- *
- * - `resource-hub-tokens`: `tokens.css`, the `--rh-` custom properties, with `color-scheme: light
- *   dark` and every colour a `light-dark()` pair, so the CMS follows the reader's system preference
- *   by default, as the front end does (`packages/ui/DESIGN.md`, "Theme and colour scheme"). The
- *   handle is shared with the plugin's related-resources block, which lists it in its `block.json`;
- *   the plugin registers its own copy at a later priority only when this has not, so a page with the
- *   block loads the tokens once (`ResourceHub\Blocks\SharedTokens` in the plugin).
- * - `resource-hub-figtree-fallback`: the size-adjusted faces `--rh-font-sans` lists after Figtree,
- *   so a page drawn before the font file lands takes nearly the space it will in Figtree.
- * - `resource-hub-brand`: the lockup in `parts/header.html`.
- * - `resource-hub-base` and `resource-hub-shell`: the document and the landmarks' layout every
- *   template sits in, as the front end's `Shell` loads them.
- * - `resource-hub-prose` and `resource-hub-page`: the article `page.html` and `index.html` render.
- * - `resource-hub-welcome`: the welcome `home.html` renders, beside `page.css`.
- * - `resource-hub-not-found`: the 404's column.
- *
- * @return array<string, array{0: string, 1: string[]}>
- */
-function resource_hub_theme_styles(): array {
-	return array(
-		'resource-hub-tokens'           => array( 'tokens.css', array() ),
-		'resource-hub-figtree-fallback' => array( 'fonts/figtree-fallback.css', array() ),
-		'resource-hub-brand'            => array( 'brand.css', array( 'resource-hub-tokens' ) ),
-		'resource-hub-base'             => array( 'base.css', array( 'resource-hub-tokens', 'resource-hub-figtree-fallback' ) ),
-		'resource-hub-shell'            => array( 'shell.css', array( 'resource-hub-base' ) ),
-		'resource-hub-prose'            => array( 'prose.css', array( 'resource-hub-base' ) ),
-		'resource-hub-page'             => array( 'page.css', array( 'resource-hub-base' ) ),
-		'resource-hub-welcome'          => array( 'welcome.css', array( 'resource-hub-page' ) ),
-		'resource-hub-not-found'        => array( 'not-found.css', array( 'resource-hub-base' ) ),
-	);
-}
-
-/**
  * Registers the stylesheets from `build/`, on `init`.
  *
- * Each version is the first 20 characters of the copy's SHA-256 from `build/assets.php`, so a
- * changed file gets a new URL.
+ * The theme's one list of its stylesheets is `ASSETS` in `scripts/build.mjs`, which writes it into
+ * `build/assets.php`: each copy's SHA-256, and each stylesheet's handle, its file and the handles it
+ * loads after (the tokens; the fallback faces; the lockup; the document and the shell every template
+ * sits in; the article, the welcome and the 404's column). Each is registered from there, its
+ * version the first 20 characters of its copy's SHA-256, so a changed file gets a new URL.
+ * `resource-hub-tokens` is shared with the plugin's related-resources block, which lists it in its
+ * `block.json`; the plugin registers its own copy at a later priority only when this has not, so a
+ * page with the block loads the tokens once (`ResourceHub\Blocks\SharedTokens` in the plugin).
+ * `tokens.css` sets `color-scheme: light dark` and writes every colour as a `light-dark()` pair, so
+ * the CMS follows the reader's system preference by default, as the front end does
+ * (`packages/ui/DESIGN.md`, "Theme and colour scheme").
  */
 function resource_hub_theme_register_styles(): void {
 	if ( ! is_readable( __DIR__ . '/build/assets.php' ) ) {
 		return;
 	}
 
-	$hashes = require __DIR__ . '/build/assets.php';
+	$assets = require __DIR__ . '/build/assets.php';
 
-	foreach ( resource_hub_theme_styles() as $handle => list( $file, $deps ) ) {
-		wp_register_style( $handle, get_theme_file_uri( 'build/' . $file ), $deps, substr( (string) ( $hashes[ $file ] ?? '' ), 0, 20 ) );
+	foreach ( $assets['styles'] as $handle => list( $file, $deps ) ) {
+		wp_register_style( $handle, get_theme_file_uri( 'build/' . $file ), $deps, substr( (string) ( $assets['copies'][ $file ] ?? '' ), 0, 20 ) );
 	}
 }
 // At init's default priority, so the theme registers `resource-hub-tokens` before the plugin's
