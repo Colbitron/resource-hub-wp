@@ -9,7 +9,7 @@
  *
  * Built only on the tokens in tokens.css, which the consumer loads first;
  * load this file before any component stylesheet. The landmarks' layout
- * (the header, `main` and the footer) is each consumer's own.
+ * (the header, `main` and the footer) is shell.css.
  *
  * Markup: `data-theme="light"` or `"dark"` on `<html>`, or no attribute for
  * System, and the skip link first in `<body>`:

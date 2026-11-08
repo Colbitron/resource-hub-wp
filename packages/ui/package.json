@@ -29,6 +29,7 @@
 		"not-found.css",
 		"resource.css",
 		"page.css",
+		"shell.css",
 		"type-accents.json",
 		"README.md",
 		"DESIGN.md"
@@ -52,6 +53,7 @@
 		"./not-found.css": "./not-found.css",
 		"./resource.css": "./resource.css",
 		"./page.css": "./page.css",
+		"./shell.css": "./shell.css",
 		"./type-accents.json": "./type-accents.json"
 	},
 	"scripts": {
