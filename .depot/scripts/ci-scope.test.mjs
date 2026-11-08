@@ -1,6 +1,7 @@
-// Tests for ci-scope.mjs, run by the `scope` job before it classifies
-// (`node --test .depot/scripts/ci-scope.test.mjs`), and runnable on a
-// laptop with Node 24 and git. Plain node:test, so the job installs nothing.
+// Tests for ci-scope.mjs, run by the `scope` job before it classifies,
+// with CI result's (`node --test .depot/scripts/ci-scope.test.mjs
+// .depot/scripts/ci-result.test.mjs`), and runnable on a laptop with
+// Node 24 and git. Plain node:test, so the job installs nothing.
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -10,6 +11,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { JOBS as CI_RESULT_JOBS } from './ci-result.mjs';
 import { changedPaths, main, pullRequestFilePaths, scopeOf, sidesOf } from './ci-scope.mjs';
 
 const EVERYTHING = { plugin: true, web: true };
@@ -327,14 +329,20 @@ test( 'the script reads --pr-files and --changed-files, and fails safe', () => {
 	}
 } );
 
-// ci.yml's conditions, read as text: every job a pull request can skip is
-// skipped only on a pull request, and neither deploy reads scope's outputs,
-// so nothing here can skip a job on main.
-test( 'ci.yml scopes jobs only on a pull request, and never the deploys', () => {
+// ci.yml's jobs, read as text with no YAML parser, so the scope job
+// installs nothing: each job id under `jobs:` (two spaces in, a bare key)
+// and its lines, comments left out.
+function workflowJobs() {
 	const jobs = {};
 	let name = null;
+	let inJobs = false;
 	for ( const line of readFileSync( WORKFLOW, 'utf8' ).split( '\n' ) ) {
-		const job = line.match( /^ {2}([a-z][a-z0-9-]*):\s*$/ );
+		if ( /^\S/.test( line ) && ! /^#/.test( line ) ) {
+			inJobs = /^jobs:\s*$/.test( line );
+			name = null;
+			continue;
+		}
+		const job = inJobs && line.match( /^ {2}([a-z][a-z0-9-]*):\s*$/ );
 		if ( job ) {
 			name = job[ 1 ];
 			jobs[ name ] = '';
@@ -342,6 +350,14 @@ test( 'ci.yml scopes jobs only on a pull request, and never the deploys', () => 
 			jobs[ name ] += line + '\n';
 		}
 	}
+	return jobs;
+}
+
+// ci.yml's conditions, read as text: every job a pull request can skip is
+// skipped only on a pull request, and neither deploy reads scope's outputs,
+// so nothing here can skip a job on main.
+test( 'ci.yml scopes jobs only on a pull request, and never the deploys', () => {
+	const jobs = workflowJobs();
 	const ifOf = ( job ) => ( jobs[ job ].match( /^ {4}if: (.*)$/m ) ?? [] )[ 1 ] ?? '';
 	for ( const job of [ 'gate', 'web-checks', 'web-e2e', 'web-screenshots' ] ) {
 		assert.match( ifOf( job ), /^github\.event_name != 'pull_request' \|\| needs\.scope\.outputs\.(plugin|web) == 'true'$/, job );
@@ -353,10 +369,43 @@ test( 'ci.yml scopes jobs only on a pull request, and never the deploys', () => 
 		assert.doesNotMatch( jobs[ job ], /needs\.scope\.outputs/, job );
 	}
 	for ( const [ job, body ] of Object.entries( jobs ) ) {
-		if ( ! [ 'scope', 'deploy', 'deploy-web', 'web-lighthouse-medians' ].includes( job ) && /needs\.scope\.outputs/.test( body ) ) {
+		if ( ! [ 'scope', 'deploy', 'deploy-web', 'web-lighthouse-medians', 'ci-result' ].includes( job ) && /needs\.scope\.outputs/.test( body ) ) {
 			assert.match( ifOf( job ), /^github\.event_name != 'pull_request' \|\|/, job );
 		}
 	}
+} );
+
+// CI result is the one required check, so a job it does not read could
+// fail on a pull request with the check still green. Every job is either
+// in ci-result's needs, with its result passed to ci-result.mjs, or
+// exempt here, for a reason: Lighthouse and its medians never run on a
+// pull request, the deploys run only after a merge, and ci-result is
+// itself. A new job fails this test, and so the scope job and CI result,
+// until it is put on one side.
+const NOT_READ_BY_CI_RESULT = [ 'web-lighthouse', 'web-lighthouse-medians', 'deploy', 'deploy-web', 'ci-result' ];
+
+test( 'ci-result reads every job but the exempt ones', () => {
+	const jobs = workflowJobs();
+	const ids = Object.keys( jobs );
+	assert.ok( ids.length >= 10 && ids.includes( 'scope' ) && ids.includes( 'ci-result' ), `parsed jobs: ${ ids.join( ', ' ) }` );
+	const body = jobs[ 'ci-result' ];
+	const needs = ( body.match( /^ {4}needs: \[ ([a-z0-9, -]+) \]$/m ) ?? [] )[ 1 ]?.split( ',' ).map( ( need ) => need.trim() );
+	assert.ok( needs, "ci-result's needs is one flow list, `needs: [ a, b ]`" );
+	assert.match( body, /^ {4}if: \$\{\{ always\(\) \}\}$/m );
+	for ( const id of ids ) {
+		assert.ok( needs.includes( id ) !== NOT_READ_BY_CI_RESULT.includes( id ), `${ id } must be in ci-result's needs or exempt, not both or neither` );
+	}
+	for ( const id of [ ...needs, ...NOT_READ_BY_CI_RESULT ] ) {
+		assert.ok( ids.includes( id ), `${ id } is not a job in ci.yml` );
+	}
+	// Scope is read by ci-result.mjs on its own; every other need is in its JOBS, its result in env.
+	assert.ok( needs.includes( 'scope' ) );
+	assert.deepEqual( Object.keys( CI_RESULT_JOBS ).sort(), needs.filter( ( need ) => need !== 'scope' ).sort() );
+	assert.match( body, /^ {10}SCOPE: \$\{\{ needs\.scope\.result \}\}$/m );
+	for ( const [ job, { env } ] of Object.entries( CI_RESULT_JOBS ) ) {
+		assert.ok( body.includes( `\n          ${ env }: \${{ needs.${ job }.result }}\n` ), `ci-result passes ${ job }'s result as ${ env }` );
+	}
+	assert.match( body, /^ {8}run: node \.depot\/scripts\/ci-result\.mjs$/m );
 } );
 
 // preview-lighthouse.yml, read as text: it measures only when this script

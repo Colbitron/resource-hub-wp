@@ -43,8 +43,12 @@
 #                            (never on a pull request)
 #   ci-result                needs scope, gate and the three web jobs above,
 #                            and always runs: red unless scope succeeded and
-#                            each of the rest succeeded or was skipped. The
-#                            one check a ruleset requires, CI / CI result
+#                            each of the rest succeeded or, on a pull
+#                            request, was skipped as scope's outputs say
+#                            (.depot/scripts/ci-result.mjs). The one check a
+#                            ruleset requires, CI / CI result. A new job
+#                            goes in its needs or in the exempt list of
+#                            ci-scope.test.mjs, whose test fails until then
 #   deploy                   needs gate (main and dispatch only)
 #   deploy-web               needs deploy and every web job (main only)
 #
@@ -52,13 +56,13 @@
 # for the gate and ci-result. Everything but scope, the two deploys, the
 # medians and ci-result starts once scope has answered, about 6 to 8 s
 # later than without it (trial runs 2nw1m59b8d, fxprsxt9wx), so a run
-# waits for scope and then the slowest of the rest, not their sum. Each front-end job that serves
-# the app builds its own copy of the end-to-end harness's build
-# (RH_FIXTURES=1, the mock CMS), the same command at the same commit,
-# rather than one job building it for the rest: the build takes about 10 s,
-# less than a job's own start, so a shared build would only put a job in
-# front of every consumer. Each job's build is stamped and checked as on a
-# laptop (apps/web/e2e/build-stamp.mts).
+# waits for scope and then the slowest of the rest, not their sum. Each
+# front-end job that serves the app builds its own copy of the end-to-end
+# harness's build (RH_FIXTURES=1, the mock CMS), the same command at the
+# same commit, rather than one job building it for the rest: the build
+# takes about 10 s, less than a job's own start, so a shared build would
+# only put a job in front of every consumer. Each job's build is stamped
+# and checked as on a laptop (apps/web/e2e/build-stamp.mts).
 #
 # Order matters in one place: PHPUnit reinstalls the tests database, which
 # deactivates every plugin on the tests site, so it runs before Playwright
@@ -90,7 +94,7 @@
 # (ADR 0053).
 #
 # Scoping a pull request. Depot CI bills each job's sandbox time, about
-# 17.8 sandbox-minutes for the whole run (docs/runbooks/deploy.md, "CI
+# 17.9 sandbox-minutes for the whole run (docs/runbooks/deploy.md, "CI
 # cost"), so a pull request
 # skips the jobs its changes cannot reach. On a pull request the scope job
 # diffs the merge commit Depot checks out (refs/pull/N/merge) against its
@@ -129,11 +133,12 @@
 # job two levels below a skipped one in trial run h1bkmg53wt; GitHub
 # Actions is reported to skip it). With scope always run, nothing on main is
 # ever skipped (deploy-web's own if aside), and if scope fails there,
-# nothing runs and the run is red. On a pull request, a failed scope
-# likewise skips every job behind it (trial run h1bkmg53wt). A skipped
-# job reports as skipped, not as passed or failed, and GitHub counts a
-# skipped check as passing, so a ruleset requires ci-result's check
-# rather than any scoped job's; see that job.
+# nothing behind it runs but ci-result, which is red, as is the run. On a
+# pull request, a failed scope likewise skips every job behind it (trial
+# run h1bkmg53wt) but ci-result, which always runs and is red (trial run
+# vr5gv4mtvq). A skipped job reports as skipped, not as passed or
+# failed, and GitHub counts a skipped check as passing, so a ruleset
+# requires ci-result's check rather than any scoped job's; see that job.
 #
 # The deploys cannot be reached by a skipped job. deploy needs the gate,
 # deploy-web needs deploy and every front-end job, and neither condition
@@ -232,9 +237,9 @@ jobs:
           persist-credentials: false
 
       # The runner's own Node and git; nothing is installed.
-      - name: Test the scope rules
+      - name: Test the scope rules and CI result's verdict
         if: github.event_name == 'pull_request'
-        run: node --test .depot/scripts/ci-scope.test.mjs
+        run: node --test .depot/scripts/ci-scope.test.mjs .depot/scripts/ci-result.test.mjs
 
       - name: Decide which jobs run
         if: github.event_name == 'pull_request'
@@ -832,12 +837,16 @@ jobs:
     # a pull request, and GitHub counts a skipped check as passing, so a
     # required gate would pass on every pull request that skipped it. This
     # job always runs and is red unless scope succeeded and every other job
-    # it needs succeeded or was skipped. Scope must succeed outright: a
-    # failed or cancelled scope skips every job behind it, and those skips
-    # would otherwise pass. always() rather than !cancelled(), so a
-    # cancelled run reports red here instead of a skip, which would pass.
-    # Lighthouse and its medians never run on a pull request and the
-    # deploys only after a merge, so none of them is read.
+    # it needs succeeded, or, on a pull request only, was skipped because
+    # scope's output for its side is 'false' (.depot/scripts/ci-result.mjs,
+    # deny by default). Scope must succeed outright: a failed or cancelled
+    # scope skips every job behind it, and those skips would otherwise
+    # pass. always() rather than !cancelled(), so a cancelled run reports
+    # red here instead of a skip, which would pass. Lighthouse and its
+    # medians never run on a pull request and the deploys only after a
+    # merge, so none of them is read. A new job goes either in needs (and
+    # in ci-result.mjs's JOBS) or in the exempt list of ci-scope.test.mjs's
+    # needs test, which fails the scope job, and so this one, until it does.
     name: CI result
     needs: [ scope, gate, web-checks, web-e2e, web-screenshots ]
     if: ${{ always() }}
@@ -845,35 +854,26 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      # The results come in through env, never interpolated into the
-      # script. An empty or unexpected result is red, like a failure.
-      - name: Check every job passed or was skipped
+      # For the script. Its pull-request paths are tested in
+      # ci-result.test.mjs, which the scope job runs, since a `depot ci run`
+      # is never a pull request.
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Everything comes in through env, never interpolated into the script.
+      - name: Check every job passed, or was skipped as scoped
         env:
+          EVENT_NAME: ${{ github.event_name }}
           SCOPE: ${{ needs.scope.result }}
+          SCOPE_PLUGIN: ${{ needs.scope.outputs.plugin }}
+          SCOPE_WEB: ${{ needs.scope.outputs.web }}
           GATE: ${{ needs.gate.result }}
           WEB_CHECKS: ${{ needs.web-checks.result }}
           WEB_E2E: ${{ needs.web-e2e.result }}
           WEB_SCREENSHOTS: ${{ needs.web-screenshots.result }}
-        run: |
-          failed=0
-          echo "scope: $SCOPE"
-          if [ "$SCOPE" != success ]; then
-            echo "::error::scope's result is '$SCOPE', not success, so the jobs behind it cannot count as passed."
-            failed=1
-          fi
-          for job in "gate=$GATE" "web-checks=$WEB_CHECKS" "web-e2e=$WEB_E2E" "web-screenshots=$WEB_SCREENSHOTS"; do
-            name=${job%%=*}
-            result=${job#*=}
-            echo "$name: $result"
-            case "$result" in
-              success | skipped) ;;
-              *)
-                echo "::error::$name's result is '$result', not success or skipped."
-                failed=1
-                ;;
-            esac
-          done
-          exit "$failed"
+        run: node .depot/scripts/ci-result.mjs
 
   deploy:
     name: Deploy to the host
