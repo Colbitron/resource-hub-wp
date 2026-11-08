@@ -226,6 +226,13 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
 
+      # The deploy's check of the host's CLI PHP (.depot/scripts/
+      # host-php-floor.mjs) cannot be trialled without deploying, so its
+      # tests run here, on every pull request, with the runner's own Node.
+      - name: Test the deploy's host PHP check
+        if: github.event_name == 'pull_request'
+        run: node --test .depot/scripts/host-php-floor.test.mjs
+
       # The runner's own Node and git; nothing is installed.
       - name: Test the scope rules
         if: github.event_name == 'pull_request'
@@ -865,6 +872,25 @@ jobs:
       run:
         shell: bash
 
+    # How every WP-CLI call on the host runs, in one place: the steps after
+    # the rsync call it, and the check before the rsync reads the PHP version
+    # through it, so the PHP checked is the PHP those calls run on and the
+    # two cannot drift. It expands on the runner into each ssh command, so it
+    # holds words for the remote shell, not a quoted value.
+    #
+    # The interpreter is pinned. Plain wp is the host's WP-CLI phar, whose
+    # `#!/usr/bin/env php` runs the CLI's default PHP, and on the host that
+    # is 8.2 (/usr/bin/php -> /etc/alternatives/php -> php8.2), which the
+    # deploy user cannot change over SSH and Cloudways' console has no
+    # setting for; the web PHP-FPM is 8.4. WP_CLI_PHP does not help: it
+    # names the PHP for the subprocesses WP-CLI starts, not the interpreter
+    # the phar itself runs on. So the binary is named here. It moves with
+    # the plugin's floor, require.php in its composer.json; when the floor
+    # rises past it, the check before the rsync fails the deploy until this
+    # is raised too.
+    env:
+      WP_CLI: php8.4 /usr/local/bin/wp
+
     steps:
       # An unset secret reads as an empty string, which would otherwise surface
       # later as a confusing ssh or rsync error. Only names are printed.
@@ -936,7 +962,8 @@ jobs:
       # The gate runs PHP inside the wp-env containers. The deploy only needs
       # Composer to write a production vendor/ directory, and starting Docker
       # and wp-env for that would cost minutes, so PHP runs on the runner here,
-      # on the same 8.4 minor version as wp-env and the host.
+      # on the same 8.4 minor version as wp-env, the host's web PHP and the
+      # PHP the deploy pins for WP-CLI on the host (WP_CLI above).
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
@@ -978,6 +1005,34 @@ jobs:
             ServerAliveCountMax 3
           EOF
           chmod 600 ~/.ssh/config
+
+      # Before anything is copied, the PHP that the deploy's WP-CLI calls
+      # will run on must meet the plugin's Composer floor, composer.json's
+      # require.php. The deployed vendor/ enforces that floor through
+      # composer/platform_check.php, so on a lower PHP every WP-CLI call
+      # after the rsync fatals as it loads the plugin, leaving the host
+      # half-deployed and deploy-web skipped (run ps_lzqkzvjvch, 2026-11-07:
+      # floor 8.4, host CLI 8.2.35, while the web PHP was 8.4). `wp cli info`
+      # loads no WordPress and no plugin, so it answers on any PHP, and runs
+      # through $WP_CLI from the WordPress root like the calls it stands for.
+      # .depot/scripts/host-php-floor.mjs compares the two, reading both
+      # through env, and fails closed: output it cannot read, or a floor not
+      # of the form >=X.Y[.Z], fails the job here too. On a pass it prints
+      # the host's CLI PHP. What to do when it fails is in
+      # docs/runbooks/deploy.md, "The host's CLI PHP".
+      - name: Check the host's CLI PHP
+        env:
+          COMPOSER_JSON: wp-content/plugins/resource-hub-wp/composer.json
+        run: |
+          dir=$(printf '%q' "$WP_ROOT")
+          # $dir and $WP_CLI are meant to expand on the runner; printf %q has quoted $dir for the remote shell.
+          # shellcheck disable=SC2029
+          HOST_CLI_INFO=$(ssh deploy "cd $dir && $WP_CLI cli info --format=json") || {
+            echo "::error::Could not run WP-CLI on the host to read its PHP version. Nothing was deployed."
+            exit 1
+          }
+          export HOST_CLI_INFO
+          node .depot/scripts/host-php-floor.mjs
 
       # The source is the plugin directory itself, so the allowlist paths and
       # the host layout match one to one and nothing else in the workspace
@@ -1023,9 +1078,9 @@ jobs:
       - name: Activate the plugin
         run: |
           dir=$(printf '%q' "$WP_ROOT")
-          # $dir is meant to expand on the runner; printf %q has quoted it for the remote shell.
+          # $dir and $WP_CLI are meant to expand on the runner; printf %q has quoted $dir for the remote shell.
           # shellcheck disable=SC2029
-          ssh deploy "cd $dir && { wp plugin is-active resource-hub-wp || wp plugin activate resource-hub-wp; }"
+          ssh deploy "cd $dir && { $WP_CLI plugin is-active resource-hub-wp || $WP_CLI plugin activate resource-hub-wp; }"
 
       # Activation clears the rewrite rules only when the plugin was inactive,
       # so a deploy that changes the permalink structure (ADR 0024) would keep
@@ -1035,9 +1090,9 @@ jobs:
       - name: Flush rewrite rules
         run: |
           dir=$(printf '%q' "$WP_ROOT")
-          # $dir is meant to expand on the runner; printf %q has quoted it for the remote shell.
+          # $dir and $WP_CLI are meant to expand on the runner; printf %q has quoted $dir for the remote shell.
           # shellcheck disable=SC2029
-          ssh deploy "cd $dir && wp rewrite flush"
+          ssh deploy "cd $dir && $WP_CLI rewrite flush"
 
       # The site's own home URL, read over SSH, so no hostname is committed and
       # no extra secret is needed. jq checks the body is the REST index, not
@@ -1045,9 +1100,9 @@ jobs:
       - name: Smoke-check the REST root
         run: |
           dir=$(printf '%q' "$WP_ROOT")
-          # $dir is meant to expand on the runner; printf %q has quoted it for the remote shell.
+          # $dir and $WP_CLI are meant to expand on the runner; printf %q has quoted $dir for the remote shell.
           # shellcheck disable=SC2029
-          home=$(ssh deploy "cd $dir && wp option get home --skip-plugins --skip-themes")
+          home=$(ssh deploy "cd $dir && $WP_CLI option get home --skip-plugins --skip-themes")
           case "$home" in
             https://*) ;;
             *)
