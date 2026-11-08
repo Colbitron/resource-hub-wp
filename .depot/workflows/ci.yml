@@ -1037,6 +1037,54 @@ jobs:
       - name: Build the block
         run: pnpm build
 
+      # Composer's download cache, kept across deploys so that while the two
+      # locks are unchanged neither install downloads a dist: on a hit each
+      # locked dist loads from the cache, and the one request Composer still
+      # makes, Packagist's filter list, only warns when it fails. Both
+      # installs came out identical with `--network none` on a hit
+      # (2026-11-08, trial runs wqf81sfz32 and 6dvrpw81wd). Neither lock has
+      # a dist shasum, so Composer verifies no dist, cached or downloaded;
+      # what that leaves exposed is in docs/runbooks/deploy.md, "Composer in
+      # a container".
+      #
+      # The key is a literal version, both locks and the image's digest,
+      # with no restore keys, so a lock or image change starts from an empty
+      # cache and saves a fresh entry. The plugin's lock is in it though that
+      # install downloads nothing today: a production dependency added there
+      # must change the key, since a hit never saves and the new dist would
+      # otherwise be downloaded on every deploy. Bumping v1 discards a bad
+      # entry, which a retry would only restore again.
+      #
+      # The image's COMPOSER_HOME is /tmp, so its cache is /tmp/cache inside
+      # the container and goes with it; COMPOSER_CACHE_DIR points both
+      # installs at this directory, mounted in. It is created here, as the
+      # runner user, because Docker would create a missing bind-mount source
+      # as root, which the installs, running as the runner's uid, could not
+      # write. The digest is checked for its shape so the key holds no ':'
+      # or '@'.
+      - name: Compute the Composer cache key
+        id: composer-dist-key
+        run: |
+          digest="${COMPOSER_IMAGE##*@sha256:}"
+          if ! [[ "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::COMPOSER_IMAGE is not pinned by a sha256 digest (got: $COMPOSER_IMAGE)."
+            exit 1
+          fi
+          dir="$RUNNER_TEMP/composer-cache"
+          mkdir -p "$dir"
+          {
+            echo "digest=$digest"
+            echo "dir=$dir"
+          } >> "$GITHUB_OUTPUT"
+          echo "COMPOSER_CACHE_HOST_DIR=$dir" >> "$GITHUB_ENV"
+
+      - name: Restore Composer's download cache
+        id: composer-dist-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.composer-dist-key.outputs.dir }}
+          key: composer-dist-v1-${{ runner.os }}-${{ hashFiles('wp-content/plugins/resource-hub-wp/composer.lock', 'site-plugins/composer.lock') }}-${{ steps.composer-dist-key.outputs.digest }}
+
       # Composer runs in a container, not on the runner. The gate runs PHP
       # inside the wp-env containers; the deploy only needs Composer to write
       # two production installs, and starting wp-env for that would cost
@@ -1061,11 +1109,14 @@ jobs:
       # PHP running Composer: output shown identical on 8.4.27 and 8.5.12 on
       # 2026-11-08. It runs as the runner's uid and gid, so what it writes is
       # the runner user's, as the rsyncs expect, not root's. Each install
-      # keeps the flags it had on the runner.
+      # keeps the flags it had on the runner and reads and fills the
+      # download cache restored above.
       - name: Install PHP dependencies for production
         run: |
           docker run --rm --user "$(id -u):$(id -g)" \
             --volume "$GITHUB_WORKSPACE/wp-content/plugins/resource-hub-wp:/app" \
+            --volume "$COMPOSER_CACHE_HOST_DIR:/composer-cache" \
+            --env COMPOSER_CACHE_DIR=/composer-cache \
             --workdir /app \
             "$COMPOSER_IMAGE" \
             composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
@@ -1078,12 +1129,15 @@ jobs:
       # workspace is mounted, not site-plugins/ alone, because
       # composer/installers writes to ../wp-content/plugins/relevanssi/;
       # site-plugins' config.platform.php (8.4) fixes resolution whatever
-      # PHP the image runs. composer/installers still downloads from GitHub
-      # (docs/runbooks/deploy.md, "Composer in a container").
+      # PHP the image runs. On a cache miss composer/installers still
+      # downloads from GitHub (docs/runbooks/deploy.md, "Composer in a
+      # container").
       - name: Install the third-party plugins
         run: |
           docker run --rm --user "$(id -u):$(id -g)" \
             --volume "$GITHUB_WORKSPACE:/repo" \
+            --volume "$COMPOSER_CACHE_HOST_DIR:/composer-cache" \
+            --env COMPOSER_CACHE_DIR=/composer-cache \
             --workdir /repo/site-plugins \
             "$COMPOSER_IMAGE" \
             composer install --no-dev --prefer-dist --no-interaction --no-progress
@@ -1122,6 +1176,18 @@ jobs:
           }
           PLUGIN_DIR=wp-content/plugins/relevanssi CHECKSUMS="$checksums" PLUGIN_SLUG=relevanssi EXPECT_VERSION="$locked" \
             node .depot/scripts/plugin-checksums.mjs
+
+      # Saved under the rule above `jobs`, and only here, after both installs
+      # and the check of Relevanssi's files: a run whose second install
+      # failed would otherwise save the first one's near-empty cache under
+      # the key, and every later deploy would hit it and download again; and
+      # a Relevanssi zip whose files fail the check is never kept.
+      - name: Save Composer's download cache
+        if: env.SAVE_CACHES == 'true' && steps.composer-dist-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.composer-dist-key.outputs.dir }}
+          key: ${{ steps.composer-dist-cache.outputs.cache-primary-key }}
 
       # The host key comes from a secret, so the first connection never trusts
       # an unknown key. The sandbox is discarded after the job, and the
