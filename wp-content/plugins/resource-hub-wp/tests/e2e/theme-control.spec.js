@@ -47,6 +47,14 @@ const colorScheme = ( page ) =>
 	);
 const stored = ( page ) =>
 	page.evaluate( ( key ) => localStorage.getItem( key ), STORAGE_KEY );
+/**
+ * Waits for the page's fonts, Figtree among them; `evaluate` runs with the page's own scripts off too.
+ *
+ * @param {import('@playwright/test').Page} page The page.
+ * @return {Promise<void>} Once the fonts are ready.
+ */
+const fontsReady = ( page ) =>
+	page.evaluate( () => document.fonts.ready.then( () => undefined ) );
 
 /**
  * Stores a choice before any page script runs, as a reader's earlier visit
@@ -271,6 +279,10 @@ test.describe( "The theme's System / Light / Dark control", () => {
 				await page.emulateMedia( { colorScheme: 'dark' } );
 				await page.goto( first.link );
 				await expect( group( page ) ).toBeVisible();
+				// Both footers are measured once Figtree has landed: its
+				// fallback faces wrap the footer's sentence differently at
+				// this width, and the second context starts with a cold cache.
+				await fontsReady( page );
 				const reference = await surface( page );
 				const withControl = await page
 					.locator( '.rh-footer' )
@@ -297,6 +309,7 @@ test.describe( "The theme's System / Light / Dark control", () => {
 				await expect(
 					plain.getByRole( 'heading', { level: 1 } )
 				).toHaveText( first.title.raw );
+				await fontsReady( plain );
 				await expect( plain.getByRole( 'radio' ) ).toHaveCount( 0 );
 				await expect( group( plain ) ).toHaveCount( 0 );
 				await expect(
