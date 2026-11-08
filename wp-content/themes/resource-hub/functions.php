@@ -1,6 +1,7 @@
 <?php
 /**
- * The Resource Hub theme's stylesheets, and its adjustments to core's table and image blocks.
+ * The Resource Hub theme's stylesheets, its adjustments to core's table and image blocks, and the
+ * footer's theme control's script.
  *
  * `theme.json` does the editor-facing styling: it registers Figtree from `build/fonts/` and maps its
  * colour, type and spacing presets to the `--rh-` tokens, which this file loads, and mirrors the
@@ -20,6 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once __DIR__ . '/inc/table-region.php';
 require_once __DIR__ . '/inc/image-lightbox.php';
+require_once __DIR__ . '/inc/theme-control.php';
 
 /**
  * Registers the stylesheets from `build/`, on `init`.
@@ -125,6 +127,12 @@ const RESOURCE_HUB_THEME_ADMIN_BAR_SHELL = 'body.admin-bar .rh-shell { min-heigh
  * drawn inside the iframe, and the shell and the article are the page around the content, which the
  * canvas shows only when an editor turns on the template preview.
  *
+ * **The theme control.** Every template but the 404 renders the footer part's System / Light / Dark
+ * control (`inc/theme-control.php`), so every page with it loads `theme-toggle.css`
+ * (`resource-hub-theme-toggle`) after the shell; the 404, the one page anonymous visitors get, loads
+ * no script and no `theme-toggle.css`, and the rule the `<noscript>` carries elsewhere removes the
+ * control's slot from its footer, added inline after `shell.css` like the admin bar's.
+ *
  * **Per template.** Every template sits in the shell. The 404 (`is_404()`) loads `not-found.css`;
  * `home.html` (`is_home()`: `/` while the front page shows posts, the CMS's state today, and the
  * posts page under a static front page) loads `welcome.css` after `page.css`; a single resource
@@ -180,6 +188,12 @@ function resource_hub_theme_enqueue_page_styles(): void {
 	wp_enqueue_style( 'resource-hub-base' );
 	wp_enqueue_style( 'resource-hub-shell' );
 	wp_add_inline_style( 'resource-hub-shell', RESOURCE_HUB_THEME_ADMIN_BAR_SHELL );
+
+	if ( resource_hub_theme_has_control() ) {
+		wp_enqueue_style( 'resource-hub-theme-toggle' );
+	} else {
+		wp_add_inline_style( 'resource-hub-shell', RESOURCE_HUB_THEME_NO_CONTROL );
+	}
 
 	if ( is_404() ) {
 		wp_enqueue_style( 'resource-hub-not-found' );
@@ -237,3 +251,7 @@ function resource_hub_theme_pagination_css(): string {
 // and each image block without its lightbox.
 add_action( 'template_redirect', 'resource_hub_theme_add_table_regions' );
 add_action( 'template_redirect', 'resource_hub_theme_add_lightbox_off' );
+
+// The theme control's script, inline in <head> before core prints the stylesheets at 8, so a stored
+// choice is applied before anything is painted (`inc/theme-control.php`).
+add_action( 'wp_head', 'resource_hub_theme_print_control_script', 1 );
