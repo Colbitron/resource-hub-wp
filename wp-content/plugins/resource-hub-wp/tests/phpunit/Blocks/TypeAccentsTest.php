@@ -153,8 +153,17 @@ final class TypeAccentsTest extends WP_UnitTestCase {
 	 * defines `WP_DEBUG` as false, so the report is recorded through the action; an error handler for the
 	 * one call catches the notice where `WP_DEBUG` is on, which PHPUnit would otherwise turn into an
 	 * exception before `read()` returned, and it is always removed.
+	 *
+	 * Core fires `wp_trigger_error_always_run` since 7.0 (`@since 7.0.0`), and the plugin supports 6.9, where
+	 * the report could not be recorded, so the test is skipped there. The comparison is with `7.0-alpha`, so a
+	 * 7.0 pre-release, which has the action, still runs it. `has_action()` cannot tell: it says whether a
+	 * callback is hooked, not whether core fires the action.
 	 */
 	public function test_read_gives_no_rows_for_a_file_that_is_not_json(): void {
+		if ( version_compare( get_bloginfo( 'version' ), '7.0-alpha', '<' ) ) {
+			$this->markTestSkipped( 'Needs WordPress 7.0 or newer: core fires wp_trigger_error_always_run, which this test records the report through, since 7.0.' );
+		}
+
 		$reports = array();
 		$record  = static function ( string $function_name, string $message ) use ( &$reports ): void {
 			$reports[] = array( $function_name, $message );
