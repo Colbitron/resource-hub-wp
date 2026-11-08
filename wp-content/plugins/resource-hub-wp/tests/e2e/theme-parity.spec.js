@@ -25,8 +25,19 @@
  * It runs against the CMS alone (the front end has its own specs against
  * the mock CMS, `apps/web/e2e/`), at 1280 px, where the shell's width, the
  * measure and the gutters all show, and at 360 px for the gutter.
+ *
+ * The second describe does the same for a resource page: the article
+ * `single-resource.html` renders, its header with the meta line the plugin's
+ * block writes, the featured image, the summary, the body, the source line
+ * and the related section, each held to `resource.css`, `card-labels.css`,
+ * `related.css` and `card.css`, on a resource `resource-page-seed.js`
+ * creates with a pick and a topic match.
  */
 const { test, expect } = require( './fixtures' );
+const {
+	seedResourcePage,
+	deleteResourcePage,
+} = require( './resource-page-seed' );
 
 /** The page's body: one of each element `prose.css` styles that a core block prints, with core's large quote and dots separator styles, and an image set to expand on click. */
 const CONTENT = [
@@ -717,5 +728,426 @@ test.describe( "A CMS page computes the front end's styles", () => {
 		} );
 		expect( rest.content.rendered ).toContain( 'wp-block-table' );
 		expect( rest.content.rendered ).not.toContain( 'rh-table-scroll' );
+	} );
+} );
+
+test.describe( "A CMS resource page computes the front end's styles", () => {
+	let seed;
+
+	test.beforeAll( async ( { requestUtils } ) => {
+		seed = await seedResourcePage( requestUtils );
+	} );
+
+	test.afterAll( async ( { requestUtils } ) => {
+		if ( seed ) {
+			await deleteResourcePage( requestUtils, seed );
+		}
+	} );
+
+	for ( const colorScheme of [ 'light', 'dark' ] ) {
+		test( `the article: header, meta line, image, summary, body and source (${ colorScheme })`, async ( {
+			page,
+		} ) => {
+			await page.emulateMedia( { colorScheme } );
+			await page.setViewportSize( { width: 1280, height: 900 } );
+			await page.goto( seed.host.link );
+
+			/**
+			 * Holds the element `selector` matches to `declarations`, resolved
+			 * on a probe inside `context` (by default the article).
+			 *
+			 * @param {string}                 selector     The element on the CMS page.
+			 * @param {Record<string, string>} declarations What the package's rule declares.
+			 * @param {string}                 [context]    Where the tokens resolve.
+			 */
+			const holds = async (
+				selector,
+				declarations,
+				context = 'article.rh-resource'
+			) =>
+				expect(
+					await computed(
+						page,
+						selector,
+						Object.keys( declarations )
+					),
+					selector
+				).toEqual( await resolve( page, context, declarations ) );
+
+			// The template's stylesheets: the resource's and the related
+			// section's, from the theme, and the rows', from the plugin's
+			// blocks, as links; the meta block's labels, which core inlines as
+			// a block style; not the page's.
+			for ( const id of [
+				'resource-hub-resource',
+				'resource-hub-related',
+				'resource-hub-card',
+			] ) {
+				await expect(
+					page.locator( `link[rel="stylesheet"]#${ id }-css` ),
+					id
+				).toHaveCount( 1 );
+			}
+			await expect(
+				page.locator( '[id^="resource-hub-resource-meta-style"]' )
+			).toHaveCount( 1 );
+			await expect(
+				page.locator( 'link#resource-hub-page-css' )
+			).toHaveCount( 0 );
+
+			// The article: the measure in its own font, centred in main's
+			// content box (resource.css), as the page's article is.
+			await expect( page.locator( 'h1' ) ).toHaveCount( 1 );
+			const tokens = await resolve( page, 'body', {
+				'padding-left': 'var(--rh-space-4)',
+			} );
+			const gutter = parseFloat( tokens[ 'padding-left' ] );
+			const measure = parseFloat(
+				(
+					await resolve( page, 'article.rh-resource', {
+						width: 'var(--rh-measure)',
+					} )
+				).width
+			);
+			const main = await box( page, 'main.rh-main' );
+			const article = await box( page, 'article.rh-resource' );
+			expect( article.width ).toBeCloseTo( measure, 1 );
+			expect( article.x ).toBeCloseTo(
+				main.x + gutter + ( main.width - 2 * gutter - measure ) / 2,
+				1
+			);
+
+			// The header and the title: resource.css's margins over base.css's h1.
+			await holds( 'header.rh-resource__header', {
+				'margin-bottom': 'var(--rh-space-5)',
+			} );
+			await holds(
+				'h1.rh-resource__title',
+				{
+					'font-size': 'var(--rh-text-2xl)',
+					'font-weight': 'var(--rh-weight-heading)',
+					'margin-top': '0px',
+					'margin-bottom': 'var(--rh-space-3)',
+					color: 'var(--rh-color-text)',
+				},
+				'h1.rh-resource__title'
+			);
+			await expect( page.locator( 'h1.rh-resource__title' ) ).toHaveText(
+				seed.host.title.raw
+			);
+
+			// The meta line: one wrapping row in the muted ink at the small size.
+			await holds( '.rh-resource__meta', {
+				display: 'flex',
+				'flex-wrap': 'wrap',
+				'align-items': 'baseline',
+				'row-gap': 'var(--rh-space-2)',
+				'column-gap': 'var(--rh-space-3)',
+				color: 'var(--rh-color-text-muted)',
+				'font-size': 'var(--rh-text-sm)',
+			} );
+			// The type's label (card-labels.css) around a link that keeps the
+			// label's ink and is underlined at the hairline (resource.css); the
+			// mark is the span's ::before, in the ink, since the type has no
+			// accent row.
+			await holds(
+				'.rh-resource__meta .rh-card__type',
+				{
+					display: 'inline-flex',
+					color: 'var(--rh-color-text)',
+					'text-transform': 'uppercase',
+					'font-weight': '600',
+					'letter-spacing': 'var(--rh-tracking-label)',
+				},
+				'.rh-resource__meta'
+			);
+			await holds(
+				'.rh-resource__meta a.rh-resource__type',
+				{
+					color: 'var(--rh-color-text)',
+					'text-decoration-line': 'underline',
+					'text-decoration-thickness': 'var(--rh-border-width)',
+					'text-underline-offset': '0.3em',
+				},
+				'.rh-resource__meta .rh-card__type'
+			);
+			const mark = await page
+				.locator( '.rh-resource__meta .rh-card__type' )
+				.evaluate( ( node ) => {
+					const style = window.getComputedStyle( node, '::before' );
+					return {
+						width: style.width,
+						'background-color': style.backgroundColor,
+					};
+				} );
+			expect( mark ).toEqual(
+				await resolve( page, '.rh-resource__meta', {
+					width: 'var(--rh-space-2)',
+					'background-color': 'var(--rh-color-text)',
+				} )
+			);
+			await expect(
+				page.locator( '.rh-resource__meta a.rh-resource__type' )
+			).toHaveAttribute(
+				'href',
+				new RegExp( `/resources/${ seed.type.slug }/$` )
+			);
+			await expect(
+				page.locator( '.rh-resource__meta time' )
+			).toHaveAttribute( 'datetime', '2026-11-01T09:30:00Z' );
+			await expect(
+				page.locator( '.rh-resource__meta time' )
+			).toHaveText( 'Nov 1, 2026' );
+			// The topics: the row's small labels, each a link to its listing.
+			const topics = page.locator(
+				'.rh-resource__meta ul.rh-card__topics'
+			);
+			await expect( topics ).toHaveAttribute( 'aria-label', 'Topics' );
+			await expect( topics ).toHaveAttribute( 'role', 'list' );
+			await holds(
+				'.rh-resource__meta ul.rh-card__topics',
+				{
+					display: 'flex',
+					'list-style-type': 'none',
+					'margin-top': '0px',
+					'padding-left': '0px',
+					color: 'var(--rh-color-text-muted)',
+					'font-size': 'var(--rh-text-sm)',
+				},
+				'.rh-resource__meta'
+			);
+			await holds(
+				'.rh-resource__meta a.rh-resource__topic',
+				{
+					color: 'var(--rh-color-accent)',
+					'text-decoration-thickness': 'var(--rh-border-width)',
+				},
+				'.rh-resource__meta ul.rh-card__topics'
+			);
+			await expect(
+				page.locator( '.rh-resource__meta a.rh-resource__topic' )
+			).toHaveAttribute(
+				'href',
+				new RegExp( `/resources/topic/${ seed.topic.slug }/$` )
+			);
+
+			// The featured image: at the column's width, never wider, with
+			// the article's corners, on the raised plate, with its box
+			// reserved by its attributes (resource.css).
+			await holds( '.rh-resource__media', {
+				'margin-top': '0px',
+				'margin-bottom': 'var(--rh-space-5)',
+				'margin-left': '0px',
+			} );
+			await holds(
+				'.rh-resource__media img',
+				{
+					display: 'block',
+					'max-width': '100%',
+					'border-top-left-radius': 'var(--rh-radius)',
+					'background-color': 'var(--rh-color-surface-raised)',
+				},
+				'.rh-resource__media'
+			);
+			const image = page.locator( '.rh-resource__media img' );
+			await expect( image ).toHaveAttribute( 'width', /^\d+$/ );
+			await expect( image ).toHaveAttribute( 'height', /^\d+$/ );
+			const imageBox = await box( page, '.rh-resource__media img' );
+			expect( imageBox.width ).toBeCloseTo( article.width, 1 );
+			expect( imageBox.height ).toBeCloseTo(
+				( imageBox.width * 675 ) / 1200,
+				0
+			);
+
+			// The summary as the lead paragraph: a step larger, muted.
+			await holds( 'p.rh-resource__summary', {
+				'margin-top': '0px',
+				'margin-bottom': 'var(--rh-space-5)',
+				color: 'var(--rh-color-text-muted)',
+				'font-size': 'var(--rh-text-md)',
+			} );
+			await expect( page.locator( 'p.rh-resource__summary' ) ).toHaveText(
+				seed.host.meta.summary
+			);
+
+			// The body: prose.css, as on a page.
+			await holds(
+				'.rh-resource__body.rh-prose > p:first-child',
+				{
+					'margin-top': '0px',
+					'margin-bottom': 'var(--rh-space-4)',
+					'max-width': 'var(--rh-measure)',
+				},
+				'.rh-resource__body'
+			);
+			await holds(
+				'.rh-resource__body.rh-prose h2',
+				{
+					'font-size': 'var(--rh-text-xl)',
+					'margin-top': 'var(--rh-space-6)',
+				},
+				'.rh-resource__body'
+			);
+
+			// The source line: small and muted, set off from the body by a
+			// hairline, its link the host of the external URL.
+			await holds( 'footer.rh-resource__source', {
+				'margin-top': 'var(--rh-space-6)',
+				'padding-top': 'var(--rh-space-4)',
+				'border-top-width': 'var(--rh-border-width)',
+				'border-top-style': 'solid',
+				'border-top-color': 'var(--rh-color-border)',
+				color: 'var(--rh-color-text-muted)',
+				'font-size': 'var(--rh-text-sm)',
+			} );
+			await holds(
+				'footer.rh-resource__source > p',
+				{ 'margin-top': '0px', 'margin-bottom': '0px' },
+				'footer.rh-resource__source'
+			);
+			await expect(
+				page.locator( 'footer.rh-resource__source' )
+			).toHaveText( 'Source: example.com' );
+			await expect(
+				page.locator( 'footer.rh-resource__source a' )
+			).toHaveAttribute( 'rel', 'noopener noreferrer' );
+		} );
+	}
+
+	test( 'the related section: the heading on its rule and the rows, picks first', async ( {
+		page,
+	} ) => {
+		await page.setViewportSize( { width: 1280, height: 900 } );
+		await page.goto( seed.host.link );
+
+		const holds = async (
+			selector,
+			declarations,
+			context = '.rh-related'
+		) =>
+			expect(
+				await computed( page, selector, Object.keys( declarations ) ),
+				selector
+			).toEqual( await resolve( page, context, declarations ) );
+
+		// The section, last in the article, named by its heading.
+		const section = page.locator(
+			'article.rh-resource > section.rh-related'
+		);
+		await expect( section ).toHaveCount( 1 );
+		await expect( section ).toHaveAttribute(
+			'aria-labelledby',
+			'rh-related-heading'
+		);
+		await expect(
+			page.locator( 'article.rh-resource > :last-child' )
+		).toHaveClass( /(^| )rh-related( |$)/ );
+		await holds( 'section.rh-related', {
+			position: 'relative',
+			'margin-top': 'var(--rh-space-7)',
+		} );
+
+		// The heading: small, over the strong rule in the ink (related.css).
+		const heading = section.locator( 'h2.rh-related__heading' );
+		await expect( heading ).toHaveText( 'Related resources' );
+		await expect( heading ).toHaveId( 'rh-related-heading' );
+		await holds( 'h2.rh-related__heading', {
+			'margin-top': '0px',
+			'margin-bottom': '0px',
+			'padding-bottom': 'var(--rh-space-2)',
+			'border-bottom-width': 'var(--rh-border-width-strong)',
+			'border-bottom-style': 'solid',
+			'border-bottom-color': 'var(--rh-color-text)',
+			'font-size': 'var(--rh-text-md)',
+			'font-weight': 'var(--rh-weight-heading)',
+		} );
+
+		// The rows: the pick first, then the newest sharing the topic, each
+		// the listing's row (card.css) at h3 under the section's h2, between
+		// hairlines.
+		const rows = section.locator(
+			'ul.rh-card-grid > li > article.rh-card'
+		);
+		await expect( rows ).toHaveCount( 2 );
+		await expect( rows.getByRole( 'heading', { level: 3 } ) ).toHaveText( [
+			seed.pick.title.raw,
+			seed.match.title.raw,
+		] );
+		await expect( rows.nth( 0 ).getByRole( 'link' ) ).toHaveAttribute(
+			'href',
+			seed.pick.link
+		);
+		await holds( 'section.rh-related ul.rh-card-grid', {
+			display: 'flex',
+			'flex-direction': 'column',
+			'margin-top': '0px',
+			'padding-left': '0px',
+			'list-style-type': 'none',
+		} );
+		await holds( 'section.rh-related ul.rh-card-grid > li:first-child', {
+			'border-bottom-width': 'var(--rh-border-width)',
+			'border-bottom-style': 'solid',
+			'border-bottom-color': 'var(--rh-color-border)',
+		} );
+		await holds(
+			'section.rh-related ul.rh-card-grid > li:first-child > article.rh-card',
+			{
+				display: 'flex',
+				'flex-wrap': 'wrap',
+				'padding-top': 'var(--rh-space-5)',
+				'padding-bottom': 'var(--rh-space-5)',
+				'row-gap': 'var(--rh-space-2)',
+				'column-gap': 'var(--rh-space-6)',
+			}
+		);
+		await holds(
+			'section.rh-related li:first-child h3.rh-card__title',
+			{
+				'margin-top': '0px',
+				'margin-bottom': '0px',
+				'font-size': 'var(--rh-text-lg)',
+				'font-weight': 'var(--rh-weight-heading)',
+			},
+			'section.rh-related li:first-child article.rh-card'
+		);
+		await holds(
+			'section.rh-related li:first-child a.rh-card__link',
+			{
+				color: 'var(--rh-color-text)',
+				'text-decoration-line': 'none',
+			},
+			'section.rh-related li:first-child article.rh-card'
+		);
+		await holds(
+			'section.rh-related li:first-child p.rh-card__summary',
+			{
+				'margin-top': '0px',
+				'margin-bottom': '0px',
+				color: 'var(--rh-color-text-muted)',
+			},
+			'section.rh-related li:first-child article.rh-card'
+		);
+		await expect(
+			rows.nth( 0 ).locator( '.rh-card__meta time' )
+		).toHaveText( 'Oct 1, 2026' );
+	} );
+
+	test( 'the resource page at 360 px', async ( { page } ) => {
+		await page.setViewportSize( { width: 360, height: 800 } );
+		await page.goto( seed.host.link );
+		const gutter = parseFloat(
+			( await resolve( page, 'body', { width: 'var(--rh-space-4)' } ) )
+				.width
+		);
+		const article = await box( page, 'article.rh-resource' );
+		expect( article.x ).toBeCloseTo( gutter, 1 );
+		expect( article.width ).toBeCloseTo( 360 - 2 * gutter, 1 );
+		// The image fills the column and never passes it.
+		expect(
+			( await box( page, '.rh-resource__media img' ) ).width
+		).toBeCloseTo( article.width, 1 );
+		expect(
+			await page.evaluate( () => document.documentElement.scrollWidth )
+		).toBeLessThanOrEqual( 360 );
 	} );
 } );
