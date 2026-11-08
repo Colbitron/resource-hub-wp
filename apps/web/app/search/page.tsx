@@ -11,9 +11,9 @@ import { parseSearchRequest } from "@/lib/search-request";
  * request, because a search is the visitor's own words and no set of
  * queries could be prerendered. What it keeps from the caching model: every
  * CMS read is still the data layer's `force-cache` fetch, tagged
- * `searchTags()`, so a repeated query is expected to be answered from the
- * Data Cache until a revalidation event clears it (measured under `next
- * start`, not yet on Vercel); the cost is one function run per request,
+ * `searchTags()`, so a repeated query is answered from the Data Cache with
+ * no CMS request (measured on Vercel and under `next start`) until a
+ * revalidation event clears it; the cost is one function run per request,
  * bounded at the edge by the "Rate limit search" WAF rule
  * (`docs/architecture/caching.md`).
  *

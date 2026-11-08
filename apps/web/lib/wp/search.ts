@@ -14,9 +14,9 @@ import { MAX_SEARCH_PAGE, searchResponseSchema } from "./schemas/search";
  * objects, read per kind with `include={ids}&orderby=include` as the related
  * section reads its resources. The `/search/` page calls it
  * (`components/SearchPage.tsx`), the one dynamic route (ADR 0043, amended):
- * its render runs on every request, and these reads are expected to come
- * from the Data Cache on a repeated query (measured under `next start`, not
- * yet on Vercel; `docs/architecture/caching.md`, "The search page").
+ * its render runs on every request, and a repeated query reads these from
+ * the Data Cache with no CMS request (measured on Vercel and under `next
+ * start`; `docs/architecture/caching.md`, "The search page").
  *
  * The query is normalised here exactly as the plugin normalises it
  * (`SearchRoute::normalize_query()`): every run of whitespace becomes one

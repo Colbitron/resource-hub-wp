@@ -44,9 +44,9 @@ import "@colbitron/resource-hub-ui/listing.css";
  * amended). A `CmsError` from the reads is not caught: it reaches
  * `app/search/error.tsx`, as on every other route. Every read is the data
  * layer's `force-cache` fetch with `searchTags()`, so a repeated query is
- * expected to be answered from the Data Cache until a revalidation event
- * clears it (measured under `next start`, not yet on Vercel), though the
- * page itself is rendered on every request.
+ * answered from the Data Cache with no CMS request (measured on Vercel and
+ * under `next start`) until a revalidation event clears it, though the page
+ * itself is rendered on every request.
  *
  * The form is a plain GET form to `/search/`, so it works without
  * JavaScript and a submission is a full document load. The rows' links are
