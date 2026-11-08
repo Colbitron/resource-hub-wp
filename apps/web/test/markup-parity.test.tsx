@@ -10,6 +10,7 @@ import { RelatedList } from "../components/RelatedList";
 import { RELATED_HEADING, RELATED_HEADING_ID } from "../components/RelatedSection";
 import { ResourceArticle } from "../components/ResourceArticle";
 import { ResourceCard } from "../components/ResourceCard";
+import { ThemeFieldset } from "../components/ThemeFieldset";
 import type { ListingFilter } from "../lib/routes";
 import { toCard } from "../lib/wp/cards";
 import { RELATED_COUNT, toRelatedCard } from "../lib/wp/related";
@@ -36,6 +37,13 @@ import nextConfig from "../next.config";
  * `featured-lead` and `collection-head` blocks from the same samples and
  * compares them with the same files, so a change to either side's markup
  * fails one of the two until the fixtures, and the other side, follow.
+ * The footer's theme control takes no
+ * sample: `ThemeFieldset`, as the server renders it (no choice known, so
+ * nothing checked and the group pending), is `theme-control.html`, which the
+ * CMS theme's footer part holds verbatim and the plugin's `ThemeControlTest`
+ * renders. The ids differ by design, React's `useId` against the CMS's
+ * `rh-theme-{choice}`, so the test writes each input's id, and the `for` of
+ * its label, as the CMS's before comparing; everything else counts.
  *
  * The comparison normalises three things the HTML parser ignores, and nothing
  * else: whitespace that holds a line break between two tags, the fixtures'
@@ -204,6 +212,18 @@ describe("markup parity with the CMS blocks", () => {
     for (const name of COLLECTION_CASES) {
       expect(readdirSync(collection)).toContain(`${name}.head.html`);
     }
+    expect(readdirSync(markup)).toContain("theme-control.html");
+  });
+
+  it("renders the footer's theme control, before the choice is known, as theme-control.html", () => {
+    let html = renderToStaticMarkup(<ThemeFieldset name="theme" value={null} onChange={() => undefined} />);
+    // Each input's generated id, and its label's `for`, as the CMS writes them.
+    const ids = [...html.matchAll(/ id="([^"]+)" name="theme" value="([a-z]+)"/g)];
+    expect(ids).toHaveLength(3);
+    for (const [, id, value] of ids) {
+      html = html.replaceAll(`"${id}"`, `"rh-theme-${value}"`);
+    }
+    expect(normalise(html)).toBe(fixture("theme-control.html"));
   });
 
   it(`renders the resource page's related section, with the first ${RELATED_COUNT} samples as rows, as related.html`, () => {
