@@ -959,8 +959,12 @@ jobs:
     # the plugin's floor, require.php in its composer.json; when the floor
     # rises past it, the check before the rsync fails the deploy until this
     # is raised too.
+    #
+    # COMPOSER_IMAGE is the one image both Composer installs below run in;
+    # why there is no PHP on the runner is above the first of them.
     env:
       WP_CLI: php8.4 /usr/local/bin/wp
+      COMPOSER_IMAGE: composer:2@sha256:8de2184c6de224f4689e8f80ed5f5edaf0030b6b8b7839a22a2bcb6722ac87d0
 
     steps:
       # An unset secret reads as an empty string, which would otherwise surface
@@ -1033,30 +1037,56 @@ jobs:
       - name: Build the block
         run: pnpm build
 
-      # The gate runs PHP inside the wp-env containers. The deploy only needs
-      # Composer to write a production vendor/ directory, and starting Docker
-      # and wp-env for that would cost minutes, so PHP runs on the runner here,
-      # on the same 8.4 minor version as wp-env, the host's web PHP and the
-      # PHP the deploy pins for WP-CLI on the host (WP_CLI above).
-      - name: Set up PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.4'
-          tools: composer
-          coverage: none
-
+      # Composer runs in a container, not on the runner. The gate runs PHP
+      # inside the wp-env containers; the deploy only needs Composer to write
+      # two production installs, and starting wp-env for that would cost
+      # minutes. PHP on the runner came from shivammathur/setup-php, which
+      # failed "Could not setup PHP 8.4" on 3 of 4 deploy attempts (runs
+      # ps_tnct8c2vqz, ps_s2wtzg81c9) while github.com returned 504s on
+      # 2026-11-08. Depot's runner sets no ImageOS or ImageVersion, so
+      # setup-php treats it as self-hosted and installs PHP from a php-builder
+      # release on github.com: a download with no fallback, whose HTTP status
+      # is ignored and whose output setup-php discards, so any github.com
+      # outage failed the deploy with no reason in the log. An image from
+      # Docker Hub keeps github.com out of the PHP path. The deploy depends
+      # on Docker Hub instead: an outage there, or its rate limit on
+      # anonymous pulls (429), fails this step visibly, with Docker's error
+      # in the log, before any SSH or rsync, so nothing reaches the host.
+      #
+      # The image is the official composer:2, pinned by digest in
+      # COMPOSER_IMAGE (the multi-arch index): Composer 2.11.1 on PHP 8.5.12,
+      # by `composer --version` and `php -v` on 2026-11-08. Any PHP at or
+      # above the floor will do, since the floor that vendor/composer/
+      # platform_check.php enforces comes from composer.json, not from the
+      # PHP running Composer: output shown identical on 8.4.27 and 8.5.12 on
+      # 2026-11-08. It runs as the runner's uid and gid, so what it writes is
+      # the runner user's, as the rsyncs expect, not root's. Each install
+      # keeps the flags it had on the runner.
       - name: Install PHP dependencies for production
-        working-directory: wp-content/plugins/resource-hub-wp
-        run: composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --volume "$GITHUB_WORKSPACE/wp-content/plugins/resource-hub-wp:/app" \
+            --workdir /app \
+            "$COMPOSER_IMAGE" \
+            composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
 
       # The third-party plugins the CMS runs beside ours, Relevanssi alone so
       # far, from site-plugins/composer.lock into wp-content/plugins/ (its
       # README). Only the installed plugin directory is sent below; this
       # project's vendor/ holds Composer's installer and autoloader, which
-      # WordPress never loads.
+      # WordPress never loads. The same image as the step above. The whole
+      # workspace is mounted, not site-plugins/ alone, because
+      # composer/installers writes to ../wp-content/plugins/relevanssi/;
+      # site-plugins' config.platform.php (8.4) fixes resolution whatever
+      # PHP the image runs. composer/installers still downloads from GitHub
+      # (docs/runbooks/deploy.md, "Composer in a container").
       - name: Install the third-party plugins
-        working-directory: site-plugins
-        run: composer install --no-dev --prefer-dist --no-interaction --no-progress
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --volume "$GITHUB_WORKSPACE:/repo" \
+            --workdir /repo/site-plugins \
+            "$COMPOSER_IMAGE" \
+            composer install --no-dev --prefer-dist --no-interaction --no-progress
 
       # The Relevanssi rsync below deletes on the host whatever its source
       # lacks, and the lock pins Relevanssi's version and archive URL but no
