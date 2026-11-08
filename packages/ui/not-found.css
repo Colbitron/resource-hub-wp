@@ -1,0 +1,30 @@
+/*
+ * The 404 page: a heading, a sentence and a link, in the article's column,
+ * `--rh-measure` wide and centred in the page as the resource page and the
+ * CMS's pages are (resource.css, page.css; DESIGN.md, "Components", "The
+ * article"). Class names are part of the contract (ADR 0033; see
+ * `packages/ui/README.md`): the front end's <NotFoundContent>
+ * (`apps/web/components/NotFoundContent.tsx`) renders the markup, and the
+ * CMS block theme's 404 template will render the same. Imported by the
+ * component that renders the markup.
+ *
+ * Built only on the tokens in tokens.css and the base styles in base.css,
+ * which the consumer loads first.
+ *
+ * Markup:
+ *   <div class="rh-not-found">
+ *     <h1>…</h1>
+ *     <p>…</p>
+ *     <p><a href="…">…</a></p>
+ *   </div>
+ */
+
+.rh-not-found {
+	max-width: var(--rh-measure);
+	margin-inline: auto;
+	padding: var(--rh-space-5) 0;
+}
+
+.rh-not-found p {
+	font-size: var(--rh-text-md);
+}
