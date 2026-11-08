@@ -26,7 +26,9 @@ import "./prose.css";
  * page excludes the page's own ID whatever its HTML says, and with
  * `renderRelatedBlock` (`components/RelatedResources.tsx`), so a block the
  * editor put in a page renders as the front end's own list, as on a
- * resource, and as the CMS's rows when its read fails. A password-protected
+ * resource, and as the CMS's rows when its read fails, and with `leadImage`,
+ * so the body's first image, the page's topmost, is fetched at high priority
+ * rather than lazily (issue #86). A password-protected
  * page is never served: the plugin answers none, and the decision refuses one
  * whose `content.protected` is set. Pages carry no featured image here: the
  * content model gives pages no meta of their own and the front end shows what
@@ -94,7 +96,7 @@ export function PageArticle({ rendered, renderBlock = renderRelatedBlock }: Page
         <h1 className="rh-page__title">{view.title}</h1>
       </header>
       <div className="rh-page__body rh-prose">
-        {renderContent(page.content.rendered, cmsUrls(), { postId: page.id, renderBlock })}
+        {renderContent(page.content.rendered, cmsUrls(), { postId: page.id, renderBlock, leadImage: true })}
       </div>
     </article>
   );

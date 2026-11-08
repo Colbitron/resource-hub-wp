@@ -56,12 +56,6 @@ export interface SampledUrl {
    * wanted: the spec's docblock has the rule and its cost.
    */
   readonly wholeDocumentGuard?: false;
-  /**
-   * `false` on an image-led page the discovery check in
-   * `document-size.spec.ts` leaves out; absent, the page is checked. The
-   * spec's docblock gives the reason for each exemption.
-   */
-  readonly discoveryGuard?: false;
 }
 
 export const SAMPLED_URLS: readonly SampledUrl[] = [
@@ -69,18 +63,9 @@ export const SAMPLED_URLS: readonly SampledUrl[] = [
   // is the front end's own welcome page (ADR 0052).
   { label: "front page", path: "/", status: 200, lighthouse: true, imageLed: false },
   // A published CMS page with a body: a CMS link, an external link and an upload.
-  // Its LCP image is the body's diagram, `loading="lazy"` with no preload,
-  // so layout, not the bytes before it, decides when it starts: no discovery
-  // check (`document-size.spec.ts`) until #86 makes the first body image
-  // eager; then drop `discoveryGuard: false`.
-  {
-    label: "CMS page",
-    path: "/welcome/",
-    status: 200,
-    lighthouse: true,
-    imageLed: true,
-    discoveryGuard: false,
-  },
+  // Its LCP image is the body's diagram, the lead image `renderContent`
+  // preloads (`takeLead` in lib/content/render.tsx).
+  { label: "CMS page", path: "/welcome/", status: 200, lighthouse: true, imageLed: true },
   { label: "library", path: "/resources/", status: 200, lighthouse: true, imageLed: true },
   { label: "type listing", path: "/resources/webinar/", status: 200, lighthouse: true, imageLed: false },
   { label: "topic listing", path: "/resources/topic/performance/", status: 200, lighthouse: true, imageLed: false },

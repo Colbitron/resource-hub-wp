@@ -70,7 +70,9 @@ import "./resource.css";
  * which sanitises it and rewrites its URLs, with `postId` so the marker
  * excludes this resource whatever its HTML says, and `renderRelatedBlock`
  * (`components/RelatedResources.tsx`) so each related-resources block
- * marker in it renders as the front end's own list.
+ * marker in it renders as the front end's own list, and with `leadImage`
+ * only when no featured image renders, so the body's first image takes its
+ * place as the one priority image and the page never has two.
  *
  * The featured image is the page's one LCP candidate. `preload` (Next.js
  * 16's replacement for the deprecated `priority`) puts a `<link
@@ -232,7 +234,7 @@ export function ResourceArticle({ rendered, related, renderBlock = renderRelated
          * fetched with the `topic:{slug}` tag, and falls back to the CMS's own
          * rows when that read fails.
          */}
-        {renderContent(resource.content.rendered, cmsUrls(), { postId: resource.id, renderBlock })}
+        {renderContent(resource.content.rendered, cmsUrls(), { postId: resource.id, renderBlock, leadImage: view.image === null })}
       </div>
       {view.source !== null && (
         <footer className="rh-resource__source">

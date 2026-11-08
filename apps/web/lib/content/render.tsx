@@ -55,12 +55,16 @@ import { mediaPath, parseSrcset, rewriteHref, stripCmsOrigin, withoutTrailing, t
  *   whose path lies under it, with no user name or password, becomes
  *   `/media/…`; with a width and a height it renders through `next/image`,
  *   otherwise as a lazy `<img>` with its `srcset` rebuilt from the candidates
- *   that are CMS images too. An image on any other host stays a plain lazy
- *   `<img>` by its `src` alone, since it says nothing about the CMS. An image
- *   that names a CMS host but is not a CMS image (`http:` where the CMS is
- *   `https:`, another port, a path outside uploads, credentials in the URL)
- *   is dropped: it cannot be served through `/media/` and showing it would
- *   show the CMS's address.
+ *   that are CMS images too. An image on any other host stays a plain
+ *   `<img>` by its `src` alone, lazy unless it is the lead (below), since it
+ *   says nothing about the CMS. An image that names a CMS host but is not a
+ *   CMS image (`http:` where the CMS is `https:`, another port, a path
+ *   outside uploads, credentials in the URL) is dropped: it cannot be served
+ *   through `/media/` and showing it would show the CMS's address. With
+ *   `leadImage`, the first image the pass renders, of any of these kinds, is
+ *   not lazy and is fetched at high priority, except that an image in a
+ *   related-resources fallback the front end may swap out never takes the
+ *   lead (`takeLead`); every other image is lazy.
  * - The CMS host: no attribute this pass renders names it (`mentionsCms`),
  *   except the `href` or `cite` of a `mailto:` or `tel:` URL. An
  *   internationalised host is looked for in its punycode and its Unicode
@@ -188,6 +192,14 @@ export interface RenderContentOptions {
    * says.
    */
   readonly postId?: number;
+  /**
+   * True when nothing above the body on the page is an image, so the body's
+   * first image is the page's likely LCP element: that image renders as the
+   * lead, unless it is in a related-resources fallback the front end may
+   * swap out, which never takes it (`takeLead`). Defaults to false, every
+   * image lazy.
+   */
+  readonly leadImage?: boolean;
 }
 
 /**
@@ -471,6 +483,8 @@ interface Context {
    * holding many tables is not searched once for each.
    */
   readonly figureLabels: Map<Element, string>;
+  /** True until the pass renders the lead image (`takeLead`); false from the start without `leadImage`. */
+  leadImagePending: boolean;
 }
 
 const UPLOADS_DIRECTORY = "/wp-content/uploads";
@@ -1159,9 +1173,78 @@ function inScope<T>(context: Context, scope: MarkupScope, render: () => T): T {
   }
 }
 
+/** `render()` with the lead's slot closed (`takeLead`), and the slot put back after, however `render` ends. */
+function withoutLead<T>(context: Context, render: () => T): T {
+  const pending = context.leadImagePending;
+  context.leadImagePending = false;
+  try {
+    return render();
+  } finally {
+    context.leadImagePending = pending;
+  }
+}
+
 /** A link to a URL, for embeds and media: `text` defaults to the rewritten URL. */
 function linkTo(href: string, text?: string): ReactElement {
   return createElement("a", { href, rel: "noopener noreferrer" }, text ?? href);
+}
+
+/**
+ * Whether the image being rendered is the lead, and the lead's slot spent if
+ * so. The lead image: with `leadImage`, the first image the pass renders, in
+ * document order, of whatever kind, outside a marker handed to `renderBlock`
+ * (below), is not lazy and is fetched at high priority, and every later
+ * image stays lazy (issue #86).
+ *
+ * Why the first: a CMS page has no featured image, so the body's first image
+ * is the topmost image on the page and its likely LCP element (the welcome
+ * page's diagram in the e2e harness). A lazy image is left by Chromium's
+ * preload scanner to layout, so its request waits for the CSS and the
+ * layout before it starts; an image that is not lazy is found as its tag
+ * arrives. Only an image that renders counts: a dropped one leaves the lead
+ * to the next. It is the first image whatever its kind, because a later
+ * image sits below it, and promoting that one instead would fetch early an
+ * image that is less likely to be the LCP.
+ *
+ * What it gets, by kind: a sized CMS image renders through `next/image` with
+ * `preload` and `fetchPriority="high"`, as the resource page's featured image
+ * does (`components/ResourceArticle.tsx` has why both): a `<link
+ * rel="preload">` in the head at High, and an eager `<img>`. A plain `<img>`
+ * (an unsized CMS image or an external one) loses `loading="lazy"` and gets
+ * `fetchPriority="high"`, and React's server renderer, which preloads an
+ * `<img>` that is not lazy, puts its preload in the head at High, with the
+ * image's `referrerPolicy`, so an external lead sends no referrer either.
+ * That preloading is also why every other image stays lazy: an eager one
+ * would get a head preload of its own, competing with the lead's.
+ *
+ * Who passes it: the CMS page (`components/PageArticle.tsx`) always, and the
+ * resource page (`components/ResourceArticle.tsx`) only when it renders no
+ * featured image, which is otherwise the page's one priority image, so a page
+ * never has two. The design specimen's own prose sample leaves it off.
+ *
+ * An image inside a related-resources marker that is handed to
+ * `renderBlock` never takes the lead: its fallback may be swapped for the
+ * front end's own list, which would leave the page with no lead and the
+ * body's real first image lazy (`marker`, `withoutLead`).
+ *
+ * Rejected: promoting only an image within a byte or position threshold of
+ * the body's start, to avoid fetching early an image deep in a long body. A
+ * byte offset says nothing about where an image lands in the viewport, and
+ * the cost it avoids is one image fetched early that a reader scrolling down
+ * fetches anyway, while a threshold set wrong leaves the LCP lazy again. The
+ * cost accepted: a first image inside a closed `<details>`, or far below the
+ * fold, still gets a head preload at High for every visitor, readers who
+ * never scroll included. Rejected too: a guard on the declared size, for a
+ * body whose first image is a small icon or badge, which takes the lead
+ * while a hero further down stays lazy, as every image was lazy before this
+ * rule; a size guard cannot judge an unsized image and would add a
+ * heuristic to a critical path. Emoji stay text, and WordPress's smilies,
+ * under `wp-includes`, are dropped by `classifyImage`.
+ */
+function takeLead(context: Context): boolean {
+  const lead = context.leadImagePending;
+  context.leadImagePending = false;
+  return lead;
 }
 
 /**
@@ -1169,7 +1252,8 @@ function linkTo(href: string, text?: string): ReactElement {
  * width and a height, which it needs to reserve the space; a CMS
  * image without them is a plain lazy `<img>` with its `srcset` and `sizes`;
  * an external image is a plain lazy `<img>` by its `src` alone, sending no
- * referrer to the other host.
+ * referrer to the other host. Whichever it is, the lead image is not lazy
+ * (`takeLead`).
  */
 function image(attributes: Attributes, context: Context): ReactElement {
   const src = attributes.get("src");
@@ -1182,10 +1266,13 @@ function image(attributes: Attributes, context: Context): ReactElement {
   props.alt = withoutCmsMentions(attributes.get("alt") ?? "", context);
   const width = matching(attributes.get("width"), DIMENSION);
   const height = matching(attributes.get("height"), DIMENSION);
+  // Past the `EMPTY` return above, so a dropped image leaves the lead to the next.
+  const lead = takeLead(context);
+  const fetching = lead ? { fetchPriority: "high" } : { loading: "lazy" };
   if (source.kind === "external") {
     if (width !== undefined) props.width = width;
     if (height !== undefined) props.height = height;
-    return createElement("img", checked({ ...props, src: source.href, loading: "lazy", referrerPolicy: "no-referrer" }, context));
+    return createElement("img", checked({ ...props, src: source.href, ...fetching, referrerPolicy: "no-referrer" }, context));
   }
   if (width !== undefined && height !== undefined) {
     // `src` and `alt` were checked above; the rest is `CONTENT_SIZES` and numbers.
@@ -1196,6 +1283,7 @@ function image(attributes: Attributes, context: Context): ReactElement {
       width: Number(width),
       height: Number(height),
       sizes: CONTENT_SIZES,
+      ...(lead ? { preload: true, fetchPriority: "high" } : {}),
     });
   }
   const srcSet = uploadSrcset(attributes.get("srcset"), context);
@@ -1204,7 +1292,7 @@ function image(attributes: Attributes, context: Context): ReactElement {
     const sizes = matching(attributes.get("sizes"), SIZES);
     if (sizes !== undefined) props.sizes = sizes;
   }
-  return createElement("img", checked({ ...props, src: source.path, loading: "lazy" }, context));
+  return createElement("img", checked({ ...props, src: source.path, ...fetching }, context));
 }
 
 /**
@@ -1363,10 +1451,13 @@ function marker(node: Element, attributes: Attributes, context: Context): ReactE
   // The wrapper always carries the contract's class, once, after any the CMS wrote.
   const classes = typeof wrapperProps.className === "string" ? wrapperProps.className.split(" ") : [];
   wrapperProps.className = (classes.includes(MARKER_CLASS) ? classes : [...classes, MARKER_CLASS]).join(" ");
+  const renderChildren = () => inScope(context, marked === null ? "none" : "marker", () => children(node, context));
+  // A fallback handed on may be swapped out, so no image in it takes the lead (`takeLead`); the slot passes to the body after it.
+  // A fallback that is not handed on always renders, and an image in it may take the lead like any other.
   const fallback = createElement(
     "div",
     checked(wrapperProps, context),
-    inScope(context, marked === null ? "none" : "marker", () => children(node, context)),
+    props === null ? renderChildren() : withoutLead(context, renderChildren),
   );
   if (props === null) {
     return fallback;
@@ -1833,6 +1924,7 @@ export function renderContent(html: string, cms: CmsUrls, options: RenderContent
     scope: "none",
     demoteHeadings: false,
     figureLabels: new Map(),
+    leadImagePending: options.leadImage === true,
   };
   if (html.length > MAX_CONTENT_LENGTH) {
     console.warn(`renderContent: the body is longer than ${MAX_CONTENT_LENGTH} characters; rendering it as text`);

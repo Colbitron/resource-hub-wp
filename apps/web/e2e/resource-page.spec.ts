@@ -223,6 +223,9 @@ test.describe("what the page renders", () => {
     await expect(body.getByRole("link", { name: "a write-up on another site" })).toHaveAttribute("href", "https://example.com/elsewhere/");
     const bodyImage = body.locator("figure img");
     expect(decodeURIComponent((await bodyImage.getAttribute("src")) ?? "")).toContain("/media/2026/11/content-model.png");
+    // Below a featured image the body has no lead: its image stays lazy, and the featured image keeps the one preload (counted above).
+    expect(await bodyImage.evaluate((img) => (img as HTMLImageElement).loading)).toBe("lazy");
+    await expect(bodyImage).not.toHaveAttribute("fetchpriority", /./);
     await expect(body.getByRole("heading", { level: 2, name: "Related resources" })).toBeVisible();
     await expect(body.getByRole("link", { name: "Alt text at scale" })).toHaveAttribute("href", "/resources/article/alt-text-at-scale/");
 
@@ -244,6 +247,24 @@ test.describe("what the page renders", () => {
     await expect(article.locator(".rh-resource__source")).toHaveCount(0);
     await expect(article.getByRole("list", { name: "Topics" })).toHaveCount(0);
     await expect(page.locator('meta[name="description"]')).toHaveCount(0);
+  });
+
+  test("a resource with no featured image leads with its body's first image, preloaded at high priority, and keeps the next lazy", async ({ page }) => {
+    const slug = unique("lead-image");
+    const figure = (name: string) =>
+      `<figure class="wp-block-image"><img src="{{origin}}/wp-content/uploads/2026/11/content-model.png" alt="${name}" width="240" height="160" /></figure>`;
+    await cms.createResource({ title: "Lead image", type: "podcast", slug, mediaId: null, content: `<p>Intro.</p>${figure("First")}<p>More.</p>${figure("Second")}` });
+    await page.goto(resourcePath("podcast", slug));
+    const body = page.locator(".rh-resource__body");
+    const [first, second] = [body.getByRole("img", { name: "First" }), body.getByRole("img", { name: "Second" })];
+    expect(await first.evaluate((img) => (img as HTMLImageElement).loading)).not.toBe("lazy");
+    await expect(first).toHaveAttribute("fetchpriority", "high");
+    expect(await second.evaluate((img) => (img as HTMLImageElement).loading)).toBe("lazy");
+    await expect(second).not.toHaveAttribute("fetchpriority", /./);
+    const preload = page.locator('link[rel="preload"][as="image"]');
+    await expect(preload).toHaveCount(1);
+    await expect(preload).toHaveAttribute("fetchpriority", "high");
+    await expect(preload).toHaveAttribute("imagesrcset", (await first.getAttribute("srcset"))!);
   });
 
   test("a source on the CMS becomes /media/ for an upload and nothing for a page the front end does not serve", async ({ page }) => {

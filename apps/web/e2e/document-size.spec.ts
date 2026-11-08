@@ -66,7 +66,7 @@ import { SAMPLED_URLS } from "./sampled-urls.mts";
  * 43,800 bytes, say on an exempt page that had been under 14,600, is caught
  * only by the LCP budget, warning-only until #76.
  *
- * **The discovery check** (every image-led page but the CMS page): the
+ * **The discovery check** (every image-led page): the
  * references the page's first paint needs are in the first 14,600 bytes on
  * the wire. Those are the LCP image's preload and the font's. The LCP image
  * is taken to be the body's one `<img fetchPriority="high">`; that it is
@@ -80,12 +80,12 @@ import { SAMPLED_URLS } from "./sampled-urls.mts";
  * image preload's last byte, at most 14,600. Stylesheets are not in the set
  * because the CSS is inline and makes no request. The async scripts are not
  * either: in a real browser they do not hold back an image's paint, only
- * Lantern's model of it, which the Lighthouse budget covers. The CMS page is
- * exempt (`discoveryGuard: false`) because its LCP image is the body's
- * diagram, `loading="lazy"` with no preload, and the preload scanner leaves
- * a lazy image to layout, so the bytes before its tag do not decide when it
- * starts. That holds until issue #86 makes the first body image eager; then
- * drop `discoveryGuard: false`.
+ * Lantern's model of it, which the Lighthouse budget covers. On the CMS
+ * page the LCP image is the body's first, the lead image `renderContent`
+ * preloads (`takeLead` in `lib/content/render.tsx`). Until issue #86 it was
+ * lazy with no preload, and the page was left out of this check, because
+ * the preload scanner leaves a lazy image to layout and the bytes before its
+ * tag did not decide when it started.
  *
  * In practice it guards the `<head>`'s order. React hoists the head as
  * charset, viewport, font preloads, high-priority image preloads, then the
@@ -324,7 +324,7 @@ for (const { label, path } of IMAGE_LED.filter((sample) => sample.wholeDocumentG
   });
 }
 
-for (const { label, path } of IMAGE_LED.filter((sample) => sample.discoveryGuard !== false)) {
+for (const { label, path } of IMAGE_LED) {
   test(`the ${label}'s font and LCP image preloads (${path}) arrive first, in the first round trip`, async ({
     page,
     request,

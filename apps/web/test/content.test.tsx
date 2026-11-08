@@ -380,6 +380,93 @@ describe("images", () => {
     );
   });
 
+  describe("the lead image (issue #86)", () => {
+    // The tag of each <img>, in order, with next/image's long srcset and src cut out.
+    const images = (output: string) =>
+      [...output.matchAll(/<img\b[^>]*>/g)].map(([tag]) => tag.replace(/ srcSet="\/_next[^"]*"| src="\/_next[^"]*"/g, ""));
+    const preloads = (output: string) => [...output.matchAll(/<link\b[^>]*rel="preload"[^>]*>/g)].map(([tag]) => tag);
+    const SIZED = (name: string) => `<img src="https://cms.example/wp-content/uploads/2026/11/${name}.jpg" width="240" height="160" alt="${name}">`;
+
+    it("without leadImage, renders every image lazy and preloads none", () => {
+      const output = render(`<p>${SIZED("a")}</p>${SIZED("b")}<img src="${UPLOAD}" alt="">`);
+      expect(images(output).map((tag) => /loading="lazy"/.test(tag))).toEqual([true, true, true]);
+      expect(output).not.toContain("fetchPriority");
+      expect(preloads(output)).toEqual([]);
+    });
+
+    it("with leadImage, preloads the first sized image at high priority, eager, and keeps every later image lazy", () => {
+      const output = render(`<p>${SIZED("a")}</p><figure>${SIZED("b")}</figure><img src="${UPLOAD}" alt="">`, { leadImage: true });
+      const [first, ...later] = images(output);
+      expect(first).toContain('alt="a"');
+      expect(first).toContain('fetchPriority="high"');
+      expect(first).not.toContain("loading=");
+      expect(later.map((tag) => /loading="lazy"/.test(tag) && !tag.includes("fetchPriority"))).toEqual([true, true]);
+      // One preload, for the lead, with its own srcset and sizes: what document-size.spec.ts looks for on the CMS page.
+      const [preload, ...others] = preloads(output);
+      expect(others).toEqual([]);
+      expect(preload).toContain('fetchPriority="high"');
+      expect(preload).toContain("url=%2Fmedia%2F2026%2F11%2Fa.jpg");
+      expect(preload).toContain('imageSizes="(max-width: 44rem) calc(-2rem + 100vw), 42rem"');
+    });
+
+    it("leads with the first image whatever its kind: an unsized CMS image or an external one, preloaded by React with its referrer policy", () => {
+      const unsized = render(`<img src="${UPLOAD}" alt="">${SIZED("b")}`, { leadImage: true });
+      const [lead, later] = images(unsized);
+      expect(lead).toBe('<img alt="" src="/media/2026/11/photo.jpg" fetchPriority="high"/>');
+      expect(later).toContain('alt="b"');
+      expect(later).toContain('loading="lazy"');
+      expect(later).not.toContain("fetchPriority");
+      expect(preloads(unsized)).toEqual(['<link rel="preload" as="image" href="/media/2026/11/photo.jpg" fetchPriority="high"/>']);
+      const external = render(`<img src="https://images.example/a.jpg" alt="">${SIZED("b")}`, { leadImage: true });
+      expect(images(external)[0]).toBe('<img alt="" src="https://images.example/a.jpg" fetchPriority="high" referrerPolicy="no-referrer"/>');
+      expect(preloads(external)).toEqual([
+        '<link rel="preload" as="image" href="https://images.example/a.jpg" fetchPriority="high" referrerPolicy="no-referrer"/>',
+      ]);
+    });
+
+    it("leads with an image inside a link and a <picture>, which the pass unwraps to the <img>", () => {
+      const output = render(`<p><a href="https://cms.example/resources/"><picture><source srcset="${UPLOAD} 1x">${SIZED("a")}</picture></a></p>${SIZED("b")}`, {
+        leadImage: true,
+      });
+      expect(output).toContain('<a href="/resources/">');
+      const [first, second] = images(output);
+      expect(first).toContain('alt="a"');
+      expect(first).toContain('fetchPriority="high"');
+      expect(second).toContain('loading="lazy"');
+      expect(preloads(output)).toHaveLength(1);
+    });
+
+    it("gives no image in a marker handed to renderBlock the lead, swapped out or kept, and passes it to the body's next image", () => {
+      const body = `${MARKER.replace("</div>", `${SIZED("in-marker")}</div>`)}${SIZED("after")}`;
+      for (const [name, renderBlock] of [
+        ["swapped", () => <p>The front end&apos;s list</p>],
+        ["kept", (_props, fallback) => fallback],
+      ] satisfies [string, RenderBlock][]) {
+        const output = render(body, { leadImage: true, renderBlock });
+        const lead = images(output).filter((tag) => tag.includes("fetchPriority"));
+        expect(lead, name).toHaveLength(1);
+        expect(lead[0], name).toContain('alt="after"');
+        expect(preloads(output), name).toHaveLength(1);
+        expect(preloads(output)[0], name).toContain("after.jpg");
+      }
+      // A marker not handed on (here, one inside a link) always renders its fallback, so its image may lead.
+      const linked = render(`<a href="/resources/">${MARKER.replace("</div>", `${SIZED("in-marker")}</div>`)}</a>${SIZED("after")}`, { leadImage: true });
+      const linkedLead = images(linked).filter((tag) => tag.includes("fetchPriority"));
+      expect(linkedLead).toHaveLength(1);
+      expect(linkedLead[0]).toContain('alt="in-marker"');
+    });
+
+    it("passes the lead over a dropped image to the next one that renders", () => {
+      const output = render(`<p><img src="https://cms.example/wp-includes/images/a.png" alt=""></p>${SIZED("b")}${SIZED("c")}`, {
+        leadImage: true,
+      });
+      const [first, second] = images(output);
+      expect(first).toContain('alt="b"');
+      expect(first).toContain('fetchPriority="high"');
+      expect(second).toContain('loading="lazy"');
+    });
+  });
+
   it("treats http uploads as CMS images when the CMS is configured over http", () => {
     const cms: CmsUrls = {
       cmsOrigins: ["http://localhost:8888"],
