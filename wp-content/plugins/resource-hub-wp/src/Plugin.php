@@ -43,6 +43,7 @@ use ResourceHub\Editor\RequiredFieldsAssets;
 use ResourceHub\Editor\RevalidationAssets;
 use ResourceHub\Editor\SidebarAssets;
 use ResourceHub\Lockdown\Lockdown;
+use ResourceHub\Pages\PostsPage;
 use ResourceHub\Rest\NoCacheHeader;
 use ResourceHub\Rest\PageRoute;
 use ResourceHub\Rest\RelatedCache;
@@ -115,6 +116,7 @@ final class Plugin {
 		( new Routes() )->register();
 		( new CollectionQuery() )->register();
 		( new PaginationNumbers() )->register();
+		( new PostsPage() )->register();
 		( new UsedTypes() )->register();
 		add_action( 'enqueue_block_editor_assets', array( new SidebarAssets( $this->file ), 'enqueue' ) );
 		add_action( 'enqueue_block_editor_assets', array( new RequiredFieldsAssets( $this->file ), 'enqueue' ) );

@@ -134,8 +134,9 @@ const RESOURCE_HUB_THEME_ADMIN_BAR_SHELL = 'body.admin-bar .rh-shell { min-heigh
  * control's slot from its footer, added inline after `shell.css` like the admin bar's.
  *
  * **Per template.** Every template sits in the shell. The 404 (`is_404()`) loads `not-found.css`;
- * `home.html` (`is_home()`: `/` while the front page shows posts, the CMS's state today, and the
- * posts page under a static front page) loads `welcome.css` after `page.css`; a single resource
+ * `home.html` (`is_home()`: `/` while the front page shows posts, the CMS's state today; the posts
+ * page under a static front page is a 404 by the plugin's `PostsPage`, as on the front end) loads
+ * `welcome.css` after `page.css`; a single resource
  * (`is_singular( 'resource' )`, `single-resource.html`) loads `prose.css`, `resource.css` and
  * `related.css`, the front end's resource page's three, and not `page.css`: `related.css` on every
  * resource page, whether or not the related block renders anything, because the front end's resource
