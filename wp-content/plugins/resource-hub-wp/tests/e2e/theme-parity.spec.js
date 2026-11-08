@@ -10,10 +10,17 @@
  * WordPress: core's global styles from `theme.json`, core's block styles,
  * the block markup the templates print, and the order they all load in.
  * So this spec reads the computed styles of the key elements of a CMS page
- * and compares each with what the package's rule resolves to on the same
- * page: every expected value is a token resolved at runtime by a probe
- * element, never a number written here, so a change to a token moves both
- * sides and this spec with them.
+ * and holds each to the value the package's rule should give it.
+ *
+ * It does not compare with the front end's computed styles, and it does
+ * not read the package's stylesheets: each check is a selector on the CMS
+ * page and the declarations the package's rule for that element makes,
+ * written here by hand from `base.css`, `shell.css`, `prose.css`,
+ * `page.css` and `welcome.css`. The values in those declarations are
+ * tokens, resolved at runtime on the same page by a probe element in the
+ * element's context, never a number written here, so a change to a token
+ * moves the CMS and this spec together; a change to a rule's declarations
+ * in the package needs the matching change here.
  *
  * It runs against the CMS alone (the front end has its own specs against
  * the mock CMS, `apps/web/e2e/`), at 1280 px, where the shell's width, the
@@ -21,7 +28,7 @@
  */
 const { test, expect } = require( './fixtures' );
 
-/** The page's body: a paragraph with a link, a section heading, a list, a captioned table and a quote. */
+/** The page's body: one of each element `prose.css` styles that a core block prints, with core's large quote and dots separator styles, and an image set to expand on click. */
 const CONTENT = [
 	'<!-- wp:paragraph --><p>An opening paragraph with <a href="/resources/">a link to the library</a>, long enough to run past the measure on a wide screen, so the column shows.</p><!-- /wp:paragraph -->',
 	'<!-- wp:heading --><h2 class="wp-block-heading">A section heading</h2><!-- /wp:heading -->',
