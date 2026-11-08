@@ -20,7 +20,7 @@ The plugin models a filterable resources library: a `resource` post type with `r
 └─ .claude/rules/                        path-scoped rules for agents, loaded only when a matching file is touched
 ```
 
-The theme is a block theme for editors and logged-in previews: anonymous visitors get a 404, rendered with its 404 template ([ADR 0031](docs/adr/0031-cms-theme-pages-are-for-logged-in-users.md)). It is a skeleton so far; keeping it in sync with the front end through the `packages/ui` tokens and CSS is planned.
+The theme is a block theme for editors and logged-in previews: anonymous visitors get the lockdown's 404 ([ADR 0031](docs/adr/0031-cms-theme-pages-are-for-logged-in-users.md)), which in wp-env is rendered with this theme's 404 template. The hosted CMS still runs its old theme until a later slice-5 pull request deploys this one. It is a skeleton so far; keeping it in sync with the front end through the `packages/ui` tokens and CSS is planned.
 
 ## Status
 
