@@ -31,16 +31,22 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire( import.meta.url );
-const theme = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
+const theme = path.resolve(
+	path.dirname( fileURLToPath( import.meta.url ) ),
+	'..'
+);
 const out = path.join( theme, 'build' );
 
 /** Each copy's path under `build/`, and the package export it is copied from. */
 const ASSETS = {
 	'tokens.css': '@colbitron/resource-hub-ui/tokens.css',
 	'brand.css': '@colbitron/resource-hub-ui/brand.css',
-	'fonts/figtree-latin-wght-normal.woff2': '@colbitron/resource-hub-ui/fonts/figtree-latin-wght-normal.woff2',
-	'fonts/LICENSE-Figtree.txt': '@colbitron/resource-hub-ui/fonts/LICENSE-Figtree.txt',
-	'fonts/figtree-fallback.css': '@colbitron/resource-hub-ui/fonts/figtree-fallback.css',
+	'fonts/figtree-latin-wght-normal.woff2':
+		'@colbitron/resource-hub-ui/fonts/figtree-latin-wght-normal.woff2',
+	'fonts/LICENSE-Figtree.txt':
+		'@colbitron/resource-hub-ui/fonts/LICENSE-Figtree.txt',
+	'fonts/figtree-fallback.css':
+		'@colbitron/resource-hub-ui/fonts/figtree-fallback.css',
 };
 
 await rm( out, { recursive: true, force: true } );
@@ -50,7 +56,9 @@ for ( const [ target, specifier ] of Object.entries( ASSETS ) ) {
 	const destination = path.join( out, target );
 	await mkdir( path.dirname( destination ), { recursive: true } );
 	await copyFile( require.resolve( specifier ), destination );
-	hashes[ target ] = createHash( 'sha256' ).update( await readFile( destination ) ).digest( 'hex' );
+	hashes[ target ] = createHash( 'sha256' )
+		.update( await readFile( destination ) )
+		.digest( 'hex' );
 }
 
 const rows = Object.entries( hashes )
@@ -61,4 +69,6 @@ await writeFile(
 	`<?php\n// Written by scripts/build.mjs: the SHA-256 of each file in build/. Do not edit.\nreturn array(\n${ rows }\n);\n`
 );
 
-console.log( `Built ${ Object.keys( hashes ).length } theme assets into ${ path.relative( process.cwd(), out ) || '.' }.` );
+process.stdout.write(
+	`Built ${ Object.keys( hashes ).length } theme assets into ${ path.relative( process.cwd(), out ) || '.' }.\n`
+);

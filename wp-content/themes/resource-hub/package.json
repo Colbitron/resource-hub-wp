@@ -2,13 +2,16 @@
 	"name": "resource-hub-theme",
 	"version": "0.1.0",
 	"private": true,
-	"description": "The Resource Hub CMS block theme's build: copies the contract package's tokens, lockup stylesheet, Figtree and its fallback faces into build/, which the theme loads and the host is given.",
+	"description": "The Resource Hub CMS block theme's build: copies the contract package's tokens, lockup stylesheet, Figtree and its fallback faces into build/, which the theme loads and the host is given; and the lint and format of that script.",
 	"license": "GPL-2.0-or-later",
 	"type": "module",
 	"scripts": {
-		"build": "node scripts/build.mjs"
+		"build": "node scripts/build.mjs",
+		"lint:js": "wp-scripts lint-js scripts",
+		"format": "wp-scripts format scripts"
 	},
 	"devDependencies": {
-		"@colbitron/resource-hub-ui": "workspace:*"
+		"@colbitron/resource-hub-ui": "workspace:*",
+		"@wordpress/scripts": "^37.0.0"
 	}
 }
