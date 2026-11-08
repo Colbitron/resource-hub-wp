@@ -43,7 +43,9 @@
  *   parent's move or rename changes the paths of every page below it without an
  *   event for each, so one tag for every page is what reaches them, and the
  *   site has few pages. A page event clears nothing of the library's, and no
- *   resource or term event clears `pages`.
+ *   resource or term event clears `pages`. The search fetches carry `pages`
+ *   as well as the library's tags (`searchTags`), since their results hold
+ *   both kinds.
  *
  * Only term events produce `terms`. Tagging every fetch `resources` instead
  * would have done the same for term events, but then every resource event
@@ -97,7 +99,7 @@ export const RESOURCES_TAG = "resources";
 /** The tag only term events clear: on every fetch that embeds or lists terms. */
 export const TERMS_TAG = "terms";
 
-/** The tag only page events clear: on every page lookup and every page read (ADR 0052). */
+/** The tag only page events clear: on every page lookup and every page read (ADR 0052), and on the search fetches. */
 export const PAGES_TAG = "pages";
 
 /** `resource:{slug}`, on the fetches for one resource. Throws a `RangeError` on a bad slug. */
@@ -274,6 +276,23 @@ export function taxonomyListTags(): string[] {
  */
 export function pageTags(): string[] {
   return [PAGES_TAG];
+}
+
+/**
+ * Search (issue #115), all three fetches: the plugin's search route
+ * (`/resource-hub/v1/search`) and the `include={ids}` reads of the
+ * resources and the pages it names. `resources`, because any resource
+ * event may add a match, take one away or change what one says; `terms`,
+ * since the resource read embeds terms and the engine can match a term's
+ * name; and `pages`, because any page event may do to the page matches what
+ * a resource event does to the resource ones. The same for every query, so
+ * the tags are fixed before the request whatever the query or the answer.
+ * The resource read's URL can be one the related section also reads; both
+ * callers' tags hold `resources` and `terms`, which reach every event that
+ * changes a resource, so the shared entry is cleared whichever stored it.
+ */
+export function searchTags(): string[] {
+  return [RESOURCES_TAG, TERMS_TAG, PAGES_TAG];
 }
 
 /** What a batch invalidates: tags for `revalidateTag`, paths for `revalidatePath`. */

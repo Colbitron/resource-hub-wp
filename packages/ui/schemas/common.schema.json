@@ -51,7 +51,7 @@
 			"pattern": "^/(?!/)\\S*$"
 		},
 		"pagePath": {
-			"description": "The public path of a WordPress page on both sites, always with a trailing slash: / for the static front page, else one segment per page in its parent chain (/about/, /about/team/), each a slug. Every segment is non-empty with no slash and no whitespace; the schema does not say which segments the front end's own routes reserve (resources, api, media, _next), because that rule lives on both sides in code.",
+			"description": "The public path of a WordPress page on both sites, always with a trailing slash: / for the static front page, else one segment per page in its parent chain (/about/, /about/team/), each a slug. Every segment is non-empty with no slash and no whitespace; the schema does not say which segments the front end's own routes reserve (resources, api, media, _next, search), because that rule lives on both sides in code.",
 			"type": "string",
 			"pattern": "^/(?:[^/\\s]+/)*$"
 		}

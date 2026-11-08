@@ -90,6 +90,9 @@ final class ReservedPageSlugsTest extends WP_UnitTestCase {
 		$this->assertTrue( ReservedPageSlugs::is_reserved( '%72esources' ) );
 		$this->assertTrue( ReservedPageSlugs::is_reserved( 'API' ) );
 		$this->assertTrue( ReservedPageSlugs::is_reserved( '_next' ) );
+		$this->assertTrue( ReservedPageSlugs::is_reserved( 'search' ) );
+		$this->assertTrue( ReservedPageSlugs::is_reserved( '%73earch' ) );
+		$this->assertFalse( ReservedPageSlugs::is_reserved( 'search-tips' ) );
 		$this->assertFalse( ReservedPageSlugs::is_reserved( 'resources-2' ) );
 		$this->assertFalse( ReservedPageSlugs::is_reserved( 'about' ) );
 	}

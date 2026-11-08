@@ -11,6 +11,7 @@ import { parsePaginationHeaders } from "../lib/wp/schemas/pagination";
 import { pageResponseSchema, pageResponseSchemaStrict } from "../lib/wp/schemas/page";
 import { relatedResponseSchema, relatedResponseSchemaStrict } from "../lib/wp/schemas/related";
 import { resolveResponseSchema, resolveResponseSchemaStrict } from "../lib/wp/schemas/resolve";
+import { searchResponseSchema, searchResponseSchemaStrict } from "../lib/wp/schemas/search";
 import {
   hasWpTaxonomy,
   wpResourceListSchema,
@@ -49,6 +50,7 @@ const contractSchemas: Record<string, z.ZodType> = {
   "resolve-response": resolveResponseSchemaStrict,
   "page-response": pageResponseSchemaStrict,
   "related-response": relatedResponseSchemaStrict,
+  "search-response": searchResponseSchemaStrict,
   "wp-error": wpErrorSchema,
   "type-accents": typeAccentTableSchema,
 };
@@ -70,6 +72,14 @@ const expectedIssuePaths: Record<string, (string | number)[][]> = {
   "related-response.extra-item-property.json": [["items", 0]],
   "related-response.extra-top-level-property.json": [[]],
   "related-response.unknown-source.json": [["items", 0, "source"]],
+  "search-response.thirteen-items.json": [["items"]],
+  "search-response.unknown-type.json": [["items", 0, "type"]],
+  "search-response.extra-item-property.json": [["items", 0]],
+  "search-response.extra-top-level-property.json": [[]],
+  "search-response.missing-total.json": [["total"]],
+  "search-response.eleven-pages.json": [["pages"]],
+  "search-response.string-id.json": [["items", 0, "id"]],
+  "search-response.negative-total.json": [["total"]],
   "revalidate-request.page-null-previous-on-update.json": [["events", 0, "previous"]],
   "revalidate-request.page-previous-on-publish.json": [["events", 0, "previous"]],
   "revalidate-request.page-path-without-slash.json": [["events", 0, "path"]],
@@ -412,6 +422,20 @@ describe("readers drop unknown keys; strict mirrors reject them", () => {
     expect(issuePaths(relatedResponseSchema.safeParse({ items: [{ id: 1, source: "random" }] }))).toEqual([["items", 0, "source"]]);
     expect(relatedResponseSchema.safeParse({ items: Array.from({ length: 11 }, (_, i) => ({ id: i + 1, source: "topic" })) }).success).toBe(false);
     expect(relatedResponseSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("an extra key on the search response, at either level", () => {
+    const mixed = readJson(path.join(contractFixtures, "valid/search-response.mixed.json")) as { items: object[] };
+    const extended = { ...mixed, items: mixed.items.map((item) => ({ ...item, score: 1 })), engine: "core" };
+    expect(searchResponseSchema.parse(extended)).toEqual(searchResponseSchema.parse(mixed));
+    expect(issuePaths(searchResponseSchemaStrict.safeParse(extended))).toEqual([["items", 0], ["items", 1], ["items", 2], []]);
+  });
+
+  it("the search reader still holds its known keys to the strict rules", () => {
+    expect(issuePaths(searchResponseSchema.safeParse({ items: [{ id: "1", type: "page" }], total: 1, pages: 1 }))).toEqual([["items", 0, "id"]]);
+    expect(issuePaths(searchResponseSchema.safeParse({ items: [{ id: 1, type: "post" }], total: 1, pages: 1 }))).toEqual([["items", 0, "type"]]);
+    expect(issuePaths(searchResponseSchema.safeParse({ items: [], total: 1.5, pages: 11 }))).toEqual([["total"], ["pages"]]);
+    expect(searchResponseSchema.safeParse({ items: [] }).success).toBe(false);
   });
 
   it("the page reader refuses a path the front end could not serve, which the schema allows", () => {

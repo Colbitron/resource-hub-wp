@@ -23,6 +23,7 @@ import {
   resourceByIdTags,
   resourceFetchTags,
   resourceTag,
+  searchTags,
   taxonomyListTags,
   termLookupTags,
   topicTag,
@@ -656,6 +657,10 @@ describe("fetch tags", () => {
   it("tag a page lookup and a page read with pages only (ADR 0052)", () => {
     expect(pageTags()).toEqual(["pages"]);
   });
+
+  it("tag every search fetch with the library's tags and pages, whatever the query", () => {
+    expect(searchTags()).toEqual(["resources", "terms", "pages"]);
+  });
 });
 
 describe("the tagging rule, against tags written out by hand", () => {
@@ -683,6 +688,7 @@ describe("the tagging rule, against tags written out by hand", () => {
     flagLookup: ["resources"],
     resolve: ["resources"],
     filterBar: ["resources", "terms"],
+    search: ["resources", "terms", "pages"],
   };
 
   const states: ResourceState[] = [
@@ -726,6 +732,7 @@ describe("the tagging rule, against tags written out by hand", () => {
       // The flag lookup shows no resource, but marking one featured is a resource event, which must reach it.
       { name: "featured flag lookup", expected: expected.flagLookup, code: flagLookupTags() },
       { name: "filter bar term lists", expected: expected.filterBar, code: taxonomyListTags() },
+      { name: "search", expected: expected.search, code: searchTags() },
     ];
   }
 
@@ -819,6 +826,15 @@ describe("the tagging rule, against tags written out by hand", () => {
       term({ taxonomy: "resource_topic", event: "create", slug: "new-topic", name: "New" }),
     ]);
     expect(shares(expected.termLookup("resource_topic", "new-topic"), tags)).toBe(true);
+  });
+
+  it("holds for page events on the search fetches, whose results hold pages", () => {
+    for (const event of ["publish", "update", "unpublish", "trash", "delete"] as const) {
+      const { tags } = eventsToInvalidations([
+        pageEvent({ event, path: "/about/", previous: event === "update" ? { path: "/team/" } : null }),
+      ]);
+      expect(shares(expected.search, tags), event).toBe(true);
+    }
   });
 
   it("does not let a resource event clear terms, though the filter bar's counts still refresh", () => {

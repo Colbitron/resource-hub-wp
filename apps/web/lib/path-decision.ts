@@ -44,7 +44,8 @@
  *   without a request (`pagePathProblem` in `lib/routes.ts`, the catch-all's
  *   own check): a segment that is not a slug or holds a dot (`robots.txt`,
  *   `wp-login.php`, `.env`), a first segment the front end's own routes use
- *   (`api`, `resources` in another case), or a path over the plugin's cap.
+ *   (`api`, `search`, `resources` in another case), or a path over the
+ *   plugin's cap.
  *   The front end's own routes under those segments, the revalidate route
  *   and the metadata files (`OWN_ROUTE_PATHS`), are left alone, and so is
  *   everything under `/_next/` and `/media/`, which the framework and the

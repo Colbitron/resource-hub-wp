@@ -307,12 +307,13 @@ export const ROOT_PATH = "/";
 /**
  * The first path segments the front end's own routes use, which a page path
  * can never start with: the library and its listings, the route handlers, the
- * uploads rewrite and the framework's assets. The plugin keeps the same list
+ * uploads rewrite, the framework's assets and the search page at `/search/`
+ * (issue #115; reserved before the page exists, so no page takes the slug). The plugin keeps the same list
  * (`ReservedPageSlugs`) and gives a top-level page asking for one a suffix,
  * as core does for `embed`; a page saved before that rule is a 404 here,
  * decided without a request.
  */
-export const RESERVED_ROOT_SEGMENTS = ["resources", "api", "media", "_next"] as const;
+export const RESERVED_ROOT_SEGMENTS = ["resources", "api", "media", "_next", "search"] as const;
 
 /**
  * The front end's own routes under a reserved first segment, or outside the

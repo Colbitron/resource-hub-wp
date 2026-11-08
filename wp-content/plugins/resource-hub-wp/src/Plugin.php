@@ -35,6 +35,8 @@ use ResourceHub\Rest\PageRoute;
 use ResourceHub\Rest\RelatedCache;
 use ResourceHub\Rest\RelatedRoute;
 use ResourceHub\Rest\ResolveRoute;
+use ResourceHub\Rest\SearchCache;
+use ResourceHub\Rest\SearchRoute;
 use ResourceHub\Revalidation\Revalidation;
 use ResourceHub\Security\Pings;
 use ResourceHub\Security\XmlRpc;
@@ -102,6 +104,9 @@ final class Plugin {
 		$related_cache = new RelatedCache();
 		$related_cache->register();
 		add_action( 'rest_api_init', array( new RelatedRoute( $related_cache ), 'register' ) );
+		$search_cache = new SearchCache();
+		$search_cache->register();
+		add_action( 'rest_api_init', array( new SearchRoute( $search_cache ), 'register' ) );
 		( new ListColumn() )->register();
 		( new TermNotice() )->register();
 		( new StatusPage( $this->file ) )->register();

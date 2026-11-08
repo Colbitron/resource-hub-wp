@@ -12,9 +12,9 @@ src/
   Plugin.php             wires every component onto WordPress hooks
   ContentModel/          post type, taxonomies, meta and its rules, permalinks, one-type rule,
                          required fields, reserved slugs, slug escapes, used-type protection
-  Rest/                  resolve route, page route, related route and its salted cache, the no-cache
-                         header on anonymous REST reads, RouteMatch (which route and handler a request
-                         reached, for the content-model REST guards)
+  Rest/                  resolve route, page route, related and search routes with their salted
+                         caches, the no-cache header on anonymous REST reads, RouteMatch (which route
+                         and handler a request reached, for the content-model REST guards)
   Blocks/                the related-resources block: registration from build/ and the render callback;
                          TypeAccents, the shared type-accent table from build/type-accents.json
   Revalidation/          events, queue, dispatcher, sender, results, config, PostHog

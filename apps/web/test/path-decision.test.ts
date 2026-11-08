@@ -134,8 +134,9 @@ describe("isNotFoundPath", () => {
     for (const segment of RESERVED_ROOT_SEGMENTS) {
       if (segment === "resources") continue;
       // Reserved and not ours to answer, or reserved and a 404: never a page either way.
+      // `search` is a 404 until the search page (issue #115) lists its own path in OWN_ROUTE_PATHS.
       const path = `/${segment}/x/`;
-      expect(isNotFoundPath(path), path).toBe(segment === "api");
+      expect(isNotFoundPath(path), path).toBe(segment === "api" || segment === "search");
     }
   });
 });
