@@ -1,0 +1,50 @@
+# THROWAWAY PROBE: never merge. Finds out which Depot CI secret variant a run
+# receives for each event and ref. Uses only the dummy secrets SCOPE_CANARY and
+# SCOPE_CANARY_MAIN_ONLY, whose values are dummy strings, not credentials.
+name: scope-probe
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: depot-ubuntu-latest
+    steps:
+      - name: Report context and canary variants
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          SHA: ${{ github.sha }}
+          CANARY: ${{ secrets.SCOPE_CANARY }}
+          CANARY_MAIN_ONLY: ${{ secrets.SCOPE_CANARY_MAIN_ONLY }}
+        run: |
+          echo "event_name=$EVENT_NAME"
+          echo "ref=$REF"
+          echo "head_ref=$HEAD_REF"
+          echo "base_ref=$BASE_REF"
+          echo "sha=$SHA"
+          identify() {
+            local name="$1"
+            if [ -z "${!name+x}" ]; then echo "$name: UNSET"; return; fi
+            local v="${!name}"
+            if [ -z "$v" ]; then echo "$name: EMPTY"; return; fi
+            local h; h=$(printf '%s' "$v" | sha256sum | cut -c1-8)
+            local which=unknown
+            case "$h" in
+              6cc7df64) which=repo-wide ;;
+              0ad2f07a) which=main ;;
+              7f35de07) which=rollback-tag ;;
+              40a66a9f) which=main-only ;;
+            esac
+            echo "$name: len=${#v} sha8=$h variant=$which"
+            # Dummy value, printed once on purpose to see whether Depot masks it.
+            echo "$name raw (masking check): $v"
+          }
+          identify CANARY
+          identify CANARY_MAIN_ONLY
