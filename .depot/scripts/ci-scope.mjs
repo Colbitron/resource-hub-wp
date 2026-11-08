@@ -66,7 +66,10 @@
 // entry counts as its old path (`previous_filename`) and its new one, as
 // in the git diff. The API lists at most 3,000 files, so a list shorter
 // than --changed-files, a file that does not parse, or a count that is not
-// a whole number reads as unknown: every side.
+// a whole number reads as unknown: every side. So does a count of 0: a pull
+// request changes at least one file, so an empty list with a count of 0
+// proves nothing, and the workflow passes no count when it could not read
+// one for the deployed commit.
 
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -167,6 +170,9 @@ export function pullRequestFilePaths( files, changedFiles ) {
 	const expected = Number( changedFiles );
 	if ( String( changedFiles ?? '' ).trim() === '' || ! Number.isInteger( expected ) || expected < 0 ) {
 		return { paths: null, reason: `the pull request's changed-file count is not a whole number (${ JSON.stringify( changedFiles ) })` };
+	}
+	if ( expected === 0 ) {
+		return { paths: null, reason: 'the pull request reports no changed files, which proves nothing' };
 	}
 	if ( ! Array.isArray( files ) || files.some( ( file ) => typeof file?.filename !== 'string' ) ) {
 		return { paths: null, reason: 'the files list is not an array of entries with a filename' };

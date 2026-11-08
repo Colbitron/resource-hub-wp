@@ -38,7 +38,7 @@ test( 'each path selects the sides it can affect', () => {
 		'docs/adr/0053-ci-runs-on-depot-ci.md': [],
 		'docs/runbooks/deploy.md': [],
 		'.claude/rules/adr.md': [],
-		'.github/workflows/preview-lighthouse.yml': [],
+		'.github/workflows/adr-approval.yml': [],
 		'.depot/workflows/preview-lighthouse.yml': [ 'plugin', 'web' ],
 		'tools/featured-images/generate.mts': [],
 		'README.md': [],
@@ -282,6 +282,9 @@ test( 'an incomplete or unreadable files list reaches every side', () => {
 		[ one, 'two', /not a whole number/ ],
 		[ one, 1.5, /not a whole number/ ],
 		[ one, -1, /not a whole number/ ],
+		[ [], 0, /no changed files/ ], // an empty list proves nothing
+		[ [], '0', /no changed files/ ],
+		[ one, 0, /no changed files/ ],
 		[ { filename: 'docs/a.md' }, 1, /not an array/ ],
 		[ [ { path: 'docs/a.md' } ], 1, /not an array/ ],
 		[ [ null ], 1, /not an array/ ],
@@ -312,6 +315,9 @@ test( 'the script reads --pr-files and --changed-files, and fails safe', () => {
 		assert.equal( run( '--pr-files', files, '--changed-files', '3' ), 'plugin=true\nweb=true\n' );
 		assert.match( readFileSync( summary, 'utf8' ), /Every side: the files API listed 2 of 3/ );
 		assert.equal( run( '--pr-files', files ), 'plugin=true\nweb=true\n' );
+		writeFileSync( join( dir, 'empty.json' ), '[]' );
+		assert.equal( run( '--pr-files', join( dir, 'empty.json' ), '--changed-files', '0' ), 'plugin=true\nweb=true\n' );
+		assert.match( readFileSync( summary, 'utf8' ), /Every side: the pull request reports no changed files/ );
 		assert.equal( run( '--pr-files', join( dir, 'missing.json' ), '--changed-files', '2' ), 'plugin=true\nweb=true\n' );
 		writeFileSync( join( dir, 'garbled.json' ), '[{"filename":' );
 		assert.equal( run( '--pr-files', join( dir, 'garbled.json' ), '--changed-files', '1' ), 'plugin=true\nweb=true\n' );
@@ -360,6 +366,11 @@ test( 'preview-lighthouse.yml measures only what the scope rules reach', () => {
 	const text = readFileSync( PREVIEW_WORKFLOW, 'utf8' ).split( '\n' ).filter( ( line ) => ! /^\s*#/.test( line ) ).join( '\n' );
 	assert.match( text, /^ {6}measure: \$\{\{ steps\.decide\.outputs\.web \}\}$/m );
 	assert.match( text, /node \.depot\/scripts\/ci-scope\.mjs --pr-files "\$files" --changed-files "\$changed"/ );
+	// The pull request is this repository's, the count is the deployed
+	// commit's, and the bypass header goes only to a vercel.app preview.
+	assert.match( text, /\.head\.sha == \$sha and \.head\.repo\.full_name == \$repo/ );
+	assert.match( text, /jq -r '\.head\.sha'\)" != "\$SHA" \]/ );
+	assert.match( text, /\[\[ "\$PREVIEW_URL" =~ \^https:\/\/\[A-Za-z0-9-\]\+\\\.vercel\\\.app\$ \]\]/ );
 	const measure = text.slice( text.indexOf( '\n  measure:\n' ) );
 	assert.match( measure, /^ {4}if: needs\.pr\.outputs\.measure == 'true'$/m );
 	assert.doesNotMatch( measure, /\.lighthouseci/ );
