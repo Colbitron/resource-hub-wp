@@ -6,6 +6,7 @@ amended:
   - 2026-11-07
   - 2026-11-07
   - 2026-11-07
+  - 2026-11-08
 ---
 
 # One repository holds the plugin, the front end and the contract package, in one pnpm workspace, with wp-env as the only local environment
@@ -55,3 +56,17 @@ The demo began as two repositories, one per side, with the plugin at this one's 
 **What changed.** `pnpm-workspace.yaml` now also lists `wp-content/themes/*`, so "lists `wp-content/plugins/*`, `apps/*` and `packages/*`" above no longer holds. The CMS theme at `wp-content/themes/resource-hub/` is a workspace package so that it takes `@colbitron/resource-hub-ui` as `workspace:*`, like every other consumer, and its build copies the tokens, the lockup's stylesheet, Figtree and its fallback faces from `packages/ui` into the theme's own `build/`, which the host is given.
 
 **What did not.** The decision is unchanged: one repository and one pnpm workspace hold the plugin, the front end and the contract package, which is never published, with wp-env as the only environment.
+
+### 2026-11-08: the deploy also syncs Relevanssi
+
+**What changed.** The search engine is Relevanssi, the free WordPress plugin (issue #115), and the CMS deploy now syncs it to the host as well as the plugin. It is the one third-party plugin: a small Composer project, `site-plugins/`, pins it to an exact version in its lockfile and installs it from wpackagist into `wp-content/plugins/relevanssi/`, which is gitignored. Before anything is sent, the deploy checks every installed file against the SHA-256 that WordPress.org publishes for that version, since the lock pins the archive's URL but cannot pin its hash, and then rsyncs that one directory into the same path on the host. So the sentence under Consequences, "the deploy's rsync runs from the plugin directory with an allowlist, so nothing else in the workspace reaches the host", now has this one exception: Relevanssi's installed directory reaches the host too, through its own rsync to a fixed target.
+
+**Why.** Relevanssi belongs to the site, not to the plugin, so it is not in the plugin's `composer.json`, and `site-plugins/` keeps it out of the plugin's production `vendor/`, which ships only what the plugin itself needs.
+
+**Options weighed.**
+
+- **A root `composer.json`.** Rejected: running it in wp-env would mean mapping the whole repository under the containers' web root, where Apache would serve it, `.env` files included.
+- **The plugin's own `composer.json` and `vendor/`.** Rejected: it would make a site-wide plugin a dependency of ours, and put a WordPress plugin into the production `vendor/` that the plugin's allowlist ships.
+- **A manual install on the host.** Rejected: an untracked version that wp-env, CI and the tests could not reproduce, and a step outside the repository.
+
+**What did not.** The decision is unchanged: one repository and one pnpm workspace hold the plugin, the front end and the contract package, with wp-env as the only environment. The plugin's own rsync keeps its allowlist, and `site-plugins/` itself, with its `vendor/`, never reaches the host, nor does `packages/`.
