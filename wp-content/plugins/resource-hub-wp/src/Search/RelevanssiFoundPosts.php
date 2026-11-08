@@ -17,7 +17,7 @@ use WP_Query;
  *
  * Relevanssi answers a search through `posts_pre_query` and sets `found_posts` and
  * `max_num_pages` from every match (4.28.8, `lib/search.php:619`). For a query with
- * `fields => ids`, which is how the search route will query, core then calls
+ * `fields => ids`, which is how the search route queries, core then calls
  * `WP_Query::set_found_posts()` anyway (WordPress 7.1, `wp-includes/class-wp-query.php:3327`), and
  * with a `LIMIT` that runs `SELECT FOUND_ROWS()`. Nothing used `SQL_CALC_FOUND_ROWS`, so MySQL
  * answers with the row count of the last `SELECT` that ran, which is whatever query Relevanssi or
