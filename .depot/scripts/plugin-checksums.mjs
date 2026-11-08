@@ -23,7 +23,8 @@
 // and include the plugin's main file and its lib/ directory, so an empty or
 // truncated list never passes. Every listed file must exist as a regular
 // file with that SHA-256, and the directory must hold no file the list does
-// not name and no symbolic link, so nothing is added, removed or altered.
+// not name, no empty directory and no symbolic link, so nothing is added,
+// removed or altered.
 // A listed path that is absolute or climbs out with `..` is refused.
 //
 // Run as a script it prints one line with the count of files verified, or an
@@ -40,8 +41,10 @@ const SHA256 = /^[0-9a-f]{64}$/;
 
 /**
  * Every regular file under a directory, as paths relative to it with `/`
- * separators, sorted. A symbolic link or anything else that is not a file
- * or a directory is returned in `others`.
+ * separators, sorted. An empty directory below it is listed too, as its path
+ * with a trailing `/`, since no checksum list names one and rsync would
+ * create it on the host, so it fails as unlisted. A symbolic link or anything
+ * else that is not a file or a directory is returned in `others`.
  *
  * @param {string} dir The directory.
  * @return {{ files: string[], others: string[] }}
@@ -50,7 +53,11 @@ export function listTree( dir ) {
 	const files = [];
 	const others = [];
 	const walk = ( relative ) => {
-		for ( const entry of readdirSync( join( dir, relative ), { withFileTypes: true } ) ) {
+		const entries = readdirSync( join( dir, relative ), { withFileTypes: true } );
+		if ( relative && entries.length === 0 ) {
+			files.push( `${ relative }/` );
+		}
+		for ( const entry of entries ) {
 			const path = relative ? `${ relative }/${ entry.name }` : entry.name;
 			if ( entry.isDirectory() ) {
 				walk( path );

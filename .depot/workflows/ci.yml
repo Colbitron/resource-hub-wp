@@ -1257,16 +1257,19 @@ jobs:
       # not read the index, without repairing it. A failure, or a build that
       # outlives the 4-minute limit inside the step, is a warning annotation
       # instead, and the stamp it did not write makes the next deploy try
-      # again; docs/runbooks/deploy.md has the manual rebuild. The step's
-      # own timeout is the backstop if ssh itself hangs, at 6 minutes, below
-      # the job's 10 with room for the steps after it.
+      # again; docs/runbooks/deploy.md has the manual rebuild. Both ends are
+      # limited: the host's coreutils `timeout` stops WP-CLI there at 220 s,
+      # since killing the local ssh alone could leave it running, and the
+      # runner's stops ssh at 240 s if the connection hangs. The step's own
+      # timeout is the last backstop, at 6 minutes, below the job's 10 with
+      # room for the steps after it.
       - name: Build the search index
         timeout-minutes: 6
         run: |
           dir=$(printf '%q' "$WP_ROOT")
           # $dir and $WP_CLI are meant to expand on the runner; printf %q has quoted $dir for the remote shell.
           # shellcheck disable=SC2029
-          if ! timeout 240 ssh deploy "cd $dir && $WP_CLI resource-hub search-index"; then
+          if ! timeout 240 ssh deploy "cd $dir && timeout 220 $WP_CLI resource-hub search-index"; then
             echo "::warning title=Search index not built::wp resource-hub search-index failed or ran past 4 minutes on the host. The CMS and Relevanssi are deployed, and the next deploy retries; to rebuild now, see docs/runbooks/deploy.md, \"The CMS deploy\"."
           fi
 

@@ -39,13 +39,13 @@ use ResourceHub\Rest\ResolveRoute;
 use ResourceHub\Rest\SearchCache;
 use ResourceHub\Rest\SearchRoute;
 use ResourceHub\Revalidation\Revalidation;
-use ResourceHub\Security\OutgoingPings;
-use ResourceHub\Security\Pings;
 use ResourceHub\Search\RelevanssiConfig;
 use ResourceHub\Search\RelevanssiFoundPosts;
 use ResourceHub\Search\RelevanssiPostCache;
 use ResourceHub\Search\SearchIndex;
 use ResourceHub\Search\TermReindex;
+use ResourceHub\Security\OutgoingPings;
+use ResourceHub\Security\Pings;
 use ResourceHub\Security\XmlRpc;
 
 /**

@@ -106,20 +106,43 @@ final class SearchIndex {
 
 	/**
 	 * The stamp for the index as it would be built now.
+	 *
+	 * Every scalar in it is read as a string first. An option written in this request is in the
+	 * cache with the type PHP gave it, the integer Relevanssi stores as its database version for
+	 * one, and comes back from the database as a string in the next request; hashed as they are,
+	 * the two would differ, and the deploy after a Relevanssi upgrade would rebuild a second time.
+	 * Arrays keep their values' types through `serialize()`, so only their scalars are touched.
 	 */
 	public function stamp(): string {
 		global $relevanssi_variables;
 
 		return md5(
 			(string) wp_json_encode(
-				array(
-					'relevanssi' => $relevanssi_variables['plugin_version'] ?? null,
-					'database'   => $relevanssi_variables['database_version'] ?? null,
-					'tables'     => get_option( 'relevanssi_db_version' ),
-					'config'     => RelevanssiConfig::fingerprint(),
+				self::as_strings(
+					array(
+						'relevanssi' => $relevanssi_variables['plugin_version'] ?? null,
+						'database'   => $relevanssi_variables['database_version'] ?? null,
+						'tables'     => get_option( 'relevanssi_db_version' ),
+						'config'     => RelevanssiConfig::fingerprint(),
+					)
 				)
 			)
 		);
+	}
+
+	/**
+	 * A value with every scalar in it, at any depth, as the string the database would hand back:
+	 * `false` and null as the empty string, `true` as "1", numbers as their digits.
+	 *
+	 * @param mixed $value The value.
+	 * @return mixed
+	 */
+	private static function as_strings( $value ) {
+		if ( is_array( $value ) ) {
+			return array_map( array( self::class, 'as_strings' ), $value );
+		}
+
+		return is_scalar( $value ) || null === $value ? (string) $value : $value;
 	}
 
 	/**

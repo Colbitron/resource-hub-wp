@@ -196,6 +196,33 @@ final class SearchIndexTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A stamp written in one request still matches in the next, where every option comes back
+	 * from the database as a string: after an upgrade the stored database version is the integer
+	 * Relevanssi wrote, in this request's cache, and "9" in the next one's. Emptying the options
+	 * cache stands in for the next request.
+	 */
+	public function test_the_stamp_survives_a_fresh_read_of_the_options(): void {
+		global $relevanssi_variables;
+		$saved = $relevanssi_variables;
+
+		try {
+			$relevanssi_variables['database_version'] = (int) get_option( 'relevanssi_db_version' ) + 1; // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Relevanssi's global.
+			update_option( 'relevanssi_index_image_files', 1 );
+			$this->assertTrue( ( new SearchIndex() )->build()['built'] );
+			$this->assertIsInt( get_option( 'relevanssi_db_version' ), 'Relevanssi was expected to store the version as an integer in this request.' );
+
+			foreach ( array( 'alloptions', 'notoptions', 'relevanssi_db_version', 'relevanssi_index_image_files', SearchIndex::STAMP_OPTION ) as $key ) {
+				wp_cache_delete( $key, 'options' );
+			}
+			$this->assertIsString( get_option( 'relevanssi_db_version' ), 'The fresh read was expected to return a string.' );
+
+			$this->assertNull( ( new SearchIndex() )->stale_reason() );
+		} finally {
+			$relevanssi_variables = $saved; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited, WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- Relevanssi's global, restored.
+		}
+	}
+
+	/**
 	 * A build that completes on tables the upgrade did not bring to Relevanssi's database version
 	 * stores no stamp, so the next run tries again instead of calling old tables current.
 	 */

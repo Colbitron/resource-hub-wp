@@ -98,6 +98,15 @@ test( 'a list without the main file or lib/ fails, so an empty or truncated list
 	}
 } );
 
+test( 'an empty directory fails as unlisted, since rsync would create it', () => {
+	const f = fixture();
+	mkdirSync( join( f.dir, 'lib', 'empty' ) );
+	const { code, out } = run( envFor( f ) );
+	f.done();
+	assert.equal( code, 1 );
+	assert.match( out, /unlisted "lib\/empty\/"/ );
+} );
+
 test( 'a symbolic link in the directory fails', () => {
 	const f = fixture();
 	symlinkSync( join( f.dir, 'readme.txt' ), join( f.dir, 'lib', 'link.txt' ) );
