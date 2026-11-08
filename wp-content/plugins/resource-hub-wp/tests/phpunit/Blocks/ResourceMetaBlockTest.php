@@ -169,6 +169,19 @@ final class ResourceMetaBlockTest extends WP_UnitTestCase {
 		$untyped = $this->resource( array() );
 		wp_set_object_terms( $untyped, array(), Taxonomies::TYPE );
 		$this->assertSame( '', $this->render( $untyped ), 'No type.' );
+
+		$this->assertSame( '', $this->render( $this->resource( array() ), 'post' ), 'A postType context that is not resource.' );
+	}
+
+	/**
+	 * A password-protected resource is a published one, as the front end and the related route treat it,
+	 * so it gets its meta line, which shows nothing the password guards.
+	 */
+	public function test_password_protected_resource_renders_its_meta_line(): void {
+		$html = $this->render( $this->resource( array(), array( 'post_password' => 'secret' ) ) );
+
+		$this->assertStringStartsWith( '<div class="rh-resource__meta">', $html );
+		$this->assertStringContainsString( '>Case study</a></span>', $html );
 	}
 
 	/**
@@ -176,8 +189,10 @@ final class ResourceMetaBlockTest extends WP_UnitTestCase {
 	 */
 	public function test_renders_the_global_post(): void {
 		$GLOBALS['post'] = get_post( $this->resource( array() ) ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The loop's global post, which a single template sets.
+		$html            = do_blocks( '<!-- wp:resource-hub/resource-meta /-->' );
+		unset( $GLOBALS['post'] );
 
-		$this->assertStringStartsWith( '<div class="rh-resource__meta">', do_blocks( '<!-- wp:resource-hub/resource-meta /-->' ) );
+		$this->assertStringStartsWith( '<div class="rh-resource__meta">', $html );
 	}
 
 	/**
@@ -226,9 +241,10 @@ final class ResourceMetaBlockTest extends WP_UnitTestCase {
 	/**
 	 * The block rendered through `WP_Block` with the post as its context.
 	 *
-	 * @param int|null $post The context's post, or none.
+	 * @param int|null    $post      The context's post, or none.
+	 * @param string|null $post_type The context's post type; the post's own when null.
 	 */
-	private function render( ?int $post ): string {
+	private function render( ?int $post, ?string $post_type = null ): string {
 		$parsed = array(
 			'blockName'    => ResourceMetaBlock::NAME,
 			'attrs'        => array(),
@@ -241,7 +257,7 @@ final class ResourceMetaBlockTest extends WP_UnitTestCase {
 			$parsed,
 			null === $post ? array() : array(
 				'postId'   => $post,
-				'postType' => get_post_type( $post ),
+				'postType' => $post_type ?? get_post_type( $post ),
 			)
 		) )->render();
 	}

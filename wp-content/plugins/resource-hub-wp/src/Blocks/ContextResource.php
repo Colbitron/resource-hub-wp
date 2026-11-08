@@ -18,7 +18,11 @@ use WP_Post;
  *
  * The card and the meta line show what the front end shows, and the front end shows only published
  * resources, so a draft, a scheduled, private or trashed resource, and any other post type, gets nothing
- * from either block. `core/post-template` sets both keys for each post it lists; `render_block()` sets
+ * from either block. A password-protected resource is a published one: the REST API lists it, the front
+ * end renders it and the related route lists it (`RelatedRoute`), so both blocks render it too. Neither
+ * shows anything the password guards: the card's summary is public meta, and neither block shows the
+ * content; the card's title leaves out core's "Protected: " prefix, as the REST API's does
+ * (`ResourceCardMarkup::title()`). `core/post-template` sets both keys for each post it lists; `render_block()` sets
  * them from the global post everywhere else (a single template, a post's own content), and the editor's
  * preview endpoint from the `post_id` it is sent. A `postType` in the context that is not `resource`
  * settles it before any lookup; without one, the post's own type decides.
