@@ -1,0 +1,77 @@
+/*
+ * The header's search control, the button half: a square button at the end
+ * of the header's row, after the lockup, that opens the search bar
+ * (DESIGN.md, "Brand" and "Components"). Shared, because the CMS theme's
+ * header renders the same control (issue #89): the front end's
+ * <HeaderSearch> (`apps/web/components/HeaderSearch.tsx`) renders the markup
+ * below. Built only on the tokens in tokens.css, which the consumer loads
+ * first. This file restyles none of the shell's own classes; the bar, its
+ * anchoring to the header and the button's open state are
+ * `header-search-bar.css`, loaded after this one.
+ *
+ * Markup. Without JavaScript, and on the search page itself (where it links
+ * to that page's own field, `href="#rh-search-q"`), the control is a link:
+ *   <div class="rh-header-search">
+ *     <a class="rh-header-search__toggle" href="/search/" aria-label="Search">
+ *       <svg class="rh-header-search__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"
+ *         fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+ *         <circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/>
+ *       </svg>
+ *     </a>
+ *   </div>
+ * The icon is painted by those SVG attributes, not by this file, which sets
+ * only its size: without them the circle draws filled. With JavaScript, a
+ * disclosure button with the same class, name and icon, and the bar it
+ * controls; open, the button has `aria-expanded="true"`, its icon is a
+ * cross (the same `<svg>`, holding `<path d="M6 6l12 12M18 6 6 18"/>`) and
+ * the bar has no `hidden`:
+ *   <div class="rh-header-search">
+ *     <button class="rh-header-search__toggle" type="button" aria-label="Search"
+ *       aria-expanded="false" aria-controls="rh-header-search-panel">
+ *       <svg class="rh-header-search__icon" …>…</svg>
+ *     </button>
+ *     <div class="rh-header-search__panel" id="rh-header-search-panel" hidden>
+ *       <div class="rh-shell__inner">
+ *         <form role="search" action="/search/" method="get">…</form>
+ *       </div>
+ *     </div>
+ *   </div>
+ * The form is the consumer's own: the front end renders its search page's
+ * form (`.rh-search`, its own `search.css`).
+ *
+ * The rules this file keeps:
+ * - The header stays one row, its height the lockup's plus its padding: the
+ *   button is 2.75rem square, the 44 px target, and its negative block
+ *   margins give it a smaller footprint in the row than the lockup's, so it
+ *   reaches into the row's padding and never makes the row taller
+ *   (`apps/web/e2e/brand.spec.ts` measures it).
+ * - Its edge is the strong border, because the edge is what shows a bare
+ *   icon is a control (DESIGN.md, "Colors"); it darkens to the ink on hover.
+ */
+
+.rh-header-search {
+	margin-left: auto;
+}
+
+.rh-header-search__toggle {
+	display: grid;
+	place-items: center;
+	width: 2.75rem;
+	height: 2.75rem;
+	margin: calc(-1 * var(--rh-space-3)) 0;
+	padding: 0;
+	border: var(--rh-border-width) solid var(--rh-color-border-strong);
+	border-radius: var(--rh-radius-sm);
+	background: none;
+	color: var(--rh-color-text);
+	cursor: pointer;
+}
+
+.rh-header-search__toggle:hover {
+	border-color: var(--rh-color-text);
+}
+
+.rh-header-search__icon {
+	width: 1.25rem;
+	height: 1.25rem;
+}

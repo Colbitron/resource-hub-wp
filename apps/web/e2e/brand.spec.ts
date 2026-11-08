@@ -11,8 +11,8 @@ import { appSiteOrigin } from "./mock-cms/config.mts";
  * The brand layer (`packages/ui/DESIGN.md`, "Brand"): the header's lockup
  * as the one home link, named "Resource Hub" with the mark hidden from
  * assistive technology, in the Tab order after the skip link and before the
- * page; the header as one row, the lockup's height plus its padding, from
- * 320 px up; the lockup under forced colours; the footer's publisher link; the icon files (the SVG,
+ * header's search control and the page; the header as one row, the lockup's
+ * height plus its padding, from 320 px up, with the search control in it; the lockup under forced colours; the footer's publisher link; the icon files (the SVG,
  * the 32 px PNG, `favicon.ico` and the apple touch icon) and the default
  * share image, each answering with the right content type and size, the
  * icon links in one order on every kind of page, 404s included, the
@@ -75,7 +75,7 @@ test.describe("the header's lockup", () => {
     ["/", "Browse the library"],
     ["/resources/", "All types"],
   ] as const) {
-    test(`is the second Tab stop on ${path}: skip link, home link, then the page`, async ({ page }) => {
+    test(`is the second Tab stop on ${path}: skip link, home link, the search control, then the page`, async ({ page }) => {
       await page.goto(path);
       await expect(page.getByRole("contentinfo").getByRole("radio", { name: "System theme", exact: true })).toBeChecked();
       await page.keyboard.press("Tab");
@@ -83,20 +83,25 @@ test.describe("the header's lockup", () => {
       await page.keyboard.press("Tab");
       await expect(page.getByRole("link", { name: "Resource Hub", exact: true })).toBeFocused();
       await page.keyboard.press("Tab");
+      await expect(page.getByRole("banner").getByRole("button", { name: "Search", exact: true })).toBeFocused();
+      await page.keyboard.press("Tab");
       await expect(page.getByRole("link", { name: first, exact: true })).toBeFocused();
     });
   }
 
-  // The header holds the lockup alone, so it is one row at every width: its
+  // The header holds the lockup and, at the row's end, the search control,
+  // drawn into the row's padding, so it is one row at every width: its
   // height is the lockup's plus the row's padding and the header's bottom
   // border, and nothing else. A second row, a wrapped wordmark or anything
-  // added beside the lockup that is taller than it fails, because every
+  // in the row whose footprint is taller than the lockup fails, because every
   // pixel here pushes the listing's first image, the LCP element at phone
   // widths, further down. Measured on 2026-11-06 with Figtree loaded: 52.5 px
   // at 320, 360, 412 and 1280 px, the lockup's 27.5 plus 24 of padding and
   // the 1 px border (the theme control's old place in the header made it
   // 110.5 px at 360 and 412 px, where it wrapped, and 75 px at 1280). The
-  // half pixel is the margin for rounding.
+  // half pixel is the margin for rounding. The search control is the row's
+  // one other child; its 44 px box reaches into the padding, inside the
+  // header (`packages/ui/header-search.css`).
   for (const width of [320, 360, 412, 1280]) {
     test(`is one row, the lockup's height plus its padding, at ${width} px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 800 });
@@ -107,17 +112,21 @@ test.describe("the header's lockup", () => {
           const header = document.querySelector("header.rh-header")!;
           const inner = header.querySelector(".rh-header__inner")!;
           const lockup = inner.querySelector(".rh-brand")!;
+          const control = inner.querySelector(".rh-header-search__toggle")!.getBoundingClientRect();
+          const box = header.getBoundingClientRect();
           const style = getComputedStyle(inner);
           return {
             header: header.getBoundingClientRect().height,
             lockup: lockup.getBoundingClientRect().height,
             padding: parseFloat(style.paddingTop) + parseFloat(style.paddingBottom),
             border: parseFloat(getComputedStyle(header).borderBottomWidth),
-            children: inner.children.length,
+            children: [...inner.children].map((child) => child.className),
+            controlInside: control.top >= box.top && control.bottom <= box.bottom - parseFloat(getComputedStyle(header).borderBottomWidth),
           };
         });
         test.info().annotations.push({ type: "header height", description: `${path} at ${width} px: ${row.header} px (lockup ${row.lockup} + padding ${row.padding} + border ${row.border})` });
-        expect(row.children, path).toBe(1);
+        expect(row.children, path).toEqual(["rh-brand", "rh-header-search"]);
+        expect(row.controlInside, path).toBe(true);
         expect(Math.abs(row.header - (row.lockup + row.padding + row.border)), `${path}: ${JSON.stringify(row)}`).toBeLessThanOrEqual(0.5);
       }
     });

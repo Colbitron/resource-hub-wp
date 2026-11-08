@@ -7,9 +7,10 @@ import { describe, expect, it } from "vitest";
 
 /**
  * DESIGN.md, Motion: under `prefers-reduced-motion: reduce` every transition
- * and animation is off, with no exception for small ones. No shipped
- * stylesheet declares one today; this test holds the rule for the first that
- * does. Every rule in a shipped stylesheet that sets a `transition*` or
+ * and animation is off, with no exception for small ones. One shipped
+ * stylesheet declares one today, the header's search bar's
+ * (`header-search-bar.css`); this test holds it and any that follows to the
+ * rule. Every rule in a shipped stylesheet that sets a `transition*` or
  * `animation*` property (to anything but `none`) must be matched, in the same
  * file, by a rule for the same selector inside
  * `@media (prefers-reduced-motion: reduce)` that sets the shorthand to `none`.

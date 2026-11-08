@@ -122,6 +122,21 @@
 	gap: var(--rh-space-4);
 }
 
+/*
+ * The still copies of the header's row with its search control
+ * (StillHeaderSearch): a hairline above, as the page's top edge would be,
+ * and under the open one room for the bar, which is laid over what follows
+ * as on a page, so it covers none of the specimen.
+ */
+.rh-specimen__header {
+	margin-bottom: var(--rh-space-4);
+	border-top: var(--rh-border-width) solid var(--rh-color-border);
+}
+
+.rh-specimen__header[data-open] {
+	margin-bottom: 9rem;
+}
+
 /* One state in the states section, set apart from the next. */
 .rh-specimen__state + .rh-specimen__state {
 	margin-top: var(--rh-space-7);

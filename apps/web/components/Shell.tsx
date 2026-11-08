@@ -6,6 +6,7 @@ import "@colbitron/resource-hub-ui/base.css";
 import "./shell.css";
 
 import { BrandLockup } from "./Brand";
+import { HeaderSearch } from "./HeaderSearch";
 import { ThemeToggle } from "./ThemeToggle";
 
 /**
@@ -22,10 +23,14 @@ import { ThemeToggle } from "./ThemeToggle";
  * content is stacked under `main`, which carries `tabIndex={-1}` so the
  * skip link lands focus on it in every browser.
  *
- * The header holds the lockup alone (`BrandLockup`: the publisher's mark
- * and the wordmark "Resource Hub", one link to the library), so it is one
- * row at every width from 320 px up, as short as it can be without
- * shrinking anything (`shell.css`).
+ * The header holds the lockup (`BrandLockup`: the publisher's mark and the
+ * wordmark "Resource Hub", one link to the library) and, at the end of the
+ * row, the search control (`HeaderSearch`, a client component, which
+ * imports its own `header-search.css` from the shared package, after
+ * `shell.css` in the order because this file imports it after). The control
+ * is drawn into the row's padding, so the header is still one row at every
+ * width from 320 px up, as short as it can be without shrinking anything
+ * (`shell.css`).
  *
  * The footer names the publisher, with the one external link the shell
  * has, says what the site is, and closes with the theme control
@@ -42,6 +47,7 @@ export function Shell({ children }: { children: ReactNode }) {
       <header className="rh-header">
         <div className="rh-shell__inner rh-header__inner">
           <BrandLockup />
+          <HeaderSearch />
         </div>
       </header>
       <main className="rh-shell__inner rh-main" id="main" tabIndex={-1}>

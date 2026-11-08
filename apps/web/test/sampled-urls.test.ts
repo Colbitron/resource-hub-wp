@@ -16,14 +16,16 @@ describe("SAMPLED_URLS", () => {
     expect(imageLed).toEqual(["/resources/", "/resources/article/taxonomies-versus-meta/", "/welcome/"]);
   });
 
-  it("exempts only the resource page from the whole-document check", () => {
+  it("exempts only the resource page and the library from the whole-document check", () => {
     // An exemption from the whole-document check is the owner's decision
     // (e2e/document-size.spec.ts's docblock); the change that makes one
     // updates this list with it. The resource page's is the owner's of
-    // 2026-11-07, for its related section. The discovery check exempts no
+    // 2026-11-07, for its related section; the library's of 2026-11-08, for
+    // the header's search control, until issue #125 removes the inlined
+    // CSS's duplicate copies. The discovery check exempts no
     // page: the CMS page's was dropped when its first body image stopped
     // being lazy (issue #86).
     const exempt = SAMPLED_URLS.filter((sample) => sample.wholeDocumentGuard === false).map((sample) => sample.path);
-    expect(exempt).toEqual(["/resources/article/taxonomies-versus-meta/"]);
+    expect(exempt.toSorted()).toEqual(["/resources/", "/resources/article/taxonomies-versus-meta/"]);
   });
 });

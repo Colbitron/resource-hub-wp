@@ -37,6 +37,7 @@ import {
   SPACE_TOKENS,
   TEXT_SIZE_TOKENS,
 } from "./tokens";
+import { StillHeaderSearch } from "./StillHeaderSearch";
 import { StillThemeFieldset } from "./StillThemeFieldset";
 
 // The listing's styles (filters, pagination, the empty state), which
@@ -606,6 +607,15 @@ export default function SpecimenFixturePage() {
               <StillThemeFieldset key={choice} name={`specimen-theme-${choice}`} value={choice} />
             ))}
           </div>
+        </div>
+        <div className="rh-specimen__state">
+          <h3>Header search</h3>
+          <p>
+            The header&rsquo;s search control closed, then open with its bar laid over the page and its field focused on a
+            press. These copies do nothing; the header&rsquo;s is live.
+          </p>
+          <StillHeaderSearch id="specimen-header-search-closed" open={false} />
+          <StillHeaderSearch id="specimen-header-search-open" open />
         </div>
         <div className="rh-specimen__state">
           <h3>A lead without an image</h3>

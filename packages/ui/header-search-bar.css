@@ -1,0 +1,95 @@
+/*
+ * The header's search bar and the open state of the button that controls
+ * it: the second half of the header's search control, whose first half,
+ * the button, is `header-search.css` (read its header comment for the
+ * markup and the rules both files keep). A file of its own because a
+ * consumer can load it later than the button's: the front end imports it
+ * with the bar's module, on demand, so the button's styles are the only
+ * ones in every page's HTML. Load it after `header-search.css`.
+ *
+ * - The bar is absolutely positioned under the header's hairline and over
+ *   the page, so opening it moves nothing. The header that holds the
+ *   control is its containing block (`:has()`, the one rule here on the
+ *   shell's own class). It is the page's surface with a hairline under it,
+ *   like the header, never a box or a shadow.
+ * - Open, the button takes the raised fill and the ink edge, and its icon
+ *   becomes a cross, so the state is a shape and survives forced colours,
+ *   where fills are dropped.
+ * - Opening fades and drops the bar in over 150 ms, the system's one
+ *   motion, in response to the reader's press; under reduced motion it
+ *   appears at once. Closing is instant.
+ * - The form inside is the consumer's own; this file sets only its outer
+ *   margin.
+ * - Without `:has()` (Firefox before 121, Safari before 15.4) the header
+ *   cannot be made the bar's containing block, and an absolute bar would be
+ *   placed against the viewport, off the screen with focus in it. There the
+ *   bar is in the flow instead: the header's row wraps, the wrapper steps
+ *   aside (`display: contents`) so the button and the bar are the row's
+ *   items, and the bar takes a line of its own under the lockup and the
+ *   button, pushing the page down while it is open. Usable and visible,
+ *   not the overlay.
+ */
+
+.rh-header:has(.rh-header-search) {
+	position: relative;
+}
+
+.rh-header-search__toggle[aria-expanded="true"] {
+	border-color: var(--rh-color-text);
+	background: var(--rh-color-surface-raised);
+}
+
+.rh-header-search__panel {
+	position: absolute;
+	top: calc(100% + var(--rh-border-width));
+	right: 0;
+	left: 0;
+	z-index: 1;
+	padding: var(--rh-space-4) 0;
+	border-bottom: var(--rh-border-width) solid var(--rh-color-border);
+	background: var(--rh-color-surface);
+	transition: opacity 150ms, transform 150ms;
+}
+
+@starting-style {
+	.rh-header-search__panel {
+		opacity: 0;
+		transform: translateY(calc(-1 * var(--rh-space-2)));
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.rh-header-search__panel {
+		transition: none;
+	}
+}
+
+.rh-header-search__panel form {
+	margin: 0;
+}
+
+@supports not selector(:has(*)) {
+	.rh-header__inner {
+		flex-wrap: wrap;
+	}
+
+	.rh-header-search {
+		display: contents;
+	}
+
+	.rh-header-search__toggle {
+		margin-left: auto;
+	}
+
+	.rh-header-search__panel {
+		position: static;
+		flex: 0 0 100%;
+		margin-top: var(--rh-space-4);
+		padding: 0;
+		border: 0;
+	}
+
+	.rh-header-search__panel .rh-shell__inner {
+		padding: 0;
+	}
+}

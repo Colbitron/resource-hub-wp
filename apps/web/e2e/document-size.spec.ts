@@ -43,16 +43,33 @@ import { SAMPLED_URLS } from "./sampled-urls.mts";
  * only by the discovery check below, by the ceiling below, and by the
  * Lighthouse LCP budget (`lighthouserc.cjs`), where a miss is a warning, not
  * a block, until issue #76 calibrates the CPU slowdown (`e2e/README.md`,
- * "Lighthouse CI"). One sampled page is exempt: the resource page, by the
- * owner's decision of 2026-11-07, for its related section (issue #50), which
- * is wanted content. The section's rows load `card.css` and `related.css`,
+ * "Lighthouse CI"). Two sampled pages are exempt. The first is the resource
+ * page, by the owner's decision of 2026-11-07, for its related section
+ * (issue #50), which is wanted content. The section's rows load `card.css` and `related.css`,
  * which the page's own meta line does without, and the body's
  * related-resources block renders the same rows. On 2026-11-07, on the
  * harness's seed, its HTML was 16,849 bytes (467 of headers), one window
  * boundary over and well under the ceiling; its preloads ended 985 bytes in,
  * inside the discovery check's limit; and its simulated LCP had gone from
- * 2,170 to a median of 2,322 ms, inside the 2,500 ms budget. These numbers
- * are stated here only; the other documents point here.
+ * 2,170 to a median of 2,322 ms, inside the 2,500 ms budget. The second is
+ * the library, by the owner's decision, approved 2026-11-08, for the header's search
+ * control (issue #115), which is wanted content on every page and costs
+ * about 360 bytes on the CMS page. On the library it costs about 1,200 to
+ * 1,700, because the page sits on a gzip-window edge: every page's HTML
+ * carries its inlined CSS three times, once in `<style>` and twice in the
+ * RSC payload, and on the library the `<style>` copy and the first RSC copy
+ * were 32,351 bytes apart, 417 inside deflate's 32,768-byte window, so the
+ * RSC copy compressed to almost nothing. Anything over about 150 bytes added
+ * before the RSC payload pushes that copy out of the window, and the
+ * document grows by about 870 bytes at once. On 2026-11-08, on the
+ * harness's seed, its HTML went from 14,147 to 15,815 bytes with the
+ * control (15,326 after the rebase onto #121 to #123), one window boundary
+ * over and well under the ceiling; its preloads ended about 1,000 bytes in;
+ * and its simulated LCP, in one quick run each, went from 2,175 to 2,411
+ * ms, inside the 2,500 ms budget. The three copies are the root cause, and
+ * issue #125 is the way out: removing the two in the RSC payload would put
+ * the library back under the window, and its exemption should go with them.
+ * These numbers are stated here only; the other documents point here.
  *
  * **The ceiling** (every exempt page): its transfer size, counted the same
  * way, is at most 43,800 bytes. Lantern's window starts at ten segments and
