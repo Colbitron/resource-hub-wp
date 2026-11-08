@@ -30,6 +30,19 @@
  * `pnpm test:e2e -- --update-snapshots` with the same `WP_BASE_URL`, look at
  * the images and commit them with the change. No retry: a difference that
  * comes and goes must fail and be looked at.
+ *
+ * WordPress is not pinned: wp-env, and so CI, runs the latest release, as the
+ * host does with major updates on. So a WordPress release that changes core's
+ * markup or CSS can move these pixels with no change here, as a Playwright
+ * upgrade (a new pinned image) can; the failure message says so. Look at the
+ * diff in the run's artifacts, and when it is core's change and the page still
+ * matches the design, regenerate the baselines as above.
+ *
+ * The container is stopped in `afterAll`, and also on the worker's exit and on
+ * SIGINT, SIGTERM and SIGHUP, as the front end's `screenshots.mts` and
+ * `render-brand-images.mts` do, so a crash or a Ctrl-C does not leave an
+ * `rh-playwright-*` container running. A worker killed outright (SIGKILL)
+ * cannot clean up; `docker ps --filter name=rh-playwright-` finds what is left.
  */
 const path = require( 'node:path' );
 const { chromium } = require( '@playwright/test' );
@@ -53,6 +66,13 @@ const SCREENSHOT = {
 	timeout: 30_000,
 };
 
+/** What a failed comparison says, besides the diff. */
+const BASELINE_HINT =
+	"A CMS screenshot differs from its baseline. If WordPress or Playwright was updated (wp-env runs the latest WordPress; apps/web/e2e/playwright-image.mts pins the image) and the diff in the artifacts is core's change, not a regression, regenerate the baselines with `WP_BASE_URL=<the tests site> pnpm test:e2e -- --update-snapshots` from the repository root, look at the images and commit them";
+
+/** The worker's exit codes for the signals the container is stopped on. */
+const SIGNAL_EXIT = { SIGHUP: 129, SIGINT: 130, SIGTERM: 143 };
+
 /** The page's body: fixed copy, so the baseline moves only when the design does. */
 const CONTENT = [
 	'<!-- wp:paragraph --><p>An opening paragraph with <a href="/resources/">a link to the library</a>, long enough to run past the measure on a wide screen, so the column shows.</p><!-- /wp:paragraph -->',
@@ -68,6 +88,26 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 	let container;
 	let browser;
 	let cmsPage;
+	/** The process listeners that stop the container, removed in `afterAll`. */
+	const listeners = [];
+
+	/** Stops the container on the worker's exit or a signal, as well as in `afterAll`. */
+	function stopOnExit() {
+		const stop = () => container?.stop();
+		listeners.push( [ 'exit', stop ] );
+		for ( const [ signal, code ] of Object.entries( SIGNAL_EXIT ) ) {
+			listeners.push( [
+				signal,
+				() => {
+					stop();
+					process.exit( code );
+				},
+			] );
+		}
+		for ( const [ event, listener ] of listeners ) {
+			process.on( event, listener );
+		}
+	}
 
 	test.beforeAll( async ( { requestUtils } ) => {
 		// The first start may pull the image and runs Chromium under
@@ -86,6 +126,7 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 		).toBe( PLAYWRIGHT_IMAGE_VERSION );
 
 		container = new BrowserContainer();
+		stopOnExit();
 		container.start();
 		const endpoint = await container.endpoint();
 		const site = new URL( requestUtils.baseURL );
@@ -105,6 +146,9 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 	test.afterAll( async ( { requestUtils } ) => {
 		await browser?.close();
 		container?.stop();
+		for ( const [ event, listener ] of listeners.splice( 0 ) ) {
+			process.off( event, listener );
+		}
 		if ( cmsPage ) {
 			await requestUtils.rest( {
 				method: 'DELETE',
@@ -173,7 +217,7 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 				await expect(
 					page.getByRole( 'heading', { level: 1 } )
 				).toHaveText( cmsPage.title.raw );
-				await expect( page ).toHaveScreenshot(
+				await expect( page, BASELINE_HINT ).toHaveScreenshot(
 					`page-${ width }-${ colorScheme }.png`,
 					SCREENSHOT
 				);
@@ -193,7 +237,7 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 				await expect(
 					page.getByRole( 'heading', { level: 1 } )
 				).toHaveText( 'Page not found' );
-				await expect( page ).toHaveScreenshot(
+				await expect( page, BASELINE_HINT ).toHaveScreenshot(
 					`404-${ width }-${ colorScheme }.png`,
 					SCREENSHOT
 				);
