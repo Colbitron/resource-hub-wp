@@ -3,6 +3,12 @@
 #
 # Changes made:
 # - Changed GitHub runs-on labels to their Depot equivalents
+#
+# Edited after the migration, for Depot CI:
+# - deploy and deploy-web also need the Depot CI variable
+#   DEPOT_DEPLOY_ENABLED == 'true' (unset until the cutover)
+# - the apt package cache key names the image from /etc/os-release and its
+#   package list where ImageOS and ImageVersion are unset, as on Depot CI
 
 # The gate. Every pull request and every push to main runs the full chain
 # inside the same wp-env containers used locally, so a green run here means
