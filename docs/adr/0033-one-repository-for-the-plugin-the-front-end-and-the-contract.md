@@ -5,7 +5,7 @@ merges: 0001 and 0041 (2026-11-06)
 amended:
   - 2026-11-07
   - 2026-11-07
-  - 2026-11-08
+  - 2026-11-07
 ---
 
 # One repository holds the plugin, the front end and the contract package, in one pnpm workspace, with wp-env as the only local environment
@@ -50,7 +50,7 @@ The demo began as two repositories, one per side, with the plugin at this one's 
 
 **What did not.** The decision is unchanged: one repository and one pnpm workspace hold the plugin, the front end and the contract package, with wp-env as the only environment.
 
-### 2026-11-08: the workspace also lists the CMS theme
+### 2026-11-07: the workspace also lists the CMS theme
 
 **What changed.** `pnpm-workspace.yaml` now also lists `wp-content/themes/*`, so "lists `wp-content/plugins/*`, `apps/*` and `packages/*`" above no longer holds. The CMS theme at `wp-content/themes/resource-hub/` is a workspace package so that it takes `@colbitron/resource-hub-ui` as `workspace:*`, like every other consumer, and its build copies the tokens, the lockup's stylesheet, Figtree and its fallback faces from `packages/ui` into the theme's own `build/`, which the host is given.
 
