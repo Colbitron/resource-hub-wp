@@ -84,6 +84,30 @@ function trackedFiles() {
 		.map( ( file ) => posix.relative( THEME, file ) );
 }
 
+/**
+ * The theme paths a PHP file builds from its own directory: `__DIR__ . '/…'`,
+ * relative to the file's directory, and `dirname( __DIR__ ) . '/…'` or
+ * `dirname( __DIR__, N ) . '/…'`, relative to the directory one or N levels
+ * above it, as `inc/theme-control.php` reaches `js/`. A path that leaves the
+ * theme throws.
+ *
+ * @param {string} file   The PHP file's path, relative to the theme.
+ * @param {string} source Its source.
+ * @return {string[]} The paths, relative to the theme.
+ */
+function dirPaths( file, source ) {
+	const paths = [];
+	for ( const [ , base, levels, path ] of source.matchAll( /(dirname\(\s*__DIR__\s*(?:,\s*(\d+)\s*)?\)|__DIR__)\s*\.\s*'(\/[^']+)'/g ) ) {
+		const up = base.startsWith( 'dirname' ) ? Number( levels ?? 1 ) : 0;
+		const resolved = posix.normalize( posix.join( posix.dirname( file ), ...Array( up ).fill( '..' ), path.slice( 1 ) ) );
+		if ( resolved === '..' || resolved.startsWith( '../' ) ) {
+			throw new Error( `${ file } loads ${ path } from outside the theme` );
+		}
+		paths.push( resolved );
+	}
+	return paths;
+}
+
 const read = ( file ) => readFileSync( `${ REPO }/${ THEME }/${ file }`, 'utf8' );
 const shipped = shippedBy( filters( syncStep() ).filter( ( [ kind ] ) => kind === 'include' ).map( ( [ , pattern ] ) => pattern ) );
 
@@ -99,6 +123,19 @@ test( 'shippedBy reads anchored files and trees, and refuses anything else', () 
 	for ( const bad of [ 'style.css', '/inc/**', '/inc/', '/*.css', '/inc/*.php', 'inc/***' ] ) {
 		assert.throws( () => shippedBy( [ bad ] ), /cannot read the include/, bad );
 	}
+} );
+
+test( 'dirPaths reads __DIR__ and dirname( __DIR__ ) paths from where the file sits', () => {
+	const source = [
+		"require_once __DIR__ . '/inc/a.php';",
+		"$file = dirname( __DIR__ ) . '/js/b.js';",
+		"$up = dirname(__DIR__, 2) . '/c.css';",
+		"$deep = __DIR__ . '/../build/d.php';",
+	].join( '\n' );
+	assert.deepEqual( dirPaths( 'functions.php', "require_once __DIR__ . '/inc/a.php';" ), [ 'inc/a.php' ] );
+	assert.deepEqual( dirPaths( 'inc/x/theme.php', source ), [ 'inc/x/inc/a.php', 'inc/js/b.js', 'c.css', 'inc/build/d.php' ] );
+	assert.deepEqual( dirPaths( 'inc/theme-control.php', "dirname( __DIR__ ) . '/js/theme-control.js'" ), [ 'js/theme-control.js' ] );
+	assert.throws( () => dirPaths( 'functions.php', "dirname( __DIR__ ) . '/x.php'" ), /outside the theme/ );
 } );
 
 test( 'syncStep reads one step and stops at the next', () => {
@@ -165,13 +202,13 @@ test( 'every file WordPress and the theme load at runtime is shipped', () => {
 	const tracked = trackedFiles();
 	const loads = new Set( WORDPRESS_READS );
 
-	// The PHP's own paths: `__DIR__ . '/…'`, relative to the file's directory,
-	// and `get_theme_file_uri( '…' )` or `_path`, relative to the theme, a
+	// The PHP's own paths: those built from `__DIR__` (dirPaths, above), and
+	// `get_theme_file_uri( '…' )` or `_path`, relative to the theme, a
 	// trailing slash standing for any file under that directory.
 	for ( const file of tracked.filter( ( name ) => name.endsWith( '.php' ) && shipped( name ) ) ) {
 		const source = read( file );
-		for ( const [ , path ] of source.matchAll( /__DIR__\s*\.\s*'(\/[^']+)'/g ) ) {
-			loads.add( posix.normalize( posix.join( posix.dirname( file ), path.slice( 1 ) ) ) );
+		for ( const path of dirPaths( file, source ) ) {
+			loads.add( path );
 		}
 		for ( const [ , path ] of source.matchAll( /get_theme_file_(?:uri|path)\(\s*'([^']+)'/g ) ) {
 			loads.add( path.endsWith( '/' ) ? `${ path }any` : path );

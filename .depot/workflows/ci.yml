@@ -1359,8 +1359,10 @@ jobs:
       # theme; the same flags, for the same reasons; and an allowlist of what
       # WordPress loads at runtime, the final '*' excluding the rest:
       # style.css (the theme's header), theme.json, functions.php and the
-      # inc/ files it requires, templates/ and parts/, and build/, the copies
-      # of the contract package's files and their manifest, which
+      # inc/ files it requires, templates/ and parts/, assets/ (the
+      # pagination stylesheet functions.php reads), js/ (the theme
+      # control's script inc/theme-control.php reads), and build/, the
+      # copies of the contract package's files and their manifest, which
       # functions.php and theme.json load. README.md, package.json, scripts/
       # (the build), figtree.sha256 (a test's record) and node_modules/ stay
       # behind. A new runtime file or directory must be added here;
@@ -1380,6 +1382,8 @@ jobs:
             '--include=/inc/***' \
             '--include=/templates/***' \
             '--include=/parts/***' \
+            '--include=/assets/***' \
+            '--include=/js/***' \
             '--include=/build/***' \
             '--exclude=*' \
             ./ "deploy:$THEME_DIR/"
