@@ -15,16 +15,23 @@
 # - the apt package cache for Playwright's system packages is gone: it
 #   worked around a slow Ubuntu mirror on GitHub's runners, and on Depot CI
 #   the whole browser install, apt included, took about 7 s uncached
+# - a pull request runs only the jobs its changed paths can reach (the scope
+#   job below); every other event runs them all
 #
-# The gate. Every pull request and every push to main runs the full chain:
-# the plugin inside the same wp-env containers used locally, so a green run
-# here means the same thing as a green run on a laptop, and the front end
-# against its mock CMS, as e2e/README.md in apps/web runs it.
+# The gate. Every push to main and every manual dispatch runs the full
+# chain: the plugin inside the same wp-env containers used locally, so a
+# green run here means the same thing as a green run on a laptop, and the
+# front end against its mock CMS, as e2e/README.md in apps/web runs it. A
+# pull request runs the part of it that its changes reach; see "Scoping a
+# pull request" below.
 #
 # The jobs, and what each waits for (needs):
 #
-#   gate                     the plugin: schemas, JS lint, block build,
-#                            PHPCS, PHPUnit, Playwright
+#   scope                    which sides a pull request's change reaches
+#                            (.depot/scripts/ci-scope.mjs); on any other
+#                            event it only says every job runs
+#   gate                     needs scope. The plugin: schemas, JS lint,
+#                            block build, PHPCS, PHPUnit, Playwright
 #   web-checks               the front end's lint, typecheck, unit tests,
 #                            production build and its fixture-route check
 #   web-e2e                  the end-to-end suite, axe and document size included
@@ -34,9 +41,11 @@
 #   deploy                   needs gate (main and dispatch only)
 #   deploy-web               needs deploy and every web job (main only)
 #
-# Everything but the two deploys and the medians starts at once, so a
-# pull request waits for the slowest of them, not their sum. Each front-end
-# job that serves the app builds its own copy of the end-to-end harness's
+# Every job but scope needs it, and every front-end job needs it too (not
+# listed below each). Everything but scope, the two deploys and the medians
+# starts once scope has answered, about 6 to 8 s later than without it
+# (trial runs 2nw1m59b8d, fxprsxt9wx), so a run waits for scope and then
+# the slowest of the rest, not their sum. Each front-end job that serves the app builds its own copy of the end-to-end harness's
 # build (RH_FIXTURES=1, the mock CMS), the same command at the same commit,
 # rather than one job building it for the rest: the build takes about 10 s,
 # less than a job's own start, so a shared build would only put a job in
@@ -65,9 +74,58 @@
 # Lighthouse against each pull request's Vercel preview is a separate,
 # non-blocking workflow, .github/workflows/preview-lighthouse.yml, which
 # stays on GitHub Actions for now; moving it is a follow-up (ADR 0053).
+#
+# Scoping a pull request. Depot CI bills each job's sandbox time, about 17
+# sandbox-minutes for the whole run (ADR 0053, "Cost"), so a pull request
+# skips the jobs its changes cannot reach. On a pull request the scope job
+# diffs the merge commit Depot checks out (refs/pull/N/merge) against its
+# first parent, the base; the rules are in .depot/scripts/ci-scope.mjs:
+# wp-content/ reaches the gate, apps/ the front-end jobs (and Lighthouse,
+# unless only Markdown changed), docs/, .claude/, .github/, tools/ and a
+# root *.md reach nothing, and everything else, packages/ui, the root
+# package files and lockfile, .wp-env.json and .depot/ included, reaches
+# both sides. Its outputs, 'true' or 'false', are plugin, web and
+# lighthouse; when the paths cannot be read for certain all three are
+# 'true'. The diff is trusted only when HEAD's second parent is the pull
+# request's head, github.event.pull_request.head.sha, since main's HEAD is
+# itself usually a merge commit. That Depot checks out refs/pull/N/merge is
+# seen in PR #98's run 8bt9mr07zz; that it fills the head SHA is assumed,
+# and without it every job runs and scope's summary says why.
+#
+# Every scoped job's condition is the same shape:
+#
+#   github.event_name != 'pull_request' || needs.scope.outputs.<side> == 'true'
+#
+# On any event but pull_request it is true without reading the outputs,
+# so a push to main, a manual dispatch and a tag dispatch run every job,
+# as before, whatever the classifier says. The condition calls no status
+# function, so it also takes the implicit success(): a job runs only once
+# scope has succeeded, on every event. That is why scope runs on every
+# event rather than being skipped off pull requests: a job whose need was
+# skipped is skipped too, so the gate would have needed !cancelled() to run
+# behind a skipped scope, and then the deploys' implicit success() would
+# depend on how the host treats a skip further up the chain (Depot ran a
+# job two levels below a skipped one in trial run h1bkmg53wt; GitHub
+# Actions is reported to skip it). With scope always run, nothing on main is
+# ever skipped (deploy-web's own if aside), and if scope fails there,
+# nothing runs and the run is red. On a pull request, a failed scope
+# likewise skips every job behind it (trial run h1bkmg53wt). A skipped
+# job reports as skipped, not as passed or failed; there is no branch
+# protection to require it.
+#
+# The deploys cannot be reached by a skipped job. deploy needs the gate,
+# deploy-web needs deploy and every front-end job, and neither condition
+# calls a status function, so each takes the implicit success(): a need
+# that was skipped, like one that failed, skips the deploy (a job shaped
+# like deploy-web, behind one job that ran and one skipped by scope's
+# output, was skipped in trial run h1bkmg53wt). Both also run
+# only on a push or a dispatch, where nothing is scoped.
+# web-lighthouse-medians keeps its !cancelled(), so it runs after a failed
+# shard, and therefore tests scope's result and the lighthouse side in its
+# condition itself: !cancelled() alone would run it after skipped shards.
 name: CI
 
-# Pull requests run the gate once. A plain `push:` trigger alongside
+# Pull requests run the workflow once. A plain `push:` trigger alongside
 # `pull_request:` would run every branch twice, so pushes only count on main,
 # where the merge commit needs its own run (and later, its deploy).
 on:
@@ -119,8 +177,55 @@ env:
   SAVE_CACHES: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
 
 jobs:
+  scope:
+    # Runs on every event, and only a pull request's run reads its outputs;
+    # see "Scoping a pull request" above the triggers.
+    name: "Scope: the jobs this change needs"
+    runs-on: depot-ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      plugin: ${{ steps.scope.outputs.plugin }}
+      web: ${{ steps.scope.outputs.web }}
+      lighthouse: ${{ steps.scope.outputs.lighthouse }}
+
+    steps:
+      - name: Not a pull request, so every job runs
+        if: github.event_name != 'pull_request'
+        env:
+          EVENT: ${{ github.event_name }}
+        run: echo "Event $EVENT is not a pull request, so every job runs; the outputs are not read."
+
+      # The merge commit and its two parents, so the diff is against the
+      # base as the pull request would merge into it now; the diff reads
+      # commits, not the working tree. `depot ci run` applies its patch of
+      # local changes right after this step, which shapes it twice: it runs
+      # on every event, though only a pull request reads the checkout, since
+      # the patch step fails when this one was skipped (trial run
+      # r02hgbd8qq); and it is not a sparse checkout of .depot/scripts, since
+      # git cannot apply the patch to files a sparse checkout left out
+      # (trial run lsq0blw8w6). It takes a few seconds either way.
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      # The runner's own Node and git; nothing is installed.
+      - name: Test the scope rules
+        if: github.event_name == 'pull_request'
+        run: node --test .depot/scripts/ci-scope.test.mjs
+
+      - name: Decide which jobs run
+        if: github.event_name == 'pull_request'
+        id: scope
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node .depot/scripts/ci-scope.mjs --expect-head "$HEAD_SHA"
+
   gate:
     name: "Plugin: lint, build, and test"
+    needs: [ scope ]
+    if: github.event_name != 'pull_request' || needs.scope.outputs.plugin == 'true'
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 30
 
@@ -278,6 +383,8 @@ jobs:
 
   web-checks:
     name: "Front end: lint, typecheck, unit tests, and build"
+    needs: [ scope ]
+    if: github.event_name != 'pull_request' || needs.scope.outputs.web == 'true'
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 15
 
@@ -324,6 +431,8 @@ jobs:
 
   web-e2e:
     name: "Front end: end-to-end tests"
+    needs: [ scope ]
+    if: github.event_name != 'pull_request' || needs.scope.outputs.web == 'true'
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 20
 
@@ -362,6 +471,8 @@ jobs:
 
   web-screenshots:
     name: "Front end: screenshots and brand images"
+    needs: [ scope ]
+    if: github.event_name != 'pull_request' || needs.scope.outputs.web == 'true'
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 20
 
@@ -486,6 +597,8 @@ jobs:
     # screenshots and every other job still block. The budgets are the
     # same on every event and in every shard.
     name: "Front end: Lighthouse (${{ matrix.shard }}/${{ matrix.of }})"
+    needs: [ scope ]
+    if: github.event_name != 'pull_request' || needs.scope.outputs.lighthouse == 'true'
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 15
     strategy:
@@ -625,9 +738,10 @@ jobs:
     # other than five runs, so a shard whose reports never arrived cannot
     # drop a URL from the table unnoticed. It decides nothing about the
     # budgets, which each shard asserted on its own URLs. It runs after a
-    # failed shard too, so the table shows what was measured.
-    needs: [ web-lighthouse ]
-    if: ${{ !cancelled() }}
+    # failed shard too, so the table shows what was measured, and is skipped
+    # with the shards on a pull request that does not reach Lighthouse.
+    needs: [ scope, web-lighthouse ]
+    if: ${{ !cancelled() && needs.scope.result == 'success' && (github.event_name != 'pull_request' || needs.scope.outputs.lighthouse == 'true') }}
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 10
 
