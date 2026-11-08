@@ -164,37 +164,6 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "WP_ENV_HOME=$RUNNER_TEMP/wp-env" >> "$GITHUB_ENV"
 
-      # The key holds the resolved Playwright version, so an upgrade misses and
-      # downloads the new browser.
-      - name: Restore Playwright browser
-        id: playwright-cache
-        uses: actions/cache/restore@v6
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.keys.outputs.playwright }}
-
-      # On a browser cache hit only the system packages are installed
-      # (install-deps); on a miss the browser is downloaded too. The install
-      # runs in the background while wp-env starts: on Depot CI's 2-vCPU
-      # sandbox wp-env's start held the CPU at about 40% for about 40 s, most
-      # of it waiting on image pulls and WordPress's install, and the browser
-      # install, about 8 s of apt and download, fits beside it. Its exit
-      # status goes to a file that "Wait for the Playwright browser" reads,
-      # so a failed install fails there, with its log.
-      - name: Start installing the Playwright browser
-        env:
-          CACHE_HIT: ${{ steps.playwright-cache.outputs.cache-hit }}
-        run: |
-          if [ "$CACHE_HIT" = 'true' ]; then
-            what=install-deps
-          else
-            what='install --with-deps'
-          fi
-          # The inner sh expands $1, $2 and $? itself, so the single quotes are intended.
-          # shellcheck disable=SC2016
-          nohup sh -c 'pnpm --filter resource-hub-wp exec playwright $1 chromium; echo $? > "$2"' sh "$what" \
-            "$RUNNER_TEMP/playwright-install.status" > "$RUNNER_TEMP/playwright-install.log" 2>&1 &
-
       # wp-env downloads WordPress core and the core test library into
       # WP_ENV_HOME and reuses them when its config checksum matches. The weekly
       # suffix keeps the unpinned "latest" core from freezing at whatever was
@@ -247,19 +216,31 @@ jobs:
       - name: Run PHPUnit
         run: pnpm test:php
 
-      # Joins the background install started before wp-env and fails here,
-      # with its log, if it failed. The limit is generous for a slow mirror.
-      - name: Wait for the Playwright browser
+      # The key holds the resolved Playwright version, so an upgrade misses and
+      # downloads the new browser.
+      - name: Restore Playwright browser
+        id: playwright-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.keys.outputs.playwright }}
+
+      # On a browser cache hit only the system packages are installed
+      # (install-deps); on a miss the browser is downloaded too. It runs after
+      # wp-env's start, not behind it: in the background it lengthened that
+      # start from about 40 s to 49 and 54 s (trial runs s13jwxd9r0 and
+      # k5tx59pw08), as much as it saved, since both wait on the network and
+      # the disk rather than the CPU. The limit is generous for a slow
+      # mirror; on Depot CI the whole install, uncached, took about 8 s.
+      - name: Install Playwright browser
         timeout-minutes: 10
+        env:
+          CACHE_HIT: ${{ steps.playwright-cache.outputs.cache-hit }}
         run: |
-          status_file="$RUNNER_TEMP/playwright-install.status"
-          until [ -s "$status_file" ]; do sleep 1; done
-          echo "::group::Playwright install log"
-          cat "$RUNNER_TEMP/playwright-install.log"
-          echo "::endgroup::"
-          if [ "$(cat "$status_file")" != "0" ]; then
-            echo "::error::Installing Playwright's browser failed; the log is above."
-            exit 1
+          if [ "$CACHE_HIT" = 'true' ]; then
+            pnpm --filter resource-hub-wp exec playwright install-deps chromium
+          else
+            pnpm --filter resource-hub-wp exec playwright install --with-deps chromium
           fi
 
       - name: Save Playwright browser
