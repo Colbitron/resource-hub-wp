@@ -86,27 +86,6 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      # TRIAL ONLY (Depot CI migration): what the sandbox provides, so the
-      # trial can settle Docker, sudo, the architecture and the environment
-      # without guessing. Prints variable names, and values only for a fixed
-      # list of non-secret ones. Remove before the cutover.
-      - name: Probe the Depot sandbox
-        run: |
-          echo "uname: $(uname -srm)"
-          . /etc/os-release && echo "os: $PRETTY_NAME"
-          echo "nproc: $(nproc); mem: $(free -g | awk '/Mem:/ {print $2}') GB"
-          for v in ImageOS ImageVersion RUNNER_OS RUNNER_ARCH RUNNER_NAME RUNNER_ENVIRONMENT RUNNER_TEMP RUNNER_TOOL_CACHE CI GITHUB_ACTIONS GITHUB_EVENT_NAME GITHUB_REF GITHUB_REF_NAME GITHUB_BASE_REF GITHUB_HEAD_REF GITHUB_SHA GITHUB_REPOSITORY GITHUB_SERVER_URL GITHUB_WORKFLOW GITHUB_JOB ACTIONS_CACHE_URL ACTIONS_RESULTS_URL ACTIONS_CACHE_SERVICE_V2 DEPOT_JOB_URL DEPOT_ORG_ID HOME USER; do
-            printf '%s=%s\n' "$v" "${!v-<unset>}"
-          done
-          echo "--- all variable names"
-          env | cut -d= -f1 | sort | tr '\n' ' '; echo
-          echo "--- sudo"; sudo -n true && echo "passwordless sudo: yes" || echo "passwordless sudo: no"
-          echo "--- docker"; docker version --format 'client {{.Client.Version}} server {{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}' || echo "docker: unavailable"
-          docker info --format 'driver {{.Driver}} cgroup {{.CgroupVersion}} cpus {{.NCPU}}' || true
-          docker compose version || true
-          echo "--- tools"; node --version; command -v jq gh rsync lsof || true
-          df -h / "$RUNNER_TEMP" | sed 1d
-
       - name: Check out
         uses: actions/checkout@v7
 
@@ -392,27 +371,6 @@ jobs:
       WP_API_URL: https://cms.example/wp-json
 
     steps:
-      # TRIAL ONLY (Depot CI migration): what the sandbox provides, so the
-      # trial can settle Docker, sudo, the architecture and the environment
-      # without guessing. Prints variable names, and values only for a fixed
-      # list of non-secret ones. Remove before the cutover.
-      - name: Probe the Depot sandbox
-        run: |
-          echo "uname: $(uname -srm)"
-          . /etc/os-release && echo "os: $PRETTY_NAME"
-          echo "nproc: $(nproc); mem: $(free -g | awk '/Mem:/ {print $2}') GB"
-          for v in ImageOS ImageVersion RUNNER_OS RUNNER_ARCH RUNNER_NAME RUNNER_ENVIRONMENT RUNNER_TEMP RUNNER_TOOL_CACHE CI GITHUB_ACTIONS GITHUB_EVENT_NAME GITHUB_REF GITHUB_REF_NAME GITHUB_BASE_REF GITHUB_HEAD_REF GITHUB_SHA GITHUB_REPOSITORY GITHUB_SERVER_URL GITHUB_WORKFLOW GITHUB_JOB ACTIONS_CACHE_URL ACTIONS_RESULTS_URL ACTIONS_CACHE_SERVICE_V2 DEPOT_JOB_URL DEPOT_ORG_ID HOME USER; do
-            printf '%s=%s\n' "$v" "${!v-<unset>}"
-          done
-          echo "--- all variable names"
-          env | cut -d= -f1 | sort | tr '\n' ' '; echo
-          echo "--- sudo"; sudo -n true && echo "passwordless sudo: yes" || echo "passwordless sudo: no"
-          echo "--- docker"; docker version --format 'client {{.Client.Version}} server {{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}' || echo "docker: unavailable"
-          docker info --format 'driver {{.Driver}} cgroup {{.CgroupVersion}} cpus {{.NCPU}}' || true
-          docker compose version || true
-          echo "--- tools"; node --version; command -v jq gh rsync lsof || true
-          df -h / "$RUNNER_TEMP" | sed 1d
-
       - name: Check out
         uses: actions/checkout@v7
 
