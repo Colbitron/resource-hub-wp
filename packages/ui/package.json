@@ -22,6 +22,7 @@
 		"theme-toggle.css",
 		"prose.css",
 		"related.css",
+		"lead.css",
 		"type-accents.json",
 		"README.md",
 		"DESIGN.md"
@@ -38,6 +39,7 @@
 		"./theme-toggle.css": "./theme-toggle.css",
 		"./prose.css": "./prose.css",
 		"./related.css": "./related.css",
+		"./lead.css": "./lead.css",
 		"./type-accents.json": "./type-accents.json"
 	},
 	"scripts": {
