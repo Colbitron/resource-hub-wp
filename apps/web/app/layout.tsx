@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { Shell } from "@/components/Shell";
 import { siteUrl } from "@/lib/env";
+import { siteIcons } from "@/lib/site-icons";
 import { THEME_INIT_SCRIPT, THEME_NOSCRIPT_STYLE } from "@/lib/theme";
 
 import { figtree } from "./fonts";
@@ -16,7 +17,9 @@ import { figtree } from "./fonts";
  * not when the module is imported. It sets no `openGraph` or `twitter`:
  * segments merge shallowly, so either would reach every page that sets none,
  * and an inherited `twitter.card` would outlive a page's image
- * (`lib/share-metadata.ts`).
+ * (`lib/share-metadata.ts`). The icon links are listed explicitly, in the
+ * order the brand sets, because the file conventions take the order the
+ * filesystem lists the files in (`lib/site-icons.ts`).
  */
 export function generateMetadata(): Metadata {
   const base = siteUrl();
@@ -27,6 +30,7 @@ export function generateMetadata(): Metadata {
       template: "%s | Resource Hub",
     },
     description: "A filterable library of resources: guides, webinars, reports and more, modelled in WordPress and rendered by Next.js.",
+    icons: siteIcons(),
   };
 }
 
