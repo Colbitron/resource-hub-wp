@@ -54,6 +54,13 @@ use ResourceHub\ContentModel\Taxonomies;
  *   whatever it renders, not to the post, and goes stale as soon as that changes; the CMS's
  *   content uses blocks, not shortcodes. With it off, Relevanssi strips the shortcodes instead.
  *
+ * - **Result pages show stored text.** Relevanssi's custom snippets (`relevanssi_excerpts`, on by
+ *   default: `lib/install.php:91`) replace each result's `post_excerpt`, on the main search query, with
+ *   a snippet cut around the matched words, and `relevanssi_highlight` (`strong` by default,
+ *   `lib/install.php:98`) wraps those words in a tag. Both are pinned off in {@see PINNED_OUTPUT}, so
+ *   the CMS theme's search page shows a page's excerpt as the REST API gives it to the front end
+ *   (`ResourceCardMarkup::page_row()`). Neither changes the index, so neither is in the fingerprint.
+ *
  * {@see fingerprint()} reads every setting that changes what the index holds, as Relevanssi will
  * see it: the pinned ones above, the unpinned ones in {@see FINGERPRINTED} (the stopword list,
  * which the settings screen does change, and settings that cannot matter here today), the indexed
@@ -166,6 +173,18 @@ final class RelevanssiConfig {
 	);
 
 	/**
+	 * Pinned options that change what a search shows, not what the index holds: no snippets in place of
+	 * a result's excerpt, and no highlighting. Read through `pre_option_*` as {@see PINNED} is, and left
+	 * out of the fingerprint, since a change to them needs no rebuild.
+	 *
+	 * @var array<string, string>
+	 */
+	public const PINNED_OUTPUT = array(
+		'relevanssi_excerpts'  => 'off',
+		'relevanssi_highlight' => 'none',
+	);
+
+	/**
 	 * Options that change what is indexed but are left to Relevanssi, so the stamp follows them:
 	 * the stopword list, which the settings screen edits; the shortcodes disabled while indexing,
 	 * moot while expansion is off; attachment and internal-link indexing, moot while only resources
@@ -185,7 +204,7 @@ final class RelevanssiConfig {
 	 * Hooks the option filters and Relevanssi's own.
 	 */
 	public function register(): void {
-		foreach ( array_keys( self::PINNED ) as $option ) {
+		foreach ( array_keys( self::PINNED + self::PINNED_OUTPUT ) as $option ) {
 			add_filter( "pre_option_{$option}", array( $this, 'pinned' ), 10, 2 );
 		}
 
@@ -216,14 +235,16 @@ final class RelevanssiConfig {
 	}
 
 	/**
-	 * `pre_option_{$option}` for every pinned option: the value in {@see PINNED}.
+	 * `pre_option_{$option}` for every pinned option: the value in {@see PINNED} or {@see PINNED_OUTPUT}.
 	 *
 	 * @param mixed  $pre    The value another filter supplied, or false.
 	 * @param string $option The option's name.
 	 * @return mixed
 	 */
 	public function pinned( $pre, $option ) {
-		return array_key_exists( (string) $option, self::PINNED ) ? self::PINNED[ $option ] : $pre;
+		$pinned = self::PINNED + self::PINNED_OUTPUT;
+
+		return array_key_exists( (string) $option, $pinned ) ? $pinned[ $option ] : $pre;
 	}
 
 	/**

@@ -46,7 +46,8 @@ use WP_REST_Server;
  * items and the same `total` and `pages`, because it is a question with an answer, and a 200 is cached.
  *
  * Each page is cached in {@see SearchCache}, so a repeated query runs its search once until something it
- * can see changes. The anonymous response carries the no-cache header, errors included, from
+ * can see changes. The CMS theme's own search page is not this route: it is core's main search query,
+ * given this route's scope by {@see \ResourceHub\Search\MainSearchQuery}, and is never cached here. The anonymous response carries the no-cache header, errors included, from
  * {@see NoCacheHeader}, which covers everything under this namespace.
  */
 final class SearchRoute {
@@ -209,25 +210,18 @@ final class SearchRoute {
 	 * @return array{items: array<int, array{id: int, type: string}>, total: int, pages: int}
 	 */
 	private static function search( string $query, int $page ): array {
-		$args = array(
-			's'                      => $query,
-			'post_type'              => self::TYPES,
-			'post_status'            => 'publish',
-			'has_password'           => false,
-			'posts_per_page'         => self::PER_PAGE,
-			'paged'                  => $page,
-			// Whole posts rather than `ids`, for each match's type; their terms and meta are never read.
-			'update_post_term_cache' => false,
-			'update_post_meta_cache' => false,
-			'ignore_sticky_posts'    => true,
-			'relevanssi'             => true,
+		$args = array_merge(
+			self::scope(),
+			array(
+				's'                      => $query,
+				'paged'                  => $page,
+				// Whole posts rather than `ids`, for each match's type; their terms and meta are never read.
+				'update_post_term_cache' => false,
+				'update_post_meta_cache' => false,
+				'ignore_sticky_posts'    => true,
+				'relevanssi'             => true,
+			)
 		);
-
-		$posts_page = PagePath::posts_page_id();
-
-		if ( $posts_page > 0 ) {
-			$args['post__not_in'] = array( $posts_page ); // phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.PostNotIn_post__not_in -- One ID, set only while a posts page is: leaving it out after the query would make found_posts count a result that is never listed.
-		}
 
 		$results = new WP_Query( $args );
 		$items   = array();
@@ -251,14 +245,40 @@ final class SearchRoute {
 	}
 
 	/**
+	 * What the route searches, as `WP_Query` arguments: published resources and pages with no password,
+	 * twelve to a page, never the posts page. The CMS theme's search page puts the same scope on core's
+	 * main search query (`ResourceHub\Search\MainSearchQuery`), so a logged-in preview lists what the
+	 * front end lists; a change here changes both.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function scope(): array {
+		$scope = array(
+			'post_type'      => self::TYPES,
+			'post_status'    => 'publish',
+			'has_password'   => false,
+			'posts_per_page' => self::PER_PAGE,
+		);
+
+		$posts_page = PagePath::posts_page_id();
+
+		if ( $posts_page > 0 ) {
+			$scope['post__not_in'] = array( $posts_page ); // phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.PostNotIn_post__not_in -- One ID, set only while a posts page is: leaving it out after the query would make found_posts count a result that is never listed.
+		}
+
+		return $scope;
+	}
+
+	/**
 	 * Every match, counted. `found_posts` is the count, except on a page past the last: core does not
 	 * count when the page it fetched is empty and leaves `found_posts` at 0, so the count comes from a
-	 * one-row query for the first page instead.
+	 * one-row query for the first page instead. Public for the CMS theme's search page, whose main query
+	 * has the same gap (`MainSearchQuery::count_and_cap()`).
 	 *
 	 * @param WP_Query             $results The page's query, run.
-	 * @param array<string, mixed> $args    Its arguments.
+	 * @param array<string, mixed> $args    Its arguments: the scope, `s`, `paged` and `relevanssi`.
 	 */
-	private static function total( WP_Query $results, array $args ): int {
+	public static function total( WP_Query $results, array $args ): int {
 		if ( array() !== $results->posts || 1 === $args['paged'] ) {
 			return (int) $results->found_posts;
 		}
