@@ -2065,9 +2065,11 @@ test.describe( "A CMS search page computes the front end's styles", () => {
 		await expect( next ).toHaveText( 'Next' );
 		await expect( next ).toHaveAttribute( 'href', /s=quokka/ );
 
-		// The second page: one row, Previous, the count unchanged.
+		// The second page: one row, Previous, the count unchanged. The link is
+		// core's, `?paged=2` under plain permalinks and `/page/2/` under pretty
+		// ones, which PHPUnit's run before this suite can leave the site on.
 		await next.click();
-		await expect( page ).toHaveURL( /paged=2/ );
+		await expect( page ).toHaveURL( /(?:[?&]paged=2|\/page\/2\/)/ );
 		await expect( page.locator( 'ul.rh-card-grid > li' ) ).toHaveCount(
 			PAGES - PER_PAGE
 		);

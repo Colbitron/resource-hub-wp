@@ -90,8 +90,10 @@ final class CollectionQueryTest extends WP_UnitTestCase {
 			$this->assertSame( 2, $GLOBALS['wp_query']->max_num_pages, $path );
 		}
 
+		// The posts index keeps the option; the search page is the search route's twelve too (MainSearchQuery).
 		self::factory()->post->create_many( 7 );
-		$this->go_to( home_url( '/?s=' ) );
+		$this->go_to( home_url( '/' ) );
+		$this->assertTrue( is_home() );
 		$this->assertSame( 5, $GLOBALS['wp_query']->post_count, 'Another archive keeps the option.' );
 	}
 

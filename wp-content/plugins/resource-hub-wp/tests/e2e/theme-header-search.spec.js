@@ -28,7 +28,7 @@ const WCAG_TAGS = [ 'wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa' ];
 const NO_SESSION = { cookies: [], origins: [] };
 
 const banner = ( page ) => page.getByRole( 'banner' );
-/** The header's control once the script has made it a button: the first button named Search, before the bar's own submit. */
+// The header's control once the script has made it a button: the first button named Search, before the bar's own submit.
 const toggle = ( page ) =>
 	banner( page )
 		.getByRole( 'button', { name: 'Search', exact: true } )
