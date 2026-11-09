@@ -83,13 +83,39 @@ final class MainSearchQueryTest extends WP_UnitTestCase {
 		$this->post( 'page' );
 
 		foreach ( array( '/search/', '/search/?s=a', '/search/?s=' . rawurlencode( "qu\u{1}okka" ), '/search/?s=' . str_repeat( 'a', 101 ), '/search/page/11/?s=' . self::WORD ) as $path ) {
-			$this->go_to( home_url( $path ) );
+			$this->assertSame( array(), $this->content_queries( $path ), "{$path} runs no content query." );
 
 			$this->assertTrue( is_search(), $path );
 			$this->assertFalse( is_404(), $path );
 			$this->assertSame( array(), $GLOBALS['wp_query']->posts, $path );
 			$this->assertSame( 0, (int) $GLOBALS['wp_query']->found_posts, $path );
 			$this->assertSame( 0, (int) $GLOBALS['wp_query']->max_num_pages, $path );
+		}
+	}
+
+	/**
+	 * An anonymous visitor's search runs no content query at all, and still gets the lockdown's 404, the
+	 * same 404 as at any other theme page: no posts, no count, no pages, the request marked `error` 404.
+	 * The same search for a logged-in user runs one, so the recorder would see it.
+	 */
+	public function test_an_anonymous_search_runs_no_content_query(): void {
+		$this->resource( self::WORD . ' guide', 'ebook', array( 'caching' ) );
+		$this->post( 'page' );
+		$this->assertNotSame( array(), $this->content_queries( '/search/?s=' . self::WORD ), 'Logged in, the search runs.' );
+
+		wp_set_current_user( 0 );
+
+		foreach ( array( '/search/?s=revalidation', '/search/?s=' . self::WORD, '/search/page/2/?s=' . self::WORD, '/?s=' . self::WORD ) as $path ) {
+			$this->assertSame( array(), $this->content_queries( $path ), "{$path} runs no content query." );
+
+			$query = $GLOBALS['wp_query'];
+			$this->assertTrue( is_404(), $path );
+			$this->assertFalse( is_search(), $path );
+			$this->assertSame( array(), $query->posts, $path );
+			$this->assertSame( 0, $query->post_count, $path );
+			$this->assertSame( 0, (int) $query->found_posts, $path );
+			$this->assertSame( 0, (int) $query->max_num_pages, $path );
+			$this->assertSame( '404', $GLOBALS['wp']->query_vars['error'] ?? null, $path );
 		}
 	}
 
@@ -157,6 +183,74 @@ final class MainSearchQueryTest extends WP_UnitTestCase {
 			)
 		);
 		$this->assertContains( $private, wp_list_pluck( $own->posts, 'ID' ), 'A query of its own keeps its reader\'s private posts.' );
+	}
+
+	/**
+	 * A search feed is not the search page: it keeps core's own scope, which lists a post.
+	 */
+	public function test_a_search_feed_keeps_cores_scope(): void {
+		$post = $this->post( 'post' );
+
+		$this->go_to( home_url( '/?s=' . self::WORD . '&feed=rss2' ) );
+
+		$this->assertTrue( is_feed() );
+		$this->assertNotSame( SearchRoute::TYPES, $GLOBALS['wp_query']->get( 'post_type' ) );
+		$this->assertContains( $post, wp_list_pluck( $GLOBALS['wp_query']->posts, 'ID' ) );
+	}
+
+	/**
+	 * The admin's main search query, as the posts list runs it, keeps its own scope: a draft and a
+	 * private page are listed for an editor.
+	 */
+	public function test_an_admin_search_keeps_its_own_scope(): void {
+		$draft   = $this->post( 'page', 'draft' );
+		$private = $this->post( 'page', 'private' );
+		set_current_screen( 'edit-page' );
+
+		$query                   = new \WP_Query();
+		$GLOBALS['wp_the_query'] = $query; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The test stands in for `wp_edit_posts_query()`, whose query is the main one.
+
+		try {
+			$query->query(
+				array(
+					's'           => self::WORD,
+					'post_type'   => 'page',
+					'post_status' => array( 'draft', 'private' ),
+				)
+			);
+
+			$this->assertTrue( $query->is_main_query() && $query->is_search() );
+			$this->assertSame( 'page', $query->get( 'post_type' ) );
+			$this->assertEqualsCanonicalizing( array( $draft, $private ), wp_list_pluck( $query->posts, 'ID' ) );
+		} finally {
+			$GLOBALS['wp_the_query']   = $GLOBALS['wp_query']; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the main query.
+			$GLOBALS['current_screen'] = null; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Leaves the admin.
+		}
+	}
+
+	/**
+	 * The SQL that reads content, posts or Relevanssi's index, while `$path` is asked for.
+	 *
+	 * @param string $path A path under the home URL.
+	 * @return string[] The statements.
+	 */
+	private function content_queries( string $path ): array {
+		global $wpdb;
+
+		$seen    = array();
+		$pattern = '/\b(?:' . preg_quote( $wpdb->posts, '/' ) . '\b|' . preg_quote( $wpdb->prefix . 'relevanssi', '/' ) . ')/';
+		$record  = static function ( $sql ) use ( &$seen, $pattern ) {
+			if ( is_string( $sql ) && preg_match( $pattern, $sql ) ) {
+				$seen[] = $sql;
+			}
+			return $sql;
+		};
+
+		add_filter( 'query', $record );
+		$this->go_to( home_url( $path ) );
+		remove_filter( 'query', $record );
+
+		return $seen;
 	}
 
 	/**

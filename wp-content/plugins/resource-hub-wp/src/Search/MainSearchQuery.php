@@ -29,6 +29,12 @@ use WP_Query;
  *   any SQL runs, and Relevanssi is told not to search either (`relevanssi_search_ok`), so the
  *   `query-no-results` block renders and the `search-empty` block writes the sentence. Without this an
  *   empty `s` lists every post, since `WP_Query` searches for nothing and finds everything.
+ * - **No search for an anonymous visitor.** `WP::main()` runs the main query before `handle_404()`, and
+ *   the lockdown decides on `pre_handle_404` (ADR 0031), so without this every anonymous `/?s=…` and
+ *   `/search/?s=…` would run an uncached search, Relevanssi's or core's, only for the lockdown to empty it
+ *   into its 404. The main search query of a visitor who is not logged in is answered as one that is not
+ *   a search: no posts, no SQL, no count from the route. The lockdown's 404 is the same either way,
+ *   since it clears the posts and the count itself.
  * - **The count and the pages on a later page.** The front end's summary says the true total on every
  *   page and its pagination lists at most {@see SearchRoute::MAX_PAGE} pages. Core leaves `found_posts`
  *   at 0 on a page past the last, so on `the_posts` an empty later page gets its count from the route's
@@ -49,7 +55,10 @@ use WP_Query;
  */
 final class MainSearchQuery {
 	/**
-	 * Before Relevanssi's own `posts_pre_query` callback (priority 10), which does not read the posts handed to it.
+	 * Before Relevanssi's own `posts_pre_query` callback (`relevanssi_query`, priority 99), so an empty list
+	 * is in place first. Relevanssi's callback does not read the posts handed to it and would search anyway;
+	 * what stops it is `relevanssi_search_ok`, which {@see self::relevanssi_search_ok()} answers false for
+	 * the same requests.
 	 */
 	private const BEFORE_RELEVANSSI = 5;
 
@@ -116,7 +125,7 @@ final class MainSearchQuery {
 
 		$request = SearchRequest::from( $query );
 
-		if ( null === $request || ! $request->searches() ) {
+		if ( null === $request || ! $request->searches() || self::answers_without_a_search( $query ) ) {
 			return $posts;
 		}
 
@@ -176,13 +185,18 @@ final class MainSearchQuery {
 	}
 
 	/**
-	 * Whether `$query` is the main search query for a request that runs no search.
+	 * Whether `$query` is the main search query for a request that runs no search: one of a kind that is
+	 * not a search, or any of an anonymous visitor, whom the lockdown answers with its 404.
 	 *
 	 * @param WP_Query $query A query whose flags are set.
 	 */
 	private static function answers_without_a_search( WP_Query $query ): bool {
 		if ( ! self::applies( $query ) ) {
 			return false;
+		}
+
+		if ( ! is_user_logged_in() ) {
+			return true;
 		}
 
 		$request = SearchRequest::from( $query );

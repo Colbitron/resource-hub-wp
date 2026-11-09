@@ -15,7 +15,8 @@
  * visitor's accessibility tree shows. The theme's own lockup is checked
  * first in each, so a blank or foreign page cannot pass. The paths work
  * under any permalink structure, since `?page_id=` and `?p=` are 404s like
- * every pretty path, and the resource is asked for at its own link. The
+ * every pretty path, `?s=` is core's search under either, and the resource is
+ * asked for at its own link. The
  * pingback pattern allows other tokens in `rel`, such as
  * `rel="alternate pingback"`.
  */
@@ -120,6 +121,8 @@ test.describe( "The theme's 404 for anonymous visitors", () => {
 			`/?p=${ post.id }`,
 			resource.link,
 			`/e2e-no-such-path-${ stamp }/`,
+			// A search, whose main query runs no search for an anonymous visitor.
+			`/?s=${ stamp }`,
 		];
 	} );
 

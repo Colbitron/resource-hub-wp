@@ -34,7 +34,7 @@ use WP_Query;
  *   first sentence carries; and the three kinds the front end refuses to search for mark the field
  *   `aria-invalid="true"`. No `required`, `minlength` or `maxlength`, as on the front end.
  * - **The count line**, `<p class="rh-search__summary" id="rh-search-message">`, only when the request
- *   searches and finds something: "1 result for “q”" or "{n} results for “q}", with the front end's
+ *   searches and finds something: "1 result for “q”" or "{n} results for “q”", with the front end's
  *   sentence about the first 120 when the total passes what the route lists. The total is the main
  *   query's `found_posts`, which {@see \ResourceHub\Search\MainSearchQuery} keeps true on a later page.
  * - **Text** is escaped as the front end escapes React text, through {@see ResourceCardMarkup::text_html()};
