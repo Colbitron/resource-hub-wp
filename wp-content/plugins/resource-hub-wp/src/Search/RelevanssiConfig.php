@@ -174,14 +174,17 @@ final class RelevanssiConfig {
 
 	/**
 	 * Pinned options that change what a search shows, not what the index holds: no snippets in place of
-	 * a result's excerpt, and no highlighting. Read through `pre_option_*` as {@see PINNED} is, and left
-	 * out of the fingerprint, since a change to them needs no rebuild.
+	 * a result's excerpt, no highlighting, and no "(Search hits: …)" line, which Relevanssi appends to a
+	 * result's `post_excerpt` when `relevanssi_show_matches` is on and which a page's row would then show.
+	 * Read through `pre_option_*` as {@see PINNED} is, and left out of the fingerprint, since a change to
+	 * them needs no rebuild.
 	 *
 	 * @var array<string, string>
 	 */
 	public const PINNED_OUTPUT = array(
-		'relevanssi_excerpts'  => 'off',
-		'relevanssi_highlight' => 'none',
+		'relevanssi_excerpts'     => 'off',
+		'relevanssi_highlight'    => 'none',
+		'relevanssi_show_matches' => 'off',
 	);
 
 	/**
