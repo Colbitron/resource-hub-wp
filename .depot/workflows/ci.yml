@@ -6,7 +6,7 @@
 #
 # Edited after the migration, for Depot CI:
 # - this is the CI (ADR 0053); the source above is deleted, and git
-#   history keeps it, which is how a rollback restores it
+#   history keeps it, which is how a rollback to GitHub Actions restores it
 # - deploy and deploy-web also need the Depot CI variable
 #   DEPOT_DEPLOY_ENABLED == 'true' (unset until the cutover)
 # - the front end's one web job is split into parallel jobs, Lighthouse
@@ -24,7 +24,9 @@
 # front end against its mock CMS, as e2e/README.md in apps/web runs it. A
 # pull request runs the part of it that its changes reach, Lighthouse
 # aside, which runs only off pull requests; see "Scoping a pull request"
-# below.
+# below. A rollback dispatch, a manual dispatch on main with the
+# rollback_sha input, runs the plugin's gate on that commit and deploys it,
+# and nothing of the front end; see "Rolling back" below.
 #
 # The jobs, and what each waits for (needs):
 #
@@ -49,8 +51,11 @@
 #                            ruleset requires, CI / CI result. A new job
 #                            goes in its needs or in the exempt list of
 #                            ci-scope.test.mjs, whose test fails until then
-#   deploy                   needs gate (main and dispatch only)
-#   deploy-web               needs deploy and every web job (main only)
+#   deploy                   needs gate (a push to main or a dispatch on
+#                            main only; a rollback dispatch deploys the
+#                            commit rollback_sha names, not main's head)
+#   deploy-web               needs deploy and every web job (main only,
+#                            never a rollback dispatch)
 #
 # Every job but the two deploys needs scope, though the list names it only
 # for the gate and ci-result. Everything but scope, the two deploys, the
@@ -89,6 +94,43 @@
 # and every front-end job, and starts the front end's production deploy on
 # Vercel through a deploy hook (ADR 0051).
 #
+# Rolling back. A CMS rollback is a manual dispatch on main whose
+# rollback_sha input names an earlier commit of main (docs/runbooks/
+# deploy.md, "Rolling back"). Depot CI refuses a dispatch on a tag, and the
+# deploy secrets are scoped to main, so the run stays on main and reads
+# the secrets as any main run does. The gate and the deploy each check out
+# main's full history, check the input (.depot/scripts/rollback-target.mjs:
+# a full lower-case SHA, an ancestor of main's head, at or after
+# ROLLBACK_FLOOR, failing closed, through env only) and only then detach
+# onto that commit, so each builds, tests and deploys the target, never
+# main's head. The gate runs on the target rather than being skipped: a
+# merge whose main run went red was never deployed and is still an
+# ancestor of main, and so is every commit inside a merged pull request,
+# so "on main" alone does not mean "gated"; one run of the plugin's gate,
+# about three minutes, keeps the rule that nothing reaches the host
+# unchecked, and keeps a red gate on main's head from blocking a rollback.
+# The front-end jobs and deploy-web are skipped: they would test main's
+# head, which the rollback does not ship, and a deploy hook always builds
+# main's head, so the front end is rolled back on Vercel instead (ADR
+# 0051). ci-result reads those skips as the rollback's (ci-result.mjs).
+# The caches are not saved from a rollback (SAVE_CACHES).
+#
+# ROLLBACK_FLOOR, in env, is the commit that gave the deploy job its
+# current shape, cb22fd9a (#137, which added the theme deploy and its
+# allowlist test): the running job is main's, but it reads the checkout for
+# the files it deploys and the scripts it runs. Just below the floor the
+# one thing missing is .depot/scripts/theme-allowlist.test.mjs, whose step
+# fails on the missing file; older commits also lack the theme's
+# theme.json and site-plugins/composer.lock. Each of those steps comes
+# before "Configure SSH", so a too-old target fails before anything
+# reaches the host; the floor refuses it first, by name. The deploy runs
+# the target's own allowlist test against the target's own ci.yml, not
+# the running one, so a later change to the allowlist here is caught only
+# by moving the floor. Bump it whenever the deploy job changes in a way an
+# older checkout cannot satisfy: a file or script it starts reading, a
+# pnpm script it starts running, an allowlist entry it drops. A commit
+# older than the floor is rolled back to with a revert pull request.
+#
 # Lighthouse against the Vercel preview of each pull request that reaches
 # the front end is a separate, non-blocking workflow,
 # .depot/workflows/preview-lighthouse.yml, which reads the same scope rules
@@ -123,8 +165,10 @@
 # but pull_request, and are never scoped.
 #
 # On any event but pull_request it is true without reading the outputs,
-# so a push to main, a manual dispatch and a tag dispatch run every job,
-# as before, whatever the classifier says. The condition calls no status
+# so a push to main and a manual dispatch run every job, as before,
+# whatever the classifier says; a rollback dispatch skips the front-end
+# jobs by their own first clause, inputs.rollback_sha == '', never through
+# scope ("Rolling back", above). The condition calls no status
 # function, so it also takes the implicit success(): a job runs only once
 # scope has succeeded, on every event. That is why scope runs on every
 # event rather than being skipped off pull requests: a job whose need was
@@ -160,13 +204,39 @@ on:
   pull_request:
   push:
     branches: [ main ]
+  # Dispatched on main only; the deploy secrets are scoped to it. With no
+  # input, a dispatch runs and deploys main's head, as a push does. With
+  # rollback_sha, it is a CMS rollback ("Rolling back", above): the gate
+  # and the deploy check that commit out instead, and the front end is left
+  # alone. The input is read into env as ROLLBACK_SHA and checked by
+  # .depot/scripts/rollback-target.mjs before anything reads the target.
   workflow_dispatch:
+    inputs:
+      rollback_sha:
+        description: >-
+          CMS rollback: the full 40-character SHA of an earlier commit of
+          main to deploy in place of main's head. Leave empty to deploy
+          main's head.
+        required: false
+        default: ''
+        type: string
 
 # A newer push to a pull request supersedes the older run. On main and for
 # manual dispatches a running run is never cancelled, because that would also
 # cancel its deploy job mid-sync, which the deploy job's own concurrency group
 # cannot prevent. GitHub keeps one waiting run per group and replaces it with
-# a newer one, which is fine: the newer commit includes the older.
+# a newer one, which is fine between pushes: the newer commit includes the
+# older. A rollback dispatch is in main's group too, so it waits for a run
+# on main that is under way, and the replacement rule cuts both ways
+# there: a push to main that arrives while the rollback waits replaces
+# it, and a rollback dispatched while a push's run waits replaces that
+# run, so the merged commit is neither gated nor deployed until the next
+# push. Nothing re-runs a replaced run. The runbook ("Rolling back") says
+# to watch the rollback to its end, dispatch again if it was replaced,
+# and, after it, dispatch main again if a push's run was waiting. Whether
+# Depot replaces waiting runs as GitHub documents is unconfirmed. One
+# group keeps main's runs in order, so a rollback never races the deploy
+# of the commit it rolls back from.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -192,8 +262,8 @@ permissions:
 # after the step that fills the directory, so a later failure does not lose
 # it. A manual dispatch on main saves too: it runs in main's scope, which
 # pull requests read, so it can re-fill an evicted entry without waiting
-# for a merge. A dispatch on a tag, which is how a rollback deploys, does
-# not, since only that tag could read what it saved.
+# for a merge. A rollback dispatch does not: it builds an earlier commit,
+# whose keys main's next runs would not read.
 #
 # On Depot CI the cache is Depot Cache, which does not isolate entries by
 # branch (per Depot's docs for its GitHub Actions runners; assumed for Depot
@@ -202,7 +272,14 @@ permissions:
 # rule still keeps one store per lockfile, saved from a whole-workspace
 # install (the gate's; see .depot/actions/setup-js).
 env:
-  SAVE_CACHES: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+  SAVE_CACHES: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && inputs.rollback_sha == '' }}
+  # The rollback_sha input, for the steps that read it (a job's `if` reads
+  # inputs directly, since env is not in reach there), and the earliest
+  # commit the deploy job can deploy: both go into
+  # .depot/scripts/rollback-target.mjs through env. "Rolling back", above,
+  # says what the floor is and when to move it.
+  ROLLBACK_SHA: ${{ inputs.rollback_sha }}
+  ROLLBACK_FLOOR: cb22fd9a1b41fbcb23ad08ca10305ba4ee941b17
 
 jobs:
   scope:
@@ -258,6 +335,12 @@ jobs:
         if: github.event_name == 'pull_request'
         run: node --test .depot/scripts/theme-allowlist.test.mjs
 
+      # And the rollback's check of its target (.depot/scripts/
+      # rollback-target.mjs), which only a rollback dispatch exercises.
+      - name: Test the rollback's target check
+        if: github.event_name == 'pull_request'
+        run: node --test .depot/scripts/rollback-target.test.mjs
+
       # The runner's own Node and git; nothing is installed.
       - name: Test the scope rules and CI result's verdict
         if: github.event_name == 'pull_request'
@@ -278,8 +361,50 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Check out
+      # On a rollback dispatch, main's full history, so the check below can
+      # decide ancestry; otherwise the one commit, as before. Then the
+      # check, main's copy of the script since the checkout is still main,
+      # and only when it passed the detach onto the target it wrote to its
+      # output, so every step after this one tests that commit ("Rolling
+      # back", above the triggers). The same four steps as the deploy's.
+      - name: Check out main's history, for a rollback
+        if: env.ROLLBACK_SHA != ''
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check out
+        if: env.ROLLBACK_SHA == ''
+        uses: actions/checkout@v7
+
+      - name: Check the rollback target
+        id: rollback
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          MAIN_SHA: ${{ github.sha }}
+        run: node .depot/scripts/rollback-target.mjs
+
+      - name: Check out the rollback target
+        if: steps.rollback.outputs.sha != ''
+        env:
+          TARGET: ${{ steps.rollback.outputs.sha }}
+        run: |
+          git checkout --detach "$TARGET"
+          git log -1 --format='Testing %H%n  %s (%cs)'
+
+      # Belt and braces, read from the input itself rather than the step
+      # output: if the detach above was skipped or failed to take, HEAD is
+      # still main's head, and this stops the job before anything builds,
+      # instead of testing main under a rollback's name.
+      - name: Check the checkout is the rollback target
+        if: env.ROLLBACK_SHA != ''
+        run: |
+          head=$(git rev-parse HEAD)
+          if [ "$head" != "$ROLLBACK_SHA" ]; then
+            echo "::error::The checkout is at $head, not the rollback target; the detach did not take. Nothing was tested or deployed."
+            exit 1
+          fi
 
       # The whole workspace: wp-env is a root dependency and the plugin's
       # tooling lives in its own package. The only job that saves the pnpm
@@ -450,7 +575,7 @@ jobs:
   web-checks:
     name: "Front end: lint, typecheck, unit tests, and build"
     needs: [ scope ]
-    if: github.event_name != 'pull_request' || needs.scope.outputs.web == 'true'
+    if: inputs.rollback_sha == '' && (github.event_name != 'pull_request' || needs.scope.outputs.web == 'true')
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 15
 
@@ -498,7 +623,7 @@ jobs:
   web-e2e:
     name: "Front end: end-to-end tests"
     needs: [ scope ]
-    if: github.event_name != 'pull_request' || needs.scope.outputs.web == 'true'
+    if: inputs.rollback_sha == '' && (github.event_name != 'pull_request' || needs.scope.outputs.web == 'true')
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 20
 
@@ -544,7 +669,7 @@ jobs:
   web-screenshots:
     name: "Front end: screenshots and brand images"
     needs: [ scope ]
-    if: github.event_name != 'pull_request' || needs.scope.outputs.web == 'true'
+    if: inputs.rollback_sha == '' && (github.event_name != 'pull_request' || needs.scope.outputs.web == 'true')
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 20
 
@@ -673,7 +798,7 @@ jobs:
     # passes the job, and with it deploy-web, only when the failure is a
     # missed budget on record, and fails it on any other Lighthouse
     # failure. The test names the events, not "always", so a dispatch on
-    # another branch or a tag still fails on a miss, and a trigger added
+    # another branch still fails on a miss, and a trigger added
     # later blocks by default. Leaving the budgets out of the gate is safe
     # for WCAG A and AA accessibility, which stays gated by the axe scan
     # inside the end-to-end suite on every WCAG 2.0-2.2 A and AA rule in
@@ -684,9 +809,11 @@ jobs:
     # same on every event and in every shard.
     name: "Front end: Lighthouse (${{ matrix.shard }}/${{ matrix.of }})"
     # It reads none of scope's outputs but still needs it, so that on main,
-    # as for every other job, a failed scope runs nothing.
+    # as for every other job, a failed scope runs nothing. Never on a
+    # rollback dispatch, which ships nothing of the front end ("Rolling
+    # back", above the triggers).
     needs: [ scope ]
-    if: github.event_name != 'pull_request'
+    if: inputs.rollback_sha == '' && github.event_name != 'pull_request'
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 15
     strategy:
@@ -823,7 +950,7 @@ jobs:
     # failed shard too, so the table shows what was measured, and is skipped
     # with the shards on every pull request.
     needs: [ scope, web-lighthouse ]
-    if: ${{ !cancelled() && needs.scope.result == 'success' && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && inputs.rollback_sha == '' && needs.scope.result == 'success' && github.event_name != 'pull_request' }}
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 10
 
@@ -875,7 +1002,10 @@ jobs:
     # skipped, and a job whose every step was skipped is reported to conclude
     # success. Neither is tested here. Lighthouse and its medians never run on
     # a pull request and the deploys only after a merge, so none of them is
-    # read. A new job goes either in needs (and in ci-result.mjs's JOBS) or in
+    # read. On a rollback dispatch the front-end jobs are skipped by design
+    # and the gate runs on the target, so the script also reads the input
+    # and accepts exactly those skips there ("Rolling back", above the
+    # triggers). A new job goes either in needs (and in ci-result.mjs's JOBS) or in
     # the exempt list of ci-scope.test.mjs's needs test, which fails the scope
     # job, and so this one, until it does.
     name: CI result
@@ -899,6 +1029,7 @@ jobs:
         if: ${{ always() }}
         env:
           EVENT_NAME: ${{ github.event_name }}
+          ROLLBACK_SHA: ${{ inputs.rollback_sha }}
           SCOPE: ${{ needs.scope.result }}
           SCOPE_PLUGIN: ${{ needs.scope.outputs.plugin }}
           SCOPE_WEB: ${{ needs.scope.outputs.web }}
@@ -916,10 +1047,12 @@ jobs:
     # both this job and every front-end job.
     needs: [ gate ]
     # Pushes only trigger on main already; the ref check keeps that true if the
-    # trigger list ever widens. A manual dispatch deploys only from main or a
-    # tag: a tag on an earlier commit is how a rollback is redeployed. Pushing
-    # a tag does not start CI (the push trigger is main only), so a tag deploy
-    # is always a dispatch.
+    # trigger list ever widens. A manual dispatch deploys only from main,
+    # where the deploy secrets are scoped: with no input it deploys main's
+    # head, and with rollback_sha it deploys that earlier commit of main,
+    # checked out below once the check accepts it ("Rolling back", above
+    # the triggers). No other ref deploys: Depot refuses a dispatch on a
+    # tag, and a tag or branch run would read the secrets as empty.
     #
     # Depot CI cutover guard: the job runs only once the Depot CI variable
     # DEPOT_DEPLOY_ENABLED is 'true'. While it is unset, nothing here can
@@ -934,14 +1067,20 @@ jobs:
     # guard.
     if: >-
       vars.DEPOT_DEPLOY_ENABLED == 'true'
-      && ((github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || (github.event_name == 'workflow_dispatch'
-      && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))))
+      && github.ref == 'refs/heads/main'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 10
     # One deploy at a time across every ref. A running deploy is never
     # cancelled; a waiting one is replaced by a newer one, which is fine
-    # because the newer commit includes the older.
+    # between pushes, because the newer commit includes the older. It does
+    # not hold for a rollback: a rollback's deploy that replaces a waiting
+    # push's deploy leaves that merged commit undeployed, and a push's
+    # deploy that replaces a waiting rollback's undoes nothing but leaves
+    # the rollback undone; neither is re-run by anything. The runbook
+    # ("Rolling back") says to check, after a rollback, whether a push was
+    # waiting, and to dispatch main again if one was. Whether Depot
+    # replaces waiting runs as GitHub does is unconfirmed.
     concurrency:
       group: deploy-production
       cancel-in-progress: false
@@ -1030,17 +1169,64 @@ jobs:
           echo "THEME_DIR=$wp_root/wp-content/themes/resource-hub" >> "$GITHUB_ENV"
 
       # The deploy never talks to GitHub after checkout, so the token is not
-      # left in .git/config.
-      - name: Check out
+      # left in .git/config. On a rollback dispatch the checkout is main's
+      # full history, so the check that follows can decide ancestry; the
+      # check runs main's copy of the script, since nothing of the target
+      # has been read yet; and only when it passed does the next step detach
+      # onto the target it wrote to its output, so every step after this
+      # one builds and deploys that commit ("Rolling back", above the
+      # triggers). The same four steps as the gate's. A target older than
+      # ROLLBACK_FLOOR is refused here by name; one the floor admits still
+      # has to carry what the later steps read, and each of those runs
+      # before "Configure SSH", so a missing file fails the job before
+      # anything reaches the host.
+      - name: Check out main's history, for a rollback
+        if: env.ROLLBACK_SHA != ''
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Check out
+        if: env.ROLLBACK_SHA == ''
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check the rollback target
+        id: rollback
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          MAIN_SHA: ${{ github.sha }}
+        run: node .depot/scripts/rollback-target.mjs
+
+      - name: Check out the rollback target
+        if: steps.rollback.outputs.sha != ''
+        env:
+          TARGET: ${{ steps.rollback.outputs.sha }}
+        run: |
+          git checkout --detach "$TARGET"
+          git log -1 --format='Deploying %H%n  %s (%cs)'
+
+      # Belt and braces, read from the input itself rather than the step
+      # output: if the detach above was skipped or failed to take, HEAD is
+      # still main's head, and this stops the job before anything builds,
+      # instead of deploying main under a rollback's name.
+      - name: Check the checkout is the rollback target
+        if: env.ROLLBACK_SHA != ''
+        run: |
+          head=$(git rev-parse HEAD)
+          if [ "$head" != "$ROLLBACK_SHA" ]; then
+            echo "::error::The checkout is at $head, not the rollback target; the detach did not take. Nothing was deployed."
+            exit 1
+          fi
 
       # The whole workspace, as the gate installs it, since the block build
       # needs the plugin's tooling. The same store, key and rule as the
       # gate's (see .depot/actions/setup-js and the comment above `jobs`): on
       # main this job runs after the gate, which has usually saved the key
-      # already, so it hits and saves nothing; on a tag nothing is saved.
+      # already, so it hits and saves nothing; a rollback saves nothing.
       - name: Set up Node, pnpm and the JavaScript dependencies
         uses: ./.depot/actions/setup-js
         with:
@@ -1598,11 +1784,14 @@ jobs:
     # issue #76; any other Lighthouse failure does (see the web-lighthouse
     # job).
     needs: [ deploy, web-checks, web-e2e, web-screenshots, web-lighthouse, web-lighthouse-medians ]
-    # Main only, on a push or a manual dispatch. Unlike the CMS deploy, a tag
-    # dispatch does not deploy the front end: a deploy hook always builds the
-    # head of main, never the tagged commit, so firing it from a rollback run
-    # would ship main, not the rollback. The front end is rolled back on
-    # Vercel instead, by promoting an earlier deployment (ADR 0051).
+    # Main only, on a push or a manual dispatch, and never on a rollback
+    # dispatch. Unlike the CMS deploy, a rollback does not deploy the front
+    # end: a deploy hook always builds the head of main, never the commit
+    # rollback_sha names, so firing it from a rollback run would ship main,
+    # not the rollback. The front end is rolled back on Vercel instead, by
+    # promoting an earlier deployment (ADR 0051). The front-end jobs it
+    # needs are skipped on a rollback too, which would skip this job on its
+    # own; the clause here keeps it off even if those conditions change.
     #
     # The same Depot CI cutover guard as deploy's: never runs until the Depot
     # CI variable DEPOT_DEPLOY_ENABLED is 'true'. It needs deploy as well, so
@@ -1612,6 +1801,7 @@ jobs:
       vars.DEPOT_DEPLOY_ENABLED == 'true'
       && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.ref == 'refs/heads/main'
+      && inputs.rollback_sha == ''
     runs-on: depot-ubuntu-latest # was: ubuntu-latest. Mapped standard GitHub runner to Depot equivalent.
     timeout-minutes: 5
     # Its own group, so a front-end deploy never waits on, or holds up, the

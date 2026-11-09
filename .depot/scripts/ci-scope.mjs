@@ -1,8 +1,10 @@
 // Which of CI's jobs a change needs (.depot/workflows/ci.yml, the `scope`
 // job). Only a pull request is ever scoped: on every other event (a push to
-// main, a manual dispatch on main or a tag, Depot's own `api` runs) the
-// job runs but its outputs are not read, and every job runs, so nothing
-// here can skip a job that gates main or a deploy. Lighthouse is not a side:
+// main, a manual dispatch on main, Depot's own `api` runs) the job runs
+// but its outputs are not read, and every job runs, so nothing here can
+// skip a job that gates main or a deploy (a rollback dispatch skips the
+// front-end jobs by its own clause in their conditions, not through
+// this; see ci.yml, "Rolling back"). Lighthouse is not a side:
 // its shards never run on a pull request, whatever paths changed, and
 // always run everywhere else (ADR 0053). Preview Lighthouse
 // (.depot/workflows/preview-lighthouse.yml) reads the same rules for a
