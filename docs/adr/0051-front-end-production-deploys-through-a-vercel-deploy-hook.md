@@ -1,7 +1,9 @@
 ---
 status: accepted
 date: 2026-11-05
-amended: 2026-11-07
+amended:
+  - 2026-11-07
+  - 2026-11-08
 ---
 
 # The front end's production deploys come from CI through a Vercel deploy hook
@@ -34,3 +36,9 @@ The deploy order puts the CMS first and the front end second: the front end goes
 **What changed.** `deploy-web` runs on Depot CI, because CI moved there (ADR 0053). The single `web` job it needed was split into parallel front-end jobs, so it now needs `deploy` plus every one of them: the checks (lint, typecheck, unit tests, the production build and its fixture-route check), the end-to-end suite, the screenshots and brand images, the Lighthouse shards and the job that merges their medians. `VERCEL_DEPLOY_HOOK_URL` is a Depot CI secret, no longer a GitHub repository secret, because the job that reads it moved with CI.
 
 **What did not.** The hook, the head check before it fires and the rest of this record are unchanged: the front end still deploys only after the CMS, only from `main`, and only when every front-end job has passed on the commit the run tested.
+
+### 2026-11-08: no tag dispatch; a CMS rollback is a dispatch on `main`
+
+**What changed.** Tag dispatch no longer exists: Depot refuses a dispatch on a tag, and the deploy job no longer admits tags (#145, closing #130). A CMS rollback is now a `workflow_dispatch` on `main` with a `rollback_sha` input naming the commit to deploy. Run `dxzmqskb8s` proved that path.
+
+**What did not.** `deploy-web` does not run on a rollback dispatch either, since the hook always builds `main`'s head, so the front end is still rolled back on Vercel by promoting an earlier deployment, as this record says.
