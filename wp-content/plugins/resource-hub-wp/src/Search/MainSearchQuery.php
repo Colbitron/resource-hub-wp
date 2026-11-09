@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace ResourceHub\Search;
 
 use ResourceHub\Rest\SearchRoute;
+use WP_Block;
 use WP_Query;
 
 /**
@@ -38,7 +39,10 @@ use WP_Query;
  *   included. Core answers a paged query that found nothing with a 404 (`WP::handle_404()`), so the
  *   `pre_handle_404` filter keeps the main search query from it, after the lockdown has had its say
  *   (ADR 0031: an anonymous visitor's request is already the lockdown's 404 by then), and the
- *   `search-empty` block says there are no results on that page instead.
+ *   `search-empty` block says there are no results on that page instead. The front end draws no
+ *   pagination on such a page, whose number is in no list of pages, so the inheriting
+ *   `core/query-pagination` block renders nothing there either (`render_block_core/query-pagination`);
+ *   core alone would draw a Previous link and the numbers with no current page.
  *
  * Nothing here touches a query that is not the main one, the admin's, or a search inside a `core/query`
  * of its own, and the search route's query is untouched: it is never the main query.
@@ -58,6 +62,7 @@ final class MainSearchQuery {
 		add_filter( 'relevanssi_search_ok', array( $this, 'relevanssi_search_ok' ), 10, 2 );
 		add_filter( 'the_posts', array( $this, 'count_and_cap' ), 10, 2 );
 		add_filter( 'pre_handle_404', array( $this, 'never_a_404' ), 1, 2 );
+		add_filter( 'render_block_core/query-pagination', array( $this, 'no_pagination_past_the_last_page' ), 10, 3 );
 	}
 
 	/**
@@ -138,6 +143,27 @@ final class MainSearchQuery {
 		}
 
 		return true;
+	}
+
+	/**
+	 * No pagination on a search page past the last, as the front end draws none there. Hooked to
+	 * `render_block_core/query-pagination`, for a block that inherits the main query.
+	 *
+	 * @param string|mixed         $content  The block's rendered markup.
+	 * @param array<string, mixed> $block    The parsed block.
+	 * @param mixed                $instance The block instance, whose context says whether its query inherits the main one.
+	 * @return string|mixed Nothing past the last page; `$content` otherwise.
+	 */
+	public function no_pagination_past_the_last_page( $content, array $block, $instance = null ) {
+		$query = $GLOBALS['wp_query'] ?? null;
+
+		if ( ! $query instanceof WP_Query || ! self::applies( $query ) || ! $instance instanceof WP_Block || empty( $instance->context['query']['inherit'] ) ) {
+			return $content;
+		}
+
+		$request = SearchRequest::from( $query );
+
+		return null !== $request && $request->page > (int) $query->max_num_pages ? '' : $content;
 	}
 
 	/**

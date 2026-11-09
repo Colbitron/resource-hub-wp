@@ -27,6 +27,11 @@ final class MainSearchQueryTest extends WP_UnitTestCase {
 	private const WORD = 'quokka';
 
 	/**
+	 * The theme's pagination block over the main query, as `search.html` renders it.
+	 */
+	private const PAGINATION = '<!-- wp:query {"queryId":0,"query":{"inherit":true}} --><div class="wp-block-query"><!-- wp:query-pagination {"className":"rh-pagination"} --><!-- wp:query-pagination-previous /--><!-- wp:query-pagination-numbers /--><!-- wp:query-pagination-next /--><!-- /wp:query-pagination --></div><!-- /wp:query -->';
+
+	/**
 	 * Pretty permalinks with the rules, and an editor, who may read private posts, so the scope is what keeps them out.
 	 */
 	public function set_up(): void {
@@ -89,7 +94,8 @@ final class MainSearchQueryTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * A page past the last, within the cap, is a 200 with no posts and the true count, as the route answers it.
+	 * A page past the last, within the cap, is a 200 with no posts and the true count, as the route answers
+	 * it, and the theme's pagination block renders nothing there, as the front end's does not.
 	 */
 	public function test_an_empty_later_page_keeps_the_count_and_the_pages(): void {
 		$this->resource( self::WORD . ' guide', 'ebook', array( 'caching' ) );
@@ -101,6 +107,17 @@ final class MainSearchQueryTest extends WP_UnitTestCase {
 		$this->assertSame( array(), $GLOBALS['wp_query']->posts );
 		$this->assertSame( 2, (int) $GLOBALS['wp_query']->found_posts );
 		$this->assertSame( 1, (int) $GLOBALS['wp_query']->max_num_pages );
+		$this->assertStringNotContainsString( 'wp-block-query-pagination', do_blocks( self::PAGINATION ), 'No pagination past the last page.' );
+
+		// On a page that is listed, the block renders; a block over a query of its own is untouched.
+		for ( $i = 1; $i <= SearchRoute::PER_PAGE; $i++ ) {
+			$this->post( 'page', 'publish', '', (string) $i );
+		}
+		$this->go_to( home_url( '/search/page/2/?s=' . self::WORD ) );
+		$this->assertStringContainsString( 'page-numbers', do_blocks( self::PAGINATION ) );
+		$this->go_to( home_url( '/search/page/3/?s=' . self::WORD ) );
+		$this->assertStringNotContainsString( 'wp-block-query-pagination', do_blocks( self::PAGINATION ) );
+		$this->assertStringContainsString( 'page-numbers', do_blocks( str_replace( '"inherit":true', '"inherit":false,"postType":"page","perPage":2', self::PAGINATION ) ) );
 	}
 
 	/**
@@ -148,13 +165,14 @@ final class MainSearchQueryTest extends WP_UnitTestCase {
 	 * @param string $type     Post type.
 	 * @param string $status   Post status.
 	 * @param string $password The post password, or '' for none.
+	 * @param string $suffix   Something to make the title its own.
 	 */
-	private function post( string $type, string $status = 'publish', string $password = '' ): int {
+	private function post( string $type, string $status = 'publish', string $password = '', string $suffix = '' ): int {
 		return self::factory()->post->create(
 			array(
 				'post_type'     => $type,
 				'post_status'   => $status,
-				'post_title'    => self::WORD . ' ' . $type . ' ' . $status,
+				'post_title'    => self::WORD . ' ' . $type . ' ' . $status . $suffix,
 				'post_content'  => 'Body text.',
 				'post_password' => $password,
 			)

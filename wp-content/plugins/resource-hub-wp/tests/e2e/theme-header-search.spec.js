@@ -28,8 +28,11 @@ const WCAG_TAGS = [ 'wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa' ];
 const NO_SESSION = { cookies: [], origins: [] };
 
 const banner = ( page ) => page.getByRole( 'banner' );
+/** The header's control once the script has made it a button: the first button named Search, before the bar's own submit. */
 const toggle = ( page ) =>
-	banner( page ).getByRole( 'button', { name: 'Search', exact: true } );
+	banner( page )
+		.getByRole( 'button', { name: 'Search', exact: true } )
+		.first();
 const link = ( page ) =>
 	banner( page ).getByRole( 'link', { name: 'Search', exact: true } );
 const bar = ( page ) => page.locator( `#${ PANEL_ID }` );
@@ -86,12 +89,18 @@ test.describe( "The theme's header search control", () => {
 		page,
 	} ) => {
 		const body = await ( await page.request.get( first.link ) ).text();
+		// The header's own markup, before the script's text in the footer names the same things.
+		const header = body.slice(
+			body.indexOf( '<header' ),
+			body.indexOf( '</header>' )
+		);
 
-		expect( body ).toContain(
+		expect( header ).toContain(
 			'<div class="rh-header-search"><a class="rh-header-search__toggle" href="/search/" aria-label="Search">'
 		);
-		expect( body ).not.toContain( 'aria-expanded' );
-		expect( body ).not.toContain( PANEL_ID );
+		expect( header ).not.toContain( 'aria-expanded' );
+		expect( header ).not.toContain( '<button' );
+		expect( header ).not.toContain( PANEL_ID );
 
 		const script = body.match(
 			new RegExp( `<script[^>]*id="${ SCRIPT_ID }"[^>]*>` )

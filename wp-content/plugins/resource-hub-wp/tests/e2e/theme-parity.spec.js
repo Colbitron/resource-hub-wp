@@ -1841,7 +1841,7 @@ test.describe( "A CMS search page computes the front end's styles", () => {
 				await requestUtils.createPage( {
 					title:
 						i === 1
-							? `Caching quokka page ${ stamp }`
+							? `Revalidation quokka page ${ stamp }`
 							: `Quokka page ${ i } ${ stamp }`,
 					content:
 						'<!-- wp:paragraph --><p>A page the search finds.</p><!-- /wp:paragraph -->',
@@ -1892,8 +1892,10 @@ test.describe( "A CMS search page computes the front end's styles", () => {
 		} ) => {
 			await page.emulateMedia( { colorScheme } );
 			await page.setViewportSize( { width: 1280, height: 900 } );
-			// Two collection resources and one page hold "caching" in their titles.
-			await page.goto( '/?s=caching' );
+			// Two collection resources and one page hold "revalidation" in their
+			// titles, and nothing else does: "caching" is a topic's name too, which
+			// Relevanssi indexes, so it would match every resource in the topic.
+			await page.goto( '/?s=revalidation' );
 
 			// The head: listing.css's header row and the one h1.
 			await expect( page.locator( 'h1' ) ).toHaveCount( 1 );
@@ -1937,7 +1939,7 @@ test.describe( "A CMS search page computes the front end's styles", () => {
 				'font-size': 'var(--rh-text-base)',
 			} );
 			await expect( page.locator( '.rh-search__input' ) ).toHaveValue(
-				'caching'
+				'revalidation'
 			);
 			await expect( page.locator( '.rh-search__input' ) ).toHaveAttribute(
 				'aria-describedby',
@@ -1956,7 +1958,7 @@ test.describe( "A CMS search page computes the front end's styles", () => {
 
 			// The count: muted, tabular, under the form.
 			await expect( page.locator( '#rh-search-message' ) ).toHaveText(
-				'3 results for “caching”'
+				'3 results for “revalidation”'
 			);
 			await holds( page, '.rh-search__summary', {
 				color: 'var(--rh-color-text-muted)',
@@ -1986,12 +1988,18 @@ test.describe( "A CMS search page computes the front end's styles", () => {
 			await expect( pageRow.locator( '.rh-card__topics' ) ).toHaveCount(
 				0
 			);
-			await holds( page, '.rh-card__kind', {
-				'text-transform': 'uppercase',
-				'font-weight': '600',
-				'letter-spacing': 'var(--rh-tracking-label)',
-				color: 'var(--rh-color-text)',
-			} );
+			// The label's tracking is in em, so it resolves in the meta line's size.
+			await holds(
+				page,
+				'.rh-card__kind',
+				{
+					'text-transform': 'uppercase',
+					'font-weight': '600',
+					'letter-spacing': 'var(--rh-tracking-label)',
+					color: 'var(--rh-color-text)',
+				},
+				'.rh-card__meta:has(.rh-card__kind)'
+			);
 			await expect(
 				page.locator( 'article.rh-card .rh-card__type' )
 			).toHaveCount( 2 );
@@ -2123,7 +2131,7 @@ test.describe( "A CMS search page computes the front end's styles", () => {
 		page,
 	} ) => {
 		await page.setViewportSize( { width: 360, height: 800 } );
-		await page.goto( '/?s=caching' );
+		await page.goto( '/?s=revalidation' );
 		expect(
 			await page.evaluate(
 				() =>
@@ -2131,10 +2139,18 @@ test.describe( "A CMS search page computes the front end's styles", () => {
 					document.documentElement.clientWidth
 			)
 		).toBe( true );
+		// The form sits in main's gutter, the shell's one column.
 		const main = await box( page, 'main.rh-main' );
 		const form = await box( page, 'form.rh-search' );
-		expect( form.x ).toBeCloseTo( main.x, 0 );
-		expect( form.width ).toBeLessThanOrEqual( 360 - 2 * 16 + 0.5 );
+		const gutter = parseFloat(
+			(
+				await resolve( page, 'main.rh-main', {
+					'padding-left': 'var(--rh-space-4)',
+				} )
+			)[ 'padding-left' ]
+		);
+		expect( form.x ).toBeCloseTo( main.x + gutter, 0 );
+		expect( form.width ).toBeLessThanOrEqual( 360 - 2 * gutter + 0.5 );
 		const input = await box( page, '.rh-search__input' );
 		expect( input.width ).toBeGreaterThanOrEqual( 12 * 16 );
 		await expect( page.locator( 'ul.rh-card-grid > li' ) ).toHaveCount( 3 );
@@ -2144,7 +2160,7 @@ test.describe( "A CMS search page computes the front end's styles", () => {
 		page,
 	} ) => {
 		for ( const [ url, status, search, control ] of [
-			[ '/?s=caching', 200, true, true ],
+			[ '/?s=revalidation', 200, true, true ],
 			[ '/?s=', 200, true, true ],
 			[ '/', 200, false, true ],
 			[ '/?post_type=resource', 200, false, true ],
