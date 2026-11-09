@@ -14,10 +14,12 @@ use ResourceHub\Collections\Routes;
 use ResourceHub\ContentModel\Meta;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\Taxonomies;
+use ResourceHub\Search\SearchPath;
 use WP_Term;
 
 /**
- * Pretty permalinks with the plugin's rewrite rules, terms by slug, published resources and the featured flag.
+ * Pretty permalinks with the plugin's rewrite rules (the collections' and the search page's), terms by slug,
+ * published resources and the featured flag.
  *
  * Setting the permalink structure resets core's rewrite object, which drops the post type's
  * permastructure, the taxonomies' rewrite tags and the rules the plugin added at `init`, so
@@ -27,13 +29,14 @@ use WP_Term;
  */
 trait MakesCollections {
 	/**
-	 * Pretty permalinks with a trailing slash, the post type, the taxonomies and the plugin's collection rules.
+	 * Pretty permalinks with a trailing slash, the post type, the taxonomies and the plugin's collection and search rules.
 	 */
 	private function use_pretty_permalinks(): void {
 		$this->set_permalink_structure( '/%postname%/' );
 		( new PostType() )->register();
 		( new Taxonomies() )->register();
 		( new Routes() )->add_rules();
+		( new SearchPath() )->add_rules();
 		delete_option( 'rewrite_rules' );
 		Lead::forget();
 	}

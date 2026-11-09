@@ -1,0 +1,10 @@
+{
+	"input": "caching",
+	"page": 1,
+	"total": 3,
+	"items": [
+		{ "type": "resource", "title": "A field guide to object caching" },
+		{ "type": "page", "title": "Caching on the CMS" },
+		{ "type": "resource", "title": "Caching and revalidation: the CDN view" }
+	]
+}

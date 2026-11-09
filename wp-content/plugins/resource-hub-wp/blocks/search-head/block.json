@@ -1,0 +1,21 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "resource-hub/search-head",
+	"version": "0.1.0",
+	"title": "Search Head",
+	"category": "theme",
+	"icon": "search",
+	"description": "The search page's heading, its form showing the reader's words, and the count of results, as the front end's search page shows them. Rendered on the server from the page's main query; empty anywhere but a search.",
+	"keywords": [ "search", "form", "results" ],
+	"textdomain": "resource-hub",
+	"supports": {
+		"html": false,
+		"className": false,
+		"customClassName": false,
+		"reusable": false,
+		"multiple": false
+	},
+	"editorScript": "file:./index.js",
+	"style": [ "resource-hub-tokens" ]
+}

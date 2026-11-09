@@ -1,0 +1,9 @@
+{
+	"input": "caching",
+	"page": 3,
+	"total": 2,
+	"items": [
+		{ "type": "resource", "title": "A field guide to object caching" },
+		{ "type": "page", "title": "Caching on the CMS" }
+	]
+}

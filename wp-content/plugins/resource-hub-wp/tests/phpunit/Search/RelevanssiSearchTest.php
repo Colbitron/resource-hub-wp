@@ -258,6 +258,31 @@ final class RelevanssiSearchTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * A result's excerpt is the stored one, with no "(Search hits: …)" line, even with the setting
+	 * stored on: Relevanssi appends that line to `post_excerpt`, which the search page's page row shows.
+	 */
+	public function test_a_results_excerpt_has_no_search_hits_line(): void {
+		$id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_title'   => 'Zephyrine notes',
+				'post_excerpt' => 'The stored excerpt.',
+				'post_content' => 'Body text.',
+			)
+		);
+		$this->build_index();
+		update_option( 'relevanssi_show_matches', 'on' );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'editor' ) ) );
+
+		$this->go_to( home_url( '/?s=zephyrine' ) );
+
+		$this->assertSame( array( $id ), wp_list_pluck( $GLOBALS['wp_query']->posts, 'ID' ) );
+		$this->assertSame( 1, $this->relevanssi_searches, 'Relevanssi answered the search.' );
+		$this->assertSame( 'The stored excerpt.', $GLOBALS['wp_query']->posts[0]->post_excerpt );
+	}
+
+	/**
 	 * A search query Relevanssi does not answer, outside REST, still gets core's results: a title
 	 * word finds the resource. Relevanssi alone would blank that query's SQL, which the second
 	 * half shows.

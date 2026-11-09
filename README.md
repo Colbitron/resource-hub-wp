@@ -99,7 +99,8 @@ Everything marked built is on `main` and passes CI.
 | CMS block theme: every template in the front end's markup and styles, including the resource page, the collection pages and the System / Light / Dark control, held to the front end by markup fixtures and computed-style and screenshot checks | built |
 | CI on Depot CI ([ADR 0053](docs/adr/0053-ci-runs-on-depot-ci.md)) | built |
 | Hosting and deploys: the CMS on Cloudways ([ADR 0005](docs/adr/0005-hosted-wordpress-on-cloudways.md)) and the front end on Vercel ([ADR 0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md)), both deployed from `main` | built |
-| The CMS theme's search template and header control (the remaining part of [issue #115](https://github.com/Colbitron/resource-hub-wp/issues/115)), the control after its redesign in [issue #128](https://github.com/Colbitron/resource-hub-wp/issues/128) | open |
+| The CMS theme's search template at `/search/` and its header search control ([issue #115](https://github.com/Colbitron/resource-hub-wp/issues/115)), the control in its first design | built |
+| The header search control's redesign on both sites ([issue #128](https://github.com/Colbitron/resource-hub-wp/issues/128)) | open |
 | Lab measurement in a real browser ([issue #85](https://github.com/Colbitron/resource-hub-wp/issues/85)) and a plan for the related list at a larger scale ([issue #87](https://github.com/Colbitron/resource-hub-wp/issues/87)) | open |
 | The theme's remaining differences from the front end, listed in its README | open |
 

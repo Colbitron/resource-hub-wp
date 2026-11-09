@@ -19,12 +19,14 @@ use WpOrg\Requests\IdnaEncoder;
 /**
  * One renderer for every block that writes a resource the way the front end does.
  *
- * Six blocks use it: `resource-hub/related-resources` and `resource-hub/related` (their rows, at `h3`),
- * `resource-hub/resource-card` (one row in a post template), `resource-hub/resource-meta` (the single
- * resource page's meta line), `resource-hub/resource-summary` (its lead paragraph),
- * `resource-hub/resource-source` (its source line) and `resource-hub/featured-lead` (the library's lead).
+ * Seven blocks use it: `resource-hub/related-resources` and `resource-hub/related` (their rows, at `h3`),
+ * `resource-hub/resource-card` (one row in a post template), `resource-hub/page-card` (a page's row in
+ * the search results), `resource-hub/resource-meta` (the single resource page's meta line),
+ * `resource-hub/resource-summary` (its lead paragraph), `resource-hub/resource-source` (its source line)
+ * and `resource-hub/featured-lead` (the library's lead).
  * The markup is the front end's, element for element, class for class and attribute for attribute, in
- * the front end's order: `row()` is `ResourceCard` (`apps/web/components/ResourceCard.tsx`); `meta()`,
+ * the front end's order: `row()` is `ResourceCard` (`apps/web/components/ResourceCard.tsx`); `page_row()`
+ * is `PageCard` (`apps/web/components/PageCard.tsx`); `meta()`,
  * `summary()` and `source()` are the meta line, the summary and the source line `ResourceArticle` writes
  * (`apps/web/components/ResourceArticle.tsx`); and `lead()` is `FeaturedLead`
  * (`apps/web/components/FeaturedLead.tsx`), whose meta line and topics are the row's own parts.
@@ -40,6 +42,14 @@ use WpOrg\Requests\IdnaEncoder;
  *                 <p class="rh-card__summary">{summary}</p>                                   (when it has one)
  *                 <ul class="rh-card__topics" aria-label="Topics" role="list"><li class="rh-card__topic">{topic}</li>…</ul>
  *               </div>                                                                       (topics when it has any)
+ *             </article>
+ *
+ *     page_row(): <article class="rh-card">
+ *               <p class="rh-card__meta"><span class="rh-card__kind">Page</span></p>
+ *               <div class="rh-card__body">
+ *                 <h{n} class="rh-card__title"><a class="rh-card__link" href="{permalink}">{title}</a></h{n}>
+ *                 <p class="rh-card__summary">{excerpt}</p>                                   (when it has one)
+ *               </div>
  *             </article>
  *
  *     lead(): <article class="rh-lead">
@@ -128,6 +138,13 @@ use WpOrg\Requests\IdnaEncoder;
  *   are the front end's listing paths on the CMS's origin, `/resources/{type}/` and
  *   `/resources/topic/{topic}/` (`type_listing_url()`, `topic_listing_url()`), not core's term links,
  *   whose paths (`/resource-type/…`, `/resource-topic/…`) the front end has no route for.
+ * - **A page's row** (`page_row()`) is the front end's `PageCard` from `toPageCard()`: the title as
+ *   `title()` reads it, or "Untitled page" (`UNTITLED_PAGE`) when it is empty; `get_permalink()` as the
+ *   link, the page's own path on the front end once the origin is removed; and the excerpt as the
+ *   summary, the REST API's `excerpt.rendered` (`get_the_excerpt()` through the `the_excerpt` filter, so
+ *   an empty excerpt is the trimmed body with core's "[…]" and the text is texturized, as the REST posts
+ *   controller renders it) as plain text, left out when nothing is left. No type, no date and no topics.
+ *   The label "Page" is the front end's text, not translated, for the reason "Topics" is not.
  * - **The lead's image** is the front end's `featuredImage()` rule as far as the CMS can follow it
  *   (`apps/web/lib/wp/images.ts`): the resource's featured image, only when WordPress has measured it
  *   (an SVG has no width and height and gets no box), in a 16:9 box with its dimensions on the `<img>`
@@ -151,6 +168,11 @@ final class ResourceCardMarkup {
 	 * The title a card shows when the resource's is empty as plain text: the front end's `UNTITLED`.
 	 */
 	public const UNTITLED = 'Untitled resource';
+
+	/**
+	 * The title a page's row shows when the page's is empty as plain text: the front end's `UNTITLED_PAGE`.
+	 */
+	public const UNTITLED_PAGE = 'Untitled page';
 
 	/**
 	 * The heading levels a row's title may take, as `ResourceCard`'s `headingLevel` prop allows.
@@ -198,6 +220,43 @@ final class ResourceCardMarkup {
 		$html .= self::topics_list( $post );
 
 		return $html . '</div></article>';
+	}
+
+	/**
+	 * One page as a row in `card.css`'s markup, as the front end's `PageCard` renders it in the search results.
+	 *
+	 * @param WP_Post $post    A published page.
+	 * @param string  $heading The title's element, one of `HEADINGS`; anything else is `h2`, the component's default.
+	 */
+	public static function page_row( WP_Post $post, string $heading = 'h2' ): string {
+		$heading = in_array( $heading, self::HEADINGS, true ) ? $heading : 'h2';
+		$title   = self::title( $post ) ?? self::UNTITLED_PAGE;
+		$summary = self::plain_text( self::rendered_excerpt( $post ) );
+
+		$html  = '<article class="rh-card">';
+		$html .= '<p class="rh-card__meta"><span class="rh-card__kind">Page</span></p>';
+		$html .= '<div class="rh-card__body">';
+		$html .= '<' . $heading . ' class="rh-card__title"><a class="rh-card__link" href="' . esc_url( (string) get_permalink( $post ) ) . '">' . self::text_html( $title ) . '</a></' . $heading . '>';
+
+		if ( '' !== $summary ) {
+			$html .= '<p class="rh-card__summary">' . self::text_html( $summary ) . '</p>';
+		}
+
+		return $html . '</div></article>';
+	}
+
+	/**
+	 * A post's excerpt as the REST API's `excerpt.rendered` gives it to the front end: nothing for a
+	 * password-protected post, else the excerpt (core trims the body for an empty one) through `the_excerpt`.
+	 *
+	 * @param WP_Post $post The post.
+	 */
+	private static function rendered_excerpt( WP_Post $post ): string {
+		if ( post_password_required( $post ) ) {
+			return '';
+		}
+
+		return (string) apply_filters( 'the_excerpt', get_the_excerpt( $post ) ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Core's filter, applied as the REST posts controller applies it for `excerpt.rendered`.
 	}
 
 	/**

@@ -40,6 +40,14 @@
  * first describe also checks the resource page's two stylesheets stay off a
  * page without the block, the welcome and the 404.
  *
+ * The fourth describe does the same for the search page, rendered by the
+ * theme's search template and the plugin's search blocks (`listing.css`,
+ * `search.css` and `card.css` over the head, the form, the count, both row
+ * shapes, the empty state and core's pagination block), as `/?s=…`, the
+ * form the tests site's plain permalinks give it, with the collections'
+ * content and a few pages made for it; its last test holds `search.css` to
+ * the search page alone and `header-search.css` to every page but the 404.
+ *
  * The third describe does the same for the collection pages, rendered by
  * the theme's collection templates and the plugin's collection blocks
  * (`listing.css`, `lead.css`, `card.css`, and the theme's `assets/pagination.css`
@@ -1814,6 +1822,383 @@ test.describe( "A CMS collection computes the front end's styles", () => {
 				path: `/wp/v2/pages/${ cmsPage.id }`,
 				params: { force: true },
 			} );
+		}
+	} );
+} );
+
+test.describe( "A CMS search page computes the front end's styles", () => {
+	let content;
+	let pages = [];
+	/** Enough pages with one word for a second page of results. */
+	const PAGES = PER_PAGE + 1;
+
+	test.beforeAll( async ( { requestUtils } ) => {
+		const stamp = Date.now();
+		content = await createCollection( requestUtils, stamp );
+		pages = [];
+		for ( let i = 1; i <= PAGES; i++ ) {
+			pages.push(
+				await requestUtils.createPage( {
+					title:
+						i === 1
+							? `Revalidation quokka page ${ stamp }`
+							: `Quokka page ${ i } ${ stamp }`,
+					content:
+						'<!-- wp:paragraph --><p>A page the search finds.</p><!-- /wp:paragraph -->',
+					excerpt: `What quokka page ${ i } is about.`,
+					status: 'publish',
+				} )
+			);
+		}
+	} );
+
+	test.afterAll( async ( { requestUtils } ) => {
+		for ( const page of pages ) {
+			await requestUtils.rest( {
+				method: 'DELETE',
+				path: `/wp/v2/pages/${ page.id }`,
+				params: { force: true },
+			} );
+		}
+		if ( content ) {
+			await deleteCollection( requestUtils, content );
+		}
+	} );
+
+	/**
+	 * Holds the element `selector` matches to `declarations`, resolved on a
+	 * probe inside `context`.
+	 *
+	 * @param {import('@playwright/test').Page} page         The page.
+	 * @param {string}                          selector     The element on the CMS page.
+	 * @param {Record<string, string>}          declarations What the package's rule declares.
+	 * @param {string}                          [context]    Where the tokens resolve; `main` by default.
+	 */
+	async function holds(
+		page,
+		selector,
+		declarations,
+		context = 'main.rh-main'
+	) {
+		expect(
+			await computed( page, selector, Object.keys( declarations ) ),
+			selector
+		).toEqual( await resolve( page, context, declarations ) );
+	}
+
+	for ( const colorScheme of [ 'light', 'dark' ] ) {
+		test( `the results: the head, the form, the count, a page row beside the resource rows (${ colorScheme })`, async ( {
+			page,
+		} ) => {
+			await page.emulateMedia( { colorScheme } );
+			await page.setViewportSize( { width: 1280, height: 900 } );
+			// Two collection resources and one page hold "revalidation" in their
+			// titles, and nothing else does: "caching" is a topic's name too, which
+			// Relevanssi indexes, so it would match every resource in the topic.
+			await page.goto( '/?s=revalidation' );
+
+			// The head: listing.css's header row and the one h1.
+			await expect( page.locator( 'h1' ) ).toHaveCount( 1 );
+			await expect(
+				page.getByRole( 'main' ).getByRole( 'heading', { level: 1 } )
+			).toHaveText( 'Search' );
+			await holds( page, '.rh-listing__header', {
+				display: 'flex',
+				'align-items': 'baseline',
+				'margin-bottom': 'var(--rh-space-4)',
+			} );
+
+			// The form: search.css's column at the measure, the label's weight,
+			// the row that wraps, the field's strong edge and the filled button.
+			const form = page.getByRole( 'search' );
+			await expect( form ).toHaveCount( 1 );
+			await expect( form ).toHaveAttribute( 'method', 'get' );
+			await holds( page, 'form.rh-search', {
+				display: 'flex',
+				'flex-direction': 'column',
+				'row-gap': 'var(--rh-space-2)',
+				'max-width': 'var(--rh-measure)',
+				'margin-bottom': 'var(--rh-space-6)',
+			} );
+			await holds( page, '.rh-search__label', { 'font-weight': '600' } );
+			await holds( page, '.rh-search__row', {
+				display: 'flex',
+				'flex-wrap': 'wrap',
+				'column-gap': 'var(--rh-space-2)',
+			} );
+			await holds( page, '.rh-search__input', {
+				'min-height': '2.5rem',
+				'padding-top': 'var(--rh-space-2)',
+				'padding-left': 'var(--rh-space-3)',
+				'border-top-width': 'var(--rh-border-width)',
+				'border-top-color': 'var(--rh-color-border-strong)',
+				'border-top-left-radius': 'var(--rh-radius-sm)',
+				'background-color': 'var(--rh-color-surface)',
+				color: 'var(--rh-color-text)',
+				'font-family': 'var(--rh-font-sans)',
+				'font-size': 'var(--rh-text-base)',
+			} );
+			await expect( page.locator( '.rh-search__input' ) ).toHaveValue(
+				'revalidation'
+			);
+			await expect( page.locator( '.rh-search__input' ) ).toHaveAttribute(
+				'aria-describedby',
+				'rh-search-message'
+			);
+			await holds( page, '.rh-search__button', {
+				'min-height': '2.5rem',
+				'padding-left': 'var(--rh-space-4)',
+				'border-top-color': 'var(--rh-color-text)',
+				'border-top-left-radius': 'var(--rh-radius-sm)',
+				'background-color': 'var(--rh-color-text)',
+				color: 'var(--rh-color-surface)',
+				'font-weight': '600',
+				'font-family': 'var(--rh-font-sans)',
+			} );
+
+			// The count: muted, tabular, under the form.
+			await expect( page.locator( '#rh-search-message' ) ).toHaveText(
+				'3 results for “revalidation”'
+			);
+			await holds( page, '.rh-search__summary', {
+				color: 'var(--rh-color-text-muted)',
+				'margin-top': '0px',
+				'margin-bottom': 'var(--rh-space-2)',
+				'font-variant-numeric': 'tabular-nums',
+			} );
+
+			// Three rows at h2, one of them a page's: the "Page" label as the
+			// type's label without its mark, and no type, date or topics.
+			const rows = page.locator( 'ul.rh-card-grid > li' );
+			await expect( rows ).toHaveCount( 3 );
+			await expect( page.locator( 'h2.rh-card__title' ) ).toHaveCount(
+				3
+			);
+			const pageRow = page.locator( 'article.rh-card', {
+				has: page.locator( '.rh-card__kind' ),
+			} );
+			await expect( pageRow ).toHaveCount( 1 );
+			await expect( pageRow.locator( '.rh-card__kind' ) ).toHaveText(
+				'Page'
+			);
+			await expect( pageRow.locator( '.rh-card__type' ) ).toHaveCount(
+				0
+			);
+			await expect( pageRow.locator( 'time' ) ).toHaveCount( 0 );
+			await expect( pageRow.locator( '.rh-card__topics' ) ).toHaveCount(
+				0
+			);
+			// The label's tracking is in em, so it resolves in the meta line's size.
+			await holds(
+				page,
+				'.rh-card__kind',
+				{
+					'text-transform': 'uppercase',
+					'font-weight': '600',
+					'letter-spacing': 'var(--rh-tracking-label)',
+					color: 'var(--rh-color-text)',
+				},
+				'.rh-card__meta:has(.rh-card__kind)'
+			);
+			await expect(
+				page.locator( 'article.rh-card .rh-card__type' )
+			).toHaveCount( 2 );
+			await holds( page, 'ul.rh-card-grid > li:first-child', {
+				'border-bottom-width': 'var(--rh-border-width)',
+				'border-bottom-color': 'var(--rh-color-border)',
+				'margin-top': '0px',
+			} );
+			await expect( page.locator( 'nav.rh-pagination' ) ).toHaveCount(
+				0
+			);
+			await expect( page.locator( '.rh-listing__empty' ) ).toHaveCount(
+				0
+			);
+		} );
+	}
+
+	test( 'many results paginate as the collections do, and none shows the empty state', async ( {
+		page,
+	} ) => {
+		await page.setViewportSize( { width: 1280, height: 900 } );
+		await page.goto( '/?s=quokka' );
+		await expect( page.locator( '#rh-search-message' ) ).toHaveText(
+			`${ PAGES } results for “quokka”`
+		);
+		await expect( page.locator( 'ul.rh-card-grid > li' ) ).toHaveCount(
+			PER_PAGE
+		);
+		await expect( page.locator( '.rh-card__kind' ) ).toHaveCount(
+			PER_PAGE
+		);
+
+		// The pagination: core's block as listing.css's, the current number
+		// heavier with the strong underline, Next at the right edge.
+		const pagination = page.getByRole( 'navigation', {
+			name: 'Pagination',
+		} );
+		await expect( pagination ).toHaveCount( 1 );
+		await expect( pagination ).toHaveClass( /rh-pagination/ );
+		await holds( page, 'nav.rh-pagination', {
+			'margin-top': 'var(--rh-space-7)',
+			'padding-top': 'var(--rh-space-3)',
+			'border-top-width': 'var(--rh-border-width-strong)',
+			'border-top-color': 'var(--rh-color-text)',
+			display: 'flex',
+		} );
+		await holds( page, '.rh-pagination .page-numbers.current', {
+			'font-weight': 'var(--rh-weight-heading)',
+			'text-decoration-line': 'underline',
+			'text-decoration-thickness': 'var(--rh-border-width-strong)',
+			'min-width': '2.5rem',
+			'min-height': '2.5rem',
+		} );
+		await expect(
+			page.locator( '.rh-pagination .page-numbers.current' )
+		).toHaveText( '1' );
+		await expect(
+			page.locator( '.rh-pagination .wp-block-query-pagination-previous' )
+		).toHaveCount( 0 );
+		const next = page.locator(
+			'.rh-pagination .wp-block-query-pagination-next'
+		);
+		await expect( next ).toHaveText( 'Next' );
+		await expect( next ).toHaveAttribute( 'href', /s=quokka/ );
+
+		// The second page: one row, Previous, the count unchanged. The link is
+		// core's, `?paged=2` under plain permalinks and `/page/2/` under pretty
+		// ones, which PHPUnit's run before this suite can leave the site on.
+		await next.click();
+		await expect( page ).toHaveURL( /(?:[?&]paged=2|\/page\/2\/)/ );
+		await expect( page.locator( 'ul.rh-card-grid > li' ) ).toHaveCount(
+			PAGES - PER_PAGE
+		);
+		await expect( page.locator( '#rh-search-message' ) ).toHaveText(
+			`${ PAGES } results for “quokka”`
+		);
+		await expect(
+			page.locator( '.rh-pagination .wp-block-query-pagination-previous' )
+		).toHaveText( 'Previous' );
+
+		// A page past the last: a 200, the count kept, the sentence and the way back.
+		const past = await page.goto( '/?s=quokka&paged=3' );
+		expect( past.status() ).toBe( 200 );
+		await expect( page.locator( '#rh-search-message' ) ).toHaveText(
+			`${ PAGES } results for “quokka”`
+		);
+		await expect( page.locator( '.rh-listing__empty' ) ).toHaveText(
+			'There are no results on page 3.Go to the first page of results'
+		);
+		await expect( page.locator( 'nav.rh-pagination' ) ).toHaveCount( 0 );
+
+		// Typed words the route normalises, quotes included, which a real
+		// request slashes: the count line quotes the normalised words, the
+		// field keeps the typed ones, and no backslash reaches either.
+		const typed = '  "quokka"  ';
+		await page.goto( `/?s=${ encodeURIComponent( typed ) }` );
+		await expect( page.locator( '#rh-search-message' ) ).toHaveText(
+			/^\d+ results? for “"quokka"”/
+		);
+		await expect( page.locator( '.rh-search__input' ) ).toHaveValue(
+			typed
+		);
+
+		// No results: listing.css's empty state, with the way to the library.
+		await page.goto( '/?s=zebraxyz' );
+		await expect( page.locator( 'ul.rh-card-grid' ) ).toHaveCount( 0 );
+		await expect( page.locator( '.rh-search__summary' ) ).toHaveCount( 0 );
+		await expect( page.locator( '#rh-search-message' ) ).toHaveText(
+			'No results for “zebraxyz”.'
+		);
+		await holds( page, '.rh-listing__empty', {
+			'max-width': 'var(--rh-measure)',
+			'padding-top': 'var(--rh-space-6)',
+		} );
+		await expect( page.locator( '.rh-listing__empty a' ) ).toHaveAttribute(
+			'href',
+			/\/resources\/$/
+		);
+
+		// No query: the form alone.
+		await page.goto( '/?s=' );
+		await expect( page.getByRole( 'search' ) ).toHaveCount( 1 );
+		await expect( page.locator( '.rh-listing__empty' ) ).toHaveCount( 0 );
+		await expect( page.locator( 'article.rh-card' ) ).toHaveCount( 0 );
+		await expect( page.locator( '.rh-search__input' ) ).not.toHaveAttribute(
+			'aria-describedby',
+			/.+/
+		);
+
+		// A query too short: the field marked invalid and the sentence.
+		await page.goto( '/?s=a' );
+		await expect( page.locator( '.rh-search__input' ) ).toHaveAttribute(
+			'aria-invalid',
+			'true'
+		);
+		await expect( page.locator( '#rh-search-message' ) ).toHaveText(
+			'Enter at least 2 characters to search.'
+		);
+		await expect( page.locator( 'article.rh-card' ) ).toHaveCount( 0 );
+	} );
+
+	test( 'the search page at 360 px: the form in the gutter, nothing sideways', async ( {
+		page,
+	} ) => {
+		await page.setViewportSize( { width: 360, height: 800 } );
+		await page.goto( '/?s=revalidation' );
+		expect(
+			await page.evaluate(
+				() =>
+					document.documentElement.scrollWidth <=
+					document.documentElement.clientWidth
+			)
+		).toBe( true );
+		// The form sits in main's gutter, the shell's one column.
+		const main = await box( page, 'main.rh-main' );
+		const form = await box( page, 'form.rh-search' );
+		const gutter = parseFloat(
+			(
+				await resolve( page, 'main.rh-main', {
+					'padding-left': 'var(--rh-space-4)',
+				} )
+			)[ 'padding-left' ]
+		);
+		expect( form.x ).toBeCloseTo( main.x + gutter, 0 );
+		expect( form.width ).toBeLessThanOrEqual( 360 - 2 * gutter + 0.5 );
+		const input = await box( page, '.rh-search__input' );
+		expect( input.width ).toBeGreaterThanOrEqual( 12 * 16 );
+		await expect( page.locator( 'ul.rh-card-grid > li' ) ).toHaveCount( 3 );
+	} );
+
+	test( "search.css loads on the search page alone, and the header control's stylesheet on every page but the 404", async ( {
+		page,
+	} ) => {
+		for ( const [ url, status, search, control ] of [
+			[ '/?s=revalidation', 200, true, true ],
+			[ '/?s=', 200, true, true ],
+			[ '/', 200, false, true ],
+			[ '/?post_type=resource', 200, false, true ],
+			[ content.lead.link, 200, false, true ],
+			[ '/?p=999999999', 404, false, false ],
+		] ) {
+			const response = await page.goto( url );
+			expect( response.status(), url ).toBe( status );
+			await expect(
+				page.locator( 'link#resource-hub-search-css' ),
+				`search.css on ${ url }`
+			).toHaveCount( search ? 1 : 0 );
+			await expect(
+				page.locator( 'link#resource-hub-listing-css' ),
+				`listing.css on ${ url }`
+			).toHaveCount( search || url === '/?post_type=resource' ? 1 : 0 );
+			await expect(
+				page.locator( 'link#resource-hub-header-search-css' ),
+				`header-search.css on ${ url }`
+			).toHaveCount( control ? 1 : 0 );
+			await expect(
+				page.locator( 'link#resource-hub-header-search-bar-css' ),
+				`the bar's stylesheet is never in the HTML, on ${ url }`
+			).toHaveCount( 0 );
 		}
 	} );
 } );

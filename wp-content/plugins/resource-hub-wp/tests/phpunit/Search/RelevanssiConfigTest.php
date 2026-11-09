@@ -88,4 +88,20 @@ final class RelevanssiConfigTest extends WP_UnitTestCase {
 		$this->assertNull( $config->block_to_render( null ) );
 		$this->assertNull( apply_filters( 'relevanssi_block_to_render', array( 'blockName' => 'resource-hub/related-resources' ) ) ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Relevanssi's hook.
 	}
+
+	/**
+	 * The output options, snippets, highlighting and the search-hits line, are answered from code too, and
+	 * are not in the fingerprint.
+	 */
+	public function test_output_options_are_pinned_off_and_not_fingerprinted(): void {
+		$this->assertSame( 'off', RelevanssiConfig::PINNED_OUTPUT['relevanssi_excerpts'] );
+		$this->assertSame( 'none', RelevanssiConfig::PINNED_OUTPUT['relevanssi_highlight'] );
+		$this->assertSame( 'off', RelevanssiConfig::PINNED_OUTPUT['relevanssi_show_matches'] );
+
+		foreach ( RelevanssiConfig::PINNED_OUTPUT as $option => $expected ) {
+			update_option( $option, 'on' );
+			$this->assertSame( $expected, get_option( $option ), $option );
+			$this->assertArrayNotHasKey( $option, RelevanssiConfig::fingerprint()['options'], "{$option} changes no index, so it is not in the stamp." );
+		}
+	}
 }

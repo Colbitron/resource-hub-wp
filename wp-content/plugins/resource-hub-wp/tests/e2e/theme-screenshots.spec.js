@@ -1,8 +1,8 @@
 /**
  * Pixel baselines of the CMS theme: a page, a resource, the library with its
- * lead and a topic collection as a logged-in editor previews them, and the
- * 404 every anonymous visitor gets, at 1280 and 360 px, in the light and the
- * dark scheme.
+ * lead, a topic collection and a page of search results as a logged-in editor
+ * previews them, and the 404 every anonymous visitor gets, at 1280 and 360
+ * px, in the light and the dark scheme.
  *
  * The second of the two parity checks the owner chose (issue #89), beside
  * the computed styles in `theme-parity.spec.js`: a template, a part, a
@@ -35,7 +35,13 @@
  * the tests site, which has plain permalinks, so the library is
  * `/?post_type=resource` and the topic `/?resource_topic=…`. The library
  * lists every published resource on the site, the resource page's seed
- * included, so a spec that left resources behind moves its baseline.
+ * included, so a spec that left resources behind moves its baseline. The
+ * search is `/?s=revalidation`: the two collection resources with the word
+ * in their titles and a page made here, so the results show both row
+ * shapes; it too lists whatever else on the site holds the word (a topic's
+ * name is indexed too, so a search for "caching" would list the whole
+ * topic). Every logged-in
+ * shot has the header's search control, closed; the 404 has none.
  * Baselines are in `__snapshots__/` beside this file. A missing one
  * fails in CI and is written locally; to change one on purpose, run
  * `pnpm test:e2e -- --update-snapshots` with the same `WP_BASE_URL`, look at
@@ -110,6 +116,7 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 	let container;
 	let browser;
 	let cmsPage;
+	let searchPage;
 	let seed;
 	let collection;
 	/** The process listeners that stop the container, removed in `afterAll`. */
@@ -169,6 +176,14 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 			content: CONTENT,
 			status: 'publish',
 		} );
+		searchPage = await requestUtils.createPage( {
+			title: 'Revalidation on the CMS',
+			content:
+				'<!-- wp:paragraph --><p>How the CMS tells the front end what changed, and when.</p><!-- /wp:paragraph -->',
+			excerpt:
+				'How the CMS tells the front end what changed, and when, in a paragraph.',
+			status: 'publish',
+		} );
 		seed = await seedResourcePage( requestUtils );
 		collection = await createCollection( requestUtils, Date.now() );
 	} );
@@ -177,12 +192,14 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 		// The page first: a browser whose container a signal stopped can
 		// throw on close, and the page must go whatever happens to it.
 		try {
-			if ( cmsPage ) {
-				await requestUtils.rest( {
-					method: 'DELETE',
-					path: `/wp/v2/pages/${ cmsPage.id }`,
-					params: { force: true },
-				} );
+			for ( const created of [ cmsPage, searchPage ] ) {
+				if ( created ) {
+					await requestUtils.rest( {
+						method: 'DELETE',
+						path: `/wp/v2/pages/${ created.id }`,
+						params: { force: true },
+					} );
+				}
 			}
 			if ( seed ) {
 				await deleteResourcePage( requestUtils, seed );
@@ -298,6 +315,8 @@ test.describe( 'The CMS theme matches its screenshot baselines', () => {
 					() => `/?resource_topic=${ collection.topics[ 0 ].slug }`,
 					'Resources on Caching',
 				],
+				// Two resources and the page made above hold "revalidation" in their titles.
+				[ 'search', '/?s=revalidation', 'Search' ],
 			] ) {
 				test( `the ${ name } at ${ width }px, ${ colorScheme }`, async ( {
 					requestUtils,

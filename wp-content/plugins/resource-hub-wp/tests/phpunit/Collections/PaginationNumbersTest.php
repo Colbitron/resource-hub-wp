@@ -273,4 +273,33 @@ final class PaginationNumbersTest extends WP_UnitTestCase {
 			$matches
 		);
 	}
+
+	/**
+	 * The search page's numbers are windowed too: the same block over the main search query lists the
+	 * front end's pages, and nothing on a page that is not a search.
+	 */
+	public function test_search_page_numbers_are_windowed(): void {
+		for ( $i = 1; $i <= 12 * 9 + 1; $i++ ) {
+			$this->resource( "Quokka {$i}", 'ebook', array( 'caching' ), gmdate( 'Y-m-d H:i:s', 1_700_000_000 + $i ) );
+		}
+
+		$this->go_to( home_url( '/search/page/4/?s=quokka' ) );
+		$this->assertTrue( is_search() );
+		$this->assertSame( 10, (int) $GLOBALS['wp_query']->max_num_pages );
+
+		$numbers = $this->numbers( do_blocks( self::BLOCK ) );
+		$this->assertSame( array( '1', '2', '3', '4', '5', '…', '10' ), $numbers, "The front end's window at 4 of 10." );
+	}
+
+	/**
+	 * The page numbers and gaps in a rendered pagination block, in order.
+	 *
+	 * @param string $html The rendered block.
+	 * @return string[]
+	 */
+	private function numbers( string $html ): array {
+		preg_match_all( '/<(?:a|span)[^>]*class="page-numbers[^"]*"[^>]*>(.*?)<\/(?:a|span)>/', $html, $matches );
+
+		return array_map( static fn ( string $text ): string => html_entity_decode( wp_strip_all_tags( $text ), ENT_QUOTES ), $matches[1] );
+	}
 }

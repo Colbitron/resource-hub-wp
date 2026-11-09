@@ -1,6 +1,6 @@
 <?php
 /**
- * Core's pagination numbers on a collection page, windowed as the front end windows them.
+ * Core's pagination numbers on a collection page and the search page, windowed as the front end windows them.
  *
  * @package ResourceHub
  */
@@ -9,11 +9,12 @@ declare(strict_types=1);
 
 namespace ResourceHub\Collections;
 
+use ResourceHub\Search\SearchRequest;
 use WP_Query;
 
 /**
- * Makes the page-number list core's `query-pagination-numbers` block writes on a collection page the
- * front end's list, through {@see PageWindow}.
+ * Makes the page-number list core's `query-pagination-numbers` block writes on a collection page, and on
+ * the CMS theme's search page, the front end's list, through {@see PageWindow}.
  *
  * The CMS theme's collection part renders core's `core/query-pagination` block, whose numbers come from
  * `paginate_links()`. Core's windowing is a fixed `end_size` and `mid_size` (the block's default is
@@ -24,7 +25,9 @@ use WP_Query;
  * gap, 20 on the front end; core's shapes are 1, gap, 3, 4, 5, gap, 20 or 1, 2, 3, 4, 5, 6, gap, 20).
  *
  * So this filters `paginate_links_output`, core's filter on the finished list, while the global
- * `$wp_query` is the main query and a collection ({@see Collection::is_collection()}), for the call the
+ * `$wp_query` is the main query and a collection ({@see Collection::is_collection()}) or the search page
+ * ({@see SearchRequest::is_search_page()}, whose template renders the same block over the main search
+ * query, and whose pages the front end's `Pagination` windows the same way), for the call the
  * numbers block makes (`type` plain, no previous and next links, not already every page): it calls
  * `paginate_links()` again with the same arguments and `show_all`, so core builds every page's link
  * itself, its URL from the request's base, format and query arguments, its `paginate_links` filter, its
@@ -39,9 +42,9 @@ use WP_Query;
  *
  * Both tests are needed: `is_collection()` alone is true of any query for resources, and for a Query
  * Loop that does not inherit the main query core's numbers block swaps the global `$wp_query` for the
- * block's own query while it calls `paginate_links()`. So off a collection (a page with a resource
- * Query Loop of its own, say) the list is core's, and so is a non-inheriting Query Loop's on a
- * collection page. In the editor and the REST API nothing paginates through this filter.
+ * block's own query while it calls `paginate_links()`. So off a collection or the search page (a page
+ * with a resource Query Loop of its own, say) the list is core's, and so is a non-inheriting Query
+ * Loop's on a collection page. In the editor and the REST API nothing paginates through this filter.
  */
 final class PaginationNumbers {
 	/**
@@ -74,7 +77,7 @@ final class PaginationNumbers {
 
 		$query = $GLOBALS['wp_query'] ?? null;
 
-		if ( ! $query instanceof WP_Query || ! $query->is_main_query() || ! Collection::is_collection( $query ) ) {
+		if ( ! $query instanceof WP_Query || ! $query->is_main_query() || ! ( Collection::is_collection( $query ) || SearchRequest::is_search_page( $query ) ) ) {
 			return $output;
 		}
 

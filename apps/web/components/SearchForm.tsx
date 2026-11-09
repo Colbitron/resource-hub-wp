@@ -1,7 +1,7 @@
 import { SEARCH_PATH } from "@/lib/routes";
 import { SEARCH_INPUT_ID } from "@/lib/search-field";
 
-import "./search.css";
+import "@colbitron/resource-hub-ui/search.css";
 
 /**
  * The search page's form (`SearchPage`): a plain GET form to `/search/` in a
@@ -14,8 +14,10 @@ import "./search.css";
  * `aria-invalid` when that sentence says the query cannot be searched as it
  * is (too short, too long, a control character). No `required`, `minlength` or `maxlength`:
  * the page says what is wrong in words, and `maxlength` counts UTF-16 units
- * where the route counts code points. Its CSS, `search.css`, also styles the
- * page's count line, `.rh-search__summary`.
+ * where the route counts code points. Its CSS is the contract package's
+ * `search.css`, which also styles the page's count line, `.rh-search__summary`,
+ * and which the CMS theme loads for the same form on its search template
+ * (`packages/ui/README.md`, "Stylesheets").
  *
  * The header's search bar (`HeaderSearch`) renders the same form, empty,
  * with its own `id` for the field, so the two never share an ID; the page's
