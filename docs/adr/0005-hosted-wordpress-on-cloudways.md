@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-11-03
-amended: 2026-11-07
+amended: [2026-11-07, 2026-11-08]
 ---
 
 # The CMS runs on Cloudways (DigitalOcean 2 GB) so the front end can reach it
@@ -31,3 +31,15 @@ Four hosts were compared on the same checklist: PHP version parity with wp-env, 
 ### 2026-11-07
 
 The plugin's declared PHP floor is raised from 8.2 to 8.4, to match the pin: `Requires PHP` in `resource-hub.php`, `"php"` in the plugin's `composer.json` (with the lock's content hash) and PHPCS `testVersion`. The Consequences above said the floor stayed at 8.2 and was not exercised by CI. It could not be: the locked dev toolchain already needed 8.4 (`doctrine/instantiator` 2.1.0, which PHPUnit 9.6 pulls in, requires `php ^8.4`), so `composer install` refused to run on 8.2 and nothing could test it there. The host, wp-env and CI all run 8.4, so the floor now names the one version the plugin is tested on.
+
+### 2026-11-08: the deploy also syncs Relevanssi and the CMS theme
+
+**What changed.** The deploy's rsync over SSH now runs three syncs, not one, so "by rsync over SSH from the plugin directory into the same path on the host" under Consequences no longer describes the whole deploy. In order:
+
+- **Relevanssi** (pull request #124; ADR 0033, amended 2026-11-08), installed by the Composer project in `site-plugins/` into `wp-content/plugins/relevanssi/` and checked file by file against WordPress.org's published SHA-256 for its version, then sent whole from that directory into the same path on the host. It takes no allowlist, because the directory is the release as published, with nothing development-only to leave behind; `site-plugins/` itself stays behind.
+- **The plugin**, from its directory into the same path on the host, as before, with its allowlist.
+- **The CMS theme** (pull request #137; ADR 0033, amended 2026-11-08), an allowlist sync from `wp-content/themes/resource-hub/` into the same path on the host, followed by its activation and an anonymous request for a theme page that must get the theme's 404.
+
+Each sync's `--delete` is scoped to its own target, a fixed path under the WordPress root that the deploy checks, so it can remove nothing outside that one directory. How each runs and fails is in [`docs/runbooks/deploy.md`](../runbooks/deploy.md).
+
+**What did not.** The decision is unchanged: the CMS runs on Cloudways, and a CI job deploys it by rsync over SSH, the plugin still into the same path on the host, so the plugin basename is the same in every environment. The CMS deploy still runs before the front end's (ADR 0051).
