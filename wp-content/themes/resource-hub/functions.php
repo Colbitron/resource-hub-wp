@@ -1,7 +1,7 @@
 <?php
 /**
- * The Resource Hub theme's stylesheets, its adjustments to core's table and image blocks, and the
- * footer's theme control's script.
+ * The Resource Hub theme's stylesheets, its adjustments to core's table and image blocks, and the scripts
+ * of the footer's theme control and the header's search control.
  *
  * `theme.json` does the editor-facing styling: it registers Figtree from `build/fonts/` and maps its
  * colour, type and spacing presets to the `--rh-` tokens, which this file loads, and mirrors the
@@ -22,6 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once __DIR__ . '/inc/table-region.php';
 require_once __DIR__ . '/inc/image-lightbox.php';
 require_once __DIR__ . '/inc/theme-control.php';
+require_once __DIR__ . '/inc/header-search.php';
 
 /**
  * Registers the stylesheets from `build/`, on `init`.
@@ -133,6 +134,13 @@ const RESOURCE_HUB_THEME_ADMIN_BAR_SHELL = 'body.admin-bar .rh-shell { min-heigh
  * no script and no `theme-toggle.css`, and the rule the `<noscript>` carries elsewhere removes the
  * control's slot from its footer, added inline after `shell.css` like the admin bar's.
  *
+ * **The header's search control.** Every template but the 404 shows the header part's search control
+ * (`inc/header-search.php`), so every page with it loads `header-search.css` (`resource-hub-header-search`),
+ * the button's half; the bar's half, `header-search-bar.css` and the form's `search.css`, is registered
+ * here and added to the page by the theme's script only when a reader is about to open the bar, as the
+ * front end imports them on demand. The 404 loads neither and hides the control with the rule inline
+ * after `shell.css`, for the reason the theme control is left off it.
+ *
  * **Per template.** Every template sits in the shell. The 404 (`is_404()`) loads `not-found.css`;
  * `home.html` (`is_home()`: `/` while the front page shows posts, the CMS's state today; the posts
  * page under a static front page is a 404 by the plugin's `PostsPage`, as on the front end) loads
@@ -146,7 +154,10 @@ const RESOURCE_HUB_THEME_ADMIN_BAR_SHELL = 'body.admin-bar .rh-shell { min-heigh
  * (`archive-resource.html`, `taxonomy-resource_type.html` and `taxonomy-resource_topic.html`, which
  * `is_post_type_archive( 'resource' )` and `is_tax()` on the two taxonomies pick out) load
  * `listing.css`, with the theme's own `assets/pagination.css` inline after it, and the library's
- * first page `lead.css` too, the one page the plugin's `featured-lead` block renders on; every other
+ * first page `lead.css` too, the one page the plugin's `featured-lead` block renders on; the search
+ * template (`is_search()`, `search.html`) loads `listing.css` with the pagination's CSS inline after it,
+ * as a collection does, and `search.css` for the form the plugin's `search-head` block renders, the
+ * front end's search page's two beside the rows' `card.css`, which its row blocks bring; every other
  * template, `page.html`, `singular.html` and `index.html`, renders the page's article and loads
  * `prose.css` and `page.css`, and `related.css` too when a post the page renders holds a
  * `resource-hub/related-resources` block ({@see resource_hub_theme_has_related_block()}): the front
@@ -157,16 +168,16 @@ const RESOURCE_HUB_THEME_ADMIN_BAR_SHELL = 'body.admin-bar .rh-shell { min-heigh
  * the fallback faces there through their dependencies, where the blocks show placeholders. The enqueue
  * here is what loads them, whether or not a block rendered anything.
  *
- * **Core's pagination as the front end's.** The collection part renders core's `query-pagination`
- * block, whose markup is WordPress's own (the one accepted DOM difference from the front end's
- * `Pagination`), with the `rh-pagination` class on its `nav` so `listing.css` draws the rule above it.
+ * **Core's pagination as the front end's.** The collection part and the search template render core's
+ * `query-pagination` block, whose markup is WordPress's own (the one accepted DOM difference from the
+ * front end's `Pagination`), with the `rh-pagination` class on its `nav` so `listing.css` draws the rule above it.
  * `assets/pagination.css`, the theme's one stylesheet of its own, maps core's `.page-numbers`,
  * `.current`, `.dots`, previous and next classes to the declarations `listing.css` makes for
  * `.rh-pagination__link`, `[aria-current]`, `__gap` and `__step`, token for token, and is added inline
  * after `listing.css` (`wp_add_inline_style()`, as the admin-bar rule is), rather than copied into
  * `build/` and registered: the manifest lists copies of the package's files, and this is not one.
  * Which numbers the block lists is the plugin's: its `PaginationNumbers` windows core's list as the
- * front end's `pageWindow()` does, in core's markup, on the collections' main query.
+ * front end's `pageWindow()` does, in core's markup, on the collections' and the search page's main query.
  *
  * **Core block styles that fight the body's.** Core enqueues each block's stylesheet as the block
  * renders, before `wp_head`, and six draw over what `prose.css` or `resource.css` gives the same elements, which the
@@ -201,6 +212,12 @@ function resource_hub_theme_enqueue_page_styles(): void {
 		wp_add_inline_style( 'resource-hub-shell', RESOURCE_HUB_THEME_NO_CONTROL );
 	}
 
+	if ( resource_hub_theme_has_header_search() ) {
+		wp_enqueue_style( 'resource-hub-header-search' );
+	} else {
+		wp_add_inline_style( 'resource-hub-shell', RESOURCE_HUB_THEME_NO_HEADER_SEARCH );
+	}
+
 	if ( is_404() ) {
 		wp_enqueue_style( 'resource-hub-not-found' );
 	} elseif ( is_home() ) {
@@ -209,6 +226,10 @@ function resource_hub_theme_enqueue_page_styles(): void {
 		wp_enqueue_style( 'resource-hub-prose' );
 		wp_enqueue_style( 'resource-hub-resource' );
 		wp_enqueue_style( 'resource-hub-related' );
+	} elseif ( is_search() ) {
+		wp_enqueue_style( 'resource-hub-listing' );
+		wp_add_inline_style( 'resource-hub-listing', resource_hub_theme_pagination_css() );
+		wp_enqueue_style( 'resource-hub-search' );
 	} elseif ( resource_hub_theme_is_collection() ) {
 		wp_enqueue_style( 'resource-hub-listing' );
 		wp_add_inline_style( 'resource-hub-listing', resource_hub_theme_pagination_css() );
@@ -294,3 +315,8 @@ add_action( 'template_redirect', 'resource_hub_theme_add_lightbox_off' );
 // The theme control's script, inline in <head> before any stylesheet <link> (core prints those at
 // 8), so a stored choice is applied before anything is painted (`inc/theme-control.php`).
 add_action( 'wp_head', 'resource_hub_theme_print_control_script', 1 );
+
+// The header's search control's script, inline at the end of the body, and its link's target on the
+// search page (`inc/header-search.php`).
+add_action( 'wp_footer', 'resource_hub_theme_print_header_search_script' );
+add_filter( 'render_block_core/html', 'resource_hub_theme_header_search_page_link' );

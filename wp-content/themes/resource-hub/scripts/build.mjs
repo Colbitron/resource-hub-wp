@@ -131,6 +131,27 @@ const ASSETS = [
 		handle: 'resource-hub-theme-toggle',
 		deps: [ 'resource-hub-tokens' ],
 	},
+	// The search template: the form and the count line the plugin's
+	// search-head block renders, beside `listing.css`; also the form the
+	// header's search bar holds, added by the theme's script when the bar
+	// is about to open (`inc/header-search.php`).
+	{
+		file: 'search.css',
+		handle: 'resource-hub-search',
+		deps: [ 'resource-hub-base' ],
+	},
+	// The header's search control, on every template but the 404: the
+	// button's half with the page, the bar's half added by the script.
+	{
+		file: 'header-search.css',
+		handle: 'resource-hub-header-search',
+		deps: [ 'resource-hub-shell' ],
+	},
+	{
+		file: 'header-search-bar.css',
+		handle: 'resource-hub-header-search-bar',
+		deps: [ 'resource-hub-header-search' ],
+	},
 ];
 
 /**

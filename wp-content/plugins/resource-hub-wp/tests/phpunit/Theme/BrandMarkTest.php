@@ -24,13 +24,15 @@ use WP_UnitTestCase;
  */
 final class BrandMarkTest extends WP_UnitTestCase {
 	/**
-	 * The theme's header part has exactly one SVG, the same drawing as the canonical mark, decorative.
+	 * The theme's header part has exactly one brand mark, the same drawing as the canonical mark, decorative;
+	 * its only other SVG is the search control's icon.
 	 */
 	public function test_header_mark_is_the_canonical_drawing(): void {
 		$canonical = $this->read( dirname( __DIR__, 6 ) . '/packages/ui/brand/mark.svg' );
 		$header    = $this->read( WP_CONTENT_DIR . '/themes/resource-hub/parts/header.html' );
 
-		$this->assertSame( 1, preg_match_all( '/<svg\b[\s\S]*?<\/svg>/', $header, $svgs ), 'The header part should draw exactly one SVG.' );
+		$this->assertSame( 1, preg_match_all( '/<svg class="rh-brand__mark"[\s\S]*?<\/svg>/', $header, $svgs ), 'The header part should draw exactly one brand mark.' );
+		$this->assertSame( 2, preg_match_all( '/<svg\b/', $header ), 'The header part draws the mark and the search control\'s icon, nothing else.' );
 		$inline = $svgs[0][0];
 
 		$this->assertCount( 3, $this->shapes( $canonical ) );

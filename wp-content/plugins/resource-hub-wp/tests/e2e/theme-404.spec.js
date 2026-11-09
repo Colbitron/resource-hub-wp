@@ -162,6 +162,11 @@ test.describe( "The theme's 404 for anonymous visitors", () => {
 			expect( html, path ).not.toContain( 'xmlrpc.php' );
 
 			expect( html, path ).not.toMatch( /<nav\b/i );
+			// The header's search control is hidden, with no script, as the theme control is (theme-header-search.spec.js).
+			expect( html, path ).not.toContain(
+				'resource-hub-header-search-js'
+			);
+			expect( html, path ).toContain( '.rh-header-search{display:none}' );
 			expect( html, path ).not.toContain( 'wp-block-navigation' );
 			expect( html, path ).not.toContain( 'wp-block-page-list' );
 			for ( const name of hiddenNames() ) {

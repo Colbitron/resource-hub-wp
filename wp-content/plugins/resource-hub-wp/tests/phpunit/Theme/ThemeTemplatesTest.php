@@ -375,22 +375,73 @@ final class ThemeTemplatesTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Search has no template of its own yet, so `index.html`.
+	 * A search is `search.html`: the front end's search page, "Search" as its one `h1`, the form showing the
+	 * query, the count, and each match a row, a resource's through the `resource-card` block and a page's
+	 * through the `page-card` block, with a post left out as the search route leaves it out.
 	 */
-	public function test_search_is_the_index(): void {
-		self::factory()->post->create( array( 'post_title' => 'A guide' ) );
+	public function test_search_is_the_search_template(): void {
+		$this->collection_content();
+		self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_title'   => 'A resource page',
+				'post_excerpt' => 'About the resources.',
+			)
+		);
+		self::factory()->post->create( array( 'post_title' => 'A resource post' ) );
 
-		$this->assertSame( 'resource-hub//index', $this->template_for( home_url( '/?s=guide' ) ) );
-		$this->assertOneHeading( 'Search results for: “guide”' );
+		$this->assertSame( 'resource-hub//search', $this->template_for( home_url( '/?s=resource' ) ) );
+		$this->assertTrue( is_search() );
+		$this->assertOneHeading( 'Search' );
+		$this->assertStringContainsString( '<form class="rh-search" role="search"', $this->html );
+		$this->assertStringContainsString( 'name="s" value="resource"', $this->html );
+		$this->assertStringContainsString( '<p class="rh-search__summary" id="rh-search-message">3 results for “resource”</p>', $this->html );
+		$this->assertSame( 3, substr_count( $this->html, '<article class="rh-card">' ) );
+		$this->assertSame( 2, substr_count( $this->html, '<span class="rh-card__type"' ), 'Two resource rows.' );
+		$this->assertSame( 1, substr_count( $this->html, '<span class="rh-card__kind">Page</span>' ), 'One page row.' );
+		$this->assertStringNotContainsString( 'A resource post', $this->html );
+		$this->assertStringContainsString( 'rh-card-grid', $this->html );
+		$this->assertStringNotContainsString( 'rh-listing__empty', $this->html );
+		// One page: core's pagination block prints nothing.
+		$this->assertStringNotContainsString( 'wp-block-query-pagination', $this->html );
+		// The header's control, as the part writes it; `ThemeHeaderSearchTest` covers the theme's filter that
+		// points it at the page's field, since `functions.php` is not loaded here.
+		$this->assertStringContainsString( '<div class="rh-header-search"><a class="rh-header-search__toggle" href="/search/" aria-label="Search">', $this->html );
 	}
 
 	/**
-	 * A missing page is `404.html`.
+	 * `/search/` with no query, and a search for nothing, are the same template: the form alone, then the
+	 * empty state's sentence.
+	 */
+	public function test_search_without_a_query_and_without_results(): void {
+		$this->set_permalink_structure( '/%postname%/' );
+		( new \ResourceHub\Search\SearchPath() )->add_rules();
+		delete_option( 'rewrite_rules' );
+
+		try {
+			$this->assertSame( 'resource-hub//search', $this->template_for( home_url( '/search/' ) ) );
+			$this->assertOneHeading( 'Search' );
+			$this->assertStringContainsString( 'name="s" value=""', $this->html );
+			$this->assertStringNotContainsString( 'rh-listing__empty', $this->html );
+			$this->assertStringNotContainsString( '<article class="rh-card">', $this->html );
+
+			$this->assertSame( 'resource-hub//search', $this->template_for( home_url( '/search/?s=zebra' ) ) );
+			$this->assertOneHeading( 'Search' );
+			$this->assertStringContainsString( '<div class="rh-listing__empty"><p id="rh-search-message">No results for “zebra”.</p>', $this->html );
+		} finally {
+			$this->set_permalink_structure( '' );
+		}
+	}
+
+	/**
+	 * A missing page is `404.html`, with the header's search control hidden by the theme's rule rather than
+	 * rendered as a link to another 404.
 	 */
 	public function test_missing_page_is_the_404(): void {
 		$this->assertSame( 'resource-hub//404', $this->template_for( home_url( '/?page_id=987654' ) ) );
 		$this->assertTrue( is_404() );
 		$this->assertOneHeading( 'Page not found' );
+		$this->assertStringContainsString( 'class="rh-header-search"', $this->html, 'The shared header part still carries the markup.' );
 	}
 
 	/**
