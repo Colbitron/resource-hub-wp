@@ -9,7 +9,7 @@ The site is a filterable library of resources. The plugin defines a `resource` p
 - **related:** returns a resource's related resources, the editor's picks first and then the newest resources that share a topic.
 - **search:** searches the published resources and pages.
 
-When a public resource, one of its terms or a page changes, the plugin sends the front end a batch of events. The front end renders the library, the CMS's static front page at `/`, every other published page at its path, and a search page at `/search/`. It clears the cached pages each batch affects, and they rebuild on demand. The `resource-hub/related-resources` block lists the newest resources in one topic inside any page or resource body. The CMS renders it as a marker, which the front end replaces with its own list.
+When a public resource, one of its terms or a page changes, the plugin sends the front end a batch of events. The front end renders the library, the CMS's static front page at `/`, every other published page at its path, and a search page at `/search/`. It clears the cached pages each batch affects, and they rebuild on demand. The `resource-hub/related-resources` block lists the newest resources in one topic inside any page or resource body. The CMS renders it as a marker, a placeholder element the front end recognises and replaces with its own list.
 
 ## Architecture
 
@@ -45,7 +45,7 @@ flowchart LR
     posthog["PostHog<br/>server-side result events"]
 
     rest -->|"content read,<br/>server side only"| pages
-    hook -->|"batch of resource, term and page events<br/>3 s timeout, result stored in meta"| api
+    hook -->|"batch of resource, term and page events<br/>3 s timeout, result stored on what it covered"| api
     hook -->|"every result, 3 s,<br/>failures ignored"| posthog
     ui -.->|"workspace:*"| block
     ui -.->|"workspace:*"| theme
@@ -54,7 +54,7 @@ flowchart LR
 
 The front end reads content from the core REST API and the custom routes, always from the Next.js server, so the CMS's address never reaches a browser ([ADR 0040](docs/adr/0040-the-cms-url-never-reaches-the-browser.md)). It rewrites CMS links to its own domain and CMS images to its `/media/` path.
 
-When content changes, WordPress sends a small bearer-authenticated batch of events to the front end. It sends the batch from a cron request after the save, so the editor never waits for it, and WordPress never renders pages for the front end. The result of each send is stored on the objects it covered and, when PostHog is configured, sent there too.
+When content changes, WordPress sends a small bearer-authenticated batch of events to the front end. It sends the batch from a cron request after the save, so the editor never waits for it, and WordPress never renders pages for the front end. The result of each send is stored on the resources, terms and pages it covered that still exist and, when PostHog is configured, sent there too. A force-deleted post or a deleted term has nowhere to hold a result, so only PostHog records those.
 
 The CMS's own block theme is for editors and logged-in previews. Anonymous visitors get a 404 rendered with the theme's 404 template, because the front end is the only public site ([ADR 0031](docs/adr/0031-cms-theme-pages-are-for-logged-in-users.md)). The theme renders with the `packages/ui` tokens and CSS and uses the plugin's blocks, so a logged-in preview looks like the front end. The differences that remain are listed in [its README](wp-content/themes/resource-hub/README.md), under "Not built yet".
 
@@ -99,7 +99,7 @@ Everything marked built is on `main` and passes CI.
 | CMS block theme: every template in the front end's markup and styles, including the resource page, the collection pages and the System / Light / Dark control, held to the front end by markup fixtures and computed-style and screenshot checks | built |
 | CI on Depot CI ([ADR 0053](docs/adr/0053-ci-runs-on-depot-ci.md)) | built |
 | Hosting and deploys: the CMS on Cloudways ([ADR 0005](docs/adr/0005-hosted-wordpress-on-cloudways.md)) and the front end on Vercel ([ADR 0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md)), both deployed from `main` | built |
-| The theme's search template and header search control ([issue #115](https://github.com/Colbitron/resource-hub-wp/issues/115)), after a redesign of that control ([issue #128](https://github.com/Colbitron/resource-hub-wp/issues/128)) | open |
+| The CMS theme's search template and header control (the remaining part of [issue #115](https://github.com/Colbitron/resource-hub-wp/issues/115)), the control after its redesign in [issue #128](https://github.com/Colbitron/resource-hub-wp/issues/128) | open |
 | Lab measurement in a real browser ([issue #85](https://github.com/Colbitron/resource-hub-wp/issues/85)) and a plan for the related list at a larger scale ([issue #87](https://github.com/Colbitron/resource-hub-wp/issues/87)) | open |
 | The theme's remaining differences from the front end, listed in its README | open |
 
@@ -116,7 +116,7 @@ pnpm wp resource-hub seed   # optional: fictional sample resources to list and f
 pnpm wp resource-hub search-index --force   # rebuilds the search index after seeding
 ```
 
-`pnpm env:start` also builds the search index, but only when it is out of date, which is why the last line forces a rebuild.
+On a fresh clone, `pnpm env:start` cannot build the search index yet, because the plugin has no `vendor/` until `pnpm composer install`. Later starts rebuild the index only when it is out of date; the forced rebuild covers the sample data you just seeded.
 
 Log in at `http://localhost:8888/wp-admin` with `admin` / `password`. That is wp-env's default login for the local site only. The plugin's [README](wp-content/plugins/resource-hub-wp/README.md) covers configuration, the WP-CLI commands and testing. The front end's [README](apps/web/README.md) covers `apps/web`.
 
@@ -149,7 +149,7 @@ The jobs:
 - **The front end's checks:** lint, typecheck, unit tests and the production build.
 - **The front end's end-to-end suite:** Playwright against a mock CMS, with an axe accessibility scan.
 - **Screenshots:** pixel comparisons of the design specimen against committed baselines, and a check that the committed brand images match a fresh render.
-- **Lighthouse CI,** on `main` only, in five shards by URL, with one more job that merges their medians.
+- **Lighthouse CI,** never on a pull request, in five shards by URL, with one more job that merges their medians. Until [issue #76](https://github.com/Colbitron/resource-hub-wp/issues/76) calibrates the budgets, a budget miss is reported as a warning and does not hold back the front-end deploy; any other Lighthouse failure does.
 
 `.depot/workflows/preview-lighthouse.yml` runs Lighthouse against the Vercel preview of each pull request that touches the front end, once Vercel reports the preview deployed, and posts the result as a comment. It never blocks a merge. `.depot/workflows/screenshot-baselines.yml` is run by hand to regenerate the screenshot baselines. The details are in the plugin's README and in [`apps/web/e2e/README.md`](apps/web/e2e/README.md).
 
@@ -161,7 +161,7 @@ Nothing is deployed by hand. A push to `main` runs the gate, then deploys the CM
 
 1. CI builds the blocks and the theme's assets, and Composer installs the plugin's production dependencies and Relevanssi, in the official `composer:2` container image, pinned by digest.
 2. Relevanssi's installed files are checked against the checksums WordPress.org publishes for that version.
-3. Relevanssi, the plugin and the theme are copied to the host by rsync over SSH, each from an allowlist of files.
+3. Relevanssi, the plugin and the theme are copied to the host by rsync over SSH. The plugin and the theme each sync from an allowlist of files; Relevanssi's whole directory syncs after its checksum check.
 4. WP-CLI activates them, flushes the rewrite rules, rebuilds the search index if it is out of date, and checks that the REST API answers.
 
 Once the CMS is deployed and every front-end job has passed, CI starts the front end's Vercel production build through a deploy hook ([ADR 0051](docs/adr/0051-front-end-production-deploys-through-a-vercel-deploy-hook.md)). The CMS always goes first, so the front end never goes live ahead of the CMS it reads. That ordering is why contract changes must be additive. Pull requests never deploy; they get Vercel previews. The secrets, the rollback steps for each side, secret rotation and the host notes are in [`docs/runbooks/deploy.md`](docs/runbooks/deploy.md).
