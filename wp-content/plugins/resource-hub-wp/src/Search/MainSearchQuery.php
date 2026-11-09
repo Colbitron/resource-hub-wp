@@ -18,11 +18,17 @@ use WP_Query;
  * `inherit`, answer as the search route answers the front end (`SearchRoute`), so a logged-in preview of a
  * search lists what the site's search page lists.
  *
- * - **The route's scope.** On `pre_get_posts` the main search query takes {@see SearchRoute::scope()}:
- *   published resources and pages with no password, never the posts page, twelve to a page. Core's own
- *   search would also list posts, and private posts for a user who may read them, at Settings > Reading's
- *   count. Relevanssi answers the main query without being asked, as it answers the route's query with
- *   `'relevanssi' => true`, and reads the same vars.
+ * - **The route's scope and the route's words.** On `pre_get_posts` the main search query takes
+ *   {@see SearchRoute::scope()}: published resources and pages with no password, never the posts page,
+ *   twelve to a page. Core's own search would also list posts, and private posts for a user who may read
+ *   them, at Settings > Reading's count. Relevanssi answers the main query without being asked, as it
+ *   answers the route's query with `'relevanssi' => true`, and reads the same vars. For a request that
+ *   searches, `s` becomes the normalised query the route searches ({@see SearchRequest::$query}), so the
+ *   count is the front end's: the raw `s` would differ wherever the normalisation changes a word, a
+ *   no-break space inside quotes or between letters, or a line break, which core deletes and the route
+ *   reads as a space. The typed `s` goes into {@see SearchRequest::INPUT} for the form. Both are read
+ *   unslashed, as core's `parse_search()` and Relevanssi read `s`, and the new `s` is slashed again for
+ *   them to unslash.
  * - **No search for a request that is not one.** For every {@see SearchRequest} kind but `search` (no
  *   query, a control character, too short, too long, a page past the route's last), the front end makes
  *   no request and shows a sentence. Here `posts_pre_query` answers the main query with no posts before
@@ -75,7 +81,8 @@ final class MainSearchQuery {
 	}
 
 	/**
-	 * The route's scope on the main search query. Hooked to `pre_get_posts`.
+	 * The route's scope, and for a request that searches the route's normalised words, on the main search
+	 * query. Hooked to `pre_get_posts`.
 	 *
 	 * @param WP_Query $query The query being set up.
 	 */
@@ -86,6 +93,15 @@ final class MainSearchQuery {
 
 		foreach ( SearchRoute::scope() as $var => $value ) {
 			$query->set( $var, $value );
+		}
+
+		$typed   = $query->get( 's' );
+		$typed   = is_string( $typed ) ? stripslashes( $typed ) : '';
+		$request = SearchRequest::classify( $typed, (int) $query->get( 'paged' ) );
+
+		if ( $request->searches() ) {
+			$query->set( SearchRequest::INPUT, $typed );
+			$query->set( 's', wp_slash( $request->query ) );
 		}
 	}
 

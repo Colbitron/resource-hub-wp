@@ -47,9 +47,9 @@ use WP_REST_Server;
  *
  * Each page is cached in {@see SearchCache}, so a repeated query runs its search once until something it
  * can see changes. The CMS theme's own search page is not this route: it is core's main search query,
- * given this route's scope by {@see \ResourceHub\Search\MainSearchQuery}, and is never cached here.
- * The anonymous response carries the no-cache header, errors included, from {@see NoCacheHeader}, which
- * covers everything under this namespace.
+ * given this route's scope and its normalised words by {@see \ResourceHub\Search\MainSearchQuery}, and
+ * is never cached here. The anonymous response carries the no-cache header, errors included, from
+ * {@see NoCacheHeader}, which covers everything under this namespace.
  */
 final class SearchRoute {
 	/**

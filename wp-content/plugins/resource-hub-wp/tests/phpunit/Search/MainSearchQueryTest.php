@@ -10,7 +10,9 @@ declare(strict_types=1);
 namespace ResourceHub\Tests\Search;
 
 use ResourceHub\Rest\SearchRoute;
+use ResourceHub\Search\SearchRequest;
 use ResourceHub\Tests\Collections\MakesCollections;
+use WP_REST_Request;
 use WP_UnitTestCase;
 
 /**
@@ -72,6 +74,29 @@ final class MainSearchQueryTest extends WP_UnitTestCase {
 		$this->assertSame( SearchRoute::TYPES, $query->get( 'post_type' ) );
 		$this->assertEqualsCanonicalizing( array( $resource, $page ), wp_list_pluck( $query->posts, 'ID' ) );
 		$this->assertSame( 2, (int) $query->found_posts );
+	}
+
+	/**
+	 * The main query searches the route's normalised words, so it lists what the route lists where the
+	 * typed words differ from them (a no-break space, doubled spaces inside quotes, a line break), while
+	 * the form keeps the typed words.
+	 */
+	public function test_the_main_query_searches_the_normalised_words(): void {
+		$guide = $this->resource( self::WORD . ' field guide', 'ebook', array( 'caching' ) );
+
+		foreach ( array( self::WORD . "\u{A0}field", '"' . self::WORD . '  field"', '"' . self::WORD . "\u{A0}field\"", self::WORD . "\nfield" ) as $typed ) {
+			$request = new WP_REST_Request( 'GET', '/' . SearchRoute::NAMESPACE . SearchRoute::ROUTE );
+			$request->set_param( 'q', $typed );
+			$route = rest_do_request( $request )->get_data();
+
+			$this->go_to( home_url( '/search/?s=' . rawurlencode( $typed ) ) );
+
+			$label = (string) wp_json_encode( $typed );
+			$this->assertContains( $guide, wp_list_pluck( $route['items'], 'id' ), "The route finds the guide for {$label}." );
+			$this->assertEqualsCanonicalizing( wp_list_pluck( $route['items'], 'id' ), wp_list_pluck( $GLOBALS['wp_query']->posts, 'ID' ), $label );
+			$this->assertSame( $route['total'], (int) $GLOBALS['wp_query']->found_posts, $label );
+			$this->assertSame( $typed, SearchRequest::current()->input, "The form shows {$label} as typed." );
+		}
 	}
 
 	/**

@@ -36,7 +36,9 @@ use WP_Query;
  * its control characters removed in the `invalid` state, so the field never holds one); `query` is the
  * normalised form, {@see SearchRoute::normalize_query()}, the one the count line quotes and the first
  * page's link carries. The normalisation and the bounds are the route's, so what the CMS's page searches
- * for is what the front end's page would send.
+ * for is what the front end's page would send. {@see MainSearchQuery} hands the main query the normalised
+ * form as its `s`, so it searches what the route searches, and keeps the typed one in {@see self::INPUT},
+ * which `from()` reads first.
  *
  * `from()` is null for any request that is not a search page: a collection, a single resource, a feed,
  * the 404 the lockdown gives an anonymous visitor (`Gate::empty_404()` clears the query's flags), so a
@@ -50,6 +52,12 @@ final class SearchRequest {
 	public const TOO_LONG     = 'too-long';
 	public const SEARCH       = 'search';
 	public const NO_SUCH_PAGE = 'no-such-page';
+
+	/**
+	 * The query var holding `s` as typed, once {@see MainSearchQuery} has set `s` to the normalised query.
+	 * Not a public query var, so no URL sets it.
+	 */
+	public const INPUT = 'resource_hub_search_input';
 
 	/**
 	 * A control character: Unicode's `Cc`, U+0000 to U+001F and U+007F to U+009F, the front end's `CONTROL`.
@@ -91,7 +99,11 @@ final class SearchRequest {
 			return null;
 		}
 
-		$input = $query->get( 's' );
+		$input = $query->get( self::INPUT, null );
+
+		if ( ! is_string( $input ) ) {
+			$input = $query->get( 's' );
+		}
 
 		return self::classify( is_string( $input ) ? $input : '', (int) $query->get( 'paged' ) );
 	}

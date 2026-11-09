@@ -2091,6 +2091,18 @@ test.describe( "A CMS search page computes the front end's styles", () => {
 		);
 		await expect( page.locator( 'nav.rh-pagination' ) ).toHaveCount( 0 );
 
+		// Typed words the route normalises, quotes included, which a real
+		// request slashes: the count line quotes the normalised words, the
+		// field keeps the typed ones, and no backslash reaches either.
+		const typed = '  "quokka"  ';
+		await page.goto( `/?s=${ encodeURIComponent( typed ) }` );
+		await expect( page.locator( '#rh-search-message' ) ).toHaveText(
+			/^\d+ results? for “"quokka"”/
+		);
+		await expect( page.locator( '.rh-search__input' ) ).toHaveValue(
+			typed
+		);
+
 		// No results: listing.css's empty state, with the way to the library.
 		await page.goto( '/?s=zebraxyz' );
 		await expect( page.locator( 'ul.rh-card-grid' ) ).toHaveCount( 0 );
