@@ -1,0 +1,8 @@
+{
+	"id": 703,
+	"slug": "tips",
+	"link": "https://cms.example/tips/",
+	"title": { "raw": "Tips \"and\" tricks", "rendered": "Tips &#8220;and&#8221; tricks" },
+	"excerpt": { "raw": "It's \"quoted\" -- so it is.", "rendered": "<p>It&#8217;s &#8220;quoted&#8221; &#8212; so it is.</p>\n" },
+	"content": { "raw": "<!-- wp:paragraph --><p>The body of the page.</p><!-- /wp:paragraph -->" }
+}

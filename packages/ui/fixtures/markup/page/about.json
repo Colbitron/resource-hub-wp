@@ -1,0 +1,8 @@
+{
+	"id": 701,
+	"slug": "about",
+	"link": "https://cms.example/about/",
+	"title": { "raw": "About & us", "rendered": "About &#038; us" },
+	"excerpt": { "raw": "Who we are, and what the library is for.", "rendered": "<p>Who we are, and what the library is for.</p>\n" },
+	"content": { "raw": "<!-- wp:paragraph --><p>The body of the page.</p><!-- /wp:paragraph -->" }
+}

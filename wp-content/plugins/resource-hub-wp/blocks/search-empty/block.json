@@ -1,0 +1,22 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "resource-hub/search-empty",
+	"version": "0.1.0",
+	"title": "Search Empty State",
+	"category": "theme",
+	"icon": "info-outline",
+	"description": "The sentence the search page shows when it lists nothing: no results, a query too short or too long, or a page past the last, as the front end shows them. Rendered on the server for a Query Loop's no-results block.",
+	"keywords": [ "search", "empty", "no results" ],
+	"textdomain": "resource-hub",
+	"ancestor": [ "core/query-no-results" ],
+	"supports": {
+		"html": false,
+		"className": false,
+		"customClassName": false,
+		"reusable": false,
+		"multiple": false
+	},
+	"editorScript": "file:./index.js",
+	"style": [ "resource-hub-tokens" ]
+}

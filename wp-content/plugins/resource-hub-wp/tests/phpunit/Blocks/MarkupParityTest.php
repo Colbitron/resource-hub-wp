@@ -11,10 +11,13 @@ namespace ResourceHub\Tests\Blocks;
 
 use ResourceHub\Blocks\CollectionHeadBlock;
 use ResourceHub\Blocks\FeaturedLeadBlock;
+use ResourceHub\Blocks\PageCardBlock;
 use ResourceHub\Blocks\RelatedBlock;
 use ResourceHub\Blocks\ResourceCardBlock;
 use ResourceHub\Blocks\ResourceMetaBlock;
 use ResourceHub\Blocks\ResourceSummaryBlock;
+use ResourceHub\Blocks\SearchEmptyBlock;
+use ResourceHub\Blocks\SearchHeadBlock;
 use ResourceHub\Blocks\TypeAccents;
 use ResourceHub\Collections\Lead;
 use ResourceHub\Collections\Routes;
@@ -23,6 +26,7 @@ use ResourceHub\ContentModel\MetaRules;
 use ResourceHub\ContentModel\PostType;
 use ResourceHub\ContentModel\Taxonomies;
 use ResourceHub\Rest\RelatedItems;
+use ResourceHub\Search\SearchPath;
 use ResourceHub\Tests\Revalidation\SchemaValidator;
 use WP_Block;
 use WP_Term;
@@ -39,8 +43,19 @@ use WP_UnitTestCase;
  * resource page's related section. And each scene in `collection/{case}.json` (terms, resources and a
  * request), stored and requested, renders through the `collection-head` block exactly as
  * `collection/{case}.head.html` says, what the front end's `CollectionHead` renders from the same scene.
- * So a change to either side's markup fails one of the two tests until the fixtures, and the other side,
- * follow.
+ * Each sample page in `page/{case}.json` renders through the `page-card` block exactly as
+ * `page/{case}.card.html` says, what the front end's `PageCard` renders from `toPageCard()`; and each
+ * search scene in `search/{case}.json` (the reader's words, the page, the total and the matching items),
+ * stored and requested at `/search/`, renders through the `search-head` and `search-empty` blocks exactly as
+ * `search/{case}.head.html` and `search/{case}.empty.html` say, what the front end's `SearchPage` renders
+ * from the same scene. So a change to either side's markup fails one of the two tests until the fixtures,
+ * and the other side, follow.
+ *
+ * The search scenes' items hold the query word in their titles, so the main query finds exactly the
+ * scene's total whether Relevanssi answers it or core's search does; a scene on a later page stores its
+ * items and asks for a page none of them is on. Two things the CMS writes differently by design are
+ * normalised here, with the links' origin: the form's field and the first page's link name core's query
+ * var, `s`, where the front end's name `q`; the fixtures hold the front end's.
  *
  * The lead and the head read the main query, so those cases set pretty permalinks with the plugin's
  * collection rules and request the page with `go_to()`, as a reader would; the lead case flags the
@@ -82,6 +97,7 @@ final class MarkupParityTest extends WP_UnitTestCase {
 		( new PostType() )->register();
 		( new Taxonomies() )->register();
 		( new Routes() )->add_rules();
+		( new SearchPath() )->add_rules();
 		delete_option( 'rewrite_rules' );
 		Lead::forget();
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
@@ -131,6 +147,40 @@ final class MarkupParityTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * The sample pages, one per file in `page/`; the front end's test reads the same directory.
+	 *
+	 * @return array<string, array{string}>
+	 */
+	public static function page_cases(): array {
+		$cases = array();
+		$files = glob( self::markup_dir() . '/page/*.json' );
+
+		foreach ( false === $files ? array() : $files as $file ) {
+			$name           = basename( $file, '.json' );
+			$cases[ $name ] = array( $name );
+		}
+
+		return $cases;
+	}
+
+	/**
+	 * The search scenes, one per file in `search/`; the front end's test reads the same directory.
+	 *
+	 * @return array<string, array{string}>
+	 */
+	public static function search_cases(): array {
+		$cases = array();
+		$files = glob( self::markup_dir() . '/search/*.json' );
+
+		foreach ( false === $files ? array() : $files as $file ) {
+			$name           = basename( $file, '.json' );
+			$cases[ $name ] = array( $name );
+		}
+
+		return $cases;
+	}
+
+	/**
 	 * The samples are there, each with its three fixtures, and the scenes with theirs.
 	 */
 	public function test_finds_the_samples(): void {
@@ -156,6 +206,89 @@ final class MarkupParityTest extends WP_UnitTestCase {
 		foreach ( array_keys( self::collection_cases() ) as $name ) {
 			$this->assertFileIsReadable( self::markup_dir() . '/collection/' . $name . '.head.html' );
 		}
+
+		foreach ( array( 'about', 'untitled', 'texturized' ) as $name ) {
+			$this->assertArrayHasKey( $name, self::page_cases() );
+		}
+
+		foreach ( array_keys( self::page_cases() ) as $name ) {
+			$this->assertFileIsReadable( self::markup_dir() . '/page/' . $name . '.card.html' );
+		}
+
+		foreach ( array( 'none', 'results', 'one-result', 'no-results', 'later-page', 'too-short', 'past-the-cap' ) as $name ) {
+			$this->assertArrayHasKey( $name, self::search_cases() );
+		}
+
+		foreach ( array_keys( self::search_cases() ) as $name ) {
+			$this->assertFileIsReadable( self::markup_dir() . '/search/' . $name . '.head.html' );
+			$this->assertFileIsReadable( self::markup_dir() . '/search/' . $name . '.empty.html' );
+		}
+	}
+
+	/**
+	 * Storing a sample page gives back the REST API's forms the front end's test feeds it: the rendered title
+	 * and the rendered excerpt, texturized and trimmed from the body where the excerpt is empty.
+	 *
+	 * @dataProvider page_cases
+	 *
+	 * @param string $name The case.
+	 */
+	public function test_the_stored_page_is_the_page( string $name ): void {
+		$sample = self::page_sample( $name );
+		$post   = get_post( $this->store_page( $sample ) );
+
+		$this->assertSame( $sample['title']['rendered'], get_the_title( $post ) );
+		$this->assertSame( $sample['excerpt']['rendered'], apply_filters( 'the_excerpt', get_the_excerpt( $post ) ) ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Core's filter, applied as the REST posts controller applies it.
+		$this->assertSame( '/' . $sample['slug'] . '/', str_replace( untrailingslashit( home_url() ), '', get_permalink( $post ) ) );
+	}
+
+	/**
+	 * The page-card block renders `page/{case}.card.html`, the front end's search-result row for a page at its default `h2`.
+	 *
+	 * @dataProvider page_cases
+	 *
+	 * @param string $name The case.
+	 */
+	public function test_page_card_matches_the_fixture( string $name ): void {
+		$post = $this->store_page( self::page_sample( $name ) );
+
+		$this->assertSame( self::fixture( 'page/' . $name . '.card.html' ), self::normalise( $this->render( PageCardBlock::NAME, $post, 'page' ) ) );
+	}
+
+	/**
+	 * The search blocks render `search/{case}.head.html` and `search/{case}.empty.html` for the scene's request, with
+	 * the scene's items stored.
+	 *
+	 * @dataProvider search_cases
+	 *
+	 * @param string $name The case.
+	 */
+	public function test_search_head_and_empty_state_match_the_fixtures( string $name ): void {
+		$scene = wp_json_file_decode( self::markup_dir() . '/search/' . $name . '.json', array( 'associative' => true ) );
+		$this->assertIsArray( $scene );
+
+		$type = self::factory()->term->create( array( 'taxonomy' => Taxonomies::TYPE ) );
+		foreach ( $scene['items'] as $i => $item ) {
+			$post = self::factory()->post->create(
+				array(
+					'post_type'   => 'resource' === $item['type'] ? PostType::NAME : 'page',
+					'post_status' => 'publish',
+					'post_title'  => $item['title'],
+					'post_name'   => 'scene-' . $name . '-' . ( $i + 1 ),
+				)
+			);
+			if ( 'resource' === $item['type'] ) {
+				wp_set_object_terms( $post, array( $type ), Taxonomies::TYPE );
+			}
+		}
+
+		$path = '/search/' . ( $scene['page'] > 1 ? 'page/' . $scene['page'] . '/' : '' ) . ( '' !== $scene['input'] ? '?s=' . rawurlencode( $scene['input'] ) : '' );
+		$this->go_to( home_url( $path ) );
+		$this->assertTrue( is_search(), $path );
+		$this->assertFalse( is_404(), $path );
+
+		$this->assertSame( self::fixture( 'search/' . $name . '.head.html' ), self::normalise( $this->render( SearchHeadBlock::NAME, null ) ) );
+		$this->assertSame( self::fixture( 'search/' . $name . '.empty.html' ), self::normalise( $this->render( SearchEmptyBlock::NAME, null ) ) );
 	}
 
 	/**
@@ -368,12 +501,41 @@ final class MarkupParityTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Stores a sample page as a published page, with its raw title, excerpt and body; its ID.
+	 *
+	 * @param array<string, mixed> $sample The decoded sample.
+	 */
+	private function store_page( array $sample ): int {
+		$id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_title'   => $sample['title']['raw'],
+				'post_name'    => $sample['slug'],
+				'post_excerpt' => $sample['excerpt']['raw'],
+				'post_content' => $sample['content']['raw'],
+			)
+		);
+
+		// The factory fills an empty excerpt with a generated one; the sample's empty excerpt is the point.
+		wp_update_post(
+			array(
+				'ID'           => $id,
+				'post_excerpt' => $sample['excerpt']['raw'],
+			)
+		);
+
+		return $id;
+	}
+
+	/**
 	 * One block, rendered through `WP_Block`: for a post, with the context a post template gives it, or with no context.
 	 *
 	 * @param string   $name The block's name.
 	 * @param int|null $post The post, or null for a block that reads the main query.
+	 * @param string   $type The context's `postType`, a resource's by default.
 	 */
-	private function render( string $name, ?int $post ): string {
+	private function render( string $name, ?int $post, string $type = PostType::NAME ): string {
 		$parsed  = array(
 			'blockName'    => $name,
 			'attrs'        => array(),
@@ -383,7 +545,7 @@ final class MarkupParityTest extends WP_UnitTestCase {
 		);
 		$context = null === $post ? array() : array(
 			'postId'   => $post,
-			'postType' => PostType::NAME,
+			'postType' => $type,
 		);
 
 		return ( new WP_Block( $parsed, $context ) )->render();
@@ -395,7 +557,9 @@ final class MarkupParityTest extends WP_UnitTestCase {
 	 * @param string $html A render or a fixture.
 	 */
 	private static function normalise( string $html ): string {
-		$html = str_replace( 'href="' . untrailingslashit( home_url() ) . '/', 'href="/', $html );
+		$html = str_replace( array( 'href="' . untrailingslashit( home_url() ) . '/', 'action="' . untrailingslashit( home_url() ) . '/' ), array( 'href="/', 'action="/' ), $html );
+		// The search form's field and the first page's link name core's query var where the front end's name `q`.
+		$html = str_replace( array( ' name="s" value="', 'href="/search/?s=' ), array( ' name="q" value="', 'href="/search/?q=' ), $html );
 		$html = (string) preg_replace( '/>\s*\n\s*</', '><', $html );
 		$html = (string) preg_replace_callback( '/ ([A-Za-z][\w:.-]*)="/', fn ( array $m ): string => ' ' . strtolower( $m[1] ) . '="', $html );
 		$html = (string) preg_replace_callback(
@@ -415,6 +579,16 @@ final class MarkupParityTest extends WP_UnitTestCase {
 	 */
 	private static function sample( string $name ): array {
 		return wp_json_file_decode( self::markup_dir() . '/' . $name . '.json', array( 'associative' => true ) );
+	}
+
+	/**
+	 * A sample page, decoded.
+	 *
+	 * @param string $name The case.
+	 * @return array<string, mixed>
+	 */
+	private static function page_sample( string $name ): array {
+		return wp_json_file_decode( self::markup_dir() . '/page/' . $name . '.json', array( 'associative' => true ) );
 	}
 
 	/**

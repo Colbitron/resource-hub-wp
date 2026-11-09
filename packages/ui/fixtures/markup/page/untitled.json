@@ -1,0 +1,8 @@
+{
+	"id": 702,
+	"slug": "untitled",
+	"link": "https://cms.example/untitled/",
+	"title": { "raw": "", "rendered": "" },
+	"excerpt": { "raw": "", "rendered": "<p>Some body text.</p>\n" },
+	"content": { "raw": "<!-- wp:paragraph --><p>Some body text.</p><!-- /wp:paragraph -->" }
+}

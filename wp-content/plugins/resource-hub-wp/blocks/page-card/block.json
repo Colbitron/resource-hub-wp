@@ -1,0 +1,28 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "resource-hub/page-card",
+	"version": "0.1.0",
+	"title": "Page Card",
+	"category": "theme",
+	"icon": "admin-page",
+	"description": "One page as the front end's search-result row: the label “Page”, its title and its excerpt. Rendered on the server for each page a Query Loop lists; nothing for any other post type.",
+	"keywords": [ "page", "card", "row", "search" ],
+	"textdomain": "resource-hub",
+	"ancestor": [ "core/post-template" ],
+	"attributes": {
+		"level": {
+			"type": "integer",
+			"default": 2
+		}
+	},
+	"usesContext": [ "postId", "postType" ],
+	"supports": {
+		"html": false,
+		"className": false,
+		"customClassName": false,
+		"reusable": false
+	},
+	"editorScript": "file:./index.js",
+	"style": [ "resource-hub-tokens", "resource-hub-card" ]
+}
