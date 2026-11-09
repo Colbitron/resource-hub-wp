@@ -428,24 +428,35 @@ test( 'workflowJobs reads every job id GitHub allows, and only the jobs', () => 
 
 // ci.yml's conditions, read as text: every job a pull request can skip is
 // skipped only on a pull request, and neither deploy reads scope's outputs,
-// so nothing here can skip a job on main.
+// so nothing here can skip a job on main. The one other skip is a rollback
+// dispatch's (ci.yml, "Rolling back"): every front-end job, Lighthouse and
+// its medians included, carries `inputs.rollback_sha == ''` as its first
+// clause, the gate does not (it runs on the rollback target), and
+// deploy-web carries it while deploy does not.
 test( 'ci.yml scopes jobs only on a pull request, and never the deploys', () => {
 	const jobs = workflowJobs();
 	const ifOf = ( job ) => ( jobs[ job ].match( /^ {4}if: (.*)$/m ) ?? [] )[ 1 ] ?? '';
-	for ( const job of [ 'gate', 'web-checks', 'web-e2e', 'web-screenshots' ] ) {
-		assert.match( ifOf( job ), /^github\.event_name != 'pull_request' \|\| needs\.scope\.outputs\.(plugin|web) == 'true'$/, job );
+	assert.equal( ifOf( 'gate' ), "github.event_name != 'pull_request' || needs.scope.outputs.plugin == 'true'" );
+	for ( const job of [ 'web-checks', 'web-e2e', 'web-screenshots' ] ) {
+		assert.equal( ifOf( job ), "inputs.rollback_sha == '' && (github.event_name != 'pull_request' || needs.scope.outputs.web == 'true')", job );
 	}
-	assert.equal( ifOf( 'web-lighthouse' ), "github.event_name != 'pull_request'" );
-	assert.match( ifOf( 'web-lighthouse-medians' ), /needs\.scope\.result == 'success' && github\.event_name != 'pull_request'/ );
+	assert.equal( ifOf( 'web-lighthouse' ), "inputs.rollback_sha == '' && github.event_name != 'pull_request'" );
+	assert.match( ifOf( 'web-lighthouse-medians' ), /^\$\{\{ !cancelled\(\) && inputs\.rollback_sha == '' && needs\.scope\.result == 'success' && github\.event_name != 'pull_request' \}\}$/ );
 	for ( const job of [ 'deploy', 'deploy-web' ] ) {
 		assert.ok( jobs[ job ], job );
 		assert.doesNotMatch( jobs[ job ], /needs\.scope\.outputs/, job );
 	}
 	for ( const [ job, body ] of Object.entries( jobs ) ) {
 		if ( ! [ 'scope', 'deploy', 'deploy-web', 'web-lighthouse-medians', 'ci-result' ].includes( job ) && /needs\.scope\.outputs/.test( body ) ) {
-			assert.match( ifOf( job ), /^github\.event_name != 'pull_request' \|\|/, job );
+			assert.match( ifOf( job ), /^(inputs\.rollback_sha == '' && \()?github\.event_name != 'pull_request' \|\|/, job );
 		}
 	}
+	// The deploys: both main only, on a push or a dispatch; a rollback
+	// dispatch reaches the CMS deploy and never the front end's.
+	const folded = ( job ) => ( jobs[ job ].match( /^ {4}if: >-\n((?: {6}[^\n]*\n)+)/m ) ?? [] )[ 1 ]?.replace( /\n {6}/g, ' ' ).trim();
+	assert.equal( folded( 'deploy' ), "vars.DEPOT_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')" );
+	assert.equal( folded( 'deploy-web' ), "vars.DEPOT_DEPLOY_ENABLED == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && inputs.rollback_sha == ''" );
+	assert.doesNotMatch( jobs.deploy, /refs\/tags|startsWith/ );
 } );
 
 // CI result is the one required check, so a job it does not read could

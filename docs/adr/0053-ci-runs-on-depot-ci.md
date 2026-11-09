@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-11-07
-amended: [2026-11-07, 2026-11-07]
+amended: [2026-11-07, 2026-11-07, 2026-11-08]
 ---
 
 # CI runs on Depot CI, the deploys included
@@ -48,3 +48,9 @@ Depot CI was chosen because it accepts personal accounts and ran the whole suite
 **What changed.** The trust test that "Depot's copy is trusted only once tested" waited on has run: a throwaway pull request, #100, closed without being merged or labelled, edited only `.depot/workflows/adr-approval.yml`, and Depot CI ran `main`'s copy of it on `pull_request_target`, not the pull request's, as GitHub does. So Depot's copy can stand as the check of record if GitHub's stops running. The test's instructions are gone from `.claude/rules/adr.md`, which now records the result and what is still unconfirmed on Depot.
 
 **What did not.** Both copies keep running and both stay guarded paths; retiring GitHub's copy is a separate decision for Colby. The consequence "Depot's copy is trusted only once tested; `.claude/rules/adr.md` has the test" stays above as written.
+
+### 2026-11-08: the CMS rolls back by a dispatch on `main` with a SHA input, and a rollback to GitHub Actions needs the secrets set again
+
+**What changed.** A CMS rollback is a `workflow_dispatch` of `ci.yml` on `main` whose `rollback_sha` input names an earlier commit of `main`; the gate and the deploy check out `main`'s full history, refuse the input unless it is a full SHA that is an ancestor of `main`'s head at or after the deploy job's floor (`.depot/scripts/rollback-target.mjs`, failing closed), and then build, test and deploy that commit, while the front-end jobs and `deploy-web` are skipped and the front end is rolled back on Vercel (ADR 0051). The tag dispatch the runbook once described never worked here: Depot refuses `depot ci dispatch --ref <tag>` ("Workflow … not found or does not have workflow_dispatch trigger", canary probe, 2026-11-07), and since 2026-11-08 the six deploy secrets have one variant each, scoped to `repository=colbitron/resource-hub-wp` and `branch=main`, so a run on any other ref reads them as empty. Issue #130 has the design; [`docs/runbooks/deploy.md`](../runbooks/deploy.md), "Rolling back", the procedure and what the first real dispatch must show. Separately, the "Rollback" consequence above leaves out a step that scoping made necessary: rolling CI back to GitHub Actions now also means setting the six deploy secrets again as GitHub repository secrets before the merge, because their GitHub copies were deleted on 2026-11-08 once nothing on GitHub Actions read them; the runbook's "Rolling CI back to GitHub Actions" has the order.
+
+**What did not.** The decision and the deploys' order: the CMS deploys first, then the front end, and `deploy` still needs only the plugin's gate. The "Rollback" consequence stays above as written; it is read with this amendment.

@@ -13,7 +13,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { JOBS, main, verdicts } from './ci-result.mjs';
+import { JOBS, isRollback, main, verdicts } from './ci-result.mjs';
 import { entryPoint } from './entry-point.mjs';
 
 const SCRIPT = fileURLToPath( new URL( './ci-result.mjs', import.meta.url ) );
@@ -75,6 +75,56 @@ test( 'off a pull request every job must succeed, skipped or not', () => {
 		// Scope's outputs are not read off a pull request, even when they say 'false'.
 		const env = { EVENT_NAME: event, SCOPE_PLUGIN: 'false', SCOPE_WEB: 'false', ...ALL_PASSED, GATE: 'skipped' };
 		assert.deepEqual( failing( env ), [ 'gate' ], String( event ) );
+	}
+} );
+
+// A rollback dispatch (ci.yml, "Rolling back"): the gate ran on the target
+// and the front-end jobs were skipped by their `inputs.rollback_sha == ''`
+// clause. That exact shape passes; anything else is red.
+const SHA = 'cb22fd9a1b41fbcb23ad08ca10305ba4ee941b17';
+const rollback = ( fields ) => ( { EVENT_NAME: 'workflow_dispatch', ROLLBACK_SHA: SHA, SCOPE: 'success', GATE: 'success', WEB_CHECKS: 'skipped', WEB_E2E: 'skipped', WEB_SCREENSHOTS: 'skipped', ...fields } );
+
+test( 'a rollback dispatch passes with the gate green and every front-end job skipped', () => {
+	assert.equal( isRollback( rollback( {} ) ), true );
+	assert.deepEqual( failing( rollback( {} ) ), [] );
+	// Scope's outputs are not read; whatever they say changes nothing.
+	assert.deepEqual( failing( rollback( { SCOPE_PLUGIN: 'false', SCOPE_WEB: 'true' } ) ), [] );
+} );
+
+test( 'on a rollback dispatch the gate must succeed and a front-end job must be skipped', () => {
+	for ( const gate of [ 'failure', 'cancelled', 'skipped', '', undefined ] ) {
+		const rows = verdicts( rollback( { GATE: gate } ) );
+		assert.deepEqual( rows.filter( ( row ) => row.problem !== null ).map( ( row ) => row.job ), [ 'gate' ], String( gate ) );
+		assert.match( rows.find( ( row ) => row.job === 'gate' ).problem, /on a rollback dispatch the gate runs on the rollback target and must pass$/ );
+	}
+	for ( const result of [ 'success', 'failure', 'cancelled', '', undefined ] ) {
+		const rows = verdicts( rollback( { WEB_E2E: result } ) );
+		assert.deepEqual( rows.filter( ( row ) => row.problem !== null ).map( ( row ) => row.job ), [ 'web-e2e' ], String( result ) );
+		assert.match( rows.find( ( row ) => row.job === 'web-e2e' ).problem, /on a rollback dispatch, where every front-end job is skipped/ );
+	}
+	// Scope still has to succeed.
+	assert.deepEqual( failing( rollback( { SCOPE: 'failure' } ) ), [ 'scope' ] );
+} );
+
+test( 'an empty or unset rollback_sha is not a rollback, so the usual rules apply', () => {
+	for ( const sha of [ '', undefined ] ) {
+		const env = { EVENT_NAME: 'workflow_dispatch', ROLLBACK_SHA: sha, ...ALL_PASSED };
+		assert.equal( isRollback( env ), false, String( sha ) );
+		assert.deepEqual( failing( env ), [], String( sha ) );
+		assert.deepEqual( failing( { ...env, WEB_CHECKS: 'skipped' } ), [ 'web-checks' ], String( sha ) );
+	}
+	// The rollback shape off a rollback is the usual red: skips off a pull request.
+	assert.deepEqual( failing( { ...rollback( {} ), ROLLBACK_SHA: '' } ), [ 'web-checks', 'web-e2e', 'web-screenshots' ] );
+} );
+
+test( 'a rollback_sha on any event but a dispatch is not a rollback', () => {
+	for ( const event of [ 'push', 'pull_request', 'api', 'schedule', '', undefined ] ) {
+		const env = rollback( { EVENT_NAME: event } );
+		assert.equal( isRollback( env ), false, String( event ) );
+		// The skips a rollback would excuse are red here.
+		assert.deepEqual( failing( env ), [ 'web-checks', 'web-e2e', 'web-screenshots' ], String( event ) );
+		// And a run where every job ran passes as any other run does.
+		assert.deepEqual( failing( { EVENT_NAME: event, ROLLBACK_SHA: SHA, ...( event === 'pull_request' ? { SCOPE_PLUGIN: 'true', SCOPE_WEB: 'true' } : {} ), ...ALL_PASSED } ), [], String( event ) );
 	}
 } );
 

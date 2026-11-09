@@ -8,12 +8,23 @@
 // failed or cancelled scope skips every job behind it. Each job it reads
 // must have succeeded, except that on a pull request a job may be skipped
 // when scope's output for its side says 'false', which is the only way
-// ci.yml skips one. Anything else, an unexpected skip, a missing result, a
-// skip off a pull request, an output other than 'true' or 'false', is red.
+// ci.yml skips one off a rollback. Anything else, an unexpected skip, a
+// missing result, a skip off a pull request, an output other than 'true'
+// or 'false', is red.
+//
+// A rollback dispatch (ci.yml, "Rolling back": a workflow_dispatch on main
+// whose rollback_sha input names an earlier commit) is the other shape.
+// There the gate runs on that commit and must succeed, and every
+// front-end job is skipped by the `inputs.rollback_sha == ''` clause in
+// its condition and must be: the rollback ships nothing of the front end,
+// so a front-end job that ran there means those conditions drifted. The
+// script reads the same input the conditions read, so the two agree.
 //
 // The workflow passes everything through env, never into the script:
 //
 //   EVENT_NAME                   github.event_name
+//   ROLLBACK_SHA                 inputs.rollback_sha: '' or unset off a
+//                                rollback dispatch
 //   SCOPE                        needs.scope.result
 //   SCOPE_PLUGIN, SCOPE_WEB      needs.scope.outputs.plugin and .web
 //   GATE, WEB_CHECKS, WEB_E2E,   needs.<job>.result, one per job in JOBS
@@ -41,6 +52,20 @@ export const JOBS = Object.freeze( {
 const SIDE_ENV = Object.freeze( { plugin: 'SCOPE_PLUGIN', web: 'SCOPE_WEB' } );
 
 /**
+ * Whether the run is a rollback dispatch: a rollback_sha, read from the
+ * same input as the jobs' conditions, on a workflow_dispatch. The event is
+ * checked too: a rollback_sha can only reach a dispatch, so one on any
+ * other event is not a rollback, and the usual rules then apply (every
+ * job must have run), which is red for the skips a rollback would excuse.
+ *
+ * @param {NodeJS.ProcessEnv} env The environment.
+ * @return {boolean} True for a workflow_dispatch with a rollback_sha.
+ */
+export function isRollback( env ) {
+	return env.EVENT_NAME === 'workflow_dispatch' && typeof env.ROLLBACK_SHA === 'string' && env.ROLLBACK_SHA !== '';
+}
+
+/**
  * The verdict for one job's result.
  *
  * @param {string} result The job's result.
@@ -49,6 +74,12 @@ const SIDE_ENV = Object.freeze( { plugin: 'SCOPE_PLUGIN', web: 'SCOPE_WEB' } );
  * @return {string|null} Null when it passes, or why it does not.
  */
 function problemWith( result, side, env ) {
+	if ( isRollback( env ) ) {
+		if ( side === 'web' ) {
+			return result === 'skipped' ? null : `result ${ JSON.stringify( result ) } on a rollback dispatch, where every front-end job is skipped: the rollback ships nothing of the front end, so this job ran only if the rollback clause left its condition`;
+		}
+		return result === 'success' ? null : `result ${ JSON.stringify( result ) }, not success; on a rollback dispatch the gate runs on the rollback target and must pass`;
+	}
 	if ( result === 'success' ) {
 		return null;
 	}
@@ -91,7 +122,7 @@ export function verdicts( env = process.env ) {
  */
 export function main( env = process.env ) {
 	const rows = verdicts( env );
-	console.log( `event ${ JSON.stringify( env.EVENT_NAME ?? '' ) }, scope outputs plugin=${ JSON.stringify( env.SCOPE_PLUGIN ?? '' ) } web=${ JSON.stringify( env.SCOPE_WEB ?? '' ) }` );
+	console.log( `event ${ JSON.stringify( env.EVENT_NAME ?? '' ) }, rollback ${ isRollback( env ) ? 'yes' : 'no' }, scope outputs plugin=${ JSON.stringify( env.SCOPE_PLUGIN ?? '' ) } web=${ JSON.stringify( env.SCOPE_WEB ?? '' ) }` );
 	for ( const { job, result, problem } of rows ) {
 		// JSON-encoded, so no value can start a workflow command.
 		console.log( problem === null ? `${ job }: ${ JSON.stringify( result ) }, passes` : `::error::${ job }: ${ problem }` );
